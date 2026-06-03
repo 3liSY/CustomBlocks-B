@@ -1,0 +1,15 @@
+.gradle/
+build/
+run/
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.class
+.DS_Store
+Thumbs.db
+*.log
+local.properties
+.wrangler/
+cloud-vault-worker/.wrangler/
