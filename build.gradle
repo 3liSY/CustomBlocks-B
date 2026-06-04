@@ -1,0 +1,219 @@
+// =============================================================================
+//  CustomBlocks — build.gradle
+//
+//  Fabric mod for Minecraft 1.21.1 (see CustomBlocks_Engineering_Bible.md).
+//
+//  PHASING NOTE (per Engineering Bible §7 "start minimal, expand per-phase"):
+//  This build script only declares what the CURRENT phase needs. Dependencies
+//  and tasks are added when their feature is built — NOT all up front.
+//    • Phase 0  (now)  → loom, fabric-api, UTF-8, verifyMojibake, verifySound
+//    • Phase 13        → jcodec (video-to-texture)
+//    • Phase 15        → SpotBugs static analysis (strict mode)
+//    • when needed     → fabric-permissions-api (permissions are post-v1.0)
+// =============================================================================
+
+plugins {
+    id 'fabric-loom' version '1.7.4'
+}
+
+version = '1.0.0'
+group = 'com.customblocks'
+
+base {
+    archivesName = 'customblocks'
+}
+
+repositories {
+    maven { url 'https://maven.fabricmc.net/' }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "com.mojang:minecraft:1.21.1"
+    mappings  "net.fabricmc:yarn:1.21.1+build.3:v2"
+    modImplementation "net.fabricmc:fabric-loader:0.16.9"
+    modImplementation "net.fabricmc.fabric-api:fabric-api:0.104.0+1.21.1"
+    include           "net.fabricmc.fabric-api:fabric-api:0.104.0+1.21.1"
+
+    // --- Added in later phases (kept here as documentation, commented out) ---
+    // Phase 13 — jcodec (pure-Java MP4/H264 decoder for video-to-texture)
+    // include implementation("org.jcodec:jcodec:0.2.5")
+    // include implementation("org.jcodec:jcodec-javase:0.2.5")
+    //
+    // Post-v1.0 — Fabric Permissions API
+    // modImplementation("me.lucko:fabric-permissions-api:0.3.1") { transitive = false }
+    //
+    // Phase 15 — SpotBugs annotations (compileOnly — not shipped in the mod JAR)
+    // compileOnly 'com.github.spotbugs:spotbugs-annotations:4.8.6'
+}
+
+processResources {
+    filteringCharset "UTF-8"
+}
+
+tasks.withType(JavaCompile).configureEach {
+    it.options.encoding = 'UTF-8'
+    it.options.release = 21
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+// ── Mojibake gate (NFR-11) ──────────────────────────────────────────────────
+// Scans every .java and .json source file for known mojibake byte sequences
+// (CP1252 bytes mis-decoded as Latin-1 then re-encoded as UTF-8). If ANY file
+// contains a corrupted sequence the build FAILS with file + line info.
+// To fix: open docs/MOJIBAKE_SHIELD.md, repair the corruption, re-run build.
+// TextSanitizer.java is excluded — it intentionally stores mojibake as repair keys.
+tasks.register('verifyMojibake') {
+    group = 'verification'
+    description = 'Fails the build if any .java or .json source file contains mojibake sequences.'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    def srcRes  = layout.projectDirectory.dir('src/main/resources').asFile
+    inputs.dir(srcJava)
+    inputs.dir(srcRes)
+
+    doLast {
+        def PATTERNS = [
+            'Â°', 'Â·', 'Ã‚', 'Ãƒ', 'â€', 'âœ', 'â–', 'â"',
+            'â†', 'Â«', 'Â»', 'Ã¢', 'âœ–', 'âœ¦', 'â–¶', 'â—€',
+            'Ã°Å¸', 'Ã¢â‚¬', 'Ã¢Å"'
+        ]
+
+        def violations = []
+
+        [srcJava, srcRes].each { root ->
+            if (!root.exists()) return
+            root.eachFileRecurse { file ->
+                if (!file.isFile()) return
+                def name = file.name
+                if (!(name.endsWith('.java') || name.endsWith('.json'))) return
+                if (name == 'TextSanitizer.java') return // intentional mojibake repair keys
+
+                def lines = file.readLines('UTF-8')
+                lines.eachWithIndex { line, idx ->
+                    PATTERNS.each { pat ->
+                        if (line.contains(pat)) {
+                            violations << "${file.absolutePath}:${idx + 1} — pattern '${pat}' found"
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  MOJIBAKE DETECTED — BUILD FAILED\n')
+            msg.append('  Read docs/MOJIBAKE_SHIELD.md before fixing.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── Sound linkage gate (NFR-12) ─────────────────────────────────────────────
+// In Yarn 1.21.1+build.3, BLOCK_NOTE_BLOCK_* constants are RegistryEntry<SoundEvent>
+// and require .value() to unwrap. Using them raw causes silent crashes.
+// Only the NOTE_BLOCK family needs .value(); other SoundEvents.* are bare SoundEvent.
+tasks.register('verifySound') {
+    group = 'verification'
+    description = 'Fails the build if any .java file uses SoundEvents.BLOCK_NOTE_BLOCK_* without .value().'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    inputs.dir(srcJava)
+
+    doLast {
+        def RAW_NOTE_BLOCK = java.util.regex.Pattern.compile(
+            'SoundEvents\\.BLOCK_NOTE_BLOCK_[A-Z0-9_]+(?!\\.value\\(\\))\\s*[,)]'
+        )
+
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                def lines = file.readLines('UTF-8')
+                lines.eachWithIndex { line, idx ->
+                    if (RAW_NOTE_BLOCK.matcher(line).find()) {
+                        violations << "${file.absolutePath}:${idx + 1} — BLOCK_NOTE_BLOCK_* needs .value(): ${line.trim()}"
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  SOUND LINKAGE VIOLATION — BUILD FAILED\n')
+            msg.append('  BLOCK_NOTE_BLOCK_* constants are RegistryEntry<SoundEvent> and need .value()\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── File-size gate (§9.3 — no monoliths) ────────────────────────────────────
+// Prevents the disaster of the old project (GuiManager ~9,400 lines,
+// CustomBlockCommand ~6,300 lines). Any .java file over its limit FAILS the build.
+//   • general cap:      500 lines
+//   • command handlers: 400 lines  (anything under command/handlers/)
+//   • config classes:   300 lines  (*Config.java)
+// package-info.java is exempt (documentation only).
+tasks.register('verifyFileSize') {
+    group = 'verification'
+    description = 'Fails the build if any .java file exceeds its line-count limit (Bible §9.3).'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    inputs.dir(srcJava)
+
+    doLast {
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                if (file.name == 'package-info.java') return
+
+                def count = file.readLines('UTF-8').size()
+                def path  = file.absolutePath.replace('\\', '/')
+
+                def limit = 500
+                def kind  = 'class'
+                if (path.contains('/command/handlers/')) { limit = 400; kind = 'command handler' }
+                else if (file.name.endsWith('Config.java')) { limit = 300; kind = 'config class' }
+
+                if (count > limit) {
+                    violations << "${file.absolutePath}:${count} lines — exceeds ${kind} limit of ${limit}"
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  FILE SIZE VIOLATION — BUILD FAILED (§9.3 no-monolith rule)\n')
+            msg.append('  Split the file into focused classes. See CLAUDE.md §5 / Bible §9.3.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+tasks.named('build').configure {
+    dependsOn tasks.named('verifyMojibake')
+    dependsOn tasks.named('verifySound')
+    dependsOn tasks.named('verifyFileSize')
+}

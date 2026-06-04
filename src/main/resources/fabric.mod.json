@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "customblocks",
+  "version": "1.0.0",
+  "name": "CustomBlocks",
+  "description": "Make any image or gif a working block :)",
+  "authors": [ "3liSY / SrbGamer" ],
+  "license": "All Rights Reserved",
+  "contact": {
+    "homepage": "https://modrinth.com/mod/customblocks"
+  },
+  "environment": "*",
+  "entrypoints": {
+    "main":   [ "com.customblocks.CustomBlocksMod" ],
+    "client": [ "com.customblocks.client.CustomBlocksClient" ]
+  },
+  "mixins": [ "customblocks.mixins.json" ],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api":   "*",
+    "minecraft":    "~1.21.1",
+    "java":         ">=21"
+  },
+  "suggests": {
+    "fabric-permissions-api-v0": "*",
+    "modmenu": "*"
+  },
+  "custom": {
+    "modmenu": {
+      "links": {
+        "modmenu.discord": "https://discord.gg/stormygang",
+        "customblocks.youtube": "https://www.youtube.com/@SrbGamerr"
+      }
+    }
+  }
+}
