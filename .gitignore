@@ -1,0 +1,25 @@
+# --- Gradle / Loom build output ---
+.gradle/
+build/
+run/
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# --- Compiled / misc ---
+*.class
+.DS_Store
+Thumbs.db
+*.log
+local.properties
+
+# --- Cloud Vault worker (Phase 14) ---
+.wrangler/
+cloud-vault-worker/.wrangler/
+
+# --- Old project kept locally as a reference archive (its own nested git repo) ---
+/CustomBlocks/
