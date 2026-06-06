@@ -11,8 +11,9 @@
   },
   "environment": "*",
   "entrypoints": {
-    "main":   [ "com.customblocks.CustomBlocksMod" ],
-    "client": [ "com.customblocks.client.CustomBlocksClient" ]
+    "main":     [ "com.customblocks.CustomBlocksMod" ],
+    "client":   [ "com.customblocks.client.CustomBlocksClient" ],
+    "modmenu":  [ "com.customblocks.modmenu.ModMenuApiImpl" ]
   },
   "mixins": [ "customblocks.mixins.json" ],
   "depends": {

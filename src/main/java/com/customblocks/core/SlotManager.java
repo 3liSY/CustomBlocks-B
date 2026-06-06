@@ -23,8 +23,13 @@ import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
 import net.minecraft.util.Identifier;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class SlotManager {
@@ -48,7 +53,10 @@ public final class SlotManager {
         items = new SlotBlock.SlotItem[max];
         for (int i = 0; i < max; i++) {
             AbstractBlock.Settings settings = AbstractBlock.Settings.create()
-                    .strength(1.5f, 6.0f);
+                    .strength(1.5f, 6.0f)
+                    // Luminance is baked per state at construction, so read the LIGHT
+                    // property — each of the 16 states bakes to its own correct value.
+                    .luminance(state -> state.get(SlotBlock.LIGHT));
             SlotBlock block = new SlotBlock(i, settings);
             Identifier id = Identifier.of(CustomBlocksMod.MOD_ID, "slot_" + i);
             SlotBlock.SlotItem item = new SlotBlock.SlotItem(block, new Item.Settings());
@@ -66,6 +74,7 @@ public final class SlotManager {
         if (BY_ID.containsKey(customId)) return null;
         int idx = nextFreeSlotIndex();
         if (idx < 0) return null;
+        TextureStore.delete(idx); // clear any stale texture from a previously freed slot
         String name = (displayName == null || displayName.isBlank()) ? customId : displayName;
         SlotData d = new SlotData(idx, customId, name);
         BY_SLOT.put(d.slotKey(), d);
@@ -79,6 +88,7 @@ public final class SlotManager {
         SlotData d = BY_ID.remove(customId);
         if (d != null) {
             BY_SLOT.remove(d.slotKey());
+            TextureStore.delete(d.index());
             saveAll();
         }
         return d;
@@ -95,11 +105,88 @@ public final class SlotManager {
         return updated;
     }
 
+    /** Set a block's light emission (0..15, clamped). Returns the new data, or null. */
+    public static synchronized SlotData setGlow(String customId, int level) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withGlow(level);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
+    /** Set a block's break hardness (negative = unbreakable, 0 = instant). Returns new data or null. */
+    public static synchronized SlotData setHardness(String customId, float hardness) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withHardness(hardness);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
+    /** Set a block's break/step/place sound group (see SlotBlock.getSoundGroup). Returns new data or null. */
+    public static synchronized SlotData setSoundType(String customId, String soundType) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withSoundType(soundType);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
+    /** Toggle a block's collision (true = passable/walk-through). Returns new data or null. */
+    public static synchronized SlotData setNoCollision(String customId, boolean noCollision) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withNoCollision(noCollision);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
+    /** Assign a block to a category ("" = uncategorized). Returns new data or null. */
+    public static synchronized SlotData setCategory(String customId, String category) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withCategory(category);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
     /** Copy a block into a new free slot under {@code newId}. Returns the new data, or null. */
     public static synchronized SlotData dupe(String customId, String newId) {
         SlotData src = BY_ID.get(customId);
         if (src == null || newId == null || newId.isBlank() || BY_ID.containsKey(newId)) return null;
         return create(newId, src.displayName());
+    }
+
+    // ── Undo/redo support (non-recording state restore — Phase 6) ─────────────
+    /**
+     * Put a snapshot straight back into the live maps + persist. Does NOT record undo —
+     * only UndoManager-driven restores call this, so undo never re-triggers itself.
+     */
+    public static synchronized void restoreSnapshot(SlotData d) {
+        if (d == null) return;
+        BY_ID.put(d.customId(), d);
+        BY_SLOT.put(d.slotKey(), d);
+        saveAll();
+    }
+
+    /** Remove a block (slot data + texture) without recording undo (undo/redo internal). */
+    public static synchronized void removeSilently(String customId) {
+        SlotData d = BY_ID.remove(customId);
+        if (d != null) {
+            BY_SLOT.remove(d.slotKey());
+            TextureStore.delete(d.index());
+            saveAll();
+        }
     }
 
     private static int nextFreeSlotIndex() {
@@ -148,8 +235,49 @@ public final class SlotManager {
         return items[index];
     }
 
+    /** Live light level for a slot index (0 if unassigned). Read by the block's luminance fn. */
+    public static int glowFor(int index) {
+        SlotData d = BY_SLOT.get("slot_" + index);
+        return d == null ? 0 : d.glow();
+    }
+
     public static SlotData getBySlot(String slotKey) { return BY_SLOT.get(slotKey); }
     public static SlotData getById(String customId) { return BY_ID.get(customId); }
     public static boolean hasId(String customId) { return BY_ID.containsKey(customId); }
     public static Collection<SlotData> assignedSlots() { return BY_ID.values(); }
+
+    // ── Search / categories (Phase 8/9 — pure reads over the live maps) ───────
+    /** All distinct non-empty categories currently in use, sorted alphabetically. */
+    public static Set<String> categories() {
+        Set<String> out = new TreeSet<>();
+        for (SlotData d : BY_ID.values()) {
+            if (!d.category().isEmpty()) out.add(d.category());
+        }
+        return out;
+    }
+
+    /** Blocks in a given category (case-insensitive exact match). */
+    public static List<SlotData> byCategory(String category) {
+        String c = category.trim().toLowerCase(Locale.ROOT);
+        List<SlotData> out = new ArrayList<>();
+        for (SlotData d : BY_ID.values()) {
+            if (d.category().equalsIgnoreCase(c)) out.add(d);
+        }
+        return out;
+    }
+
+    /** Blocks whose id, display name, or category contains the query (case-insensitive). */
+    public static List<SlotData> search(String query) {
+        String q = query.trim().toLowerCase(Locale.ROOT);
+        List<SlotData> out = new ArrayList<>();
+        if (q.isEmpty()) return out;
+        for (SlotData d : BY_ID.values()) {
+            if (d.customId().toLowerCase(Locale.ROOT).contains(q)
+                    || d.displayName().toLowerCase(Locale.ROOT).contains(q)
+                    || d.category().toLowerCase(Locale.ROOT).contains(q)) {
+                out.add(d);
+            }
+        }
+        return out;
+    }
 }

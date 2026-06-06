@@ -5,8 +5,8 @@
  * (design rule #4, FR-01). Persists all assigned SlotData to
  * config/customblocks/slots.json using an atomic temp-file + move (NFR-13).
  *
- * Format: { "blocks": [ { "index": N, "customId": "...", "displayName": "..." }, ... ] }
- * Fields grow per-phase alongside SlotData.
+ * Format: { "blocks": [ { "index", "customId", "displayName", "glow", "hardness", "sound", "noCollision", "category" }, ... ] }
+ * Fields grow per-phase alongside SlotData (older files missing a field default safely).
  *
  * Depends on: SlotData
  * Called by:  SlotManager (saveAll / loadAll) only.
@@ -51,6 +51,11 @@ public final class SlotDataStore {
                 o.addProperty("index", d.index());
                 o.addProperty("customId", d.customId());
                 o.addProperty("displayName", d.displayName());
+                o.addProperty("glow", d.glow());
+                o.addProperty("hardness", d.hardness());
+                o.addProperty("sound", d.soundType());
+                if (d.noCollision()) o.addProperty("noCollision", true); // omit the common default
+                if (!d.category().isEmpty()) o.addProperty("category", d.category()); // omit when uncategorized
                 arr.add(o);
             }
             JsonObject root = new JsonObject();
@@ -77,7 +82,12 @@ public final class SlotDataStore {
                 int index = o.get("index").getAsInt();
                 String customId = o.get("customId").getAsString();
                 String displayName = o.has("displayName") ? o.get("displayName").getAsString() : customId;
-                out.add(new SlotData(index, customId, displayName));
+                int glow = o.has("glow") ? o.get("glow").getAsInt() : 0;
+                float hardness = o.has("hardness") ? o.get("hardness").getAsFloat() : SlotData.DEFAULT_HARDNESS;
+                String sound = o.has("sound") ? o.get("sound").getAsString() : SlotData.DEFAULT_SOUND;
+                boolean noCollision = o.has("noCollision") && o.get("noCollision").getAsBoolean();
+                String category = o.has("category") ? o.get("category").getAsString() : SlotData.DEFAULT_CATEGORY;
+                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category));
             }
         } catch (Exception e) {
             LOGGER.error("[CustomBlocks] Failed to load slot data (starting empty)", e);

@@ -25,6 +25,7 @@ base {
 
 repositories {
     maven { url 'https://maven.fabricmc.net/' }
+    maven { url 'https://maven.terraformersmc.com/releases' }
     mavenCentral()
 }
 
@@ -35,11 +36,13 @@ dependencies {
     modImplementation "net.fabricmc.fabric-api:fabric-api:0.104.0+1.21.1"
     include           "net.fabricmc.fabric-api:fabric-api:0.104.0+1.21.1"
 
-    // --- Added in later phases (kept here as documentation, commented out) ---
     // Phase 13 — jcodec (pure-Java MP4/H264 decoder for video-to-texture)
-    // include implementation("org.jcodec:jcodec:0.2.5")
-    // include implementation("org.jcodec:jcodec-javase:0.2.5")
-    //
+    include implementation("org.jcodec:jcodec:0.2.5")
+    include implementation("org.jcodec:jcodec-javase:0.2.5")
+
+    // Phase 16 — Mod Menu config screen integration (compile-only; not shipped)
+    modCompileOnlyApi "com.terraformersmc:modmenu:11.0.2"
+
     // Post-v1.0 — Fabric Permissions API
     // modImplementation("me.lucko:fabric-permissions-api:0.3.1") { transitive = false }
     //

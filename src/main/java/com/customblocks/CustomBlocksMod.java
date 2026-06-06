@@ -1,26 +1,33 @@
 /**
  * CustomBlocksMod.java
  *
- * Responsibility: Main mod entrypoint (Fabric ModInitializer). The single place where
- * blocks, items, commands, and network payloads are registered at startup.
+ * Responsibility: Main mod entrypoint (Fabric ModInitializer). Registers the slot pool,
+ * loads saved blocks, registers the /cb command tree, runs the resource-pack HTTP server,
+ * and pushes the pack to clients.
  *
- * Phase 2 (persistence + core commands): registers the slot pool, loads saved blocks
- * from disk, registers the /cb command tree, and saves on shutdown. The texture/network
- * pipeline (Phase 4-5) is wired in later.
+ * Phase 4 (textures): the HTTP pack server starts with the world, rebuilds on every
+ * retexture, and is sent to each player on join.
  *
- * Depends on: CustomBlocksConfig, SlotManager, SlotBlock, CommandRegistrar
+ * Depends on: CustomBlocksConfig, SlotManager, SlotBlock, CommandRegistrar, ResourcePackServer
  * Called by:  Fabric loader via the "main" entrypoint in fabric.mod.json
- *
- * ADR Reference: ADR-001 (pre-registration instead of dynamic registry).
  */
 package com.customblocks;
 
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.CommandRegistrar;
+import com.customblocks.core.OnboardingManager;
+import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.item.ToolItems;
+import com.customblocks.network.ResourcePackServer;
+import com.customblocks.network.payloads.HudSyncPayload;
+import com.customblocks.network.payloads.OpenGuiPayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
+import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -41,24 +48,57 @@ public class CustomBlocksMod implements ModInitializer {
     /** Shared logger. All log lines are prefixed "[CustomBlocks]" per NFR-09. */
     public static final Logger LOGGER = LoggerFactory.getLogger("CustomBlocks");
 
-    /** The mod's creative inventory tab. */
+    /** The mod's creative inventory tab for created blocks. */
     public static final RegistryKey<ItemGroup> CUSTOM_BLOCKS_TAB =
             RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(MOD_ID, "blocks"));
 
+    /** The mod's creative inventory tab for the hand tools (Phase 7). */
+    public static final RegistryKey<ItemGroup> CUSTOM_TOOLS_TAB =
+            RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(MOD_ID, "tools"));
+
     @Override
     public void onInitialize() {
-        LOGGER.info("[CustomBlocks] Initializing CustomBlocks v1.0.0 (Phase 2 — persistence + commands)");
+        LOGGER.info("[CustomBlocks] Initializing CustomBlocks v1.0.0 (Phase 10+)");
 
         CustomBlocksConfig.load();
         int maxSlots = CustomBlocksConfig.maxSlots;
 
-        SlotManager.registerAll(maxSlots);
-        SlotManager.loadAll();          // restore saved blocks AFTER registration
-        registerCreativeTab();
-        CommandRegistrar.register();    // /customblock + /cb
+        // Register server→client payloads (Phase 10/11)
+        PayloadTypeRegistry.playS2C().register(OpenGuiPayload.ID,  OpenGuiPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(HudSyncPayload.ID,  HudSyncPayload.CODEC);
 
-        // Persist all slot data on shutdown (changes are also saved on each edit).
+        SlotManager.registerAll(maxSlots);
+        SlotManager.loadAll();
+        ToolItems.registerAll();
+        registerCreativeTab();
+        registerToolsTab();
+        CommandRegistrar.register();
+
+        // Resource-pack HTTP server: start with the world, rebuild the pack, stop on shutdown.
+        ServerLifecycleEvents.SERVER_STARTED.register(server -> {
+            ResourcePackServer.setServer(server);
+            ResourcePackServer.start();
+            ResourcePackServer.updatePack();
+        });
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> SlotManager.saveAll());
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> ResourcePackServer.stop());
+
+        // On player join: send pack, send HUD index, fire onboarding welcome.
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            ResourcePackServer.sendToPlayer(handler.player);
+            // Build and send HUD sync index (slotIndex → "customId displayName")
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (var d : SlotManager.assignedSlots()) {
+                if (!first) sb.append(',');
+                sb.append('"').append(d.index()).append("\":\"")
+                  .append(d.customId()).append(' ').append(d.displayName()).append('"');
+                first = false;
+            }
+            sb.append('}');
+            ServerPlayNetworking.send(handler.player, new HudSyncPayload(sb.toString()));
+            OnboardingManager.onPlayerJoin(handler.player);
+        });
 
         LOGGER.info("[CustomBlocks] Registered {} slot blocks (slot_0 to slot_{}).",
                 maxSlots, maxSlots - 1);
@@ -66,17 +106,31 @@ public class CustomBlocksMod implements ModInitializer {
         LOGGER.info("[CustomBlocks] Hello World — mod loaded successfully.");
     }
 
-    /** Register the creative tab and fill it with the slot items. */
+    /** Register the creative tab, listing only the blocks that have actually been created. */
     private static void registerCreativeTab() {
         Registry.register(Registries.ITEM_GROUP, CUSTOM_BLOCKS_TAB,
                 FabricItemGroup.builder()
                         .displayName(Text.translatable("itemGroup.customblocks.blocks"))
                         .icon(() -> new ItemStack(Items.BOOKSHELF))
                         .entries((displayContext, entries) -> {
-                            for (int i = 0; i < SlotManager.registeredCount(); i++) {
-                                SlotBlock.SlotItem item = SlotManager.itemAt(i);
+                            for (SlotData d : SlotManager.assignedSlots()) {
+                                SlotBlock.SlotItem item = SlotManager.itemAt(d.index());
                                 if (item != null) entries.add(item);
                             }
+                        })
+                        .build());
+    }
+
+    /** Register the tools tab listing the mod's hand tools. */
+    private static void registerToolsTab() {
+        Registry.register(Registries.ITEM_GROUP, CUSTOM_TOOLS_TAB,
+                FabricItemGroup.builder()
+                        .displayName(Text.translatable("itemGroup.customblocks.tools"))
+                        .icon(() -> new ItemStack(ToolItems.LUMINA_BRUSH))
+                        .entries((displayContext, entries) -> {
+                            entries.add(ToolItems.LUMINA_BRUSH);
+                            entries.add(ToolItems.CHISEL);
+                            entries.add(ToolItems.DELETER);
                         })
                         .build());
     }

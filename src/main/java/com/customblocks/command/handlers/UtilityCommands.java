@@ -10,9 +10,13 @@
 package com.customblocks.command.handlers;
 
 import com.customblocks.block.SlotBlock;
+import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
+import com.customblocks.core.DraftManager;
+import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -29,6 +33,8 @@ import net.minecraft.util.Formatting;
 
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 
 public final class UtilityCommands {
 
@@ -39,29 +45,52 @@ public final class UtilityCommands {
 
         root.then(CommandManager.literal("give")
                 .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
                         .executes(ctx -> give(ctx, StringArgumentType.getString(ctx, "id")))));
 
         root.then(CommandManager.literal("reload")
-                .requires(s -> s.hasPermissionLevel(2))
                 .executes(UtilityCommands::reload));
 
+        root.then(CommandManager.literal("search")
+                .then(CommandManager.argument("query", StringArgumentType.greedyString())
+                        .executes(ctx -> search(ctx, StringArgumentType.getString(ctx, "query")))));
+
+        root.then(CommandManager.literal("categories")
+                .executes(UtilityCommands::categories));
+
         root.then(CommandManager.literal("export")
-                .executes(ctx -> export(ctx, "json")) // bare "/cb export" defaults to json
+                .executes(UtilityCommands::exportMenu)
                 .then(CommandManager.literal("json").executes(ctx -> export(ctx, "json")))
-                .then(CommandManager.literal("txt").executes(ctx -> export(ctx, "txt"))));
+                .then(CommandManager.literal("txt").executes(ctx -> export(ctx, "txt")))
+                .then(CommandManager.literal("vault").executes(UtilityCommands::exportVaultAll))
+                .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .executes(ctx -> exportOneMenu(ctx, StringArgumentType.getString(ctx, "id")))
+                        .then(CommandManager.literal("config")
+                                .executes(ctx -> exportOneConfig(ctx, StringArgumentType.getString(ctx, "id"))))
+                        .then(CommandManager.literal("vault")
+                                .executes(ctx -> exportOneVault(ctx, StringArgumentType.getString(ctx, "id"))))
+                        .then(CommandManager.literal("download")
+                                .executes(ctx -> exportOneDownload(ctx, StringArgumentType.getString(ctx, "id"))))));
+
+        root.then(CommandManager.literal("importfolder")
+                .executes(ctx -> importFolderCmd(ctx, null))
+                .then(CommandManager.argument("path", StringArgumentType.greedyString())
+                        .executes(ctx -> importFolderCmd(ctx, StringArgumentType.getString(ctx, "path")))));
     }
 
     private static int list(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
         if (all.isEmpty()) {
-            src.sendFeedback(() -> Text.literal("§7No custom blocks yet. Make one with §f/cb create <id>§7."), false);
+            Chat.info(src, "No custom blocks yet. Make one with /cb create <id>");
             return 1;
         }
-        src.sendFeedback(() -> Text.literal("§e" + all.size() + " custom block(s):"), false);
+        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + all.size() + " custom block(s):"), false);
         for (SlotData d : all) {
             src.sendFeedback(() -> Text.literal(
-                    "§7 - §f" + d.customId() + " §7(slot " + d.index() + ", \"" + d.displayName() + "\")"), false);
+                    "§7 - §f" + d.customId() + categoryTag(d) + statusTags(d.customId())
+                            + " §7(slot " + d.index() + ", \"" + d.displayName() + "\")"), false);
         }
         // Clickable export options.
         MutableText exportLine = Text.literal("§7Export list: ")
@@ -76,44 +105,182 @@ public final class UtilityCommands {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
         if (d == null) {
-            src.sendError(Text.literal("No block with id '" + id + "'."));
+            Chat.error(src, "No block '" + id + "'");
             return 0;
         }
         SlotBlock.SlotItem item = SlotManager.itemAt(d.index());
         if (item == null) {
-            src.sendError(Text.literal("Slot item missing for '" + id + "'."));
+            Chat.error(src, "Slot item missing for '" + id + "'");
             return 0;
         }
         ServerPlayerEntity player = src.getPlayerOrThrow();
         player.getInventory().insertStack(new ItemStack(item));
-        src.sendFeedback(() -> Text.literal("§aGave §f" + id + "§a."), false);
+        Chat.success(src, "Gave " + id);
         return 1;
     }
 
     private static int reload(CommandContext<ServerCommandSource> ctx) {
         SlotManager.reload();
-        ctx.getSource().sendFeedback(
-                () -> Text.literal("§aReloaded §f" + SlotManager.usedSlots() + "§a block(s) from disk."), false);
+        Chat.success(ctx.getSource(), "Reloaded " + SlotManager.usedSlots() + " block(s) from disk");
         return 1;
     }
 
+    private static int search(CommandContext<ServerCommandSource> ctx, String query) {
+        ServerCommandSource src = ctx.getSource();
+        List<SlotData> hits = SlotManager.search(query);
+        if (hits.isEmpty()) {
+            Chat.info(src, "No blocks match '" + query + "'");
+            return 1;
+        }
+        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + hits.size() + " match(es) for \"" + query + "\":"), false);
+        for (SlotData d : hits) {
+            MutableText line = Text.literal("§7 - §f" + d.customId() + categoryTag(d) + statusTags(d.customId()) + " ")
+                    .append(runButton("[give]", "/cb give " + d.customId(), "Give " + d.customId()));
+            src.sendFeedback(() -> line, false);
+        }
+        return 1;
+    }
+
+    private static int categories(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        Set<String> cats = SlotManager.categories();
+        if (cats.isEmpty()) {
+            Chat.info(src, "No categories yet. Set one with /cb setcategory <id> <name>");
+            return 1;
+        }
+        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + cats.size() + " categor(ies):"), false);
+        for (String c : cats) {
+            int count = SlotManager.byCategory(c).size();
+            MutableText line = Text.literal("§7 - §f" + c + " §7(" + count + ") ")
+                    .append(runButton("[list]", "/cb search " + c, "Show blocks in " + c));
+            src.sendFeedback(() -> line, false);
+        }
+        return 1;
+    }
+
+    /** A small grey "[category]" tag for list output, or "" when uncategorized. */
+    private static String categoryTag(SlotData d) {
+        return d.category().isEmpty() ? "" : " §8[" + d.category() + "]";
+    }
+
+    /** Lock/draft status tags for list output — e.g. " §c[locked] §8[draft]". */
+    private static String statusTags(String id) {
+        StringBuilder sb = new StringBuilder();
+        if (LockManager.isLocked(id)) sb.append(" §c[locked]");
+        if (DraftManager.isDraft(id))  sb.append(" §8[draft]");
+        return sb.toString();
+    }
+
+    /** /cb export (no args) — shows bulk export options */
+    private static int exportMenu(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        Collection<SlotData> all = SlotManager.assignedSlots();
+        if (all.isEmpty()) {
+            Chat.info(src, "Nothing to export yet — make a block with /cb create <id>");
+            return 1;
+        }
+        MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + all.size() + "§f block(s): ")
+                .append(runButton("[.json]", "/cb export json", "Bulk export all blocks to JSON"))
+                .append(Text.literal(" "))
+                .append(runButton("[.txt]", "/cb export txt", "Bulk export all blocks to TXT"))
+                .append(Text.literal(" "))
+                .append(runButton("[to Vault]", "/cb export vault", "Upload all blocks to the Vault"))
+                .append(Text.literal("  §7Per-block: §f/cb export <id>"));
+        src.sendFeedback(() -> msg, false);
+        return 1;
+    }
+
+    /** /cb export json|txt */
     private static int export(CommandContext<ServerCommandSource> ctx, String format) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
         if (all.isEmpty()) {
-            src.sendFeedback(() -> Text.literal("§7Nothing to export yet — make a block with §f/cb create <id>§7."), false);
+            Chat.info(src, "Nothing to export yet — make a block with /cb create <id>");
             return 1;
         }
         Path file = BlockExporter.exportAll(format, all);
         if (file == null) {
-            src.sendError(Text.literal("Export failed (unsupported format '" + format + "' or write error)."));
+            Chat.error(src, "Export failed — write error");
             return 0;
         }
-        String abs = file.toAbsolutePath().toString();
-        MutableText msg = Text.literal("§aExported §f" + all.size() + "§a block(s) → §f" + file + " ")
-                .append(copyButton(abs));
+        String name = file.getFileName().toString();
+        MutableText msg = Text.literal(Chat.PREFIX + "§fExported §e" + all.size() + "§f block(s) → §7" + name + " ")
+                .append(runButton("[to Vault]", "/cb export vault", "Upload all blocks to the Vault"));
         src.sendFeedback(() -> msg, false);
         return 1;
+    }
+
+    /** /cb export vault — bulk vault upload (Phase 14 stub) */
+    private static int exportVaultAll(CommandContext<ServerCommandSource> ctx) {
+        Chat.info(ctx.getSource(), "Vault sync is coming in Phase 14. Stay tuned!");
+        return 1;
+    }
+
+    /** /cb export <id> — shows per-block export options */
+    private static int exportOneMenu(CommandContext<ServerCommandSource> ctx, String id) {
+        ServerCommandSource src = ctx.getSource();
+        SlotData d = SlotManager.getById(id);
+        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + id + "§f: ")
+                .append(runButton("[to Config]", "/cb export " + id + " config", "Save " + id + ".json to exports folder"))
+                .append(Text.literal(" "))
+                .append(runButton("[to Vault]", "/cb export " + id + " vault", "Upload to Block Vault"))
+                .append(Text.literal(" "))
+                .append(runButton("[Download]", "/cb export " + id + " download", "Get a download link for this block"));
+        src.sendFeedback(() -> msg, false);
+        return 1;
+    }
+
+    /** /cb export <id> config — saves to exports/<id>.json */
+    private static int exportOneConfig(CommandContext<ServerCommandSource> ctx, String id) {
+        ServerCommandSource src = ctx.getSource();
+        SlotData d = SlotManager.getById(id);
+        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        Path file = BlockExporter.exportOne(d);
+        if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
+        Chat.success(src, "Saved §e" + id + "§r → §7exports/" + id + ".json");
+        return 1;
+    }
+
+    /** /cb export <id> vault — upload to vault (Phase 14 stub) */
+    private static int exportOneVault(CommandContext<ServerCommandSource> ctx, String id) {
+        if (SlotManager.getById(id) == null) { Chat.error(ctx.getSource(), "No block '" + id + "'"); return 0; }
+        Chat.info(ctx.getSource(), "Vault sync is coming in Phase 14. Stay tuned!");
+        return 1;
+    }
+
+    /** /cb export <id> download — saves to config then serves a link via the HTTP server */
+    private static int exportOneDownload(CommandContext<ServerCommandSource> ctx, String id) {
+        ServerCommandSource src = ctx.getSource();
+        SlotData d = SlotManager.getById(id);
+        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        Path file = BlockExporter.exportOne(d);
+        if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
+        String url = ResourcePackServer.getExportUrl(id);
+        MutableText msg = Text.literal(Chat.PREFIX + "§fDownload §e" + id + "§f: ")
+                .append(openUrlButton("[open link]", url, url));
+        src.sendFeedback(() -> msg, false);
+        return 1;
+    }
+
+    private static int importFolderCmd(CommandContext<ServerCommandSource> ctx, String pathStr) {
+        ServerCommandSource src = ctx.getSource();
+        Path folder = pathStr == null
+                ? Path.of("config/customblocks/exports")
+                : Path.of(pathStr);
+        BlockExporter.ImportResult result = BlockExporter.importFolder(folder);
+        int c = result.created().size(), s = result.skipped().size(), f = result.failed().size();
+        if (c == 0 && s == 0 && f == 0) {
+            Chat.info(src, "No importable block JSONs found in: " + folder);
+            return 1;
+        }
+        if (c > 0) {
+            ResourcePackServer.updatePack();
+            Chat.success(src, "Imported " + c + " block(s): " + String.join(", ", result.created()));
+        }
+        if (s > 0) Chat.info(src, "Skipped " + s + " (already exist): " + String.join(", ", result.skipped()));
+        if (f > 0) Chat.error(src, "Failed " + f + ": " + String.join(", ", result.failed()));
+        return c > 0 ? 1 : 0;
     }
 
     // ── Clickable chat helpers ───────────────────────────────────────────────
@@ -125,10 +292,10 @@ public final class UtilityCommands {
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
     }
 
-    private static MutableText copyButton(String path) {
-        return Text.literal("[copy path]").styled(s -> s
+    private static MutableText openUrlButton(String label, String url, String hover) {
+        return Text.literal(label).styled(s -> s
                 .withColor(Formatting.AQUA)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, path))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal("Copy the file path to clipboard"))));
+                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
     }
 }
