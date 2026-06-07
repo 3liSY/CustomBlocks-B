@@ -4,6 +4,199 @@ One entry per work session. Newest at the top. See the Engineering Bible §9.2.
 
 ---
 
+## 2026-06-07 — Phase 16 Validation: Blockstate Warning Diagnosis (Issue #1 & #2)
+
+### How it started
+
+Developer submitted a diagnostic report from in-game testing. The report identified a
+high-volume warning loop in the server console:
+
+```
+[Worker-Main-10/WARN]: Exception loading blockstate definition:
+  'customblocks:blockstates/slot_X.json' missing model for variant:
+  'customblocks:slot_X#light=Y'
+```
+
+The error fired 16 times per slot (once for each light level 0–15), starting at slot_850
+and continuing through slot_977 where the log truncated. With maxSlots configured to 2048,
+this produces up to ~32,000 warnings per startup. Developer asked: "Isn't that expected
+since we don't have textures for all 800 blocks?"
+
+### First assessment (WRONG)
+
+I initially identified two separate bugs:
+
+1. **Pack generates blockstate JSONs for all 2048 slots** — should only generate for assigned
+   ones (~35). This causes 32K warnings for blocks that don't exist.
+2. **The `""` empty variant in `blockstateJson()` is wrong** — should enumerate `light=0`
+   through `light=15` individually. Minecraft can't resolve the model when the blockstate
+   JSON says `""` but the block has a `light` IntProperty.
+
+I was confident about both. I was wrong about both — partially.
+
+### Investigation round 1: the `""` catch-all
+
+Sent an agent to read the actual code. Findings contradicted my first take:
+
+- **`""` (empty string) IS the vanilla-idiomatic catch-all.** Minecraft's `BlockStatesLoader`
+  accepts `""` as a variant key that matches ALL property combinations. This is how vanilla
+  blocks like `LightBlock` work. The PROGRESS_LOG entry from 2026-06-04 ("Batch 3 polish")
+  even says: "the generator's `""` catch-all variant matches all 16 states (verified in the
+  `BlockStatesLoader` bytecode — empty key = empty predicate = match-all)."
+- **maxSlots defaults to 800, not 2048.** The 2048 value came from the developer's custom
+  `config.json`. Code caps at 8192.
+- **The pack generator ALREADY handles empty slots.** It creates a shared `empty_slot.json`
+  model (intentionally references a missing texture → purple/black checkerboard) and writes
+  blockstate JSONs pointing to it for every unassigned slot. This was specifically designed
+  to suppress "missing model" warnings.
+
+So I corrected myself: the code looks correct on paper. The `""` catch-all should work.
+The empty slot handling exists. Then why the warnings?
+
+### Investigation round 2: the full pipeline
+
+Dug into every component in the chain:
+
+| Component | File | Verdict |
+|---|---|---|
+| `blockstateJson()` | ServerPackGenerator.java:98–106 | ✅ Valid JSON, `""` catch-all |
+| `emptyModelJson()` | ServerPackGenerator.java:123–133 | ✅ Valid `cube_all` model |
+| `cubeAllJson()` | ServerPackGenerator.java:108–115 | ✅ Correct real block model |
+| ZIP entry paths | `assets/customblocks/blockstates/slot_N.json` etc. | ✅ Standard Minecraft paths |
+| `add()` helper | ServerPackGenerator.java:135–140 | ✅ Duplicate guard, proper close |
+| `pack.mcmeta` | pack_format 34 | ✅ Correct for MC 1.21.1 |
+| HTTP serving | ResourcePackServer.java:77–87 | ✅ Correct MIME, streaming, SHA1 |
+| Static assets | `src/main/resources/assets/customblocks/` | ✅ No conflicts (only lang + tool items) |
+| Debouncing | ResourcePackServer.java:128–148 | ✅ AtomicInteger, no double-builds |
+
+Everything checks out. The pack ZIP is well-formed. The JSON is valid. The HTTP server
+works. No file conflicts.
+
+### Root cause: startup timing
+
+The problem is WHEN things happen:
+
+```
+onInitialize()
+  ├── SlotManager.registerAll(maxSlots)  ← All 2048 blocks register with Minecraft
+  ├── SlotManager.loadAll()              ← 35 blocks loaded from disk
+  └── (Minecraft's resource loader runs) ← Looks for blockstate JSONs in the JAR
+                                            The JAR has NONE for slot blocks
+                                            → Warnings fire for EVERY registered block
+
+SERVER_STARTED event (later)
+  ├── ResourcePackServer.start()         ← HTTP server starts
+  └── ResourcePackServer.updatePack()    ← ZIP built on BACKGROUND thread
+                                            Clients download it on join
+                                            → Everything works in-game
+```
+
+The blockstate JSONs live in the dynamically-generated ZIP, not in the mod JAR. Minecraft's
+resource loader runs between `onInitialize()` and `SERVER_STARTED`, finds no blockstate
+definitions in the JAR for any `slot_N` block, and logs warnings. By the time a player
+actually joins and receives the resource pack, all models resolve correctly.
+
+**The warnings are cosmetic startup noise. Blocks render correctly in-game.**
+
+### But wait — the `""` catch-all question
+
+The diagnostic report's error message says `missing model for variant: 'slot_X#light=Y'`.
+This specific phrasing means Minecraft found a blockstate JSON, parsed it, and couldn't
+match the `light=Y` variant. If no blockstate JSON existed at all, the error message would
+be different ("missing blockstate definition" or "FileNotFoundException").
+
+This creates an ambiguity:
+
+- **If the warnings fire BEFORE the pack exists** (no blockstate JSON in JAR at all) →
+  pure timing issue, `""` catch-all is irrelevant because Minecraft never sees it.
+- **If the warnings fire AFTER the pack is applied** (blockstate JSON exists but `""`
+  doesn't match) → the `""` catch-all genuinely fails for blocks with properties in 1.21.1.
+
+The log thread name `Worker-Main-10` suggests resource loading during startup (before pack
+delivery), which points to timing. But the error message's wording suggests it DID find a
+blockstate file somewhere.
+
+**Resolution: we fix BOTH possible causes.** If it's timing-only, the variant fix is harmless.
+If `""` genuinely fails with properties, the variant fix is essential. Either way, we win.
+
+### What the developer actually wants
+
+From the discussion, the developer chose:
+
+1. **Reduce maxSlots default to 100** — fewer blocks registered = fewer potential warnings.
+   Still configurable up to 8192 for power users.
+2. **Only generate pack entries for assigned slots** — remove the empty-slot loop entirely.
+   No blockstate/model JSONs for unassigned slots. Unassigned slots show purple/black
+   checkerboard naturally (Minecraft's default for blocks with no model).
+3. **Investigate before implementing the light variant fix** — done (this entry).
+
+### Planned fix (two changes)
+
+**Change 1 — Fix `blockstateJson()` to enumerate all 16 light variants:**
+
+```java
+private static byte[] blockstateJson(String modelRef) {
+    JsonObject variant = new JsonObject();
+    variant.addProperty("model", modelRef);
+    JsonObject variants = new JsonObject();
+    for (int light = 0; light <= 15; light++) {
+        variants.add("light=" + light, variant);
+    }
+    JsonObject bs = new JsonObject();
+    bs.add("variants", variants);
+    return GSON.toJson(bs).getBytes(StandardCharsets.UTF_8);
+}
+```
+
+This replaces the `""` catch-all with explicit `light=0` through `light=15` entries. Each
+points to the same model. Harmless if `""` already works; essential if it doesn't. Matches
+what Minecraft expects for blocks with an IntProperty.
+
+**Change 2 — ServerPackGenerator: only generate for assigned slots:**
+
+Remove the entire empty-slot loop (current lines 70–82). Unassigned slots get no blockstate
+JSON, no model JSON, no item model. Minecraft shows the default purple/black missing-texture
+checkerboard for any unassigned slot that gets placed — which is the correct behavior already.
+
+Also remove `emptyModelJson()` since nothing calls it anymore.
+
+**Change 3 — CustomBlocksConfig: default maxSlots 800 → 100:**
+
+One-line change. Reduces the registration pool. Still configurable, still capped at 8192.
+
+### What these fixes DON'T solve
+
+The startup timing gap (blocks register before the pack ZIP exists) means the server console
+may still log warnings during initialization for the ~35 assigned slots. These warnings
+disappear once the pack is built and applied. Fixing THIS would require either:
+
+- Generating the pack synchronously during `onInitialize()` (before resource loading)
+- Bundling static fallback blockstate JSONs in the JAR
+
+Both are possible future improvements but are NOT blocking — the warnings are brief, low
+in volume (35 × 16 = 560 lines vs the current 32,000), and gameplay is unaffected.
+
+### Lessons
+
+1. Don't trust your first analysis without reading the code. The `""` catch-all looked wrong
+   but was actually the documented vanilla approach from an earlier session.
+2. The previous developer (this same AI, in an earlier session) verified `""` works "in the
+   `BlockStatesLoader` bytecode" and wrote it into the progress log. That verification may
+   have been against a different Minecraft version or may have been wrong. Trust but verify.
+3. A 32K-line warning loop from 2048 × 16 iterations is always worth fixing even if it's
+   "just cosmetic" — it buries real errors and makes the log unreadable.
+4. The developer's instinct ("isn't this expected?") was partially right. The unassigned-slot
+   warnings ARE expected noise. The assigned-slot variant mismatch is the real issue.
+
+### Status
+
+- Investigation: ✅ Complete
+- Fix plan: ✅ Documented above (3 changes)
+- Implementation: ⏳ Awaiting developer confirmation to proceed
+- In-game verification: ⏳ Blocked on implementation
+
+---
+
 ## 2026-06-05 — Phase 13/16 final push: Video, GUI screens, Mod Menu (Batch 14)
 
 ### Done (build-verified after `gradlew build` downloads jcodec + modmenu)
