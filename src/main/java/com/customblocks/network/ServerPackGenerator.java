@@ -67,9 +67,19 @@ public final class ServerPackGenerator {
                     add(zos, itemModel(key), itemJson(MOD_ID + ":block/" + key), written);
                 }
 
-                // Empty slots are intentionally skipped — unassigned slots have no blockstate
-                // or model in the pack, so Minecraft shows the default missing-texture
-                // checkerboard. This avoids generating thousands of unnecessary JSON entries.
+                // Empty slots → one shared placeholder model (purple/black missing-texture look).
+                int max = CustomBlocksConfig.maxSlots;
+                boolean emptyModel = false;
+                for (int i = 0; i < max; i++) {
+                    if (assigned.contains(i)) continue;
+                    String key = "slot_" + i;
+                    if (!emptyModel) {
+                        add(zos, "assets/" + MOD_ID + "/models/block/empty_slot.json", emptyModelJson(), written);
+                        emptyModel = true;
+                    }
+                    add(zos, blockstate(key), blockstateJson(MOD_ID + ":block/empty_slot"), written);
+                    add(zos, itemModel(key), itemJson(MOD_ID + ":block/empty_slot"), written);
+                }
             }
             Files.move(tmp.toPath(), outputFile.toPath(),
                     StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -89,9 +99,7 @@ public final class ServerPackGenerator {
         JsonObject variant = new JsonObject();
         variant.addProperty("model", modelRef);
         JsonObject variants = new JsonObject();
-        for (int light = 0; light <= 15; light++) {
-            variants.add("light=" + light, variant);
-        }
+        variants.add("", variant);
         JsonObject bs = new JsonObject();
         bs.add("variants", variants);
         return GSON.toJson(bs).getBytes(StandardCharsets.UTF_8);
@@ -109,6 +117,18 @@ public final class ServerPackGenerator {
     private static byte[] itemJson(String parent) {
         JsonObject m = new JsonObject();
         m.addProperty("parent", parent);
+        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
+    }
+
+    private static byte[] emptyModelJson() {
+        // References a texture that is intentionally absent from the pack.
+        // Minecraft renders the standard purple/black missing-texture checkerboard,
+        // which is the correct placeholder appearance for deleted or unassigned slots.
+        JsonObject tex = new JsonObject();
+        tex.addProperty("all", MOD_ID + ":block/placeholder");
+        JsonObject m = new JsonObject();
+        m.addProperty("parent", "minecraft:block/cube_all");
+        m.add("textures", tex);
         return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
     }
 

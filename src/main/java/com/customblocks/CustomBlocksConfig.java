@@ -32,7 +32,7 @@ public final class CustomBlocksConfig {
     // ── Phase 1 ──────────────────────────────────────────────────────────────
 
     /** Number of slot blocks to pre-register at startup. Requires a restart to change. */
-    public static volatile int maxSlots = 100;
+    public static volatile int maxSlots = 800;
 
     /** Port for the embedded resource-pack HTTP server. */
     public static volatile int httpPort = 8123;
