@@ -74,7 +74,7 @@ public final class VideoCommands {
 
     private static int extract(ServerCommandSource src, String filename, String id, int frame) {
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (LockManager.isLocked(id)) {
             Chat.error(src, "'" + id + "' is locked — /cb unlock " + id + " first");
             return 0;

@@ -12,10 +12,13 @@ package com.customblocks.command.handlers;
 import com.customblocks.command.Chat;
 import com.customblocks.core.DiagnosticsHelper;
 import com.customblocks.core.IncidentRecorder;
+import com.customblocks.gui.chest.GuiRouter;
+import com.customblocks.gui.chest.Nav;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
 import java.util.List;
@@ -36,6 +39,10 @@ public final class DiagnosticsCommands {
 
     private static int diag(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.DIAG));
+            return 1;
+        }
         List<String> lines = DiagnosticsHelper.collect(src.getServer());
         for (String line : lines) src.sendFeedback(() -> Text.literal(line), false);
         return 1;

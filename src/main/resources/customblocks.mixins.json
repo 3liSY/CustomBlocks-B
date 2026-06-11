@@ -4,7 +4,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [
-    "HudRenderMixin"
+    "ClientCommonNetworkHandlerMixin",
+    "HudRenderMixin",
+    "ScreenInvoker"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -15,7 +15,8 @@ public enum GuiMode {
     CONFIG(2),
     TEMPLATE_LIST(3),
     ARABIC_BROWSER(4),
-    MACRO_LIST(5);
+    MACRO_LIST(5),
+    HUD_EDITOR(6);
 
     public final int id;
 

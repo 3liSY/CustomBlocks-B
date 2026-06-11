@@ -13,9 +13,12 @@ import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.DraftManager;
+import com.customblocks.core.IncidentRecorder;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.gui.chest.GuiRouter;
+import com.customblocks.gui.chest.Nav;
 import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -52,6 +55,7 @@ public final class UtilityCommands {
                 .executes(UtilityCommands::reload));
 
         root.then(CommandManager.literal("search")
+                .executes(UtilityCommands::searchGui)
                 .then(CommandManager.argument("query", StringArgumentType.greedyString())
                         .executes(ctx -> search(ctx, StringArgumentType.getString(ctx, "query")))));
 
@@ -105,28 +109,43 @@ public final class UtilityCommands {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
         if (d == null) {
-            Chat.error(src, "No block '" + id + "'");
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         SlotBlock.SlotItem item = SlotManager.itemAt(d.index());
         if (item == null) {
-            Chat.error(src, "Slot item missing for '" + id + "'");
+            Chat.error(src, "The item for \"" + id + "\" couldn't be found — try /cb reload, "
+                    + "and report this if it keeps happening.");
             return 0;
         }
         ServerPlayerEntity player = src.getPlayerOrThrow();
         player.getInventory().insertStack(new ItemStack(item));
-        Chat.success(src, "Gave " + id);
+        Chat.success(src, "Gave you 1 × " + d.displayName() + ".");
         return 1;
     }
 
     private static int reload(CommandContext<ServerCommandSource> ctx) {
         SlotManager.reload();
-        Chat.success(ctx.getSource(), "Reloaded " + SlotManager.usedSlots() + " block(s) from disk");
+        Chat.success(ctx.getSource(), "Reloaded " + SlotManager.usedSlots() + " block(s) from disk.");
+        return 1;
+    }
+
+    private static int searchGui(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.SEARCH));
+            return 1;
+        }
+        Chat.info(src, "Usage: /cb search <query>");
         return 1;
     }
 
     private static int search(CommandContext<ServerCommandSource> ctx, String query) {
         ServerCommandSource src = ctx.getSource();
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.SEARCH, query));
+            return 1;
+        }
         List<SlotData> hits = SlotManager.search(query);
         if (hits.isEmpty()) {
             Chat.info(src, "No blocks match '" + query + "'");
@@ -220,7 +239,7 @@ public final class UtilityCommands {
     private static int exportOneMenu(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + id + "§f: ")
                 .append(runButton("[to Config]", "/cb export " + id + " config", "Save " + id + ".json to exports folder"))
                 .append(Text.literal(" "))
@@ -235,7 +254,7 @@ public final class UtilityCommands {
     private static int exportOneConfig(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Path file = BlockExporter.exportOne(d);
         if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
         Chat.success(src, "Saved §e" + id + "§r → §7exports/" + id + ".json");
@@ -244,7 +263,7 @@ public final class UtilityCommands {
 
     /** /cb export <id> vault — upload to vault (Phase 14 stub) */
     private static int exportOneVault(CommandContext<ServerCommandSource> ctx, String id) {
-        if (SlotManager.getById(id) == null) { Chat.error(ctx.getSource(), "No block '" + id + "'"); return 0; }
+        if (SlotManager.getById(id) == null) { Chat.error(ctx.getSource(), "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Chat.info(ctx.getSource(), "Vault sync is coming in Phase 14. Stay tuned!");
         return 1;
     }
@@ -253,7 +272,7 @@ public final class UtilityCommands {
     private static int exportOneDownload(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Path file = BlockExporter.exportOne(d);
         if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
         String url = ResourcePackServer.getExportUrl(id);
@@ -276,10 +295,16 @@ public final class UtilityCommands {
         }
         if (c > 0) {
             ResourcePackServer.updatePack();
-            Chat.success(src, "Imported " + c + " block(s): " + String.join(", ", result.created()));
+            Chat.success(src, "Imported " + c + " block(s): " + String.join(", ", result.created()) + ".");
         }
-        if (s > 0) Chat.info(src, "Skipped " + s + " (already exist): " + String.join(", ", result.skipped()));
-        if (f > 0) Chat.error(src, "Failed " + f + ": " + String.join(", ", result.failed()));
+        if (s > 0) Chat.info(src, "Skipped " + s + " that already exist: " + String.join(", ", result.skipped()));
+        if (f > 0) {
+            // Major-error routing (Group 04): import failures also land in the incidents log.
+            IncidentRecorder.record("Import failed for " + f + " file(s) in " + folder + " (by "
+                    + src.getName() + "): " + String.join(", ", result.failed()));
+            Chat.error(src, f + " file(s) couldn't be imported: " + String.join(", ", result.failed())
+                    + ". Check they are valid CustomBlocks export JSONs.");
+        }
         return c > 0 ? 1 : 0;
     }
 

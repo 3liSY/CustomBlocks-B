@@ -19,15 +19,18 @@ import com.customblocks.core.OnboardingManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.item.ToolItems;
+import com.customblocks.network.HudSync;
 import com.customblocks.network.ResourcePackServer;
+import com.customblocks.network.payloads.ChatPrefillPayload;
+import com.customblocks.network.payloads.HudStatePayload;
 import com.customblocks.network.payloads.HudSyncPayload;
 import com.customblocks.network.payloads.OpenGuiPayload;
+import com.customblocks.network.payloads.SilentPackPayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -64,8 +67,11 @@ public class CustomBlocksMod implements ModInitializer {
         int maxSlots = CustomBlocksConfig.maxSlots;
 
         // Register server→client payloads (Phase 10/11)
-        PayloadTypeRegistry.playS2C().register(OpenGuiPayload.ID,  OpenGuiPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(HudSyncPayload.ID,  HudSyncPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(OpenGuiPayload.ID,   OpenGuiPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(HudSyncPayload.ID,   HudSyncPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(HudStatePayload.ID,  HudStatePayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(ChatPrefillPayload.ID, ChatPrefillPayload.CODEC); // Group 04
+        PayloadTypeRegistry.playS2C().register(SilentPackPayload.ID, SilentPackPayload.CODEC);   // Group 05
 
         SlotManager.registerAll(maxSlots);
         SlotManager.loadAll();
@@ -83,20 +89,13 @@ public class CustomBlocksMod implements ModInitializer {
         ServerLifecycleEvents.SERVER_STOPPING.register(server -> SlotManager.saveAll());
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> ResourcePackServer.stop());
 
-        // On player join: send pack, send HUD index, fire onboarding welcome.
+        // On player join: tell the client our silent-pack preference FIRST (so the pack
+        // push below is auto-accepted with no dialog), then send pack, HUD index, welcome.
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
+                    handler.player, new SilentPackPayload(CustomBlocksConfig.silentPack));
             ResourcePackServer.sendToPlayer(handler.player);
-            // Build and send HUD sync index (slotIndex → "customId displayName")
-            StringBuilder sb = new StringBuilder("{");
-            boolean first = true;
-            for (var d : SlotManager.assignedSlots()) {
-                if (!first) sb.append(',');
-                sb.append('"').append(d.index()).append("\":\"")
-                  .append(d.customId()).append(' ').append(d.displayName()).append('"');
-                first = false;
-            }
-            sb.append('}');
-            ServerPlayNetworking.send(handler.player, new HudSyncPayload(sb.toString()));
+            HudSync.sendTo(handler.player);
             OnboardingManager.onPlayerJoin(handler.player);
         });
 
@@ -121,16 +120,23 @@ public class CustomBlocksMod implements ModInitializer {
                         .build());
     }
 
-    /** Register the tools tab listing the mod's hand tools. */
+    /**
+     * Register the tools tab listing the mod's hand tools. Registered AFTER the blocks tab
+     * (see onInitialize order) so it appears right after the CustomBlocks blocks tab — custom
+     * creative groups render in registration order.
+     */
     private static void registerToolsTab() {
         Registry.register(Registries.ITEM_GROUP, CUSTOM_TOOLS_TAB,
                 FabricItemGroup.builder()
                         .displayName(Text.translatable("itemGroup.customblocks.tools"))
-                        .icon(() -> new ItemStack(ToolItems.LUMINA_BRUSH))
+                        .icon(() -> new ItemStack(ToolItems.OMNI_TOOL))
                         .entries((displayContext, entries) -> {
-                            entries.add(ToolItems.LUMINA_BRUSH);
-                            entries.add(ToolItems.CHISEL);
+                            // Group 06: the unified Omni-Tool replaces the separate Brush + Chisel.
+                            entries.add(ToolItems.OMNI_TOOL);
+                            entries.add(ToolItems.RAINBOW_RECTANGLE);
                             entries.add(ToolItems.DELETER);
+                            // The eight colour/shape tools (Squares + Triangles).
+                            for (var shape : ToolItems.SHAPES) entries.add(shape);
                         })
                         .build());
     }

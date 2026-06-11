@@ -1,22 +1,20 @@
 /**
  * GuiCommands.java
  *
- * Responsibility: /cb gui [block <id>] — open the in-game GUI by sending an
- * OpenGuiPayload to the requesting player's client.
- * /cb edithud — toggle HUD visibility.
- * Stays under 400 lines (§9.3).
+ * Responsibility: /cb edithud — open the drag-to-reposition HUD editor by sending an
+ * OpenGuiPayload (mode = HUD_EDITOR) to the requesting player's client. HUD on/off
+ * toggling now lives in `/cb config hud` (see ConfigCommands), so this command is no
+ * longer a toggle stub. Stays under 400 lines (§9.3).
  *
- * Depends on: OpenGuiPayload, GuiMode, ServerPlayNetworking, Chat
+ * Depends on: OpenGuiPayload, GuiMode, ServerPlayNetworking, Chat, SlotManager
  * Called by: CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
-import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.GuiMode;
 import com.customblocks.network.payloads.OpenGuiPayload;
-import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -30,37 +28,9 @@ public final class GuiCommands {
     private GuiCommands() {}
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
-        // /cb gui — main menu
-        var gui = CommandManager.literal("gui");
-        gui.executes(ctx -> openGui(ctx, GuiMode.MAIN_MENU, ""));
-
-        // /cb gui block <id> — block editor
-        gui.then(CommandManager.literal("block")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> openGui(ctx, GuiMode.BLOCK_EDITOR,
-                                StringArgumentType.getString(ctx, "id")))));
-
-        // /cb gui config — config screen
-        gui.then(CommandManager.literal("config")
-                .executes(ctx -> openGui(ctx, GuiMode.CONFIG, "")));
-
-        // /cb gui macros — macro list screen
-        gui.then(CommandManager.literal("macros")
-                .executes(ctx -> openGui(ctx, GuiMode.MACRO_LIST, "")));
-
-        // /cb gui arabic — arabic browser screen
-        gui.then(CommandManager.literal("arabic")
-                .executes(ctx -> openGui(ctx, GuiMode.ARABIC_BROWSER, "")));
-
-        root.then(gui);
-
-        // /cb edithud — toggle HUD visibility
+        // /cb gui, /cb admingui and the chest menus are handled by ChestGuiCommands.
+        // /cb edithud — open the drag-to-reposition HUD editor (client-side overlay).
         root.then(CommandManager.literal("edithud").executes(GuiCommands::editHud));
-
-        // /cb admingui — alias for main menu (admin context)
-        root.then(CommandManager.literal("admingui")
-                .executes(ctx -> openGui(ctx, GuiMode.MAIN_MENU, "")));
     }
 
     private static int openGui(CommandContext<ServerCommandSource> ctx,
@@ -68,23 +38,18 @@ public final class GuiCommands {
         ServerCommandSource src = ctx.getSource();
         ServerPlayerEntity player = src.getPlayerOrThrow();
 
-        // For BLOCK_EDITOR: validate the id before opening
-        if (mode == GuiMode.BLOCK_EDITOR && !data.isEmpty()) {
-            if (SlotManager.getById(data) == null) {
-                Chat.error(src, "No block '§e" + data + "§r'.");
-                return 0;
-            }
+        // For BLOCK_EDITOR: validate the id before opening.
+        if (mode == GuiMode.BLOCK_EDITOR && !data.isEmpty() && SlotManager.getById(data) == null) {
+            Chat.error(src, "There's no block called \"" + data + "\". Check /cb list for the right id.");
+            return 0;
         }
 
         ServerPlayNetworking.send(player, new OpenGuiPayload(mode.id, data));
         return 1;
     }
 
-    private static int editHud(CommandContext<ServerCommandSource> ctx) {
-        CustomBlocksConfig.hudEnabled = !CustomBlocksConfig.hudEnabled;
-        CustomBlocksConfig.save();
-        String state = CustomBlocksConfig.hudEnabled ? "§aenabled" : "§cdisabled";
-        Chat.success(ctx.getSource(), "HUD overlay " + state + "§r.");
-        return 1;
+    private static int editHud(CommandContext<ServerCommandSource> ctx) throws CommandSyntaxException {
+        // The editor is a client-side overlay; tell the player's client to open it.
+        return openGui(ctx, GuiMode.HUD_EDITOR, "");
     }
 }

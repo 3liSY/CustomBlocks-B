@@ -32,7 +32,9 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ResourcePackServer {
 
@@ -49,7 +51,25 @@ public final class ResourcePackServer {
         t.setDaemon(true);
         return t;
     });
-    private static final AtomicInteger pendingBuilds = new AtomicInteger(0);
+
+    // Group 05: debounce window — rapid texture changes collapse into one rebuild.
+    private static final long DEBOUNCE_MS = 500;
+    private static final ScheduledExecutorService DEBOUNCER = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "CustomBlocks-PackDebounce");
+        t.setDaemon(true);
+        return t;
+    });
+    /** true while a rebuild is already scheduled within the debounce window. */
+    private static final AtomicBoolean rebuildScheduled = new AtomicBoolean(false);
+
+    // Group 02: pause auto-regeneration and suppress auto re-sends until explicitly resumed.
+    private static volatile boolean paused = false;
+    private static volatile boolean suppressed = false;
+
+    // Deferred reload safety (recycled old-project behaviour): a pack push would yank the
+    // player out of any open CustomBlocks menu/prompt, so pushes to such players are HELD
+    // here and delivered when their GUI closes (CbChestHandler/AnvilPrompt call onGuiClosed).
+    private static final java.util.Set<UUID> PENDING_SENDS = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     private ResourcePackServer() {} // static-only
 
@@ -124,14 +144,52 @@ public final class ResourcePackServer {
         return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/export/" + id;
     }
 
-    /** Rebuild the pack ZIP on a background thread, then prompt all players to reload. */
+    // ── Group 02: resource-pack regeneration controls ───────────────────────
+
+    /** Pause automatic pack regeneration (edits won't rebuild the pack until resume()). */
+    public static void pause() { paused = true; }
+
+    /** Resume automatic regeneration and rebuild once immediately. */
+    public static void resume() { paused = false; updatePack(); }
+
+    public static boolean isPaused() { return paused; }
+
+    /** Re-send the current pack to every online player; returns the player count. */
+    public static int syncToAll() {
+        MinecraftServer s = serverInstance;
+        if (s == null) return 0;
+        int n = s.getPlayerManager().getPlayerList().size();
+        sendToAll();
+        return n;
+    }
+
+    /** Clear the suppression flag and re-send the pack to all players. */
+    public static void unsuppress() {
+        suppressed = false;
+        sendToAll();
+    }
+
+    /**
+     * Request a pack rebuild. Debounced (~500ms): several rapid texture changes collapse
+     * into a single rebuild that picks up the latest data, preventing pack thrash during
+     * bulk operations (Group 05). The actual build runs on the single PACK_BUILDER thread.
+     */
     public static void updatePack() {
-        if (pendingBuilds.incrementAndGet() > 1) {
-            pendingBuilds.decrementAndGet(); // a build is already queued; it will use latest data
-            return;
+        if (paused) return;
+        // Only the first caller in a window schedules the rebuild; later calls ride along.
+        if (rebuildScheduled.compareAndSet(false, true)) {
+            DEBOUNCER.schedule(() -> {
+                rebuildScheduled.set(false);
+                if (!paused) rebuild();
+            }, DEBOUNCE_MS, TimeUnit.MILLISECONDS);
         }
+    }
+
+    /** Build the pack ZIP on the builder thread, then prompt all players to reload. */
+    private static void rebuild() {
         PACK_BUILDER.submit(() -> {
             try {
+                CustomBlocksMod.LOGGER.info("[CustomBlocks] Rebuilding resource pack…");
                 ServerPackGenerator.generate(PACK_FILE);
                 if (PACK_FILE.exists()) {
                     currentPackFile = PACK_FILE;
@@ -141,8 +199,8 @@ public final class ResourcePackServer {
                 }
             } catch (Exception e) {
                 CustomBlocksMod.LOGGER.error("[CustomBlocks] Pack rebuild failed", e);
-            } finally {
-                pendingBuilds.decrementAndGet();
+                // Major-error routing (Group 04): pack failures land in the incidents log too.
+                com.customblocks.core.IncidentRecorder.record("Resource pack rebuild failed", e);
             }
         });
     }
@@ -154,8 +212,15 @@ public final class ResourcePackServer {
     }
 
     public static void sendToPlayer(ServerPlayerEntity player) {
+        if (suppressed) return;
         String hash = currentHash;
         if (hash == null || hash.isEmpty() || activePort < 0) return;
+        PENDING_SENDS.remove(player.getUuid());
+        if (hasBlockingGui(player)) {
+            // Don't interrupt an open CustomBlocks menu — deliver when it closes.
+            PENDING_SENDS.add(player.getUuid());
+            return;
+        }
         UUID id = UUID.nameUUIDFromBytes(hash.getBytes(StandardCharsets.UTF_8));
         try {
             ResourcePackSendS2CPacket packet = new ResourcePackSendS2CPacket(
@@ -165,6 +230,30 @@ public final class ResourcePackServer {
         } catch (Exception e) {
             CustomBlocksMod.LOGGER.warn("[CustomBlocks] Failed to send pack to {}", player.getName().getString());
         }
+    }
+
+    /** True while the player is inside a CustomBlocks chest menu or anvil prompt. */
+    private static boolean hasBlockingGui(ServerPlayerEntity player) {
+        if (player.currentScreenHandler == player.playerScreenHandler) return false;
+        if (player.currentScreenHandler instanceof com.customblocks.gui.chest.CbChestHandler h) {
+            return !h.isDisposed();
+        }
+        return com.customblocks.gui.chest.AnvilPrompt.isPrompt(player.currentScreenHandler);
+    }
+
+    /**
+     * A CustomBlocks GUI just closed for this player — if a pack push was held back, deliver
+     * it shortly. The small delay lets menu→menu navigation (close + reopen in one action)
+     * settle first; if another of our screens is open by then, the push keeps waiting.
+     */
+    public static void onGuiClosed(ServerPlayerEntity player) {
+        if (!PENDING_SENDS.contains(player.getUuid())) return;
+        MinecraftServer s = serverInstance;
+        if (s == null) return;
+        DEBOUNCER.schedule(() -> s.execute(() -> {
+            if (player.isDisconnected() || hasBlockingGui(player)) return;
+            if (PENDING_SENDS.remove(player.getUuid())) sendToPlayer(player);
+        }), 300, TimeUnit.MILLISECONDS);
     }
 
     private static String sha1(File f) throws Exception {

@@ -108,7 +108,7 @@ public final class AttributeCommands {
     /** Returns true (and prints an error) if the block is locked. Call before any mutation. */
     private static boolean locked(ServerCommandSource src, String id) {
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "'" + id + "' is locked — /cb unlock " + id + " first");
+            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
             return true;
         }
         return false;
@@ -118,18 +118,18 @@ public final class AttributeCommands {
         ServerCommandSource src = ctx.getSource();
         int clamped = Math.max(0, Math.min(15, level)); // 15 is Minecraft's max block light
         SlotData before = SlotManager.getById(id);
-        if (before == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (locked(src, id)) return 0;
         SlotData d = SlotManager.setGlow(id, clamped);
         if (d == null) {
-            Chat.error(src, "No block '" + id + "'");
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "glow");
         // New placements inherit it via getPlacementState; refresh already-placed ones nearby.
         SlotLighting.applyToPlaced(src.getServer(), d.index(), clamped);
-        String note = level > 15 ? " §7(max 15)" : level < 0 ? " §7(min 0)" : "";
-        Chat.success(src, "Glow " + id + " → " + clamped + note);
+        String note = level > 15 ? " §7(15 is the maximum)" : level < 0 ? " §7(0 is the minimum)" : "";
+        Chat.success(src, "Set \"" + id + "\" glow to " + clamped + "." + note);
         return 1;
     }
 
@@ -142,18 +142,18 @@ public final class AttributeCommands {
         }
         float value = Math.max(-1.0f, Math.min(100.0f, parsed)); // clamp to a sane range
         SlotData before = SlotManager.getById(id);
-        if (before == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (locked(src, id)) return 0;
         SlotData d = SlotManager.setHardness(id, value);
         if (d == null) {
-            Chat.error(src, "No block '" + id + "'");
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "hardness");
         // Read live on every break attempt (SlotBlock.calcBlockBreakingDelta).
-        if (value < 0)       Chat.success(src, id + " → unbreakable");
-        else if (value == 0) Chat.success(src, id + " → instant break");
-        else                 Chat.success(src, "Hardness " + id + " → " + trim(value));
+        if (value < 0)       Chat.success(src, "\"" + id + "\" is now unbreakable.");
+        else if (value == 0) Chat.success(src, "\"" + id + "\" now breaks instantly.");
+        else                 Chat.success(src, "Set \"" + id + "\" hardness to " + trim(value) + ".");
         return 1;
     }
 
@@ -189,16 +189,16 @@ public final class AttributeCommands {
             return 0;
         }
         SlotData before = SlotManager.getById(id);
-        if (before == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (locked(src, id)) return 0;
         SlotData d = SlotManager.setSoundType(id, key);
         if (d == null) {
-            Chat.error(src, "No block '" + id + "'");
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "sound");
         // Read live in SlotBlock.getSoundGroup — placed blocks use the new sound immediately.
-        Chat.success(src, "Sound " + id + " → " + key);
+        Chat.success(src, "Set \"" + id + "\" sound to " + key + ".");
         return 1;
     }
 
@@ -210,16 +210,16 @@ public final class AttributeCommands {
             return 0;
         }
         SlotData before = SlotManager.getById(id);
-        if (before == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (locked(src, id)) return 0;
         SlotData d = SlotManager.setNoCollision(id, passable);
         if (d == null) {
-            Chat.error(src, "No block '" + id + "'");
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "collision");
         // Read live in SlotBlock.getCollisionShape — placed blocks update immediately.
-        Chat.success(src, id + " → " + (passable ? "passable (walk-through)" : "solid"));
+        Chat.success(src, "\"" + id + "\" is now " + (passable ? "passable — players walk through it." : "solid."));
         return 1;
     }
 
@@ -232,15 +232,17 @@ public final class AttributeCommands {
             cat = cat.toLowerCase(Locale.ROOT);
         }
         SlotData before = SlotManager.getById(id);
-        if (before == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (locked(src, id)) return 0;
         SlotData d = SlotManager.setCategory(id, cat);
         if (d == null) {
-            Chat.error(src, "No block '" + id + "'");
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "category");
-        Chat.success(src, cat.isEmpty() ? id + " → uncategorized" : "Category " + id + " → " + cat);
+        Chat.success(src, cat.isEmpty()
+                ? "Removed \"" + id + "\" from its category."
+                : "Moved \"" + id + "\" to the \"" + cat + "\" category.");
         return 1;
     }
 

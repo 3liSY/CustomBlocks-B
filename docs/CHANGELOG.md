@@ -6,6 +6,83 @@ progress by **phase milestones** (see CustomBlocks_Engineering_Bible.md §8).
 ## [Unreleased]
 
 ### Added
+- **Group 06 / M4 — paint single block faces from a URL (built, not yet in-game tested).**
+  - **Rainbow Rectangle, right-click a face** → chat opens pre-filled with
+    `/cb paintface <id> <face> ` — paste an image URL and only that face changes; the other
+    five keep the base texture. `/cb clearface <id> <face|all>` resets painted faces.
+    Painted faces are stored as files and survive restarts. The area selector moved to
+    **sneak + right-click** (the Omni-Tool's Area mode is unchanged).
+
+### Fixed
+- **Red Triangle item art** — the bundled red art was lumpy/deformed (an old-project file);
+  redrawn from the clean yellow art in the same style (fill + highlight + dark outline).
+  Custom-colour tool icons now use the clean shape too, and re-tinted art keeps its
+  highlight/outline contrast instead of flattening.
+- **Resource-pack reloads no longer interrupt open menus** — a pack push aimed at a player
+  who has ANY CustomBlocks menu or anvil prompt open is now held and delivered right after
+  they close it (the old "RP building starts while the GUI opens" bug, properly this time —
+  the first fix only covered the recolour-confirm prompt).
+- **Group 06 — Config-GUI hex editor, rebuild timing fix, `/cb customcolor` Color Studio (built, not yet in-game tested).**
+  - **`/cb config` → Variant Colours** — a new glowing entry opens a sub-GUI where each magic
+    tool is its dye (red/yellow/green/black); clicking one edits that hex **in an anvil**
+    (type `#RRGGBB`, take the output). Same validation, saving and repaint-confirm as the
+    chat command.
+  - **Fixed:** changing a hex no longer starts the resource-pack rebuild while the
+    "recolour existing blocks?" prompt is opening — the rebuild now **waits** until that
+    prompt is answered or closed (Yes → one rebuild after the repaint batch; No/close → one
+    rebuild right then).
+  - **`/cb customcolor` (rebuilt from scratch)** — bare, it opens the **Color Studio**: 29
+    ready-made colours (Purple, Pink, Baby Blue…) shown as dyes; click one to receive that
+    colour's **magic Square + Triangle pair**, or use **Custom Hex…** to type any `#RRGGBB`
+    or colour name in an anvil. `/cb customcolor <hex|name>` gives the pair directly.
+    The pair's colour lives in the items themselves (names + icons tinted to match), the
+    Triangle creates `*_hex_rrggbb` variants and the Square swaps to them — and tools,
+    variants and hexes all survive a restart.
+- **Group 06 / M3 hex — the four variant colours are configurable (built, not yet in-game tested).**
+  - **`/cb config hex <colour> <#RRGGBB>`** changes what red/yellow/green/black mean: new variants
+    use the new colour, the matching Square + Triangle **item art re-tints** automatically, and item
+    names show the live hex (e.g. `Red Square [#FF8800]`).
+  - When blocks of that colour already exist, a **Yes / Info / No confirm** offers to repaint them —
+    a direct colour swap that only touches pixels near the old colour, so designs are safe.
+    `/cb recolorvariants <colour> <oldhex>` runs the same repaint by hand.
+  - Bare `/cb config hex` shows all four; bad colours/codes are rejected with clear errors.
+- **Group 06 / M3 — Squares swap placed blocks between colour variants (built, not yet in-game tested).**
+  - **Right-click a placed custom block with a Square** → the block changes in place to that
+    colour's existing variant (`vart` + Red Square → the placed block becomes `vart_red`). The
+    variant's glow carries over. Squares never create variants — no variant of that colour yet →
+    a hotbar error points you to the matching Triangle.
+  - **Black Square fallback** — no `_black` variant → the block swaps back to the original base block.
+  - The old placeholder "tagged at (x, y, z)" message and the "tagging" lore are gone; Square
+    tooltips now explain the swap.
+  - **All "marker"/"tagging" wording removed mod-wide** — `ShapeMarkerItem` renamed to
+    `ShapeToolItem`, and the Magic Items GUI section label changed from "Marker Shapes — Tag
+    your custom blocks by colour" to "Squares & Triangles — Triangles create colour variants,
+    Squares swap them".
+- **Group 06 / M2 — Triangles create colour variants (✅ in-game verified 2026-06-11).**
+  - **Right-click a custom block with a Triangle** → creates a new block whose image background
+    is recoloured to that triangle's colour (`mars` + Black Triangle → `mars_black`); the design
+    stays, the source block is untouched, and light/hardness/sound carry over. The variant lands
+    in your inventory. Using the same triangle again just hands you another one.
+  - **Sneak + right-click** opens a Yes / Info / No confirm first.
+  - **Configurable colours** — `triangleRedHex` / `triangleYellowHex` / `triangleGreenHex` /
+    `triangleBlackHex` in `config.json` (defaults `#EE3333` / `#F0C814` / `#1E8C1E` / `#0A0A0A`).
+- **Group 03 — HUD overlay, HUD editor & ESC-menu buttons (written, not yet built/tested).**
+  - **HUD overlay** — pointing your crosshair at a CustomBlocks block shows its id and display name
+    in a small overlay that hides when you look away.
+  - **`/cb edithud` drag editor** — a Lunar-style overlay (`HudEditorScreen`) to drag the HUD to any
+    position and adjust scale, text color (palette cycle), background opacity, and ID/Name
+    visibility, with Save / Reset / Cancel. The world stays visible; closing without saving reverts.
+  - **Persisted HUD settings** — position/scale/color/opacity/show-flags save to
+    `config/customblocks/data/hud-config-server.json` (atomic write) and restore on launch.
+  - **`/cb config hud`** — `toggle` / `on` / `off` switch the HUD (and a bare read prints status);
+    resolves the `/cb config hud on|off` the in-game config screen already referenced.
+  - **ESC-menu buttons** — two gray Command-Block-icon buttons below “Leave Game”:
+    “CustomBlocks Menu” (opens the dashboard) and “HUD Editor”, added via `ScreenEvents.AFTER_INIT`
+    + a `ScreenInvoker` mixin.
+
+### Fixed
+- **HUD name line was blank/garbled** — `HudSync` joined id and name with a space while the client
+  parser split on a NUL byte; both now use `'\u0000'`.
 - **Phase 13/16 final push — Video, remaining GUI screens, Mod Menu (Batch 14).**
   - **Video-to-texture** (`/cb video`) — place `.mp4` files in `config/customblocks/videos/`,
     then `/cb video list` to browse them and `/cb video extract <file> <id> <frame>` to bake

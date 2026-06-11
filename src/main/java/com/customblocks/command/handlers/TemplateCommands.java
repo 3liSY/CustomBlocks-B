@@ -100,7 +100,7 @@ public final class TemplateCommands {
     private static int save(CommandContext<ServerCommandSource> ctx, String name, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (!TemplateManager.save(name, d)) { Chat.error(src, "Failed to save template '" + name + "'"); return 0; }
         Chat.success(src, "Saved §f\"" + name + "\"§r from §e" + id + "§r §8(" + formatAttrs(d) + ")");
         return 1;
@@ -109,7 +109,7 @@ public final class TemplateCommands {
     private static int apply(CommandContext<ServerCommandSource> ctx, String name, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData before = SlotManager.getById(id);
-        if (before == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (LockManager.isLocked(id)) {
             Chat.error(src, "'" + id + "' is locked — /cb unlock " + id + " first");
             return 0;

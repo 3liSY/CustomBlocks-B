@@ -69,6 +69,22 @@ public final class HistoryCommands {
         return 1;
     }
 
+    /** Undo exactly one step for the player; returns false if there was nothing to undo. */
+    public static boolean undoOnce(ServerPlayerEntity player) {
+        UndoManager.Op op = UndoManager.undo(player.getUuid());
+        if (op == null) return false;
+        applyInverse(player.getCommandSource(), op);
+        return true;
+    }
+
+    /** Redo exactly one step for the player; returns false if there was nothing to redo. */
+    public static boolean redoOnce(ServerPlayerEntity player) {
+        UndoManager.Op op = UndoManager.redo(player.getUuid());
+        if (op == null) return false;
+        applyForward(player.getCommandSource(), op);
+        return true;
+    }
+
     /** Reverse an op (undo direction). */
     private static void applyInverse(ServerCommandSource src, UndoManager.Op op) {
         switch (op.kind()) {

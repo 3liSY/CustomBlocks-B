@@ -19,7 +19,9 @@ package com.customblocks.core;
 import com.customblocks.CustomBlocksConfig;
 
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Deque;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -75,6 +77,10 @@ public final class UndoManager {
     }
 
     private static synchronized void push(UUID player, Op op) {
+        // Audit hook (Group 02): record every recorded edit to the persistent history log.
+        String mlId = op.after() != null ? op.after().customId()
+                : (op.before() != null ? op.before().customId() : "?");
+        MutationLog.record(player, op.label(), mlId);
         UUID key = keyFor(player);
         if (key == null) return; // per-player mode with no player → not undoable
         Deque<Op> u = UNDO.computeIfAbsent(key, k -> new ArrayDeque<>());
@@ -120,6 +126,20 @@ public final class UndoManager {
         UUID key = keyFor(player);
         Deque<Op> r = key == null ? null : REDO.get(key);
         return r == null ? 0 : r.size();
+    }
+
+    /** Snapshot of the player's undo stack, most-recent first (for the visual undo menu). */
+    public static synchronized List<Op> undoStack(UUID player) {
+        UUID key = keyFor(player);
+        Deque<Op> u = key == null ? null : UNDO.get(key);
+        return u == null ? new ArrayList<>() : new ArrayList<>(u);
+    }
+
+    /** Snapshot of the player's redo stack, most-recent first (for the visual redo menu). */
+    public static synchronized List<Op> redoStack(UUID player) {
+        UUID key = keyFor(player);
+        Deque<Op> r = key == null ? null : REDO.get(key);
+        return r == null ? new ArrayList<>() : new ArrayList<>(r);
     }
 
     /** Drop a player's history (call on disconnect / reload). */

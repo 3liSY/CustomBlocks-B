@@ -15,15 +15,20 @@ package com.customblocks.command;
 
 import com.customblocks.command.handlers.ArabicCommands;
 import com.customblocks.command.handlers.AttributeCommands;
+import com.customblocks.command.handlers.ChestGuiCommands;
 import com.customblocks.command.handlers.CloudCommands;
 import com.customblocks.command.handlers.ConfigCommands;
 import com.customblocks.command.handlers.CreationCommands;
 import com.customblocks.command.handlers.DiagnosticsCommands;
+import com.customblocks.command.handlers.FaceCommands;
 import com.customblocks.command.handlers.GuiCommands;
+import com.customblocks.command.handlers.HelpCommands;
+import com.customblocks.command.handlers.HexCommands;
 import com.customblocks.command.handlers.HistoryCommands;
 import com.customblocks.command.handlers.MacroCommands;
 import com.customblocks.command.handlers.ManagementCommands;
 import com.customblocks.command.handlers.TemplateCommands;
+import com.customblocks.command.handlers.ToolCommands;
 import com.customblocks.command.handlers.UtilityCommands;
 import com.customblocks.command.handlers.VideoCommands;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -40,9 +45,11 @@ public final class CommandRegistrar {
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
             LiteralArgumentBuilder<ServerCommandSource> root = CommandManager.literal("customblock");
             CreationCommands.register(root);
+            FaceCommands.register(root);
             AttributeCommands.register(root);
             HistoryCommands.register(root);
             ConfigCommands.register(root);
+            HexCommands.register(root);
             ManagementCommands.register(root);
             TemplateCommands.register(root);
             UtilityCommands.register(root);
@@ -51,10 +58,19 @@ public final class CommandRegistrar {
             DiagnosticsCommands.register(root);
             CloudCommands.register(root);
             GuiCommands.register(root);
+            ChestGuiCommands.register(root);
             VideoCommands.register(root);
+            HelpCommands.register(root);
+            ToolCommands.register(root);
+            // DidYouMean's greedy catch-all MUST be appended after every real literal —
+            // Brigadier prefers literals, so this only fires for unknown subcommands.
+            DidYouMean.appendFallback(root);
             LiteralCommandNode<ServerCommandSource> node = dispatcher.register(root);
-            // /cb alias → redirects to the same tree.
-            dispatcher.register(CommandManager.literal("cb").redirect(node));
+            // /cb alias → forwards to the same tree, AND executes the dashboard when run bare.
+            // A plain redirect does NOT inherit the target's executes, so "/cb" with no
+            // subcommand would otherwise fail as an unknown command (only "/customblock" worked).
+            dispatcher.register(CommandManager.literal("cb").redirect(node)
+                    .executes(ChestGuiCommands::openDashboard));
         });
     }
 }

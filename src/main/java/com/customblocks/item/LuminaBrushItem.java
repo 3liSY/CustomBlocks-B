@@ -14,7 +14,10 @@ import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -45,5 +48,13 @@ public class LuminaBrushItem extends CustomToolItem {
     private static int prevStep(int cur) {
         for (int i = STEPS.length - 1; i >= 0; i--) if (STEPS[i] < cur) return STEPS[i];
         return STEPS[STEPS.length - 1]; // wrap below 0 back to 15
+    }
+
+    @Override
+    public void appendTooltip(ItemStack stack, Item.TooltipContext context, java.util.List<Text> tooltip,
+                              net.minecraft.item.tooltip.TooltipType type) {
+        tooltip.add(Text.literal("§7Brushes living light into your custom blocks.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal("§7Right-click to brighten; sneak + right-click to dim.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal("§8Now folded into the Omni-Tool as Glow mode.").styled(s -> s.withItalic(false)));
     }
 }

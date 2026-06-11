@@ -17,6 +17,7 @@ import com.customblocks.CustomBlocksMod;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
+import com.customblocks.image.ColorReplacer;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 
@@ -63,7 +64,17 @@ public final class ServerPackGenerator {
                     if (tex == null || tex.length == 0) tex = PLACEHOLDER_PNG;
                     add(zos, tex(key), tex, written);
                     add(zos, blockstate(key), blockstateJson(MOD_ID + ":block/" + key), written);
-                    add(zos, blockModel(key), cubeAllJson(key), written);
+                    // M4 — faces with a painted override get a per-face cube model; the rest
+                    // of the block (and blocks with no overrides at all) shows the base texture.
+                    if (TextureStore.hasAnyFace(i)) {
+                        for (String face : TextureStore.FACES) {
+                            byte[] ft = TextureStore.loadFace(i, face);
+                            if (ft != null && ft.length > 0) add(zos, tex(key + "_" + face), ft, written);
+                        }
+                        add(zos, blockModel(key), cubeFacesJson(i, key), written);
+                    } else {
+                        add(zos, blockModel(key), cubeAllJson(key), written);
+                    }
                     add(zos, itemModel(key), itemJson(MOD_ID + ":block/" + key), written);
                 }
 
@@ -80,11 +91,38 @@ public final class ServerPackGenerator {
                     add(zos, blockstate(key), blockstateJson(MOD_ID + ":block/empty_slot"), written);
                     add(zos, itemModel(key), itemJson(MOD_ID + ":block/empty_slot"), written);
                 }
+
+                // M3 hex — when a colour's hex was changed from the shipped default, override
+                // that colour's Square/Triangle item art with a re-tinted copy of the bundled art.
+                addTintedShapeItems(zos, written);
             }
             Files.move(tmp.toPath(), outputFile.toPath(),
                     StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (Exception e) {
             CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to generate resource pack", e);
+        }
+    }
+
+    /** Re-tinted Square/Triangle item textures for every colour whose hex left its default. */
+    private static void addTintedShapeItems(ZipOutputStream zos, Set<String> written) {
+        String[][] colours = {
+                {"red",    CustomBlocksConfig.triangleRedHex,    CustomBlocksConfig.TRIANGLE_RED_DEFAULT},
+                {"yellow", CustomBlocksConfig.triangleYellowHex, CustomBlocksConfig.TRIANGLE_YELLOW_DEFAULT},
+                {"green",  CustomBlocksConfig.triangleGreenHex,  CustomBlocksConfig.TRIANGLE_GREEN_DEFAULT},
+                {"black",  CustomBlocksConfig.triangleBlackHex,  CustomBlocksConfig.TRIANGLE_BLACK_DEFAULT},
+        };
+        for (String[] c : colours) {
+            if (c[1].equalsIgnoreCase(c[2])) continue; // still the default → bundled art is right
+            int rgb = Integer.parseInt(c[1].substring(1), 16);
+            for (String shape : new String[]{"square", "triangle"}) {
+                String rel = "assets/" + MOD_ID + "/textures/item/" + c[0] + "_" + shape + ".png";
+                try (var in = ServerPackGenerator.class.getResourceAsStream("/" + rel)) {
+                    if (in == null) continue; // bundled art missing — keep whatever the client has
+                    add(zos, rel, ColorReplacer.tint(in.readAllBytes(), rgb), written);
+                } catch (Exception e) {
+                    CustomBlocksMod.LOGGER.warn("[CustomBlocks] Item re-tint failed for {}", rel, e);
+                }
+            }
         }
     }
 
@@ -110,6 +148,20 @@ public final class ServerPackGenerator {
         tex.addProperty("all", MOD_ID + ":block/" + key);
         JsonObject m = new JsonObject();
         m.addProperty("parent", "minecraft:block/cube_all");
+        m.add("textures", tex);
+        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** M4 — full cube model: painted faces point at their override, the rest at the base. */
+    private static byte[] cubeFacesJson(int index, String key) {
+        String base = MOD_ID + ":block/" + key;
+        JsonObject tex = new JsonObject();
+        tex.addProperty("particle", base);
+        for (String face : TextureStore.FACES) {
+            tex.addProperty(face, TextureStore.hasFace(index, face) ? base + "_" + face : base);
+        }
+        JsonObject m = new JsonObject();
+        m.addProperty("parent", "minecraft:block/cube");
         m.add("textures", tex);
         return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
     }

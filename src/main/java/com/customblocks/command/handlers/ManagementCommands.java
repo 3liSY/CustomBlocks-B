@@ -91,7 +91,7 @@ public final class ManagementCommands {
 
     private static int lockBlock(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (!LockManager.lock(id)) { Chat.info(src, "'" + id + "' is already locked"); return 1; }
         Chat.success(src, "Locked §f" + id + "§r — use §f/cb unlock " + id + "§r to edit it again");
         return 1;
@@ -121,7 +121,7 @@ public final class ManagementCommands {
 
     private static int showNote(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         String note = BlockNotesManager.getNote(id);
         if (note == null) {
             src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§7No note for §f" + id
@@ -134,7 +134,7 @@ public final class ManagementCommands {
 
     private static int setNote(CommandContext<ServerCommandSource> ctx, String id, String text) {
         ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         BlockNotesManager.setNote(id, text);
         Chat.success(src, "Note on §f" + id + "§r saved");
         return 1;
@@ -155,7 +155,7 @@ public final class ManagementCommands {
             Chat.error(src, "Favorites are per-player — run as a player, not console");
             return 0;
         }
-        if (SlotManager.getById(id) == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         UUID uuid = player.getUuid();
         if (FavoritesManager.isFavorite(uuid, id)) {
             FavoritesManager.remove(uuid, id);
@@ -193,7 +193,7 @@ public final class ManagementCommands {
 
     private static int markDraft(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "No block '" + id + "'"); return 0; }
+        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (!DraftManager.markDraft(id)) { Chat.info(src, "'" + id + "' is already a draft"); return 1; }
         Chat.success(src, "§f" + id + "§r marked as draft. Publish with §f/cb publish " + id);
         return 1;

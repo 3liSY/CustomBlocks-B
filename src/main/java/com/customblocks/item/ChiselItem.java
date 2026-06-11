@@ -15,7 +15,10 @@ import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -43,5 +46,13 @@ public class ChiselItem extends CustomToolItem {
     private static int indexOf(float h) {
         for (int i = 0; i < STEPS.length; i++) if (Float.compare(STEPS[i], h) == 0) return i;
         return 2; // "stone" — a sensible starting point for an off-preset value
+    }
+
+    @Override
+    public void appendTooltip(ItemStack stack, Item.TooltipContext context, java.util.List<Text> tooltip,
+                              net.minecraft.item.tooltip.TooltipType type) {
+        tooltip.add(Text.literal("§7Sets how tough your custom blocks are to break.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal("§7Right-click to harden; sneak + right-click to soften.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal("§8Now folded into the Omni-Tool as Hardness mode.").styled(s -> s.withItalic(false)));
     }
 }

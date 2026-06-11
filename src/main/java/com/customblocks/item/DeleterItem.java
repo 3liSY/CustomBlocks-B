@@ -23,7 +23,10 @@ import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
 import com.customblocks.core.UndoManager;
 import com.customblocks.network.ResourcePackServer;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.Text;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.world.World;
 
@@ -46,5 +49,13 @@ public class DeleterItem extends CustomToolItem {
         ResourcePackServer.updatePack();
         UndoManager.recordDelete(player.getUuid(), d, texture);
         Chat.tool(player, "Deleted " + d.customId());
+    }
+
+    @Override
+    public void appendTooltip(ItemStack stack, Item.TooltipContext context, java.util.List<Text> tooltip,
+                              net.minecraft.item.tooltip.TooltipType type) {
+        tooltip.add(Text.literal("§7Right-click a custom block to erase its design —").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal("§7texture, name and settings, all at once.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal("§8Had second thoughts? §7/cb undo §8restores everything.").styled(s -> s.withItalic(false)));
     }
 }

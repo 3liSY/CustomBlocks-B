@@ -3,5 +3,17 @@
   "itemGroup.customblocks.tools": "CustomBlocks Tools",
   "item.customblocks.lumina_brush": "Lumina Brush",
   "item.customblocks.chisel": "Chisel",
-  "item.customblocks.deleter": "Deleter"
+  "item.customblocks.deleter": "Deleter",
+  "item.customblocks.omni_tool": "Omni-Tool",
+  "item.customblocks.rainbow_rectangle": "Rainbow Rectangle",
+  "item.customblocks.green_square": "Green Square",
+  "item.customblocks.green_triangle": "Green Triangle",
+  "item.customblocks.yellow_square": "Yellow Square",
+  "item.customblocks.yellow_triangle": "Yellow Triangle",
+  "item.customblocks.red_square": "Red Square",
+  "item.customblocks.red_triangle": "Red Triangle",
+  "item.customblocks.black_square": "Black Square",
+  "item.customblocks.black_triangle": "Black Triangle",
+  "item.customblocks.custom_square": "Custom Square",
+  "item.customblocks.custom_triangle": "Custom Triangle"
 }

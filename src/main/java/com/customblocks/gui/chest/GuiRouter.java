@@ -1,0 +1,162 @@
+/**
+ * GuiRouter.java
+ *
+ * Central entry point for opening chest menus and walking the navigation back-stack.
+ * All menu opening is deferred to the server thread (server.execute) so it never runs
+ * re-entrantly inside a slot-click handler. Mutating actions delegate to the existing,
+ * tested /cb commands via runCommand / runAndReopen rather than re-implementing logic.
+ */
+package com.customblocks.gui.chest;
+
+import com.customblocks.command.Chat;
+import com.customblocks.gui.chest.Nav.Dest;
+import com.customblocks.gui.chest.Nav.MenuKey;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
+import net.minecraft.text.Text;
+
+public final class GuiRouter {
+
+    private GuiRouter() {} // static-only
+
+    /** Open the dashboard, starting a fresh navigation session. */
+    public static void openRoot(ServerPlayerEntity player) {
+        Nav.reset(player.getUuid(), MenuKey.of(Dest.MAIN));
+        render(player, MenuKey.of(Dest.MAIN));
+    }
+
+    /** Open a menu directly as a fresh single-entry session. */
+    public static void openFresh(ServerPlayerEntity player, MenuKey key) {
+        Nav.reset(player.getUuid(), key);
+        render(player, key);
+    }
+
+    /** Navigate deeper: push the destination onto the stack and open it. */
+    public static void navigate(ServerPlayerEntity player, MenuKey key) {
+        Nav.push(player.getUuid(), key);
+        render(player, key);
+    }
+
+    /** Change only the current menu (e.g. a new page) without growing the stack. */
+    public static void repage(ServerPlayerEntity player, MenuKey key) {
+        Nav.replaceTop(player.getUuid(), key);
+        render(player, key);
+    }
+
+    /** Go back one level; closes the screen if there is nothing beneath. */
+    public static void back(ServerPlayerEntity player) {
+        MenuKey prev = Nav.popToPrevious(player.getUuid());
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        if (prev == null) { s.execute(player::closeHandledScreen); return; }
+        render(player, prev);
+    }
+
+    /** Build the menu for a key and show it on the server thread (in place when possible). */
+    public static void render(ServerPlayerEntity player, MenuKey key) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> show(player, build(player, key)));
+    }
+
+    /**
+     * Show a freshly built menu. If the player already has one of our chest menus open with
+     * the SAME size and title (e.g. a toggle or page change within the same screen), refresh
+     * it in place so the mouse cursor does not snap back to the centre. Otherwise open it as
+     * a new screen (navigating to a different menu).
+     */
+    private static void show(ServerPlayerEntity player, ChestMenu menu) {
+        if (menu == null) return;
+        if (player.currentScreenHandler instanceof CbChestHandler h
+                && !h.isDisposed()
+                && h.menuRows() == menu.rows()
+                && h.menuTitle().equals(menu.title())) {
+            h.refreshWith(menu);
+        } else {
+            menu.open(player);
+        }
+    }
+
+    /** Close the chest, then run a /cb subcommand as the player (for non-chest features). */
+    public static void runCommand(ServerPlayerEntity player, String sub) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> {
+            player.closeHandledScreen();
+            s.getCommandManager().executeWithPrefix(player.getCommandSource(), "cb " + sub);
+        });
+    }
+
+    /** Run a /cb subcommand as the player, then push+open a new menu (deeper navigation). */
+    public static void runThenNavigate(ServerPlayerEntity player, String sub, MenuKey key) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> {
+            s.getCommandManager().executeWithPrefix(player.getCommandSource(), "cb " + sub);
+            Nav.push(player.getUuid(), key);
+            show(player, build(player, key));
+        });
+    }
+
+    /** Run a /cb subcommand as the player, then rebuild and reopen the given menu in place. */
+    public static void runAndReopen(ServerPlayerEntity player, String sub, MenuKey key) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> {
+            s.getCommandManager().executeWithPrefix(player.getCommandSource(), "cb " + sub);
+            show(player, build(player, key));
+        });
+    }
+
+    /** Close the chest and send a clickable chat prompt that pre-fills a command (text input). */
+    public static void promptCommand(ServerPlayerEntity player, String suggest, String label) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> {
+            player.closeHandledScreen();
+            player.sendMessage(Text.literal(Chat.PREFIX + "§fClick to continue: ")
+                    .append(Text.literal("§e[" + label + "]").styled(st -> st
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, suggest))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(suggest))))), false);
+        });
+    }
+
+    /** Close the chest and send a clickable chat confirmation that runs a command on click. */
+    public static void confirmCommand(ServerPlayerEntity player, String run, String label) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> {
+            player.closeHandledScreen();
+            player.sendMessage(Text.literal(Chat.PREFIX + "§fConfirm: ")
+                    .append(Text.literal(label).styled(st -> st
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, run))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(run))))), false);
+        });
+    }
+
+    private static ChestMenu build(ServerPlayerEntity player, MenuKey key) {
+        return switch (key.dest()) {
+            case MAIN -> MainMenu.build(player);
+            case BLOCK_LIST -> BlockListMenu.build(player, key.page());
+            case EDITOR -> EditorMenu.build(player, key.arg());
+            case UNDO -> UndoMenu.build(player, false, key.page());
+            case REDO -> UndoMenu.build(player, true, key.page());
+            case HISTORY -> HistoryMenu.build(player, key.page());
+            case MAGIC -> MagicMenu.build(player, false, key.page());
+            case MAGIC_EDIT -> MagicMenu.build(player, true, key.page());
+            case CONFIG -> ConfigMenu.build(player);
+            case TEXTURE_SIZE -> TextureSizeMenu.build(player);
+            case RETEXTURE_CONFIRM -> RetextureConfirmMenu.build(player, key.arg());
+            case RECOLOR_CONFIRM -> RecolorConfirmMenu.build(player, key.arg());
+            case HEX_RECOLOR_CONFIRM -> HexRecolorConfirmMenu.build(player, key.arg());
+            case HEX_COLORS -> HexColorsMenu.build(player);
+            case CUSTOM_COLOR -> CustomColorMenu.build(player);
+            case DIAG -> DiagMenu.build(player);
+            case SEARCH -> SearchMenu.build(player, key.arg(), key.page());
+            case HELP -> HelpMenu.build(player, key.arg(), key.page());
+            case OMNI -> OmniMenu.build(player);
+        };
+    }
+}
