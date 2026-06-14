@@ -98,6 +98,21 @@ public final class HistoryCommands {
                 ResourcePackServer.updatePack();
             }
             case MODIFY -> restoreMeta(src, op.before());
+            case SHAPE -> { // restore the old shape, then rebuild the pack so the model reverts too
+                restoreMeta(src, op.before());
+                ResourcePackServer.updatePack();
+            }
+            case TEXTURE -> { // pixels were replaced → put the old texture back + rebuild the pack
+                TextureStore.save(op.before().index(), op.texture());
+                ResourcePackServer.updatePack();
+            }
+            case REID -> // id was changed old→new → change it back new→old (reId is its own inverse)
+                    SlotManager.reId(op.after().customId(), op.before().customId());
+            case BATCH -> { // revert every child of the bulk op as a single step
+                if (op.children() != null) {
+                    for (UndoManager.Op child : op.children()) applyInverse(src, child);
+                }
+            }
         }
     }
 
@@ -113,6 +128,21 @@ public final class HistoryCommands {
                 ResourcePackServer.updatePack();
             }
             case MODIFY -> restoreMeta(src, op.after());
+            case SHAPE -> { // re-apply the new shape + rebuild the pack
+                restoreMeta(src, op.after());
+                ResourcePackServer.updatePack();
+            }
+            case TEXTURE -> { // re-apply the new texture + rebuild the pack
+                TextureStore.save(op.after().index(), op.textureAfter());
+                ResourcePackServer.updatePack();
+            }
+            case REID -> // re-apply the id change old→new
+                    SlotManager.reId(op.before().customId(), op.after().customId());
+            case BATCH -> { // re-apply every child of the bulk op as a single step
+                if (op.children() != null) {
+                    for (UndoManager.Op child : op.children()) applyForward(src, child);
+                }
+            }
         }
     }
 
@@ -123,6 +153,13 @@ public final class HistoryCommands {
     }
 
     private static String describe(UndoManager.Op op) {
+        if (op.kind() == UndoManager.Kind.BATCH) {
+            int n = op.children() == null ? 0 : op.children().size();
+            return op.label() + " (" + n + " block" + (n == 1 ? "" : "s") + ")";
+        }
+        if (op.kind() == UndoManager.Kind.REID) {
+            return "reid " + op.before().customId() + " §7→§r " + op.after().customId();
+        }
         SlotData d = op.before() != null ? op.before() : op.after();
         String id = d != null ? d.customId() : "?";
         return op.label() + " " + id;

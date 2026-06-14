@@ -31,18 +31,29 @@ public final class UndoManager {
     private UndoManager() {} // static-only
 
     /** What kind of change an Op represents (drives how undo/redo reverses it). */
-    public enum Kind { CREATE, DELETE, MODIFY }
+    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE }
 
     /**
      * One reversible edit.
      *
-     * @param kind    CREATE (before == null), DELETE (after == null), or MODIFY (both set).
-     * @param before  slot state before the edit (null for CREATE).
-     * @param after   slot state after the edit (null for DELETE).
-     * @param texture for DELETE: the texture bytes that existed before deletion (may be null).
-     * @param label   human-readable verb shown in chat ("create", "rename", "glow", …).
+     * @param kind         CREATE (before == null), DELETE (after == null), MODIFY (both set),
+     *                     TEXTURE (pixels changed; before == after == the slot, texture/textureAfter
+     *                     carry the bytes), or BATCH (children set; before/after/texture null).
+     * @param before       slot state before the edit (null for CREATE / BATCH; the slot for TEXTURE).
+     * @param after        slot state after the edit (null for DELETE / BATCH; the slot for TEXTURE).
+     * @param texture      for DELETE: the texture that existed before deletion; for TEXTURE: the
+     *                     PRE-edit bytes restored on undo (may be null).
+     * @param textureAfter for TEXTURE: the POST-edit bytes re-applied on redo; null otherwise.
+     * @param label        human-readable verb shown in chat ("create", "rename", "glow", "dress", …).
+     * @param children     for BATCH: the child ops reverted/re-applied together as one step (null otherwise).
      */
-    public record Op(Kind kind, SlotData before, SlotData after, byte[] texture, String label) {}
+    public record Op(Kind kind, SlotData before, SlotData after,
+                     byte[] texture, byte[] textureAfter, String label, List<Op> children) {
+        /** Convenience constructor for a single (non-batch) op — textureAfter + children null. */
+        public Op(Kind kind, SlotData before, SlotData after, byte[] texture, String label) {
+            this(kind, before, after, texture, null, label, null);
+        }
+    }
 
     private static final Map<UUID, Deque<Op>> UNDO = new ConcurrentHashMap<>();
     private static final Map<UUID, Deque<Op>> REDO = new ConcurrentHashMap<>();
@@ -76,10 +87,55 @@ public final class UndoManager {
         push(player, new Op(Kind.MODIFY, before, after, null, label));
     }
 
+    /**
+     * Record an id change (/cb reid): {@code before} carries the OLD id, {@code after} the NEW id.
+     * Reversed by re-id-ing back (see HistoryCommands) — reId is its own inverse, so no snapshot
+     * restore is needed. Distinct from MODIFY because the map key itself moved.
+     */
+    public static void recordReid(UUID player, SlotData before, SlotData after) {
+        if (before == null || after == null) return;
+        push(player, new Op(Kind.REID, before, after, null, "reid"));
+    }
+
+    /**
+     * Record a shape change (/cb setshape, /cb clearshape). Like MODIFY but flagged distinct so
+     * undo/redo also rebuilds the resource pack — the block's MODEL changes, not just live state.
+     */
+    public static void recordShape(UUID player, SlotData before, SlotData after) {
+        if (before == null || after == null) return;
+        push(player, new Op(Kind.SHAPE, before, after, null, "shape"));
+    }
+
+    /**
+     * Record several edits as ONE undo step (Group 07): a whole bulk operation reverts in a
+     * single /cb undo. Children are applied/reverted together, newest-batch-first like any op.
+     */
+    public static void recordBatch(UUID player, List<Op> children, String label) {
+        if (children == null || children.isEmpty()) return;
+        push(player, new Op(Kind.BATCH, null, null, null, null, label, List.copyOf(children)));
+    }
+
+    /**
+     * Record a texture replacement (/cb dress, and reusable by future pixel ops). {@code slot}
+     * is the unchanged metadata snapshot (carries the index + id); {@code before}/{@code after}
+     * are the PNG bytes so undo restores the old pixels and redo re-applies the new ones. The
+     * caller does the actual TextureStore.save + pack rebuild (HistoryCommands), keeping this
+     * class free of image/server types.
+     */
+    public static void recordTexture(UUID player, SlotData slot, byte[] before, byte[] after, String label) {
+        if (slot == null || before == null || after == null) return;
+        push(player, new Op(Kind.TEXTURE, slot, slot, before, after, label, null));
+    }
+
     private static synchronized void push(UUID player, Op op) {
         // Audit hook (Group 02): record every recorded edit to the persistent history log.
-        String mlId = op.after() != null ? op.after().customId()
-                : (op.before() != null ? op.before().customId() : "?");
+        String mlId;
+        if (op.kind() == Kind.BATCH) {
+            mlId = "×" + (op.children() == null ? 0 : op.children().size());
+        } else {
+            mlId = op.after() != null ? op.after().customId()
+                    : (op.before() != null ? op.before().customId() : "?");
+        }
         MutationLog.record(player, op.label(), mlId);
         UUID key = keyFor(player);
         if (key == null) return; // per-player mode with no player → not undoable

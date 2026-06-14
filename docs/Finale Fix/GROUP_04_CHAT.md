@@ -10,6 +10,24 @@
 
 ---
 
+## Chat-polish backlog (open items)
+
+Small wording issues noticed during testing. Not bugs (the commands work) — message clarity only.
+
+- **`/cb rename` fake-succeeds when the new name equals the current one.**
+  `/cb rename <id> <name>` always prints `Renamed "<id>" to "<name>".`
+  ([CreationCommands.java:228](../../src/main/java/com/customblocks/command/handlers/CreationCommands.java))
+  — there is **no no-op check**. Running `/cb rename testing testing` twice both report success
+  (`Renamed "testing" to "testing".`) even though nothing changed the second time. **Wanted:** when
+  the new name already equals the block's current display name, give a friendly "already named that"
+  message instead of a fake success — exactly like `/cb reid` already does for ids
+  (`"x" is already its id — nothing to change.`). Fix idea: after the lock check, if
+  `name.equals(before.displayName())` → `Chat.info(src, "\"" + id + "\" is already named \"" + name
+  + "\" — nothing to change.")` and return without recording an undo step.
+  *(Reported by developer, screenshot 2026-06-13. Polish only — leave the command working.)*
+
+---
+
 ## What this group restores
 
 | Area | Old CustomBlocks | New CustomBlocks-B | This Group |

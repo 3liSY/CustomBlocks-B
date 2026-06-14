@@ -16,7 +16,9 @@ public enum GuiMode {
     TEMPLATE_LIST(3),
     ARABIC_BROWSER(4),
     MACRO_LIST(5),
-    HUD_EDITOR(6);
+    HUD_EDITOR(6),
+    RECOLOR_SLIDER(7),  // Group 10 — live recolour slider (client screen)
+    EYEDROP(8);         // Group 10 — sample a colour from the Minecraft screen (client screen)
 
     public final int id;
 

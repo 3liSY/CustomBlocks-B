@@ -43,6 +43,18 @@ public final class VideoCommands {
         // /cb video extract <file> <id> <frame>
         video.then(CommandManager.literal("extract")
                 .then(CommandManager.argument("file", StringArgumentType.word())
+                        .suggests((c, b) -> {
+                            File[] files = videosDir(c.getSource().getServer())
+                                    .listFiles((f, n) -> n.endsWith(".mp4"));
+                            if (files != null) {
+                                String typed = b.getRemaining().toLowerCase(java.util.Locale.ROOT);
+                                for (File f : files) {
+                                    String name = f.getName().substring(0, f.getName().length() - 4);
+                                    if (name.toLowerCase(java.util.Locale.ROOT).startsWith(typed)) b.suggest(name);
+                                }
+                            }
+                            return b.buildFuture();
+                        })
                         .then(CommandManager.argument("id", StringArgumentType.word())
                                 .suggests(BlockSuggestions.IDS)
                                 .then(CommandManager.argument("frame", IntegerArgumentType.integer(0))

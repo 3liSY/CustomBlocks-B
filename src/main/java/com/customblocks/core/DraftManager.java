@@ -46,6 +46,11 @@ public final class DraftManager {
         return false;
     }
 
+    /** Move draft state from {@code oldId} to {@code newId} (for /cb reid). No-op if oldId wasn't a draft. */
+    public static synchronized void renameId(String oldId, String newId) {
+        if (DRAFTS.remove(oldId)) { DRAFTS.add(newId); save(); }
+    }
+
     /** All current draft IDs, sorted alphabetically. */
     public static synchronized List<String> list() {
         List<String> ids = new ArrayList<>(DRAFTS);

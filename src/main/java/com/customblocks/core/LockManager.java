@@ -47,6 +47,11 @@ public final class LockManager {
         return false;
     }
 
+    /** Move lock state from {@code oldId} to {@code newId} (for /cb reid). No-op if oldId wasn't locked. */
+    public static synchronized void renameId(String oldId, String newId) {
+        if (LOCKED.remove(oldId)) { LOCKED.add(newId); save(); }
+    }
+
     /** All currently locked IDs, sorted alphabetically. */
     public static synchronized List<String> list() {
         List<String> ids = new ArrayList<>(LOCKED);

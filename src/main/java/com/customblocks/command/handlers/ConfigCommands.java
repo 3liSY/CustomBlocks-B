@@ -13,6 +13,7 @@ package com.customblocks.command.handlers;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.image.BackgroundRemover;
+import com.customblocks.core.AutoBackup;
 import com.customblocks.core.UndoManager;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav;
@@ -108,18 +109,83 @@ public final class ConfigCommands {
                                 .suggests((c, b) -> { b.suggest(16); b.suggest(32); b.suggest(64); b.suggest(128); b.suggest(256); b.suggest(512); return b.buildFuture(); })
                                 .executes(ctx -> setTextureSize(ctx, IntegerArgumentType.getInteger(ctx, "px"))))));
 
+        // /cb config autobackup [interval [min] | keep [count]] — timed auto-backup (Group 09 / Slice 3).
+        // No value after interval/keep cycles through presets (used by the Config GUI tile).
+        root.then(CommandManager.literal("config")
+                .then(CommandManager.literal("autobackup")
+                        .executes(ConfigCommands::autoBackupStatus)
+                        .then(CommandManager.literal("interval")
+                                .executes(ConfigCommands::cycleAutoInterval)
+                                .then(CommandManager.argument("min", IntegerArgumentType.integer(0, 10080))
+                                        .executes(ctx -> setAutoInterval(ctx, IntegerArgumentType.getInteger(ctx, "min")))))
+                        .then(CommandManager.literal("keep")
+                                .executes(ConfigCommands::cycleAutoKeep)
+                                .then(CommandManager.argument("count", IntegerArgumentType.integer(0, 1000))
+                                        .executes(ctx -> setAutoKeep(ctx, IntegerArgumentType.getInteger(ctx, "count")))))));
+
         // /cb config hex + /cb recolorvariants (M3 hex) live in HexCommands (400-line limit).
     }
 
     private static int show(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         if (src.getEntity() instanceof ServerPlayerEntity p) {
-            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CONFIG));
+            // Gate the config screen behind a Yes/No confirm (it changes live behaviour).
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CONFIG_CONFIRM));
             return 1;
         }
         Chat.info(src, "Undo mode: §f" + label(CustomBlocksConfig.undoMode)
                 + " §8(/cb config undomode to switch)");
         return 1;
+    }
+
+    // ── Auto-backup (Group 09 / Slice 3) ─────────────────────────────────────
+
+    private static final int[] INTERVAL_PRESETS = {0, 5, 15, 30, 60, 120, 360};
+    private static final int[] KEEP_PRESETS     = {3, 5, 10, 20, 50};
+
+    private static int autoBackupStatus(CommandContext<ServerCommandSource> ctx) {
+        int iv = CustomBlocksConfig.autoBackupInterval;
+        Chat.info(ctx.getSource(), "Auto-backup: " + (iv <= 0 ? "§cOFF" : "§aevery " + iv + " min")
+                + " §7· keep §f" + CustomBlocksConfig.autoBackupKeepCount
+                + " §8(/cb config autobackup interval <min> · keep <count>)");
+        return 1;
+    }
+
+    private static int cycleAutoInterval(CommandContext<ServerCommandSource> ctx) {
+        return setAutoInterval(ctx, nextPreset(INTERVAL_PRESETS, CustomBlocksConfig.autoBackupInterval));
+    }
+
+    private static int setAutoInterval(CommandContext<ServerCommandSource> ctx, int min) {
+        CustomBlocksConfig.autoBackupInterval = Math.max(0, Math.min(10080, min));
+        CustomBlocksConfig.save();
+        AutoBackup.applyConfigChange(); // adopt the new interval immediately
+        int iv = CustomBlocksConfig.autoBackupInterval;
+        Chat.success(ctx.getSource(), iv <= 0
+                ? "Auto-backup turned off."
+                : "Auto-backup → every " + iv + " min.");
+        return 1;
+    }
+
+    private static int cycleAutoKeep(CommandContext<ServerCommandSource> ctx) {
+        return setAutoKeep(ctx, nextPreset(KEEP_PRESETS, CustomBlocksConfig.autoBackupKeepCount));
+    }
+
+    private static int setAutoKeep(CommandContext<ServerCommandSource> ctx, int count) {
+        CustomBlocksConfig.autoBackupKeepCount = Math.max(0, Math.min(1000, count));
+        CustomBlocksConfig.save();
+        Chat.success(ctx.getSource(), "Auto-backup keep count → " + CustomBlocksConfig.autoBackupKeepCount
+                + ". Older auto-backups beyond that are pruned.");
+        return 1;
+    }
+
+    /** Next value in {@code presets} after {@code current} (wraps); if {@code current} isn't a preset,
+     *  snap to the first preset greater than it, else the first preset. */
+    private static int nextPreset(int[] presets, int current) {
+        for (int i = 0; i < presets.length; i++) {
+            if (presets[i] == current) return presets[(i + 1) % presets.length];
+        }
+        for (int v : presets) if (v > current) return v;
+        return presets[0];
     }
 
     private static int cycleUndoMode(CommandContext<ServerCommandSource> ctx) {

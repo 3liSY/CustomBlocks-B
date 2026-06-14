@@ -290,3 +290,86 @@ If anything shows ❌ — paste:
 ```
 /cb delete g08a
 ```
+
+---
+
+## 💡 Future idea — Custom Shape Sculptor *(currently just an idea — not planned, not built)*
+
+> Captured 2026-06-13. A direction to explore **after** Group 08 is confirmed working in-game.
+> Nothing here is committed; it may become its own group later.
+
+**The wish:** a tool (likely an Omni-Tool mode) to "curve/shape any pixel of any custom block however I
+like" — freeform shaping instead of the fixed preset shapes.
+
+**The honest constraint:** Minecraft block models can't do **true curves**. A block model is
+axis-aligned cuboid "elements" only, with rotation limited to 22.5° steps on one axis. So "curving"
+isn't possible — but **freeform shaping out of voxels/boxes is**, and the foundation already exists:
+`BlockShapes` already turns a list of boxes into both the model elements *and* the collision union, so a
+sculptor just makes that list **data-driven** instead of hardcoded.
+
+**Two possible flavors:**
+- **Voxel sculptor** — treat the block as an 8×8×8 grid; each cell on/off. Add/carve cells to build any
+  blocky shape. Needs greedy-merging of cells into larger boxes for render performance.
+- **Box editor** — define a handful of arbitrary boxes (from/to + optional 22.5° tilt). Fewer pieces;
+  can fake "slanted" looks. Closer to Blockbench.
+
+**How the tool could work in-world:** `useOnBlock` already exposes the clicked face (`getSide()`) and the
+exact hit point (`getHitPos()`), so a `SCULPT` Omni-Tool mode could add a voxel where you right-click and
+carve the one you point at — live model + collision rebuild (debounced), one undo step per click.
+
+**Constraints to respect if we build it:** render perf (cap resolution at 8³, greedy-merge boxes);
+it edits the block *type* (all placed copies change, like shapes today); store the voxel mask on
+`SlotData` (compact bitset) with undo; v1 paints the base texture on every box (per-box texturing is a
+much bigger job — defer). The Group 08 `custom` AABB shape is the small seed of this.
+
+**Status:** idea only. Revisit after Group 08 passes in-game; if pursued, write a proper group spec first.
+
+---
+
+## 🧭 Planned — Face direction helper ("FaceGuide") *(idea, agreed — not built yet)*
+
+> Captured 2026-06-13. Replaces the confusing coloured-tile face editor as the way to learn "which
+> side is which." The face *editor* (paint/clear) stays; this is purely about **showing directions**.
+
+**Part 1 — a built-in FaceGuide block.** On load the mod auto-seeds one custom block (like it already
+seeds the built-in tools) with **N / E / S / W / UP / DOWN** painted on its six faces, so each face
+plainly states which world direction it is. It's a normal, placeable, usable custom block. The letter
+textures are **drawn in-code** (no download — offline-safe), using per-face textures (already supported).
+
+**Part 2 — inspect a placed block in place.** A toggle command (e.g. `/cb faceguide`): look at a custom
+block and run it → that block **temporarily** swaps to the FaceGuide appearance where it sits → run again
+(or look away) → it swaps back. No pack rebuild / reload prompt — it's a live block swap. Chat walks the
+player through it. **Safety:** the swap stores the original block and auto-restores after ~30s and on
+relog/disconnect, so a block can never get stuck looking like the guide.
+
+**Naming note:** call it `FaceGuide` / `/cb faceguide`, **not** "ShapePreview" — `/cb shapepreview`
+already exists for shapes, so reusing that name would confuse.
+
+**Status:** agreed direction, not built. Build as a Group 08 slice after the current work; front-end only
+where possible (per-face textures + a temp block-swap with restore).
+
+---
+
+## 🎨 PARTIAL — Textured shape preview: `/cb shapepreview <shape> [id]` *(base works; `[id]` deferred)*
+
+> ⚠️ **Status: PARTIAL.** `/cb shapepreview <shape>` (vanilla stand-in) works and passed in-game. The
+> optional **`[id]`** argument — preview the shape wearing a custom block's texture with no pack reload —
+> is **not built yet**; come back and implement it correctly/perfectly later (developer's call,
+> 2026-06-13). Design below.
+
+> Captured 2026-06-13. Extends the working `/cb shapepreview <shape>` (which floats a vanilla stand-in
+> block) so you can preview a shape **wearing one of your custom block's textures**, with **no pack
+> rebuild / reload prompt**.
+
+**The trick:** the custom block's texture is already in the loaded pack as `customblocks:slot_N`. A
+`block_display` can show that block's model **transformed** (scale + translate) into a shape's box —
+and `summon` takes the transformation as NBT, so no code-side entity API and no rebuild. For each box in
+`BlockShapes.boxes(shape)` (the same source the collision/model use), summon one transformed copy of
+`slot_N`; auto-remove after 5s, exactly like the current preview.
+
+- Single-box shapes (slab/carpet/thin/wall/pillar): one transformed display — exact.
+- Multi-box (stairs/pane): one display per box.
+- `full`: the block at scale 1. `cross`: billboard — can't be made by transforming a cube; fall back to
+  the vanilla stand-in or just show `full` (decision when built).
+
+**Status:** idea, brainstormed. Build alongside / after FaceGuide.

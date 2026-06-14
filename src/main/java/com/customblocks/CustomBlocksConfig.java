@@ -127,6 +127,24 @@ public final class CustomBlocksConfig {
     /** Fill colour used when a Black Triangle recolours a block's background (#RRGGBB). */
     public static volatile String triangleBlackHex = TRIANGLE_BLACK_DEFAULT;
 
+    // ── Group 07 — bulk operations ────────────────────────────────────────────
+
+    /** A bulk operation affecting MORE than this many blocks asks for /cb confirm first. */
+    public static volatile int bulkConfirmThreshold = 10;
+
+    // ── Group 09 / Slice 3 — auto-backup ──────────────────────────────────────
+
+    /** Minutes between automatic backups. 0 (or less) disables auto-backup. Default 30. */
+    public static volatile int autoBackupInterval = 30;
+
+    /** How many of the most recent auto-backups to keep; older "auto-…" ones are pruned. Default 10. */
+    public static volatile int autoBackupKeepCount = 10;
+
+    // ── Group 09 / Slice 4 — deleted-block trash ──────────────────────────────
+
+    /** Days a deleted block stays in the trash before auto-pruning. 0 = keep forever. Pinned never prune. */
+    public static volatile int trashRetentionDays = 30;
+
     private CustomBlocksConfig() {} // static-only
 
     /** Load config from disk, writing defaults if the file is missing. */
@@ -162,6 +180,10 @@ public final class CustomBlocksConfig {
             triangleYellowHex = normalizeHexColor(getString(root, "triangleYellowHex", triangleYellowHex), triangleYellowHex);
             triangleGreenHex  = normalizeHexColor(getString(root, "triangleGreenHex",  triangleGreenHex),  triangleGreenHex);
             triangleBlackHex  = normalizeHexColor(getString(root, "triangleBlackHex",  triangleBlackHex),  triangleBlackHex);
+            bulkConfirmThreshold = clamp(getInt(root, "bulkConfirmThreshold", bulkConfirmThreshold), 1, 100000);
+            autoBackupInterval  = clamp(getInt(root, "autoBackupInterval", autoBackupInterval), 0, 10080); // 0..1 week
+            autoBackupKeepCount = clamp(getInt(root, "autoBackupKeepCount", autoBackupKeepCount), 0, 1000);
+            trashRetentionDays  = clamp(getInt(root, "trashRetentionDays", trashRetentionDays), 0, 3650);
             LOGGER.info("[CustomBlocks] Config loaded: maxSlots={}, httpPort={}, textureSize={}, hudEnabled={}",
                     maxSlots, httpPort, textureSize, hudEnabled);
         } catch (Exception e) {
@@ -195,6 +217,10 @@ public final class CustomBlocksConfig {
             root.addProperty("triangleYellowHex",  triangleYellowHex);
             root.addProperty("triangleGreenHex",   triangleGreenHex);
             root.addProperty("triangleBlackHex",   triangleBlackHex);
+            root.addProperty("bulkConfirmThreshold", bulkConfirmThreshold);
+            root.addProperty("autoBackupInterval",  autoBackupInterval);
+            root.addProperty("autoBackupKeepCount", autoBackupKeepCount);
+            root.addProperty("trashRetentionDays",  trashRetentionDays);
             Path tmp = dir.resolve(CONFIG_FILE + ".tmp");
             Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

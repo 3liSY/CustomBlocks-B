@@ -40,6 +40,7 @@ public final class BackgroundRemover {
     public static final String NONE   = "none";
     public static final String EDGES  = "edges";   // background only — edge-connected
     public static final String CLOSED = "closed";  // background + enclosed areas
+    public static final String SMART  = "smart";   // offline subject isolation (Group 10 — pure Java)
 
     /**
      * Player-facing strength 0-100 maps linearly onto CIE-LAB ΔE [0, MAX_DELTA_E]. Kept at 22
@@ -58,6 +59,10 @@ public final class BackgroundRemover {
      *  near-black subject isn't swallowed by a black background. Saturated-but-bright subjects
      *  (e.g. pure red, value 255) stay on black; only genuinely dark subjects flip. */
     private static final int FILL_DARK_VALUE = 64;
+    /** A silhouette pixel with HSV value below this would vanish into a black fill. */
+    private static final int EDGE_DARK_VALUE = 64;
+    /** If at least this fraction of the silhouette is dark, fill WHITE so the outline stays visible. */
+    private static final double EDGE_DARK_FRACTION = 0.45;
     /** After resize, pixels with every channel ≤ this snap to pure black (kills bicubic gray halos). */
     private static final int SNAP_MAX = 24;
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
@@ -65,9 +70,18 @@ public final class BackgroundRemover {
     /**
      * Remove the background and return cleaned PNG bytes. On mode {@code none} (or any failure)
      * the original bytes are returned unchanged — background removal must never break a retexture.
+     * Uses the smart black/white fill (auto-picks based on subject brightness).
      */
     public static byte[] apply(byte[] input, String mode, int tolerance) {
         return process(input, mode, tolerance, null); // null → smart black/white fill
+    }
+
+    /**
+     * Remove the background and paint the removed area with {@code fillRgb} (0xRRGGBB).
+     * Used by BgStudio when the player picks a custom fill colour.
+     */
+    public static byte[] apply(byte[] input, String mode, int tolerance, int fillRgb) {
+        return process(input, mode, tolerance, 0xFF000000 | (fillRgb & 0xFFFFFF));
     }
 
     /**
@@ -84,9 +98,13 @@ public final class BackgroundRemover {
     /** Shared pipeline: detect the background, then paint it {@code forcedFill} (or smart fill when null). */
     private static byte[] process(byte[] input, String mode, int tolerance, Integer forcedFill) {
         String m = normalize(mode);
-        if (NONE.equals(m) || tolerance <= 0) return input; // off
+        final boolean smart = SMART.equals(m);
+        if (NONE.equals(m)) return input; // off
+        // Smart mode auto-picks a sensible strength when none is given; the classic modes need one.
+        int effTol = tolerance > 0 ? tolerance : (smart ? 35 : 0);
+        if (effTol <= 0) return input; // off
         // Map the player-facing 0-100 strength onto a CIE-LAB ΔE distance.
-        final double tol = Math.max(0, Math.min(100, tolerance)) / 100.0 * MAX_DELTA_E;
+        final double tol = Math.max(0, Math.min(100, effTol)) / 100.0 * MAX_DELTA_E;
         final double fringeTol = tol + FRINGE_EXTRA;
         try {
             BufferedImage src = ImageIO.read(new ByteArrayInputStream(input));
@@ -122,9 +140,9 @@ public final class BackgroundRemover {
                 }
             }
 
-            // Stage 1b (CLOSED only) — remove enclosed areas matching the bg colour, even if
+            // Stage 1b (CLOSED + SMART) — remove enclosed areas matching the bg colour, even if
             // they aren't edge-connected (a logo's trapped inner background, for example).
-            if (CLOSED.equals(m)) {
+            if (CLOSED.equals(m) || smart) {
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
                         if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, bgLab, tol)) {
@@ -133,6 +151,20 @@ public final class BackgroundRemover {
                     }
                 }
             }
+
+            // Stage 1c — despeckle the background mask. This is the fix for the old "tiny edge
+            // pixels block removal" bug, and it never touches the colour tolerance: a 1-pixel
+            // morphological close (dilate→erode) bridges the hairline gaps and pinhole specks that
+            // a near-tolerance pixel leaves behind and that wall off the flood-fill, then any tiny
+            // isolated foreground island left over is dropped into the background.
+            BgMask.despeckle(isBg, w, h);
+
+            // Stage 1d (SMART only) — keep just the single largest connected subject and drop every
+            // other free-floating foreground blob into the background. This is the offline "smart"
+            // win: a busy/cluttered background that the colour flood can't fully reach is removed
+            // because only the main subject survives. Pure heuristic — never neural — but it isolates
+            // a clear central subject far better than corners/flood alone.
+            if (smart) BgMask.keepLargestForeground(isBg, w, h);
 
             // Stage 2 — 1-pixel anti-fringe dilation: mark non-bg pixels adjacent to bg that are
             // within the looser tolerance, removing the bright halo anti-aliasing leaves behind.
@@ -156,25 +188,37 @@ public final class BackgroundRemover {
                 }
             }
 
-            // Smart fill: choose the background colour from the subject's brightness. Default is
-            // BLACK (old-version parity); but if the subject itself is near-black a black fill
-            // would swallow it (black-on-black). Brightness = mean HSV "value" (max RGB channel)
-            // over the foreground, so a saturated-but-bright subject (pure red = value 255) keeps
-            // a black fill and only a genuinely dark subject flips to WHITE.
-            long valueSum = 0, fgCount = 0;
+            // Smart fill: choose the background colour so the subject stays visible against it.
+            // Default is BLACK (old-version parity). Flip to WHITE when EITHER:
+            //   • the whole subject is near-black (black-on-black), OR
+            //   • the subject's SILHOUETTE (its outermost ring, the pixels touching the background)
+            //     is mostly dark — e.g. a logo with a black outline. A black fill there would
+            //     swallow that outline into the background (the Jordan-emblem case); a white fill
+            //     keeps it crisp. Brightness = HSV "value" (max RGB channel), so a saturated-but-
+            //     bright subject (pure red = 255) still keeps a black fill.
+            long valueSum = 0, fgCount = 0, edgeCount = 0, edgeDark = 0;
             if (forcedFill == null) { // brightness scan only feeds the smart fill
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
                         if (isBg[x][y]) continue;
                         int px = img.getRGB(x, y);
                         int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
-                        valueSum += Math.max(r, Math.max(g, b));
+                        int v = Math.max(r, Math.max(g, b));
+                        valueSum += v;
                         fgCount++;
+                        boolean onEdge = false;
+                        for (int[] d : DIRS) {
+                            int nx = x + d[0], ny = y + d[1];
+                            if (nx >= 0 && nx < w && ny >= 0 && ny < h && isBg[nx][ny]) { onEdge = true; break; }
+                        }
+                        if (onEdge) { edgeCount++; if (v < EDGE_DARK_VALUE) edgeDark++; }
                     }
                 }
             }
+            boolean subjectDark = fgCount > 0 && valueSum / fgCount < FILL_DARK_VALUE;
+            boolean outlineDark = edgeCount > 0 && (double) edgeDark / edgeCount >= EDGE_DARK_FRACTION;
             int fill = forcedFill != null ? forcedFill
-                    : (fgCount > 0 && valueSum / fgCount < FILL_DARK_VALUE) ? WHITE : BLACK;
+                    : (subjectDark || outlineDark) ? WHITE : BLACK;
             int fillR = (fill >> 16) & 0xFF, fillG = (fill >> 8) & 0xFF, fillB = fill & 0xFF;
 
             // Stage 3 — paint the background with the chosen fill; flatten any leftover transparency
@@ -218,9 +262,10 @@ public final class BackgroundRemover {
     public static String fromArg(String raw) {
         if (raw == null) return null;
         return switch (raw.trim().toLowerCase(Locale.ROOT)) {
-            case "none",   "nobgremove"     -> NONE;
-            case "edges",  "bgremove"       -> EDGES;
-            case "closed", "bgremove&more"  -> CLOSED;
+            case "none",   "nobgremove"           -> NONE;
+            case "edges",  "bgremove"             -> EDGES;
+            case "closed", "bgremove&more"        -> CLOSED;
+            case "smart",  "ai", "bgsmart"        -> SMART;
             default -> null;
         };
     }
@@ -230,6 +275,7 @@ public final class BackgroundRemover {
         return switch (normalize(mode)) {
             case EDGES  -> "Background Removal Only";
             case CLOSED -> "Background + Closed Areas Removal";
+            case SMART  -> "Smart Removal (offline)";
             default     -> "No Background Removal";
         };
     }
@@ -239,47 +285,59 @@ public final class BackgroundRemover {
         return switch (normalize(mode)) {
             case EDGES  -> "BgRemove";
             case CLOSED -> "BgRemove&More";
+            case SMART  -> "BgSmart";
             default     -> "NoBgRemove";
         };
     }
 
-    /** Next mode in the cycle none → edges → closed → none (used by the config menu). */
+    /** Next mode in the cycle none → edges → closed → smart → none (used by the config menu). */
     public static String next(String mode) {
         return switch (normalize(mode)) {
-            case NONE  -> EDGES;
-            case EDGES -> CLOSED;
-            default    -> NONE;
+            case NONE   -> EDGES;
+            case EDGES  -> CLOSED;
+            case CLOSED -> SMART;
+            default     -> NONE;
         };
     }
 
     /**
-     * After the texture has been resized, snap near-black pixels to pure #000000. Bicubic
-     * downscaling blends the black background with neighbouring bright pixels, leaving dark-gray
-     * halos; this restores a true black there. No-op when mode is none, or when the smart fill
-     * chose WHITE (a dark subject) — snapping there would turn the subject into black specks.
-     * Conservative: only pixels already very close to black are touched, so a bright subject is
-     * untouched.
+     * After the texture has been resized, snap near-fill pixels to the exact fill colour.
+     * The classic case is snapping near-black halos to pure black after bicubic downscaling.
+     * No-op when mode is none. When {@code fillRgb} is -1, defaults to smart detection (reads
+     * the corners — if they aren't near-black, bails out so a dark subject isn't destroyed).
      */
     public static byte[] snapBackgroundBlack(byte[] png, String mode, int tolerance) {
+        return snapBackgroundColor(png, mode, tolerance, -1);
+    }
+
+    /** Snap near-fill-colour pixels after resize. {@code fillRgb} = -1 for smart (detect from corners). */
+    public static byte[] snapBackgroundColor(byte[] png, String mode, int tolerance, int fillRgb) {
         if (NONE.equals(normalize(mode)) || tolerance <= 0) return png;
         try {
             BufferedImage read = ImageIO.read(new ByteArrayInputStream(png));
             if (read == null) return png;
             BufferedImage img = toArgb(read);
             int w = img.getWidth(), h = img.getHeight();
-            // Smart fill may have used a WHITE background (dark subject). The near-black snap is
-            // only correct on a BLACK background; on a white-fill block it would blacken the dark
-            // subject. Read the fill from the corners and bail if it isn't black.
-            int bg = sampleCornerBackground(img, w, h);
-            if (((bg >> 16) & 0xFF) > SNAP_MAX || ((bg >> 8) & 0xFF) > SNAP_MAX || (bg & 0xFF) > SNAP_MAX) {
-                return png; // non-black fill → nothing to snap
+            int targetR, targetG, targetB;
+            if (fillRgb >= 0) {
+                targetR = (fillRgb >> 16) & 0xFF;
+                targetG = (fillRgb >> 8) & 0xFF;
+                targetB = fillRgb & 0xFF;
+            } else {
+                // Smart: read the fill from the corners and bail if it isn't near-black.
+                int bg = sampleCornerBackground(img, w, h);
+                if (((bg >> 16) & 0xFF) > SNAP_MAX || ((bg >> 8) & 0xFF) > SNAP_MAX || (bg & 0xFF) > SNAP_MAX) {
+                    return png; // non-black fill → nothing to snap
+                }
+                targetR = 0; targetG = 0; targetB = 0;
             }
+            int target = 0xFF000000 | (targetR << 16) | (targetG << 8) | targetB;
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
                     int px = img.getRGB(x, y);
                     int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
-                    if (r <= SNAP_MAX && g <= SNAP_MAX && b <= SNAP_MAX) {
-                        img.setRGB(x, y, BLACK);
+                    if (Math.abs(r - targetR) <= SNAP_MAX && Math.abs(g - targetG) <= SNAP_MAX && Math.abs(b - targetB) <= SNAP_MAX) {
+                        img.setRGB(x, y, target);
                     }
                 }
             }

@@ -85,6 +85,18 @@ public final class EditorMenu {
                     GuiRouter.runAndReopen(p, "setcategory " + id + " " + next, MenuKey.of(Dest.EDITOR, id));
                 });
 
+        m.set(25, Icons.of(Items.STONECUTTER, "§eShape", "§7Slab, stairs, carpet, cross…",
+                        "§7Click to open the shape picker"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.SHAPE_EDITOR, id)));
+
+        m.set(26, Icons.of(Items.ITEM_FRAME, "§eFaces", "§7A different texture per side",
+                        "§7Click to open the face editor"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.FACE_EDITOR, id)));
+
+        m.set(28, Icons.of(Items.ANVIL, "§eChange ID", "§7Give this block a new id",
+                        "§7Texture & placed blocks stay — only the id changes"),
+                (p, b, a) -> ReIdMenu.openAnvil(p, id, () -> GuiRouter.render(p, MenuKey.of(Dest.EDITOR, id))));
+
         m.set(29, Icons.of(Items.NAME_TAG, "§eRename", "§7Set a new display name"),
                 (p, b, a) -> GuiRouter.promptCommand(p, "/cb rename " + id + " ", "rename " + id));
 
@@ -94,8 +106,20 @@ public final class EditorMenu {
         m.set(31, Icons.of(Items.WRITABLE_BOOK, "§eNote", "§7Attach a note to this block"),
                 (p, b, a) -> GuiRouter.promptCommand(p, "/cb note " + id + " ", "note " + id));
 
+        m.set(32, Icons.of(Items.LIME_DYE, "§eColour Variants", "§7Lighter / darker / complementary…",
+                        "§7Spin off new colour-shifted blocks"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.COLOR_VARIANTS, id)));
+
         m.set(33, Icons.of(Items.TNT, "§c§lDelete", "§7Remove this block", "§cClick, then confirm in chat"),
                 (p, b, a) -> GuiRouter.confirmCommand(p, "/cb delete " + id, "§c[Confirm DELETE " + id + "]"));
+
+        m.set(34, Icons.of(Items.SHEARS, "§eBackground Studio", "§7Remove / change this block's background",
+                        "§7corners · enclosed · smart (offline)"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.BGSTUDIO, id)));
+
+        m.set(35, Icons.of(Items.SPYGLASS, "§eLive Recolour", "§7Drag hue/sat/bright with a live preview",
+                        "§8Opens a screen — needs the mod client-side"),
+                (p, b, a) -> GuiRouter.runCommand(p, "livecolor " + id));
 
         m.set(45, Icons.back(), (p, b, a) -> GuiRouter.back(p));
         m.set(53, Icons.close(), (p, b, a) -> p.closeHandledScreen());

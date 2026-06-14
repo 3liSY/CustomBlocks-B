@@ -56,6 +56,12 @@ public final class BlockNotesManager {
         if (NOTES.remove(id) != null) save();
     }
 
+    /** Move a note from {@code oldId} to {@code newId} (for /cb reid). No-op if oldId had no note. */
+    public static synchronized void renameId(String oldId, String newId) {
+        String note = NOTES.remove(oldId);
+        if (note != null) { NOTES.put(newId, note); save(); }
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
 
     private static void load() {

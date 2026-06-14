@@ -66,12 +66,19 @@ public final class UtilityCommands {
                 .executes(UtilityCommands::exportMenu)
                 .then(CommandManager.literal("json").executes(ctx -> export(ctx, "json")))
                 .then(CommandManager.literal("txt").executes(ctx -> export(ctx, "txt")))
+                .then(CommandManager.literal("csv").executes(ctx -> export(ctx, "csv")))
+                .then(CommandManager.literal("md").executes(ctx -> export(ctx, "md")))
+                .then(CommandManager.literal("html").executes(ctx -> export(ctx, "html")))
+                .then(CommandManager.literal("yaml").executes(ctx -> export(ctx, "yaml")))
+                .then(CommandManager.literal("png").executes(UtilityCommands::exportPngAll))
                 .then(CommandManager.literal("vault").executes(UtilityCommands::exportVaultAll))
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
                         .executes(ctx -> exportOneMenu(ctx, StringArgumentType.getString(ctx, "id")))
                         .then(CommandManager.literal("config")
                                 .executes(ctx -> exportOneConfig(ctx, StringArgumentType.getString(ctx, "id"))))
+                        .then(CommandManager.literal("png")
+                                .executes(ctx -> exportOnePng(ctx, StringArgumentType.getString(ctx, "id"))))
                         .then(CommandManager.literal("vault")
                                 .executes(ctx -> exportOneVault(ctx, StringArgumentType.getString(ctx, "id"))))
                         .then(CommandManager.literal("download")
@@ -203,6 +210,14 @@ public final class UtilityCommands {
                 .append(Text.literal(" "))
                 .append(runButton("[.txt]", "/cb export txt", "Bulk export all blocks to TXT"))
                 .append(Text.literal(" "))
+                .append(runButton("[.csv]", "/cb export csv", "Bulk export to CSV (open in a spreadsheet)"))
+                .append(Text.literal(" "))
+                .append(runButton("[.md]", "/cb export md", "Bulk export to a Markdown table"))
+                .append(Text.literal(" "))
+                .append(runButton("[.html]", "/cb export html", "Bulk export to a viewable HTML table"))
+                .append(Text.literal(" "))
+                .append(runButton("[.png]", "/cb export png", "Save every block's texture as a .png image"))
+                .append(Text.literal(" "))
                 .append(runButton("[to Vault]", "/cb export vault", "Upload all blocks to the Vault"))
                 .append(Text.literal("  §7Per-block: §f/cb export <id>"));
         src.sendFeedback(() -> msg, false);
@@ -229,6 +244,29 @@ public final class UtilityCommands {
         return 1;
     }
 
+    /** /cb export png — write every block's baked texture PNG into exports/textures-&lt;stamp&gt;/ */
+    private static int exportPngAll(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        Collection<SlotData> all = SlotManager.assignedSlots();
+        if (all.isEmpty()) { Chat.info(src, "Nothing to export yet — make a block with /cb create <id>"); return 1; }
+        BlockExporter.PngBatch r = BlockExporter.exportAllPng(all);
+        if (r == null) { Chat.error(src, "Export failed — write error"); return 0; }
+        Chat.success(src, "Exported §e" + r.written() + "§r texture PNG(s) → §7exports/" + r.dir().getFileName()
+                + (r.skipped() > 0 ? " §8(" + r.skipped() + " had no texture)" : ""));
+        return 1;
+    }
+
+    /** /cb export &lt;id&gt; png — write that block's texture to exports/&lt;id&gt;.png */
+    private static int exportOnePng(CommandContext<ServerCommandSource> ctx, String id) {
+        ServerCommandSource src = ctx.getSource();
+        SlotData d = SlotManager.getById(id);
+        if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
+        Path file = BlockExporter.exportPng(d);
+        if (file == null) { Chat.error(src, "No texture to export for \"" + id + "\"."); return 0; }
+        Chat.success(src, "Saved §e" + id + "§r texture → §7exports/" + id + ".png");
+        return 1;
+    }
+
     /** /cb export vault — bulk vault upload (Phase 14 stub) */
     private static int exportVaultAll(CommandContext<ServerCommandSource> ctx) {
         Chat.info(ctx.getSource(), "Vault sync is coming in Phase 14. Stay tuned!");
@@ -242,6 +280,8 @@ public final class UtilityCommands {
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + id + "§f: ")
                 .append(runButton("[to Config]", "/cb export " + id + " config", "Save " + id + ".json to exports folder"))
+                .append(Text.literal(" "))
+                .append(runButton("[.png]", "/cb export " + id + " png", "Save " + id + ".png (the block texture image)"))
                 .append(Text.literal(" "))
                 .append(runButton("[to Vault]", "/cb export " + id + " vault", "Upload to Block Vault"))
                 .append(Text.literal(" "))

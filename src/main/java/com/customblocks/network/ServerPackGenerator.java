@@ -19,6 +19,7 @@ import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
 import com.customblocks.image.ColorReplacer;
 import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import java.io.File;
@@ -64,9 +65,13 @@ public final class ServerPackGenerator {
                     if (tex == null || tex.length == 0) tex = PLACEHOLDER_PNG;
                     add(zos, tex(key), tex, written);
                     add(zos, blockstate(key), blockstateJson(MOD_ID + ":block/" + key), written);
-                    // M4 — faces with a painted override get a per-face cube model; the rest
-                    // of the block (and blocks with no overrides at all) shows the base texture.
-                    if (TextureStore.hasAnyFace(i)) {
+                    // Model selection, in priority order:
+                    //   non-full shape (G08) → a generated shape model (uses the base texture);
+                    //   else M4 per-face overrides → per-face cube; else the plain cube_all.
+                    String shape = SlotManager.shapeFor(i);
+                    if (!com.customblocks.block.BlockShapes.isFull(shape)) {
+                        add(zos, blockModel(key), shapeModelJson(shape, key), written);
+                    } else if (TextureStore.hasAnyFace(i)) {
                         for (String face : TextureStore.FACES) {
                             byte[] ft = TextureStore.loadFace(i, face);
                             if (ft != null && ft.length > 0) add(zos, tex(key + "_" + face), ft, written);
@@ -164,6 +169,55 @@ public final class ServerPackGenerator {
         m.addProperty("parent", "minecraft:block/cube");
         m.add("textures", tex);
         return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Model for a non-full shape (G08). "cross" uses the vanilla cross billboard; every other
+     * shape is built from BlockShapes' boxes as model elements, textured with the base on all faces.
+     * Geometry comes from the SAME BlockShapes boxes the collision uses, so look matches feel.
+     */
+    private static byte[] shapeModelJson(String shape, String key) {
+        String base = MOD_ID + ":block/" + key;
+        JsonObject m = new JsonObject();
+        JsonObject tex = new JsonObject();
+        tex.addProperty("particle", base);
+
+        if (com.customblocks.block.BlockShapes.isCross(shape)) {
+            m.addProperty("parent", "minecraft:block/cross");
+            tex.addProperty("cross", base);
+            m.add("textures", tex);
+            return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
+        }
+
+        m.addProperty("parent", "minecraft:block/block");
+        tex.addProperty("all", base);
+        m.add("textures", tex);
+        JsonArray elements = new JsonArray();
+        int[][] boxes = com.customblocks.block.BlockShapes.boxes(shape);
+        if (boxes != null) {
+            for (int[] b : boxes) elements.add(element(b));
+        }
+        m.add("elements", elements);
+        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /** One model element (box) with the base texture on all six faces, auto-UV. */
+    private static com.google.gson.JsonObject element(int[] b) {
+        JsonObject el = new JsonObject();
+        JsonArray from = new JsonArray();
+        from.add(b[0]); from.add(b[1]); from.add(b[2]);
+        JsonArray to = new JsonArray();
+        to.add(b[3]); to.add(b[4]); to.add(b[5]);
+        el.add("from", from);
+        el.add("to", to);
+        JsonObject faces = new JsonObject();
+        for (String face : new String[]{"down", "up", "north", "south", "west", "east"}) {
+            JsonObject f = new JsonObject();
+            f.addProperty("texture", "#all");
+            faces.add(face, f);
+        }
+        el.add("faces", faces);
+        return el;
     }
 
     private static byte[] itemJson(String parent) {

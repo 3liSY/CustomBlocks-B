@@ -2,13 +2,15 @@
  * BlockExporter.java
  *
  * Responsibility: Write/read block definitions for the Phase 9 import/export system.
- *   - exportAll  — timestamped bulk JSON/TXT for readability/backup (not round-trip importable)
+ *   - exportAll  — timestamped bulk list for readability/backup (not round-trip importable),
+ *                  in json/txt/csv/md/html/yaml
  *   - exportOne  — per-block schema-v1 JSON in exports/<id>.json (importable by importFolder)
+ *   - exportPng / exportAllPng — write the baked block texture(s) as usable .png image files
  *   - importFolder — scan a directory for per-block JSONs and create any missing blocks
  * All writes use atomic temp-rename (NFR-13).
  *
- * Depends on: SlotData, SlotManager
- * Called by:  UtilityCommands
+ * Depends on: SlotData, SlotManager, TextureStore
+ * Called by:  UtilityCommands, BulkExportCommands
  */
 package com.customblocks.core;
 
@@ -27,6 +29,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Locale;
 
 public final class BlockExporter {
 
@@ -36,9 +39,13 @@ public final class BlockExporter {
 
     private BlockExporter() {}
 
-    /** Returns true if {@code format} is a supported bulk export format. */
+    /** Returns true if {@code format} is a supported TEXT bulk export format (png is separate — see exportPng). */
     public static boolean isSupported(String format) {
-        return "json".equalsIgnoreCase(format) || "txt".equalsIgnoreCase(format);
+        if (format == null) return false;
+        return switch (format.toLowerCase(Locale.ROOT)) {
+            case "json", "txt", "csv", "md", "markdown", "html", "yaml", "yml" -> true;
+            default -> false;
+        };
     }
 
     /**
@@ -47,16 +54,62 @@ public final class BlockExporter {
      */
     public static Path exportAll(String format, Collection<SlotData> blocks) {
         if (!isSupported(format)) return null;
-        String fmt = format.toLowerCase();
+        String ext;
+        String content;
+        switch (format.toLowerCase(Locale.ROOT)) {
+            case "json"           -> { ext = "json"; content = toBulkJson(blocks); }
+            case "txt"            -> { ext = "txt";  content = toTxt(blocks); }
+            case "csv"            -> { ext = "csv";  content = toCsv(blocks); }
+            case "md", "markdown" -> { ext = "md";   content = toMarkdown(blocks); }
+            case "html"           -> { ext = "html"; content = toHtml(blocks); }
+            case "yaml", "yml"    -> { ext = "yml";  content = toYaml(blocks); }
+            default               -> { return null; }
+        }
         try {
             Path dir = Path.of(DIR);
             Files.createDirectories(dir);
-            Path file = dir.resolve("blocks-" + LocalDateTime.now().format(STAMP) + "." + fmt);
-            atomicWrite(file, fmt.equals("json") ? toBulkJson(blocks) : toTxt(blocks));
+            Path file = dir.resolve("blocks-" + LocalDateTime.now().format(STAMP) + "." + ext);
+            atomicWrite(file, content);
             return file;
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /** Export one block's baked texture PNG to exports/&lt;id&gt;.png. Null if it has no texture or the write fails. */
+    public static Path exportPng(SlotData d) {
+        byte[] png = TextureStore.load(d.index());
+        if (png == null || png.length == 0) return null;
+        try {
+            Path dir = Path.of(DIR);
+            Files.createDirectories(dir);
+            Path file = dir.resolve(d.customId() + ".png");
+            atomicWriteBytes(file, png);
+            return file;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Outcome of a bulk PNG export: where it went, how many wrote, how many had no texture. */
+    public record PngBatch(Path dir, int written, int skipped) {}
+
+    /** Export every given block's baked texture PNG into exports/textures-&lt;stamp&gt;/. Null only on directory failure. */
+    public static PngBatch exportAllPng(Collection<SlotData> blocks) {
+        Path dir = Path.of(DIR, "textures-" + LocalDateTime.now().format(STAMP));
+        int written = 0, skipped = 0;
+        try {
+            Files.createDirectories(dir);
+        } catch (Exception e) {
+            return null;
+        }
+        for (SlotData d : blocks) {
+            byte[] png = TextureStore.load(d.index());
+            if (png == null || png.length == 0) { skipped++; continue; }
+            try { atomicWriteBytes(dir.resolve(d.customId() + ".png"), png); written++; }
+            catch (Exception e) { skipped++; }
+        }
+        return new PngBatch(dir, written, skipped);
     }
 
     /**
@@ -173,9 +226,110 @@ public final class BlockExporter {
         return sb.toString();
     }
 
+    private static String toCsv(Collection<SlotData> blocks) {
+        String nl = System.lineSeparator();
+        StringBuilder sb = new StringBuilder("id,name,slot,glow,hardness,sound,collision,category").append(nl);
+        for (SlotData d : blocks)
+            sb.append(csv(d.customId())).append(',')
+              .append(csv(d.displayName())).append(',')
+              .append(d.index()).append(',')
+              .append(d.glow()).append(',')
+              .append(d.hardness()).append(',')
+              .append(csv(d.soundType())).append(',')
+              .append(!d.noCollision()).append(',')
+              .append(csv(d.category())).append(nl);
+        return sb.toString();
+    }
+
+    private static String toMarkdown(Collection<SlotData> blocks) {
+        String nl = System.lineSeparator();
+        StringBuilder sb = new StringBuilder();
+        sb.append("# CustomBlocks — ").append(blocks.size()).append(" block(s)").append(nl).append(nl);
+        sb.append("| ID | Name | Slot | Glow | Hardness | Sound | Collision | Category |").append(nl);
+        sb.append("|----|------|------|------|----------|-------|-----------|----------|").append(nl);
+        for (SlotData d : blocks)
+            sb.append("| `").append(md(d.customId())).append("` | ")
+              .append(md(d.displayName())).append(" | ")
+              .append(d.index()).append(" | ")
+              .append(d.glow()).append(" | ")
+              .append(d.hardness()).append(" | ")
+              .append(md(d.soundType())).append(" | ")
+              .append(d.noCollision() ? "no" : "yes").append(" | ")
+              .append(md(d.category().isEmpty() ? "—" : d.category())).append(" |").append(nl);
+        return sb.toString();
+    }
+
+    private static String toHtml(Collection<SlotData> blocks) {
+        String nl = System.lineSeparator();
+        StringBuilder sb = new StringBuilder();
+        sb.append("<!DOCTYPE html>").append(nl).append("<html lang=\"en\"><head><meta charset=\"UTF-8\">").append(nl)
+          .append("<title>CustomBlocks — Block List</title>").append(nl)
+          .append("<style>body{font-family:system-ui,Arial,sans-serif;margin:2rem;background:#1b1b1f;color:#e8e8ea}")
+          .append("h1{font-weight:500}table{border-collapse:collapse;width:100%}")
+          .append("th,td{border:1px solid #3a3a40;padding:6px 10px;text-align:left}")
+          .append("th{background:#26262b}tr:nth-child(even){background:#222227}code{color:#7fd1ff}</style>").append(nl)
+          .append("</head><body>").append(nl)
+          .append("<h1>CustomBlocks — ").append(blocks.size()).append(" block(s)</h1>").append(nl)
+          .append("<table><thead><tr><th>ID</th><th>Name</th><th>Slot</th><th>Glow</th><th>Hardness</th>")
+          .append("<th>Sound</th><th>Collision</th><th>Category</th></tr></thead><tbody>").append(nl);
+        for (SlotData d : blocks)
+            sb.append("<tr><td><code>").append(html(d.customId())).append("</code></td><td>")
+              .append(html(d.displayName())).append("</td><td>").append(d.index()).append("</td><td>")
+              .append(d.glow()).append("</td><td>").append(d.hardness()).append("</td><td>")
+              .append(html(d.soundType())).append("</td><td>").append(d.noCollision() ? "no" : "yes")
+              .append("</td><td>").append(html(d.category().isEmpty() ? "—" : d.category()))
+              .append("</td></tr>").append(nl);
+        sb.append("</tbody></table></body></html>").append(nl);
+        return sb.toString();
+    }
+
+    private static String toYaml(Collection<SlotData> blocks) {
+        String nl = System.lineSeparator();
+        StringBuilder sb = new StringBuilder("blocks:").append(nl);
+        for (SlotData d : blocks)
+            sb.append("  - id: ").append(yaml(d.customId())).append(nl)
+              .append("    name: ").append(yaml(d.displayName())).append(nl)
+              .append("    slot: ").append(d.index()).append(nl)
+              .append("    glow: ").append(d.glow()).append(nl)
+              .append("    hardness: ").append(d.hardness()).append(nl)
+              .append("    sound: ").append(yaml(d.soundType())).append(nl)
+              .append("    collision: ").append(!d.noCollision()).append(nl)
+              .append("    category: ").append(yaml(d.category())).append(nl);
+        return sb.toString();
+    }
+
+    private static String csv(String s) {
+        if (s == null) return "";
+        return (s.contains(",") || s.contains("\"") || s.contains("\n"))
+                ? "\"" + s.replace("\"", "\"\"") + "\"" : s;
+    }
+
+    private static String md(String s) {
+        if (s == null) return "";
+        return s.replace("|", "\\|").replace("\n", " ").replace("\r", " ");
+    }
+
+    private static String html(String s) {
+        if (s == null) return "";
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                .replace("\"", "&quot;").replace("'", "&#39;");
+    }
+
+    private static String yaml(String s) {
+        if (s == null) return "\"\"";
+        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", " ").replace("\r", " ") + "\"";
+    }
+
     private static void atomicWrite(Path file, String content) throws IOException {
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         Files.writeString(tmp, content, StandardCharsets.UTF_8);
+        Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
+    private static void atomicWriteBytes(Path file, byte[] bytes) throws IOException {
+        Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+        Files.write(tmp, bytes);
         Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
     }
 }

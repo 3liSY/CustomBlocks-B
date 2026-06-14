@@ -65,6 +65,18 @@ public final class ChestMenu {
         return this;
     }
 
+    /**
+     * Frame the perimeter two-tone: edges in one pane, the four corners in a darker one
+     * (the GUI Design Guide's "picture frame" — see docs/GUI_DESIGN_GUIDE.md §3).
+     */
+    public ChestMenu frame(ItemStack edge, ItemStack corner) {
+        int last = size() - 9;
+        for (int i = 0; i < 9; i++) { set(i, edge); set(last + i, edge); }
+        for (int r = 1; r < rows - 1; r++) { set(r * 9, edge); set(r * 9 + 8, edge); }
+        set(0, corner); set(8, corner); set(last, corner); set(last + 8, corner);
+        return this;
+    }
+
     public ChestMenu set(int slot, ItemStack stack) {
         if (slot >= 0 && slot < size() && stack != null) inventory.setStack(slot, stack);
         return this;

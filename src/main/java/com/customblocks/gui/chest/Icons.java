@@ -53,7 +53,7 @@ public final class Icons {
 
     /** Standard back-arrow button. */
     public static ItemStack back() {
-        return of(Items.ARROW, "§eBack", "§8Return to the previous menu");
+        return of(Items.ARROW, "§eBack", "§8Previous menu — or home if you started here");
     }
 
     /** Standard close button. */

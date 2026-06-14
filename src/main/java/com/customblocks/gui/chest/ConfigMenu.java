@@ -94,6 +94,20 @@ public final class ConfigMenu {
                 "§aClick §7→ open the colour editor"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.HEX_COLORS)));
 
+        // ── Auto-backup (editable: left = interval, right = keep count) ──────
+        int autoIv = CustomBlocksConfig.autoBackupInterval;
+        m.set(33, Icons.glint(Items.BARREL, "§a§lAuto-Backup §f→ "
+                        + (autoIv <= 0 ? "§cOFF" : "§aevery " + autoIv + " min"),
+                "§7The server saves a backup on a timer and",
+                "§7prunes old auto-backups automatically.",
+                "§7Keep newest: §f" + CustomBlocksConfig.autoBackupKeepCount + " §8auto-backup(s)",
+                "§aLeft-click §7→ interval §8(off→5→15→30→60→120→360)",
+                "§aRight-click §7→ how many to keep"),
+                (p, b, a) -> {
+                    if (b == 1) GuiRouter.runAndReopen(p, "config autobackup keep", MenuKey.of(Dest.CONFIG));
+                    else GuiRouter.runAndReopen(p, "config autobackup interval", MenuKey.of(Dest.CONFIG));
+                });
+
         // ── Feature flags (read-only) ─────────────────────────────────────
         m.set(28, Icons.of(CustomBlocksConfig.hudEnabled ? Items.GLOWSTONE : Items.GLOWSTONE_DUST,
                 "§e§lBlock HUD §f= " + (CustomBlocksConfig.hudEnabled ? "§aON" : "§cOFF"),

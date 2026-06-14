@@ -39,6 +39,13 @@ public final class ArabicCommands {
         // /cb arabic letter <name> — single letter
         arabic.then(CommandManager.literal("letter")
                 .then(CommandManager.argument("name", StringArgumentType.word())
+                        .suggests((c, b) -> {
+                            String typed = b.getRemaining().toLowerCase(java.util.Locale.ROOT);
+                            for (ArabicLetterMap.Letter l : ArabicLetterMap.ALL) {
+                                if (l.nameEn().toLowerCase(java.util.Locale.ROOT).startsWith(typed)) b.suggest(l.nameEn());
+                            }
+                            return b.buildFuture();
+                        })
                         .executes(ctx -> importLetter(ctx,
                                 StringArgumentType.getString(ctx, "name")))));
 

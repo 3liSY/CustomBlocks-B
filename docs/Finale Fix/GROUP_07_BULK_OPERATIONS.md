@@ -56,14 +56,28 @@
 
 ### 1. Filter Syntax
 
-All bulk commands accept a filter argument that selects which blocks to operate on:
+All bulk commands accept a filter argument that selects which blocks to operate on. The
+resolver lives in `core/BulkScope.java` (ported + upgraded from the old mod's `BulkScope`,
+adapted to the new immutable `SlotData` record + `SlotManager` API).
+
+**Core filters (required by this group):**
 
 | Filter | Meaning |
 |---|---|
-| `category:<name>` | All blocks in that category |
-| `id:<prefix>` | All blocks whose ID starts with the prefix |
+| `category:<name>` | All blocks in that category (case-insensitive exact match) |
+| `id:<prefix>` | All blocks whose ID starts with the prefix *(new — old mod only did exact id)* |
 | `name:<substring>` | All blocks whose display name contains the substring |
 | `all` | All blocks (requires confirmation even if ≤ 10) |
+
+**Bonus filters (recycled from the old mod's resolver, kept as free extras):**
+
+| Filter | Meaning |
+|---|---|
+| `name:<prefix>*` | Display name *starts with* the prefix (wildcard form of `name:`) |
+| `favorite:yes` / `favorite:no` | Favorited / not favorited by the running player |
+| `locked:yes` / `locked:no` | Locked / unlocked blocks |
+| `<id1>,<id2>,...` | Explicit comma-separated id list |
+| `<id>` | A single block by exact id |
 
 Example: `/cb bulkdelete category:test` — deletes all blocks in the "test" category.
 
@@ -237,6 +251,42 @@ Check `config/customblocks/cloud_exports/` — ZIP file present.
 
 **Pass:** GUI opens with all sections.
 **Fail:** Command missing or GUI empty.
+
+---
+
+## Implementation status
+
+> **Slice 1 — built, NOT verified.** Awaiting the developer's in-game test (the golden rule:
+> nothing is ✅ until tested in-game). Build is green (compile + 3 gates); jar staged at
+> `.minecraft/mods/customblocks-1.0.0.jar`.
+
+**Slice 1 ships (covers G07.1–G07.4):**
+
+| Piece | Where |
+|---|---|
+| Filter resolver (core + bonus filters above) | `core/BulkScope.java` (new) |
+| `/cb bulkproperty <filter> <glow\|hardness\|sound\|collision> <value>` | `command/handlers/BulkCommands.java` (new) |
+| Confirm guard — `/cb confirm` / `/cb cancel`, 60s auto-expire, fires when N > threshold or `all` | `BulkCommands` pending-action map |
+| `bulkConfirmThreshold` config (default 10) | `CustomBlocksConfig.java` |
+| **Batch undo** — whole batch = ONE undo entry (`/cb undo` reverts all) | `UndoManager.Kind.BATCH` + `recordBatch()`, applied in `HistoryCommands` |
+
+**Slice 2 adds (GUI + chat QOL — awaiting test):**
+
+| Piece | Where |
+|---|---|
+| `bulkproperty` is now **mainly a GUI** — `/cb bulkproperty` (no args) / `/cb bulkgui` / `/cb bulk` / dashboard tile open a click-driven builder | `gui/chest/BulkPropertyMenu.java` + `BulkFilterMenu.java` + `BulkSession.java` |
+| Click-to-pick filter (All / Favorited / Locked / per-category), property + value cycling, live "N matches" count, Apply | `BulkPropertyMenu` (thin front-end → runs the tested command) |
+| **Cleaner chat** — bulk result is one line, full id list on **hover**, clickable `[↩ Undo]` | `BulkCommands` + new `Chat` rich helpers (`runButton`/`suggestButton`/`hover`/`line`) |
+| Clickable confirm — `[✔ Confirm]` / `[✖ Cancel]` buttons instead of typing | `BulkCommands.sendConfirmPrompt` |
+
+Notes:
+- Locked blocks are **skipped** in a bulk op (reported in the result line), not errored.
+- `bulkproperty` properties: `glow`/`light`, `hardness`, `sound`, `collision` (mirror the single-block setters).
+- GUI filters cover the no-typing cases; `id:`/`name:` prefix filters stay on the chat command (need typed text).
+
+**Not yet built (later slices):** `bulkdelete / bulkrename / bulkreid / bulkexport / bulkmove /
+bulkduplicate / bulklock / bulkunlock / bulkfavorite / bulkunfavorite / bulksound / bulkrecolor`
+(edge-mode only) and `/cb bulkgui` (tests G07.5–G07.9). `bulkshape` is out — needs Group 08.
 
 ---
 

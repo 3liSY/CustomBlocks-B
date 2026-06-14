@@ -124,15 +124,26 @@ public class SlotBlock extends Block {
     }
 
     /**
+     * Live outline (selection box): matches the block's configured shape, read from SlotData each
+     * call so a /cb setshape updates already-placed blocks immediately. (The visible model comes
+     * from the resource pack; this is the server-side targeting/highlight box.)
+     */
+    @Override
+    public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
+        SlotData d = SlotManager.getBySlot(slotKey);
+        return BlockShapes.outline(d != null ? d.shape() : SlotData.DEFAULT_SHAPE);
+    }
+
+    /**
      * Live collision: a "passable" block (noCollision) has an empty collision box, so entities
-     * walk through it — but its outline shape is unchanged, so it still renders solid and can
-     * be targeted/broken. Read from SlotData each call, so placed blocks update immediately.
+     * walk through it. Otherwise the collision matches the configured shape (cross is walk-through
+     * like a plant). Read from SlotData each call, so placed blocks update immediately.
      */
     @Override
     public VoxelShape getCollisionShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         SlotData d = SlotManager.getBySlot(slotKey);
         if (d != null && d.noCollision()) return VoxelShapes.empty();
-        return super.getCollisionShape(state, world, pos, context);
+        return BlockShapes.collision(d != null ? d.shape() : SlotData.DEFAULT_SHAPE);
     }
 
     @Override

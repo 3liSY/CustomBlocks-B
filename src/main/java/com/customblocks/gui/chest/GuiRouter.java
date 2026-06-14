@@ -45,12 +45,15 @@ public final class GuiRouter {
         render(player, key);
     }
 
-    /** Go back one level; closes the screen if there is nothing beneath. */
+    /** Go back one level. A menu opened directly (e.g. /cb bulkgui) has nothing beneath —
+     *  Back then goes home to the Main Menu instead of closing; the ✖ Close button closes. */
     public static void back(ServerPlayerEntity player) {
         MenuKey prev = Nav.popToPrevious(player.getUuid());
-        MinecraftServer s = player.getServer();
-        if (s == null) return;
-        if (prev == null) { s.execute(player::closeHandledScreen); return; }
+        if (prev == null) {
+            Nav.reset(player.getUuid(), MenuKey.of(Dest.MAIN));
+            render(player, MenuKey.of(Dest.MAIN));
+            return;
+        }
         render(player, prev);
     }
 
@@ -110,6 +113,20 @@ public final class GuiRouter {
         });
     }
 
+    /** Close the chest and post a one-click chat line that fills the player's chat box with a command. */
+    public static void typeInChat(ServerPlayerEntity player, String command) {
+        MinecraftServer s = player.getServer();
+        if (s == null) return;
+        s.execute(() -> {
+            player.closeHandledScreen();
+            player.sendMessage(Text.literal(Chat.PREFIX + "§7Click to type: ")
+                    .append(Text.literal("§e" + command).styled(st -> st
+                            .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command))
+                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
+                                    Text.literal("§7Puts it in your chat box — edit or press Enter to run"))))), false);
+        });
+    }
+
     /** Close the chest and send a clickable chat prompt that pre-fills a command (text input). */
     public static void promptCommand(ServerPlayerEntity player, String suggest, String label) {
         MinecraftServer s = player.getServer();
@@ -139,8 +156,9 @@ public final class GuiRouter {
     private static ChestMenu build(ServerPlayerEntity player, MenuKey key) {
         return switch (key.dest()) {
             case MAIN -> MainMenu.build(player);
-            case BLOCK_LIST -> BlockListMenu.build(player, key.page());
+            case BLOCK_LIST -> BlockListMenu.build(player, key.arg(), key.page());
             case EDITOR -> EditorMenu.build(player, key.arg());
+            case REID -> ReIdMenu.build(player, key.page());
             case UNDO -> UndoMenu.build(player, false, key.page());
             case REDO -> UndoMenu.build(player, true, key.page());
             case HISTORY -> HistoryMenu.build(player, key.page());
@@ -157,6 +175,25 @@ public final class GuiRouter {
             case SEARCH -> SearchMenu.build(player, key.arg(), key.page());
             case HELP -> HelpMenu.build(player, key.arg(), key.page());
             case OMNI -> OmniMenu.build(player);
+            case BULK_HUB -> BulkHubMenu.build(player);
+            case BULK_SELECT -> BulkSelectMenu.build(player);
+            case BULK_ACTION -> BulkActionMenu.build(player);
+            case SHAPE_EDITOR -> ShapeEditorMenu.build(player, key.arg());
+            case FACE_EDITOR -> FaceEditorMenu.build(player, key.arg());
+            case BACKUP_LIST -> BackupMenu.build(player, key.page());
+            case BACKUP_CONFIRM -> BackupConfirmMenu.build(player, key.arg());
+            case CONFIG_CONFIRM -> ConfigWarnMenu.build(player);
+            case TRASH_LIST -> TrashMenu.build(player, key.page());
+            case TRASH_ENTRY -> TrashEntryMenu.build(player, key.arg());
+            case BROKEN_LIST -> BrokenBlocksMenu.build(player, key.page());
+            case BROKEN_CONFIRM -> BrokenConfirmMenu.build(player, key.arg());
+            case SAFETY -> SafetyMenu.build(player);
+            case BGSTUDIO -> BgStudioMenu.build(player, key.arg());
+            case COLOR_VARIANTS -> ColorVariantsMenu.build(player, key.arg());
+            case COLORS -> ColorsMenu.build(player);
+            case PALETTE_LIST -> PaletteMenu.build(player, key.page());
+            case GRADIENT_PICKER -> GradientPickerMenu.build(player);
+            case COLOR_PICK -> ColorPickBlockMenu.build(player, key.arg(), key.page());
         };
     }
 }

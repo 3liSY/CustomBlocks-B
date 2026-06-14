@@ -122,6 +122,41 @@ public final class ResourcePackServer {
             exchange.sendResponseHeaders(200, f.length());
             try (OutputStream os = exchange.getResponseBody()) { Files.copy(f.toPath(), os); }
         });
+        // Serves an exported block texture as a downloadable PNG: GET /png/<id>
+        // (written by /cb exportpng <id> to config/customblocks/cloud_exports/<id>.png — the
+        // clickable [download] link in chat points here so the file opens straight in a browser).
+        server.createContext("/png/", exchange -> {
+            String raw = exchange.getRequestURI().getPath().substring("/png/".length());
+            String id  = raw.replaceAll("\\.png$", "").replaceAll("[^a-zA-Z0-9_\\-]", ""); // no traversal
+            File f = new File("config/customblocks/cloud_exports", id + ".png");
+            if (id.isEmpty() || !f.exists()) {
+                byte[] msg = ("not found: " + id).getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(404, msg.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(msg); }
+                return;
+            }
+            exchange.getResponseHeaders().set("Content-Type", "image/png");
+            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + id + ".png\"");
+            exchange.sendResponseHeaders(200, f.length());
+            try (OutputStream os = exchange.getResponseBody()) { Files.copy(f.toPath(), os); }
+        });
+        // Serves a block's CURRENT baked texture straight from TextureStore: GET /tex/<id>
+        // (always available, no export step). The live-recolour slider fetches this to preview.
+        server.createContext("/tex/", exchange -> {
+            String raw = exchange.getRequestURI().getPath().substring("/tex/".length());
+            String id  = raw.replaceAll("\\.png$", "").replaceAll("[^a-zA-Z0-9_\\-]", "");
+            com.customblocks.core.SlotData d = id.isEmpty() ? null : com.customblocks.core.SlotManager.getById(id);
+            byte[] tex = d == null ? null : com.customblocks.core.TextureStore.load(d.index());
+            if (tex == null || tex.length == 0) {
+                byte[] msg = ("not found: " + id).getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(404, msg.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(msg); }
+                return;
+            }
+            exchange.getResponseHeaders().set("Content-Type", "image/png");
+            exchange.sendResponseHeaders(200, tex.length);
+            try (OutputStream os = exchange.getResponseBody()) { os.write(tex); }
+        });
         server.setExecutor(null);
         server.start();
         CustomBlocksMod.LOGGER.info("[CustomBlocks] Resource-pack HTTP server live on port {}", activePort);
@@ -142,6 +177,18 @@ public final class ResourcePackServer {
     public static String getExportUrl(String id) {
         int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
         return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/export/" + id;
+    }
+
+    /** Public URL for an exported PNG (the chat [download] link target). */
+    public static String getPngUrl(String id) {
+        int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
+        return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/png/" + id + ".png";
+    }
+
+    /** Public URL for a block's current baked texture (used by the live-recolour preview). */
+    public static String getTexUrl(String id) {
+        int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
+        return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/tex/" + id + ".png";
     }
 
     // ── Group 02: resource-pack regeneration controls ───────────────────────

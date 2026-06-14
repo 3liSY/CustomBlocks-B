@@ -62,6 +62,24 @@ public final class FavoritesManager {
         return set == null ? Collections.emptyList() : new ArrayList<>(set);
     }
 
+    /**
+     * Move a block id from {@code oldId} to {@code newId} in EVERY player's favorites (for /cb reid).
+     * Order is preserved (the id is swapped in place). No-op for players who hadn't favorited it.
+     */
+    public static synchronized void renameId(String oldId, String newId) {
+        boolean changed = false;
+        for (var e : FAVS.entrySet()) {
+            LinkedHashSet<String> set = e.getValue();
+            if (set.contains(oldId)) {
+                LinkedHashSet<String> rebuilt = new LinkedHashSet<>();
+                for (String id : set) rebuilt.add(id.equals(oldId) ? newId : id);
+                e.setValue(rebuilt);
+                changed = true;
+            }
+        }
+        if (changed) save();
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
 
     private static void load() {

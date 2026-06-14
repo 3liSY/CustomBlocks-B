@@ -54,6 +54,12 @@ public final class SlotManager {
         for (int i = 0; i < max; i++) {
             AbstractBlock.Settings settings = AbstractBlock.Settings.create()
                     .strength(1.5f, 6.0f)
+                    // nonOpaque so the game respects each block's real (possibly partial) shape for
+                    // face culling — without it every slot is treated as a full opaque cube, so a
+                    // slab/pillar/etc. wrongly culls its neighbours' faces and you see through the
+                    // world behind it (the G08 "x-ray" bug). Also lets cut-out (transparent-background)
+                    // textures show through correctly.
+                    .nonOpaque()
                     // Luminance is baked per state at construction, so read the LIGHT
                     // property — each of the 16 states bakes to its own correct value.
                     .luminance(state -> state.get(SlotBlock.LIGHT));
@@ -83,11 +89,14 @@ public final class SlotManager {
         return d;
     }
 
-    /** Free a slot. Returns the removed data, or null if no such id. */
+    /** Free a slot. Returns the removed data, or null if no such id. The block is copied into the
+     *  trash (best-effort) BEFORE its texture is removed, so it can be browsed/restored later. */
     public static synchronized SlotData delete(String customId) {
         SlotData d = BY_ID.remove(customId);
         if (d != null) {
             BY_SLOT.remove(d.slotKey());
+            // Snapshot into the trash first, while the texture/source still exist on disk.
+            TrashManager.capture(d, TextureStore.load(d.index()), TextureStore.loadSource(d.index()));
             TextureStore.delete(d.index());
             saveAll();
         }
@@ -101,6 +110,37 @@ public final class SlotManager {
         SlotData updated = d.withDisplayName(newDisplayName);
         BY_ID.put(customId, updated);
         BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
+    /**
+     * Change a block's custom id from {@code oldId} to {@code newId}, keeping its slot INDEX
+     * (so the baked texture, keyed by index, does NOT move and already-placed blocks — which are
+     * the registry {@code slot_N} blocks, not the custom id — are unaffected; no pack rebuild
+     * needed). Migrates every id-keyed reference (locks, favorites, notes, drafts) so nothing
+     * dangles; the category rides on the SlotData itself. Returns the renamed data, or null if
+     * oldId is missing, or newId is blank / unchanged / already taken.
+     *
+     * Records NO undo — the caller (ReIdCommands, or HistoryCommands when reversing) owns that.
+     * Because the migration is a pure move, reId is its own inverse: reId(new, old) reverses it.
+     */
+    public static synchronized SlotData reId(String oldId, String newId) {
+        if (oldId == null || newId == null) return null;
+        newId = newId.trim();
+        if (newId.isBlank() || newId.equals(oldId)) return null;
+        SlotData old = BY_ID.get(oldId);
+        if (old == null || BY_ID.containsKey(newId)) return null;
+        SlotData updated = old.withCustomId(newId);
+        BY_ID.remove(oldId);
+        BY_ID.put(newId, updated);
+        BY_SLOT.put(updated.slotKey(), updated); // same slot key, new value (drops the old-id snapshot)
+        // Migrate every id-keyed reference so none points at the now-gone old id.
+        LockManager.renameId(oldId, newId);
+        FavoritesManager.renameId(oldId, newId);
+        BlockNotesManager.renameId(oldId, newId);
+        DraftManager.renameId(oldId, newId);
+        BlockToleranceStore.renameId(oldId, newId);
         saveAll();
         return updated;
     }
@@ -160,11 +200,42 @@ public final class SlotManager {
         return updated;
     }
 
+    /** Set a block's shape (see BlockShapes; null/blank → full). Returns new data or null.
+     *  The caller rebuilds the pack — the model changes, unlike glow/sound which are live. */
+    public static synchronized SlotData setShape(String customId, String shape) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withShape(shape);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
     /** Copy a block into a new free slot under {@code newId}. Returns the new data, or null. */
+    /**
+     * Duplicate a block into a new id: clones the display name, every attribute (glow / hardness /
+     * sound / collision / category) AND the baked texture + stored source image, so the copy is
+     * visually identical. Returns the new block's latest snapshot, or null if the source is missing,
+     * the new id is taken/blank, or no slot is free. Caller rebuilds the pack to show the texture.
+     */
     public static synchronized SlotData dupe(String customId, String newId) {
         SlotData src = BY_ID.get(customId);
         if (src == null || newId == null || newId.isBlank() || BY_ID.containsKey(newId)) return null;
-        return create(newId, src.displayName());
+        SlotData created = create(newId, src.displayName());
+        if (created == null) return null; // no free slot
+        // Clone attributes onto the new block.
+        setGlow(newId, src.glow());
+        setHardness(newId, src.hardness());
+        setSoundType(newId, src.soundType());
+        setNoCollision(newId, src.noCollision());
+        setCategory(newId, src.category());
+        // Clone the baked texture and the original source image (for retexture-all re-renders).
+        byte[] tex = TextureStore.load(src.index());
+        if (tex != null) TextureStore.save(created.index(), tex);
+        byte[] source = TextureStore.loadSource(src.index());
+        if (source != null) TextureStore.saveSource(created.index(), source);
+        return BY_ID.get(newId);
     }
 
     // ── Undo/redo support (non-recording state restore — Phase 6) ─────────────
@@ -239,6 +310,12 @@ public final class SlotManager {
     public static int glowFor(int index) {
         SlotData d = BY_SLOT.get("slot_" + index);
         return d == null ? 0 : d.glow();
+    }
+
+    /** Live shape name for a slot index ("full" if unassigned). Read by the block's shape overrides. */
+    public static String shapeFor(int index) {
+        SlotData d = BY_SLOT.get("slot_" + index);
+        return d == null ? SlotData.DEFAULT_SHAPE : d.shape();
     }
 
     public static SlotData getBySlot(String slotKey) { return BY_SLOT.get(slotKey); }

@@ -14,12 +14,14 @@ package com.customblocks.gui.chest;
 import com.customblocks.command.Chat;
 import com.customblocks.core.ColorLibrary;
 import com.customblocks.core.ColorLibrary.LibColor;
+import com.customblocks.core.PlayerPaletteManager;
 import com.customblocks.item.CustomColorToolItem;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.server.network.ServerPlayerEntity;
 
+import java.util.List;
 import java.util.Locale;
 
 public final class CustomColorMenu {
@@ -54,6 +56,20 @@ public final class CustomColorMenu {
                         new ItemStack(Items.MAGENTA_DYE), "#",
                         text -> applyCustom(p, text),
                         () -> GuiRouter.render(p, Nav.MenuKey.of(Nav.Dest.CUSTOM_COLOR))));
+
+        // Palette quick-picks (shared source): your saved colours, one click → that colour's pair.
+        List<String> pal = PlayerPaletteManager.working(player.getUuid());
+        if (!pal.isEmpty()) {
+            m.set(46, Icons.of(Items.PAINTING, "§ePalette",
+                    "§7Quick-pick from your saved colours."));
+            int[] slots = {47, 48, 49, 50, 51};
+            for (int i = 0; i < slots.length && i < pal.size(); i++) {
+                final String hx = pal.get(i);
+                m.set(slots[i], Icons.of(Swatch.woolFor(hx), "§f" + hx,
+                                "§aClick §7→ get the " + hx + " Square + Triangle"),
+                        (p, b, a) -> givePair(p, hx));
+            }
+        }
 
         m.set(45, Icons.back(), (p, b, a) -> GuiRouter.back(p));
         m.set(53, Icons.close(), (p, b, a) -> p.closeHandledScreen());

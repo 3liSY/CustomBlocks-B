@@ -5,7 +5,9 @@
  *   /cb paintface <id> <face> <url>  — download an image and put it on ONE face of the block
  *                                      (same clean-up pipeline as /cb retexture; the other
  *                                      faces keep showing the base texture)
+ *   /cb setface <id> <face> <url>    — alias of paintface (the Group 08 spec name)
  *   /cb clearface <id> <face|all>    — remove face override(s), back to the base texture
+ *   /cb clearallfaces <id>           — alias of "clearface <id> all" (the Group 08 spec name)
  * The Rainbow Rectangle's right-click pre-fills "/cb paintface <id> <face> " in chat, so the
  * player only pastes the URL (ChatPrefillPayload).
  *
@@ -52,6 +54,18 @@ public final class FaceCommands {
                                                 StringArgumentType.getString(ctx, "face"),
                                                 StringArgumentType.getString(ctx, "url")))))));
 
+        // setface — Group 08 spec name; identical to paintface.
+        root.then(CommandManager.literal("setface")
+                .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .then(CommandManager.argument("face", StringArgumentType.word())
+                                .suggests((c, b) -> { for (String f : TextureStore.FACES) b.suggest(f); return b.buildFuture(); })
+                                .then(CommandManager.argument("url", StringArgumentType.greedyString())
+                                        .executes(ctx -> paintFace(ctx,
+                                                StringArgumentType.getString(ctx, "id"),
+                                                StringArgumentType.getString(ctx, "face"),
+                                                StringArgumentType.getString(ctx, "url")))))));
+
         root.then(CommandManager.literal("clearface")
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
@@ -60,6 +74,13 @@ public final class FaceCommands {
                                 .executes(ctx -> clearFace(ctx,
                                         StringArgumentType.getString(ctx, "id"),
                                         StringArgumentType.getString(ctx, "face"))))));
+
+        // clearallfaces — Group 08 spec name; identical to "clearface <id> all".
+        root.then(CommandManager.literal("clearallfaces")
+                .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .executes(ctx -> clearFace(ctx,
+                                StringArgumentType.getString(ctx, "id"), "all"))));
     }
 
     private static boolean validFace(String face) {

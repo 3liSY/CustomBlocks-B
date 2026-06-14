@@ -47,6 +47,18 @@ public final class ChestGuiCommands {
                         .suggests(BlockSuggestions.IDS)
                         .executes(ctx -> editor(ctx, StringArgumentType.getString(ctx, "id")))));
 
+        // /cb shapeeditor <id> — Group 08 shape picker GUI
+        root.then(CommandManager.literal("shapeeditor")
+                .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .executes(ctx -> openFor(ctx, Dest.SHAPE_EDITOR, StringArgumentType.getString(ctx, "id")))));
+
+        // /cb facechangegui <id> — Group 08 per-face texture GUI
+        root.then(CommandManager.literal("facechangegui")
+                .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .executes(ctx -> openFor(ctx, Dest.FACE_EDITOR, StringArgumentType.getString(ctx, "id")))));
+
         // Direct menu entry points.
         root.then(CommandManager.literal("listgui").executes(open(Dest.BLOCK_LIST)));
         root.then(CommandManager.literal("undogui").executes(open(Dest.UNDO)));
@@ -91,9 +103,14 @@ public final class ChestGuiCommands {
     }
 
     private static int editor(CommandContext<ServerCommandSource> ctx, String id) {
+        return openFor(ctx, Dest.EDITOR, id);
+    }
+
+    /** Open a per-block GUI (editor / shape editor / face editor) at {@code id}, with Back going home. */
+    private static int openFor(CommandContext<ServerCommandSource> ctx, Dest dest, String id) {
         ServerCommandSource src = ctx.getSource();
         if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
-            Chat.error(src, "Open the editor as a player");
+            Chat.error(src, "Open this menu as a player");
             return 0;
         }
         if (SlotManager.getById(id) == null) {
@@ -101,7 +118,7 @@ public final class ChestGuiCommands {
             return 0;
         }
         Nav.reset(p.getUuid(), MenuKey.of(Dest.MAIN));
-        GuiRouter.navigate(p, MenuKey.of(Dest.EDITOR, id));
+        GuiRouter.navigate(p, MenuKey.of(dest, id));
         return 1;
     }
 

@@ -84,6 +84,7 @@ public final class CreationCommands {
         root.then(CommandManager.literal("retextureall")
                 .executes(ctx -> retextureAll(ctx.getSource().getServer(), CustomBlocksConfig.textureSize, ctx.getSource()))
                 .then(CommandManager.argument("px", IntegerArgumentType.integer(16, 512))
+                        .suggests((c, b) -> { b.suggest(16); b.suggest(32); b.suggest(64); b.suggest(128); b.suggest(256); b.suggest(512); return b.buildFuture(); })
                         .executes(ctx -> retextureAll(ctx.getSource().getServer(),
                                 IntegerArgumentType.getInteger(ctx, "px"), ctx.getSource()))));
     }
@@ -104,12 +105,24 @@ public final class CreationCommands {
 
     private static int create(CommandContext<ServerCommandSource> ctx, String id, String name, String url) {
         ServerCommandSource src = ctx.getSource();
-        // Validate the URL BEFORE creating, so a bad link never leaves a half-made block.
-        if (url != null && !url.isBlank() && !ImageDownloader.isHttpUrl(url)) {
-            Chat.error(src, "That doesn't look like a web link, so the block was not created. "
-                    + "Use a direct http/https image URL (right-click the image → Copy Image Address).");
-            return 0;
+
+        // With a URL: download + decode FIRST, and only create the block if that succeeds — a broken
+        // or non-image link must NOT leave behind an empty, untextured block (developer-reported bug).
+        if (url != null && !url.isBlank()) {
+            if (!ImageDownloader.isHttpUrl(url)) {
+                Chat.error(src, "That doesn't look like a web link, so the block was not created. "
+                        + "Use a direct http/https image URL (right-click the image → Copy Image Address).");
+                return 0;
+            }
+            if (SlotManager.hasId(id)) {
+                Chat.error(src, "Couldn't create \"" + id + "\" — that id is already taken. Try a different id.");
+                return 0;
+            }
+            createWithTexture(src, id, name, url);
+            return 1;
         }
+
+        // No URL: create immediately (nothing can fail to download).
         SlotData d = SlotManager.create(id, name);
         if (d == null) {
             Chat.error(src, "Couldn't create \"" + id + "\" — that id is already taken or every slot "
@@ -121,10 +134,56 @@ public final class CreationCommands {
                 ? "Block \"" + id + "\" created successfully."
                 : "Block \"" + id + "\" (\"" + name + "\") created successfully.");
         syncHud(src);
-        if (url != null && !url.isBlank()) {
-            applyTexture(src, id, d.index(), url); // one-shot create + texture
-        }
         return 1;
+    }
+
+    /**
+     * Download + decode the image off the server thread, and create the block ONLY when that
+     * succeeds. If the link is broken / rejected / not an image, nothing is created (the fix for
+     * "a bad link still makes an empty block"). Mirrors applyTexture's pipeline, but the slot is
+     * allocated last so a failure leaves the world untouched.
+     */
+    private static void createWithTexture(ServerCommandSource src, String id, String name, String url) {
+        MinecraftServer server = src.getServer();
+        Chat.info(src, "Fetching the image for \"" + id + "\" before creating…");
+
+        Thread worker = new Thread(() -> {
+            try {
+                byte[] raw = ImageDownloader.download(url);
+                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
+                        CustomBlocksConfig.backgroundTolerance);
+                byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
+                png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode,
+                        CustomBlocksConfig.backgroundTolerance);
+                final byte[] finalPng = png;
+                server.execute(() -> {
+                    // Re-check on the server thread — the id could have been taken while downloading.
+                    SlotData d = SlotManager.create(id, name);
+                    if (d == null) {
+                        Chat.error(src, "Couldn't create \"" + id + "\" — the id was taken or every slot "
+                                + "is in use. Nothing was created.");
+                        return;
+                    }
+                    TextureStore.save(d.index(), finalPng);
+                    TextureStore.saveSource(d.index(), raw);
+                    UndoManager.recordCreate(actor(src), d);
+                    ResourcePackServer.updatePack();
+                    Chat.success(src, "Block \"" + id + "\"" + (name == null ? "" : " (\"" + name + "\")")
+                            + " created" + (CustomBlocksConfig.silentPack
+                            ? " — it'll show in a moment."
+                            : " — accept the resource pack prompt to see it."));
+                    syncHud(src);
+                });
+            } catch (Exception e) {
+                String msg = e.getMessage() != null ? e.getMessage() : e.toString();
+                IncidentRecorder.record("Create-with-texture failed for \"" + id + "\" (by "
+                        + src.getName() + ", url: " + url + ")", e);
+                server.execute(() -> Chat.error(src,
+                        "Couldn't get an image from that URL, so the block was NOT created. " + msg));
+            }
+        }, "CustomBlocks-CreateTexture");
+        worker.setDaemon(true);
+        worker.start();
     }
 
     private static int delete(CommandContext<ServerCommandSource> ctx, String id) {

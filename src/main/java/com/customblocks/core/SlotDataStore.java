@@ -56,6 +56,7 @@ public final class SlotDataStore {
                 o.addProperty("sound", d.soundType());
                 if (d.noCollision()) o.addProperty("noCollision", true); // omit the common default
                 if (!d.category().isEmpty()) o.addProperty("category", d.category()); // omit when uncategorized
+                if (!d.shape().equals(SlotData.DEFAULT_SHAPE)) o.addProperty("shape", d.shape()); // omit "full"
                 arr.add(o);
             }
             JsonObject root = new JsonObject();
@@ -87,7 +88,8 @@ public final class SlotDataStore {
                 String sound = o.has("sound") ? o.get("sound").getAsString() : SlotData.DEFAULT_SOUND;
                 boolean noCollision = o.has("noCollision") && o.get("noCollision").getAsBoolean();
                 String category = o.has("category") ? o.get("category").getAsString() : SlotData.DEFAULT_CATEGORY;
-                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category));
+                String shape = o.has("shape") ? o.get("shape").getAsString() : SlotData.DEFAULT_SHAPE;
+                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape));
             }
         } catch (Exception e) {
             LOGGER.error("[CustomBlocks] Failed to load slot data (starting empty)", e);

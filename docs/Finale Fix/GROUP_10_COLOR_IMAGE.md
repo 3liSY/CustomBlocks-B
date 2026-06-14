@@ -254,16 +254,17 @@ Open `/cb editor g10a` → click "Color Variants" slot.
 
 | Test | Description | Result |
 |---|---|---|
-| G10.1 | Dress applies color overlay | ⬜ |
-| G10.2 | Dress is undoable | ⬜ |
-| G10.3 | Gradient creates interpolated blocks | ⬜ |
-| G10.4 | Background removal (corners mode) works | ⬜ |
-| G10.5 | Export PNG saves file with chat link | ⬜ |
-| G10.6 | Resize resamples texture | ⬜ |
-| G10.7 | Palette save, list, and load work | ⬜ |
-| G10.8 | Color Variants panel creates new blocks | ⬜ |
+| G10.1 | Dress applies color overlay | ❌ removed (replaced by Variants + live recolour) |
+| G10.2 | Dress is undoable | ❌ removed |
+| G10.3 | Gradient creates interpolated blocks | ✅ in-game (2026-06-14) |
+| G10.4 | Background removal (corners mode) works | ✅ in-game (2026-06-14) |
+| G10.5 | Export PNG saves file with chat link | ✅ in-game (2026-06-14) |
+| G10.6 | Resize resamples texture | ✅ in-game (2026-06-14) |
+| G10.7 | Palette save, list, and load work | ✅ in-game (2026-06-14) |
+| G10.8 | Color Variants panel creates new blocks | ✅ in-game (2026-06-14) |
 
-**Group 10 passes when all color and image tools work in-game.**
+**Group 10 + the Coloring redesign confirmed working in-game by the developer (2026-06-14).** Remaining
+polish landed on top: client screens (live recolour, eyedrop) return to the previous menu on cancel/Esc.
 
 If anything shows ❌ — paste:
 1. The exact command and texture URL

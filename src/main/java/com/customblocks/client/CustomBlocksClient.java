@@ -12,6 +12,10 @@
  *   - HudConfig.load() restores saved HUD position/scale/color/opacity on init
  *   - ScreenEvents.AFTER_INIT → inject ESC-menu buttons (EscMenuButtons)
  *
+ * Group 10 additions:
+ *   - OpenGuiPayload RECOLOR_SLIDER → live recolour slider (data = "<id>|<texture url>")
+ *   - OpenGuiPayload EYEDROP        → screen eyedrop
+ *
  * Depends on: CustomBlocksMod (logger), gui screens, ClientSlotCache, HudConfig,
  *             HudEditorScreen, EscMenuButtons
  * Called by: Fabric loader via the "client" entrypoint in fabric.mod.json
@@ -20,7 +24,9 @@ package com.customblocks.client;
 
 import com.customblocks.CustomBlocksMod;
 import com.customblocks.client.gui.EscMenuButtons;
+import com.customblocks.client.gui.EyedropScreen;
 import com.customblocks.client.gui.HudEditorScreen;
+import com.customblocks.client.gui.RecolorSliderScreen;
 import com.customblocks.gui.GuiMode;
 import com.customblocks.gui.screens.ArabicBrowserScreen;
 import com.customblocks.gui.screens.BlockEditorScreen;
@@ -61,6 +67,14 @@ public class CustomBlocksClient implements ClientModInitializer {
                     case MACRO_LIST     -> context.client().setScreen(new MacroListScreen());
                     case ARABIC_BROWSER -> context.client().setScreen(new ArabicBrowserScreen());
                     case HUD_EDITOR     -> context.client().setScreen(new HudEditorScreen());
+                    case RECOLOR_SLIDER -> {
+                        // data = "<id>|<texture url>" (see ImageToolCommands.livecolor)
+                        int sep = data.indexOf('|');
+                        String rid = sep >= 0 ? data.substring(0, sep) : data;
+                        String url = sep >= 0 ? data.substring(sep + 1) : "";
+                        context.client().setScreen(new RecolorSliderScreen(rid, url));
+                    }
+                    case EYEDROP        -> context.client().setScreen(new EyedropScreen());
                     default             -> context.client().setScreen(new MainMenuScreen());
                 }
             });

@@ -4,7 +4,1330 @@ One entry per work session. Newest at the top. See the Engineering Bible §9.2.
 
 ---
 
-## 2026-06-11 (HANDOFF → START GROUP 07 — Bulk Operations) — read this first
+## 2026-06-14 (later 10) — Group 10 marked PASSED in-game + client-screen cancel→back fix (build green)
+
+**Developer confirmed the whole of Group 10 + the Coloring redesign works in-game.** Marked all scorecards
+✅ in `GROUP_10_TESTING_GUIDE.md` and the verdict table in `GROUP_10_COLOR_IMAGE.md` (G10.3–G10.8 ✅;
+G10.1/G10.2 dress = removed). resize/exportpng were already ✅.
+
+**Done — cancel/Esc returns to the previous menu (build green; gates pass — NOT in-game tested):**
+- New `network/payloads/GuiBackPayload` (empty C2S signal). Registered playC2S + a server receiver in
+  `CustomBlocksMod` that reopens `Nav.current(player)` via `GuiRouter.render`.
+- `RecolorSliderScreen` + `EyedropScreen` now override `close()` to send `GuiBackPayload` — so Cancel/Esc
+  (and Apply, for the slider) drop the player back into the chest menu they came from (the block picker, the
+  editor, or the Coloring hub) instead of out to the world. Eyedrop *picking* a colour still routes to the
+  chat prefill (no back), only Esc/cancel goes back.
+
+**Files:** new — `network/payloads/GuiBackPayload`. Edited — `CustomBlocksMod`,
+`client/gui/{RecolorSliderScreen, EyedropScreen}`.
+
+**TEST IN-GAME (developer):** open `/cb coloring` → Live Recolour → pick a block → **Cancel** (and **Esc**):
+should land back on the block picker. Same for `/cb eyedrop` Esc → back to the hub. Apply on the slider
+should commit and also return to the picker.
+
+---
+
+## 2026-06-14 (later 9) — Coloring redesign built in one push (build green; gates pass — NOT in-game)
+
+Developer approved building all four redesign slices at once. **Build green with JDK 21 (`--no-daemon`);
+all three gates pass (fileSize, mojibake, sound).** Jar in `build/libs/` only.
+
+**Done — Coloring redesign (build green; gates pass — NOT in-game tested):**
+- **`/cb colors` → `/cb coloring`** (rename; `colors` kept as a silent alias). `ColorsMenu` rebuilt as a
+  framed 6-row hub titled "Coloring" — 4 main tools (Background Studio, Palette, Gradient Builder, Custom
+  Colour) over 3 extras (Colour Variants, Live Recolour, Screen Eyedrop). Added a **Coloring** tile to the
+  `/cb` dashboard (MainMenu slot 32) for discoverability.
+- **`/cb bgstudio` no-arg → block picker.** New `ColorPickBlockMenu` (generic paged block picker that routes
+  to bgstudio / variants / livecolor); `/cb bgstudio` and the hub's block tools open it. `/cb bgstudio <id>`
+  still goes straight in. New `Nav.Dest.COLOR_PICK` + GuiRouter case.
+- **`/cb tolerance <value> [id]`** — arg order flipped to value-first. No id = set the **global** default
+  (`CustomBlocksConfig.backgroundTolerance`, persisted). With id = per-block override in new
+  **`BlockToleranceStore`** (atomic JSON, mirrors LockManager; renames follow via SlotManager.renameId),
+  global untouched, re-applies now. BgStudio seeds each block's strength from its override.
+- **Palette is now a shared colour source.** Working-set swatches appear as one-click quick-picks in the
+  BgStudio **fill** picker, the **Gradient** endpoints (left=A / right=B), and **Custom Colour**. Header lore
+  explains where they're used.
+- **BgStudio polish** — clearer mode names (Keep / Remove background / Remove background + gaps / ★ Smart
+  auto), header shows whether strength is per-block or global, Apply remembers the block's strength, and an
+  **↩ Undo last change** tile gives an apply→look→revert loop (real preview is the undoable apply).
+- **Gradient kept + improved** — `/cb gradient` with no args now opens the Builder GUI (was an error); palette
+  endpoints added; `woolFor`/hex helpers deduped onto the new shared **`Swatch`** util (removed 3 copies).
+
+**Files:** new — `core/BlockToleranceStore`, `gui/chest/{Swatch, ColorPickBlockMenu}`. Rewritten —
+`gui/chest/{ColorsMenu, BgStudioMenu}`, `command/handlers/ImageToolCommands`. Edited — `gui/chest/{Nav,
+GuiRouter, BgStudioSession, PaletteMenu, GradientPickerMenu, CustomColorMenu, MainMenu}`,
+`command/handlers/ColorImageCommands`, `core/SlotManager`.
+
+**TEST IN-GAME (developer):** see `Reports/GROUP_10_TESTING_GUIDE.md` (updated). Key flows: `/cb coloring`
+hub, `/cb bgstudio` (no id) picker, `/cb tolerance 40` vs `/cb tolerance 40 <id>`, palette swatches showing up
+in bgstudio fill + gradient + custom colour, gradient GUI from `/cb gradient`.
+
+---
+
+## 2026-06-14 (later 8) — Group 10 in-game results + colour-tools redesign (DISCUSSION, nothing built)
+
+Developer tested Group 10 in-game. **Confirmed working:** `/cb resize`, `/cb exportpng`, and the `/cb colors`
+hub open/navigation. Marked ✅ in `GROUP_10_COLOR_IMAGE.md` (G10.5/G10.6) and the testing-guide §1 scorecard.
+
+**Developer rejected as not good enough:** `/cb gradient` (no GUI, confusing), `/cb bgstudio` (no picker,
+blind Apply, confusing modes — "currently bad, needs so much work"), `/cb palette` (weird, no clear purpose),
+`/cb tolerance` (wrong arg order, no global-vs-per-block split).
+
+**Confirmed design direction (4 forks answered):**
+- Rename `/cb colors` → `/cb coloring`; fold palette + bgstudio + tolerance under it.
+- **Palette → shared colour source:** saved colours become one-click swatches in every colour picker
+  (bgstudio fill, custom colour, recolour); eyedrop + add feed it.
+- **Tolerance:** `/cb tolerance <value> [id]` — no id = global default; with id = per-block override (persists),
+  global untouched.
+- **Gradient: KEEP** (reversed earlier removal) — build it a real preview GUI so it stops being confusing.
+- **BgStudio: major polish** — add a block picker for no-arg, add a result preview before Apply, simplify the
+  modes. Developer flagged all three pain points.
+
+**Plan = 4 ordered slices (each build-verified + handed off for in-game test), not one push.** Slice 1
+(rename + picker + tolerance syntax/storage) proposed as the start. Nothing coded yet — awaiting the go-ahead
+on slice 1.
+
+---
+
+## 2026-06-14 (later 7) — Group 10 Revamp: palette anvil, BgStudio fill colour, gradient GUI, dress removed (build green)
+
+Applied the developer's four design answers to the Group 10 colour tools. **Build green with JDK 21; all three
+gates pass (fileSize, mojibake, sound).** Jar in `build/libs/` only — **NOT in-game tested.**
+
+**Done — Group 10 Revamp (build green; gates pass — NOT in-game tested):**
+- **Palette "Add colour" → anvil** — `PaletteMenu` rewritten: "＋ Add colour" now opens an `AnvilPrompt`
+  (typed hex/name) instead of closing to chat. Layout reorganised (6 rows): header → actions → working set
+  swatches → saved palettes. "Save as…" also uses anvil. Left-click a swatch = remove it. Palette now
+  accessible from the Gradient Builder and BgStudio fill-colour picker.
+- **BgStudio fill-colour picker** — `BgStudioMenu` gains a fill-colour tile (slot 28): shows nearest-wool,
+  hex in lore. Left-click = anvil to type any colour; right-click = reset to black. The fill colour flows
+  through `BgStudioSession.fillColor` → `ColorToolService.applyBgRemoval(fillRgb)` →
+  `BackgroundRemover.apply(4-arg)` + `snapBackgroundColor`. Old 3-arg `apply()` and `snapBackgroundBlack`
+  kept for backward compat (default smart black/white).
+- **Gradient Builder GUI** — new `GradientPickerMenu` + `GradientSession`: 5-row chest with Colour A/B tiles
+  (left-click = anvil hex, right-click = `/cb gradientpick a|b <id>` to pick from a block's average colour),
+  steps ±, wool preview swatches (CIE-Lab interpolated), Create button. New `/cb gradientpick` command wired
+  into `ColorImageCommands`. `Nav.Dest.GRADIENT_PICKER` + `GuiRouter` case + tile in `ColorsMenu`.
+- **`/cb dress` removed** — command registration + handler method deleted from `ColorImageCommands`. The dress
+  functionality (solid-colour overlay) was deemed "overkill and unnecessary" by the developer; Colour Variants
+  + live recolour cover the same ground.
+- **`ColorsMenu` expanded** to 4 rows to fit the new Gradient Builder tile.
+- **Testing guide rewritten** — `GROUP_10_TESTING_GUIDE.md` §2 overhauled (dress → gradient GUI), §3 gains
+  fill-colour tests (③-④), §5 rewritten for anvil flow + layout changes.
+
+**Files:** new — `gui/chest/{GradientPickerMenu,GradientSession}`. Rewritten — `gui/chest/{BgStudioMenu,
+PaletteMenu,ColorsMenu}`, `command/handlers/ColorImageCommands`. Edited — `gui/chest/{BgStudioSession,Nav,
+GuiRouter}`, `core/ColorToolService`, `image/BackgroundRemover`. Docs — `GROUP_10_TESTING_GUIDE.md`.
+
+**TEST IN-GAME (developer):** `Reports/GROUP_10_TESTING_GUIDE.md` — all sections. Key new tests:
+§2 ③-⑦ (gradient GUI + dress gone), §3 ③-④ (fill colour), §5 ①-⑥ (palette anvil + layout).
+
+---
+
+## 2026-06-14 (later 6) — Group 10 FINISHED in one push (build green; gates pass — NOT in-game)
+
+Developer said: build the **entire** rest of Group 10 in one go, no per-slice handoff. Asked the two real
+forks first — Smart/AI background mode → **pure-Java offline** (no model download, respects the no-internet
+rule); screen eyedrop → **samples Minecraft's own screen** (no OS capture). Then built everything.
+**Build green with JDK 21 (`C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot`, `--no-daemon`); all three
+gates pass.** Jar in `build/libs/` only.
+
+**Done — rest of Group 10 (build green; gates pass — NOT in-game tested):**
+- **`/cb bgstudio <id>`** — per-block Background Studio chest GUI (`BgStudioMenu` + `BgStudioSession`): pick
+  None / Background-only / Background+enclosed / **Smart (offline)**, nudge tolerance, Apply. Re-bakes from the
+  saved source (else the baked PNG) through the **existing** `BackgroundRemover`. **Undoable** (TEXTURE op).
+- **`/cb tolerance <id> <0-100>`** — sets the strength + applies the current mode immediately. Undoable.
+- **Smart BG mode (new, pure offline Java)** — added `SMART` to `BackgroundRemover` (+ `image/BgMask` split out
+  to keep the file under the 500 gate): border-flood + enclosed pass + **keep-largest-connected-subject**. Never
+  neural; falls back to the original image on any failure like the other modes.
+- **Colour Variants panel** — `ColorVariantsMenu` off `/cb editor`: 7 algorithmic swatches (lighter/darker/
+  vivid/muted/complementary/2× split-complement) via new HSL maths in `ColorMath`. Click → bakes a new
+  `<id>_<variant>` block (deduped). One CREATE undo per click. (Distinct from the Group-06 `ColorVariantService`.)
+- **`/cb palette` (per-player)** — new `PlayerPaletteManager` (atomic JSON, working set + named saves) +
+  `PaletteCommands` (add/clear/list/save/load/delete) + `PaletteMenu` GUI (nearest-wool swatches) +
+  **`/cb colors`** hub (`ColorsMenu`: palette · custom colour · variant colours · eyedrop).
+- **exportpng `[download]` link** — `ResourcePackServer` now serves `/png/<id>` (export) + `/tex/<id>` (live
+  texture); `exportpng` prints a clickable localhost **[download]**.
+- **Live recolour slider (client)** — `RecolorSliderScreen` (Hue/Sat/Bright drag bars, live cell-grid preview
+  fetched from `/tex/<id>`); **Apply** sends the new C2S `RecolorApplyPayload` → server bakes via
+  `ColorToolService.applyRecolor` (TEXTURE undo). Server stays authoritative.
+- **Screen eyedrop (client)** — `EyedropScreen` captures the framebuffer, reads the clicked pixel, opens chat
+  pre-filled with `/cb palette add #RRGGBB` (reuses the palette command — no extra packet).
+- **New `core/ColorToolService`** — the shared server flows (applyBgRemoval / createVariant / applyRecolor),
+  same off-thread-bake → one-pack-rebuild idiom as the rest. New `GuiMode.RECOLOR_SLIDER`/`EYEDROP`; four new
+  `Nav.Dest`s wired in `GuiRouter`; three new editor tiles.
+
+**Files:** new — `image/BgMask`, `core/ColorToolService`, `core/PlayerPaletteManager`,
+`command/handlers/ImageToolCommands`, `command/handlers/PaletteCommands`, `gui/chest/{BgStudioMenu,
+BgStudioSession,ColorVariantsMenu,ColorsMenu,PaletteMenu}`, `client/gui/{RecolorSliderScreen,EyedropScreen}`,
+`network/payloads/RecolorApplyPayload`. Edited — `image/{ColorMath,BackgroundRemover}`,
+`command/handlers/ColorImageCommands`, `command/CommandRegistrar`, `network/ResourcePackServer`,
+`gui/GuiMode`, `gui/chest/{Nav,GuiRouter,EditorMenu}`, `client/CustomBlocksClient`, `CustomBlocksMod`.
+
+**TEST IN-GAME (developer):** `Reports/GROUP_10_TESTING_GUIDE.md` §3–§6 (plus re-confirm §2 dress/gradient if
+not already). §6 needs the mod on your client (it does).
+
+**Note on §6 (client screens):** live recolour + eyedrop compile but are the least gate-coverable parts (no
+server gate can prove a client screen renders). The framebuffer eyedrop + the live preview fetch are the bits
+most likely to need a tweak in-game — report what you see.
+
+---
+
+## 2026-06-14 (later 5) — Group 10 Slice 2: dress + gradient + real texture undo (green, NOT in-game)
+
+Developer confirmed Slice 1's `/cb exportpng` works (the "didn't export" worry was just looking in the old
+`config/customblocks1/cloud_exports` — the new mod writes to `config/customblocks/cloud_exports`; file was
+there). Then: build Slice 2. **Build green with JDK 21 (`C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot`,
+`--no-daemon`); all three gates pass.** Jar in `build/libs/` only.
+
+**Done — Group 10 Slice 2 (build green; gates pass — NOT in-game tested):**
+- **`/cb dress <id> <colour> <intensity 0-1>`** — blends a solid colour over the block's current texture
+  (linear per-channel mix; transparent padding untouched, so only the art is tinted). Colour accepts a
+  ColorLibrary name OR hex; arg comes in as a greedy tail so a literal `#RRGGBB` parses (Brigadier `word()`
+  rejects `#`). Off-thread bake → server-thread pack rebuild + sync. **Undoable** (see below).
+- **`/cb gradient <id1> <id2> <steps 1-32>`** — averages each source block's colour, interpolates in
+  **CIE-Lab** (Decision §M) at `k/(steps+1)`, bakes solid swatch blocks `gradient_1…N` (next free id). Whole
+  batch is **ONE `/cb undo`** via `recordBatch` of CREATE children. One pack rebuild after the batch.
+- **Texture-level undo now exists** (was explicitly deferred). Added `UndoManager.Kind.TEXTURE` + a
+  `textureAfter` field on `Op` + `recordTexture(...)`; `HistoryCommands` restores pre-edit bytes on undo and
+  re-applies post-edit bytes on redo, then rebuilds the pack. Dress is its first user; reusable by future
+  pixel ops. `/cb resize`/`/cb retexture` still have no undo (unchanged this slice).
+- **New `image/ColorMath`** — dress blend, alpha-weighted average colour, sRGB⇄CIE-Lab + `labLerp`, solid
+  swatch PNG. Pure maths, no MC/server types. No existing image code touched.
+- Files touched: `core/UndoManager`, `command/handlers/HistoryCommands`, `command/handlers/ColorImageCommands`
+  (now Slices 1–2, ~310 lines, under the 400 gate), new `image/ColorMath`. `ColorImageCommands.register`
+  already wired in CommandRegistrar (Slice 1) — dress/gradient are added inside it, no registrar change.
+
+**Design call (asked first):** dress-undo → built real texture undo (clean 2-file core extension); gradient →
+solid-colour swatches interpolated in Lab (matches spec "colour step"), not a texture cross-fade. Both
+developer-chosen.
+
+**Known limit (pre-existing, mod-wide):** redo of a CREATE restores metadata but not the texture file —
+so redo-ing an undone gradient brings the blocks back textureless. Same as every other create; undo (the
+common path) is perfect. Not expanded this slice.
+
+**TEST IN-GAME (developer):** `Reports/GROUP_10_TESTING_GUIDE.md` §2 — `/cb dress` (G10.1/G10.2),
+`/cb gradient` (G10.3), undo of each, and the bad-input refusals.
+
+---
+
+## 2026-06-14 (later 4) — Group 09 wrapped (S6 deferred) · Group 10 STARTED · Slice 1 resize + exportpng (green, NOT in-game)
+
+Group 09 build-complete (Slices 1–5 + GUIs; Slice 6 deferred by developer). Moved to the next group in the
+finale-fix sequence — **Group 10 (Color & Image Tools)** — built in tested slices, simplest first. **Build
+green with JDK 21; all three gates pass.** Jar in `build/libs/` only.
+
+**Done — Group 10 Slice 1 (build green; gates pass — NOT in-game tested):**
+- **`command/handlers/ColorImageCommands`** (new):
+  - **`/cb resize <id> <16-512>`** (suggests 64/128/256) — resamples a block's texture. Re-renders from the
+    saved SOURCE image when there is one (lossless), else resamples the baked PNG. Off-thread bake →
+    server-thread pack rebuild + sync. Locked blocks refused; no-texture blocks refused. Reuses the exact
+    `/cb retexture` pipeline — no new image code. (Note: like all texture ops today, **no undo** — the saved
+    source is untouched so it's re-derivable.)
+  - **`/cb exportpng <id>`** — writes the block's current texture to
+    `config/customblocks/cloud_exports/<id>.png` (atomic tmp→move; id sanitised for the filename) and prints
+    the path. (The spec's clickable localhost `[download]` HTTP link is a later slice — needs a serve
+    endpoint on ResourcePackServer.)
+- Registered `ColorImageCommands` in `CommandRegistrar`.
+
+**Chose the two simplest tools first on purpose** — both are self-contained and reuse tested infra (no undo
+engine, GUI, AI, or live-preview needed). The heavier Group 10 features come in later slices:
+- **Slice 2:** `/cb dress` (colour overlay, needs texture undo) + `/cb gradient` (CIE-Lab interpolated blocks).
+- **Slice 3:** `/cb bgstudio` GUI (corners/flood/none) + `/cb tolerance <id>` + Color Variants panel.
+- **Slice 4:** `/cb palette` (per-player) + exportpng HTTP `[download]` link.
+- **Later/hard:** AI background removal, live recolor slider, screen eyedrop (client-side — discuss first).
+
+**TEST IN-GAME (developer):** new `Reports/GROUP_10_TESTING_GUIDE.md` §1 — `/cb resize` (G10.6) and
+`/cb exportpng` (G10.5).
+
+---
+
+## 2026-06-14 (later 3) — Slice 5 ✅ CONFIRMED · broken-blocks bulk actions + Safety dashboard GUI (green, NOT in-game)
+
+Developer confirmed Slice 5 works ✅ and asked for two upgrades, then to start the next slice. **Build green
+with JDK 21; all three gates pass.** Jar in `build/libs/` only.
+
+**Developer-confirmed ✅ (in-game):** Slice 5 — `/cb showbrokenblocks` + `/cb safety` (chat) + the
+rebuild-from-source fix.
+
+**Done this session (build green; gates pass — NOT in-game tested):**
+- **`/cb showbrokenblocks` is now a multi-select bulk fixer.** Per tile: **left-click ticks** for a bulk
+  action, **right-click fixes just that one** (rebake / retexture). Footer: **Fix selected** (batch re-bake
+  from saved images — one pack rebuild for the whole batch), selection summary/clear, **Select all**,
+  **Delete selected** (→ confirm → trash; deleted blocks stay recoverable). New `BrokenSelection` (separate
+  per-player store) + `BrokenConfirmMenu`; `SafetyCommands.guiRebakeMany` batches the re-bake.
+- **`/cb safety` now opens an advanced GUI dashboard** (`SafetyMenu`) instead of chat (console still gets the
+  chat summary). A framed 6-row panel with a health line + clickable tiles: **Blocks** (used/max),
+  **Backups** → backup manager, **Auto-Backup** → config, **Trash** → trash browser, **Broken Blocks** →
+  the fixer, plus a **Save a backup now** action. Reuses every existing screen — pure navigation, no logic
+  duplicated.
+- New dests `BROKEN_CONFIRM`, `SAFETY`; router cases added.
+
+**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` §5 — the new bulk select / Fix-selected /
+Delete-selected on `/cb showbrokenblocks`, and `/cb safety` opening the dashboard.
+
+**Slice 6 — DEFERRED by developer (2026-06-14).** Asked the two key questions before touching live
+persistence. Decision: **-B is fresh now (no old data), but they want to bring the old -A data into -B AND
+do the `config/customblocks/data/` path move LATER, together — not now.** So Slice 6 (first-boot
+MigrationManager + data-path move) stays **unbuilt** until they're ready to migrate. Marked in the
+`project_customblocks_dat_migration` memory. **Group 09 is now build-complete (Slices 1–5 + GUIs);
+remaining: deferred Slice 6 + the backup-GUI polish pass.**
+
+**Next → Group 10 (Color & Image Tools)** — the next group in the finale-fix sequence (`GROUP_10_COLOR_IMAGE.md`).
+
+Developer confirmed the previous batch works in-game ✅ and said to push on. **Build green with JDK 21; all
+three gates pass.** Jar in `build/libs/` only.
+
+**Developer-confirmed ✅ (in-game):**
+- **Slice 4 — deleted-block trash** (`/cb deletedblocks`: capture on delete, restore, pin, delete-forever, prune).
+- **`/cb config` confirm gate** + **auto-backup config tile** (interval/keep cycling).
+
+**Done — Slice 5 (build green; gates pass — NOT in-game tested):**
+- **`core/BrokenBlockScanner`** (new, READ-ONLY) — flags every assigned block with **no baked texture file**
+  (`!TextureStore.has(index)`); records whether a saved SOURCE image exists (so it can be auto-fixed). No
+  world scan (placed-instance sweep deliberately skipped — too costly; the registry/texture mismatch is the
+  cheap, reliable signal).
+- **`command/handlers/SafetyCommands`** (new):
+  - **`/cb showbrokenblocks`** — opens the report GUI (console prints a count).
+  - **`/cb safety`** — read-only summary: blocks used/max · backups + newest · auto-backup on/off + interval ·
+    trash count · broken count (clickable `[open]` when > 0; a `[/cb backup save]` nudge when 0 backups).
+  - **`guiRebake`** — the GUI auto-fix: re-renders a broken block's texture **from its saved source** (no
+    network), reusing the exact `BackgroundRemover → ImageProcessor → TextureStore → updatePack` pipeline
+    that `/cb retexture` / retexture-all use. Off-thread bake → server-thread pack rebuild + sync.
+- **`gui/chest/BrokenBlocksMenu`** (new) — paginated red-wool list. Click a tile: if it has a saved image →
+  rebuild from source; if not → pre-fills `/cb retexture <id>` in chat. All-clear screen when nothing's broken.
+- Registered `SafetyCommands`; added `Dest.BROKEN_LIST` + router case.
+
+**Notes for testing:**
+- "Broken" = missing baked texture only (renders purple). A block with a texture but no saved source is NOT
+  flagged (it renders fine; many legit blocks — Arabic/video — have no source).
+- Auto-fix only works when a source image was saved (normal for URL-created blocks). No-source blocks route
+  to `/cb retexture`.
+
+**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` new **§5** — delete a texture file → `/cb
+showbrokenblocks` shows it → rebuild-from-source fix → `/cb safety` summary.
+
+**Next (after §5 passes):** Slice 6 — first-boot migration + move data to `config/customblocks/data/` (🔴
+highest risk: touches live persistence — will be built extra-carefully and discussed first).
+
+Developer **confirmed two pieces working in-game** ✅, asked for the backup GUI to be marked partial, two
+config polish items, then to push straight into the next slice. **Build green with JDK 21
+(`C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot`); all three gates pass.** Jar in `build/libs/` only.
+
+**Developer-confirmed ✅ (in-game):**
+- **`/cb backup load`** (the `restore`→`load` rename) — works.
+- **Auto-backup (Slice 3)** — timed auto-backup + prune works.
+
+**🟡 PARTIAL / needs polish (developer's call):**
+- **The advanced backup GUI** (`/cb backup` no-args `BackupMenu` + `BackupConfirmMenu`) — functional but the
+  developer wants it polished further. Treat as **partial**, not done.
+
+**Done this session (build green; gates pass — NOT in-game tested):**
+- **Auto-backup is now a clickable tile in `/cb config`** (`ConfigMenu` slot 33, barrel icon): **left-click
+  cycles the interval** (off→5→15→30→60→120→360 min), **right-click cycles the keep count** (3→5→10→20→50).
+  Backed by new chat commands `/cb config autobackup interval [min]` / `keep [count]` (no value = cycle).
+  Interval changes apply **immediately** via `AutoBackup.applyConfigChange()` (generation-token reschedule —
+  no cancel/race; a superseded tick no-ops).
+- **`/cb config` now asks first.** Opening config (command OR the dashboard Config button) lands on a Yes/No
+  **`ConfigWarnMenu`** gate; **Yes** swaps in the config screen (Back from config then goes home), **No** backs
+  out. Restores the old "are you sure" guard the finale-fix had dropped.
+- **Slice 4 — deleted-block trash (`/cb deletedblocks`, alias `/cb trash`):**
+  - **`core/TrashManager`** (new) — on delete, the block's fields + texture + source image are copied (atomic
+    tmp→rename, BEST-EFFORT so a trash-write failure can't break the delete) into
+    `config/customblocks/trash/<entryId>/`. `list()` is newest-first and **lazily prunes** unpinned entries
+    older than `trashRetentionDays` (default **30**, 0 = keep forever); **pinned entries never prune**.
+  - **Capture hook** in `SlotManager.delete` — snapshots BEFORE the texture is removed. (Undo's
+    `removeSilently` is untouched, so undo doesn't spam the trash.)
+  - **`TrashMenu` + `TrashEntryMenu`** (new) — paginated browser; per entry: **Restore · Pin/Unpin · Delete
+    forever** (confirm). Restore reuses the tested `SlotManager.create` + setters + `TextureStore.save`
+    (same path as `dupe`), then rebuilds + pushes the pack; refuses if the id is already taken or the pool is full.
+  - **Config:** `trashRetentionDays` added (clamped 0..3650, persisted).
+
+**⚠️ Call out for testing (Slice 4 is the risky one — it recreates live blocks):**
+- **Restore correctness** — does a restored block come back with its texture, glow, hardness, sound,
+  collision, category AND shape? (Per-face textures from the face editor are NOT captured yet — a restored
+  face-edited block keeps only its main texture. Known limit.)
+- Restoring when the id is taken / pool is full should fail cleanly with a chat message (not crash).
+- Bulk-deleting many blocks copies each to the trash — watch for any lag on a very large bulk delete.
+
+**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` — new **§4** (delete → `/cb deletedblocks` → restore
+/ pin / delete-forever), plus the config gate + auto-backup config tile. §2/§3 marked ✅.
+
+**Next (after §4 passes):** Slice 5 (`/cb showbrokenblocks` + `/cb safety`, 🟢 read-only), then Slice 6
+(first-boot migration + move data to `data/`, 🔴).
+
+---
+
+## 2026-06-14 — Group 09: `restore`→`load` rename · advanced backup GUI · Slice 3 auto-backup (green, NOT in-game)
+
+Developer-requested polish on Group 09 + the next slice, built to test together. **Build green with JDK 21
+(`Microsoft\jdk-21.0.10.7-hotspot`); all three gates pass (verifyFileSize/Mojibake/Sound). NOT in-game
+tested.** Jar in `build/libs/` only — not copied to mods.
+
+**Done — rename + GUI (build green; gates pass — awaiting in-game test):**
+- **`/cb backup restore` → `/cb backup load`.** `load` is the primary verb everywhere (usage text, the
+  restore-undo hint now says `/cb backup load <safety>`). **`restore` kept as a hidden alias** so old habit
+  / the testing-guide steps still work.
+- **Bare `/cb backup` (no args) now opens an advanced chest GUI** (`BackupMenu`) for players; console still
+  gets the chat usage list. Also added **`/cb backupgui`** (matches `/cb listgui`, `/cb bulkgui`).
+- **`BackupMenu`** — paginated, newest-first grid of every backup. Per tile: **left-click = tick for bulk
+  delete**, **right-click = load** (→ confirm screen). Footer: Back · **Create new backup** (anvil name
+  prompt, pre-filled auto name) · selection summary/clear · prev/page/next · **Select all** · **Delete N
+  selected** (→ confirm) · Close. Auto/safety backups show a barrel icon + "(auto)" tag.
+- **`BackupConfirmMenu`** — Yes/No screens for **load** (one backup) and **delete-selected** (bulk). The
+  chest's Yes IS the confirmation, so the GUI path skips the chat `/cb confirm`.
+- **Reuse, not rewrite:** the GUI calls new `BackupCommands.guiCreate` / `guiLoad`, which run the SAME
+  tested save (`startSave`, refactored out of `save`) and `doRestore` orchestration as the chat commands.
+  New `BackupSelection` (per-player ticked-names set) mirrors `ListSelection` but is a separate store so
+  block- and backup-selections never collide.
+
+**Done — Slice 3 (auto-backup + prune) (build green; gates pass — awaiting in-game test):**
+- **`core/AutoBackup.java`** (new) — daemon scheduler. Every `autoBackupInterval` minutes it asks the
+  **server thread** to flush slots + read the block count, then copies on a **separate IO worker** (same
+  threading idiom as a manual save — no tick hitch). Saves an `auto-YYYYMMDD-HHMMSS` backup, then prunes.
+  Runs **silently** (one log line per save, no chat). Self-reschedules reading config each cycle, so an
+  interval change takes effect next cycle; **interval ≤ 0 disables** it (re-checked every 60s).
+- **`BackupManager.pruneAuto(keep)`** — keeps the newest `keep` **`auto-`** backups, deletes the rest.
+  **Only `auto-` folders are touched** — manual saves and `pre-restore-…` safety copies are never pruned.
+- **Config:** `autoBackupInterval` (default **30** min, 0 disables) + `autoBackupKeepCount` (default **10**),
+  both clamped + persisted in `CustomBlocksConfig`.
+- **Lifecycle:** `AutoBackup.start(server)` on `SERVER_STARTED`; `AutoBackup.stop()` on `SERVER_STOPPING`
+  **before** the final `saveAll`, so no auto-backup fires mid-shutdown.
+
+**Design notes / call out for testing:**
+- Auto-backup config is read from disk — to test, set `autoBackupInterval: 2` in `config/customblocks/
+  config.json` and restart (G09.5). Default 30 min means you won't see one quickly otherwise.
+- Creating a backup from the GUI reopens the list **after** the (async) save finishes, so the new backup
+  appears without a manual refresh.
+
+**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` — updated §2 to `load`, new **§GUI** (open `/cb
+backup`, create, tick + bulk-delete, right-click load) and **§3** (auto-backup fires + prunes).
+
+**Next (after these pass):** Slice 4 (`/cb deletedblocks` trash browser + pin).
+
+---
+
+## 2026-06-13 (later 12) — Group 09 Slice 2: restore + delete + panic + recover (green, NOT in-game)
+
+Built the dangerous slice (it overwrites live data) carefully. **Build green with JDK 21; all three gates
+pass. NOT in-game tested.** Jar at `build/libs/` only — not copied to mods.
+
+**Done — Slice 2 (build green; gates pass — awaiting in-game test):**
+- **`BackupManager.restore(name, currentBlocks)`** — SAFE SWAP: verify the chosen backup parses (else
+  abort, live untouched) → **MOVE** the current live files into a fresh `pre-restore-<stamp>` backup
+  (fast rename; doubles as a recoverable snapshot) → **COPY** the chosen backup's files into live. On a
+  copy failure it best-effort rolls the safety copy back, then rethrows. Plus `isValidBackup`,
+  `latestName`, `delete`, `moveIfExists`, `rollback`.
+- **`BackupCommands`** — `/cb backup restore <name>` (confirm-gated via the existing `BulkConfirm`),
+  `/cb backup delete <name>`, `/cb backup panic` (restore newest, NO confirm — emergency), and top-level
+  **`/cb recover`** (restore newest, with confirm). Name tab-complete added.
+- **`doRestore` (server thread):** pause pack → `saveAll` → `BackupManager.restore` → `CustomBlocksConfig
+  .load()` → `SlotManager.reload()` → resume (rebuilds pack) → `syncToAll`. On failure: resume + leave
+  data as-is + incident-log. Reports the `pre-restore-…` safety name so the developer can undo a restore.
+
+**Design notes / known limits (call out for testing):**
+- Restore runs **synchronously on the server thread** (brief hitch on a big restore) — deliberate, so no
+  other command can edit slots mid-swap. Acceptable for a rare, safety-critical op.
+- Placed-block **glow** isn't re-applied to already-placed blocks on restore (matches startup, which does
+  no post-load relight); the block's SlotData glow IS restored, so re-placing/breaking picks it up. Minor.
+- `CustomBlocksConfig.load()` re-reads the restored config; a backup from a different maxSlots is an
+  untested cross-version edge (same-version backups are fine).
+
+**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` §2 (restore needs confirm · brings block back ·
+safety copy auto-saved · cancel · recover · panic · delete · survives restart). **Test §1 too if not yet.**
+
+**Next (after §1+§2 pass):** Slice 3 (auto-backup timer + prune).
+
+---
+
+## 2026-06-13 (later 11) — Group 09 STARTED · Slice 1 (backup save + list) built (green, NOT in-game)
+
+Developer parked `shapepreview [id]` as **PARTIAL** (base works; textured `[id]` deferred — noted in
+`GROUP_08_SHAPES.md`) and moved to **Group 09 (Backup & Data Safety)** with a strong "be surgical" note.
+Group 09 is greenfield in -B and large/dangerous, so it's being built in **tested slices, safest first**
+(plan in `GROUP_09_TESTING_GUIDE.md`). Developer approved **starting with Slice 1 only**.
+
+**Done — Slice 1 (build green; gates pass; NOT in-game tested):**
+- **`core/BackupManager.java`** (new) — point-in-time backups under `config/customblocks/backups/<name>/`:
+  copies live `slots.json` + `config.json` + `textures/` + `sources/` verbatim, plus a `manifest.json`
+  (epoch + human time, block count, auto flag). **READ-ONLY w.r.t. live data** — never writes the live
+  files. Built in a `<name>.tmp` dir then **atomically renamed**, so a crash mid-copy can only leave a
+  stray `.tmp` (ignored by `list()`), never a half-written named backup. Name validated
+  `[A-Za-z0-9_-]{1,48}` (no path traversal). `list()` reads manifests, newest first.
+- **`command/handlers/BackupCommands.java`** (new) — `/cb backup save [name]` (auto-names if blank;
+  refuses duplicates + bad names) and `/cb backup list`. Save flushes `SlotManager.saveAll()` on the
+  server thread first, then copies on a daemon worker (heavy-I/O idiom) → chat on completion.
+- Registered in `CommandRegistrar`.
+- **Path-agnostic by design:** backups copy whatever paths exist *now* and (Slice 2) restore them
+  exactly — so this slice does NOT touch the risky data-path normalization (deferred to Slice 6).
+
+**Deliberately NOT built yet (next slices, each tested before the next):** restore/delete/panic/recover
+(Slice 2, 🔴 overwrites live data), auto-backup (3), trash browser (4), broken-blocks + safety (5),
+first-boot migration + path move to `data/` (6, 🔴 highest risk).
+
+**Jar:** built to `build/libs/customblocks-1.0.0.jar` only — **not** copied to any mods folder
+(developer's instruction; build.gradle has no auto-deploy task anyway).
+
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_09_TESTING_GUIDE.md` §1 (G09.1–2: save named/
+auto, duplicate + bad-name refused, list). After it passes → Slice 2 (restore/panic) with extra care.
+
+---
+
+## 2026-06-13 (later 10) — x-ray + shapepreview fixes ✅ in-game · ideas captured
+
+Developer confirmed **both fixes pass in-game** ✅ — `.nonOpaque()` killed the x-ray on shaped blocks, and
+`/cb shapepreview` now spawns (op-level summon). No code this turn — captured two agreed/brainstormed
+ideas in `docs/Finale Fix/GROUP_08_SHAPES.md`:
+- **FaceGuide** (replaces the confusing face-tile clarity problem): a built-in auto-seeded block with
+  N/E/S/W/UP/DOWN painted on its faces + a `/cb faceguide` toggle that temporarily swaps a looked-at block
+  to it (auto-restores after ~30s / on relog). Letters drawn in-code, no download.
+- **Textured shape preview** `/cb shapepreview <shape> [id]`: preview a shape wearing a custom block's
+  texture with NO pack rebuild — summon `block_display`(s) of `customblocks:slot_N` transformed into each
+  `BlockShapes.boxes(shape)` box. Single-box exact; multi-box = one display per box; cross = fallback.
+
+**Next (build order, after this):** FaceGuide block + `/cb faceguide`; textured `shapepreview` arg2;
+`facechangegui` no-arg list-pick flow; then `bulkshape`; then the triangle chat.
+
+---
+
+## 2026-06-13 (later 9) — Group 08 tested: x-ray + shapepreview bugs FIXED · GUIs parked for polish
+
+Developer ran the Group 08 guide. **Shapes, shape editor GUI, face commands + face editor GUI all
+pass** ✅ — but two bugs + GUI-clarity feedback. **Build green with JDK 21; all three gates pass.
+The two fixes are NOT yet in-game re-tested.**
+
+**Bugs fixed this session (build green — awaiting in-game re-test):**
+- **X-ray on shaped blocks** — placed slab/pillar/etc. let you see through the world behind them.
+  Cause: `SlotBlock` was registered as a full **opaque** cube, so neighbours culled their faces against
+  it regardless of the real shape. Fix: `AbstractBlock.Settings.nonOpaque()` in `SlotManager.registerAll`
+  so the game respects each block's actual culling shape. Bonus: cut-out (transparent-background)
+  textures now show through. ⚠️ Re-test that **full** image blocks still look right (lighting can differ
+  slightly for non-opaque blocks).
+- **`/cb shapepreview` showed nothing** — the chat line printed but no block appeared. Cause: the inner
+  vanilla `summon` ran on a `withSilent()` source at the **player's** permission level; in a no-cheats
+  world that's level 0, so `summon` (needs 2) failed silently. Fix: run summon/kill on `src.withLevel(4)
+  .withSilent()` (op level), so it works regardless of cheats/op. (Confirmed via latest.log: "Previewing
+  …" fired, no summon, no error — classic silenced permission failure.)
+
+**GUI updates — 🟡 PARKED for polish (developer's call, do later):**
+- **Face editor layout is confusing** — coloured-glass tiles don't read as "this is the north face,"
+  etc. (see the test screenshot). Needs a clearer, intuitive layout — brainstormed options in chat /
+  below; not built yet.
+- **`/cb facechangegui` no-arg flow** — should open the block list (`listgui`) in single-pick mode →
+  confirm one block → then the face editor for it. Not built yet (part of the same polish pass).
+
+**Docs:** the **Custom Shape Sculptor** idea is now saved at the bottom of `docs/Finale Fix/
+GROUP_08_SHAPES.md`, clearly marked "currently just an idea."
+
+**Next:** developer re-tests the two fixes (x-ray on a slab + `/cb shapepreview slab_top`); then the
+face-GUI polish (layout redesign + no-arg list-pick flow); then `bulkshape`; then the triangle chat.
+
+---
+
+## 2026-06-13 (later 8) — Group 08 slices: shape cmds + 2 GUIs + face aliases + shapepreview (build green, NOT in-game)
+
+Continued Group 08. Slice 1 (shape **commands** + live collision/outline + generated pack model) was
+already in the tree from the prior session and **compiles**; this session added the two **chest GUIs**,
+the **spec-name face aliases**, and **`/cb shapepreview`**, all delegating to tested commands / the
+vanilla command parser. **Build green with JDK 21; all three gates pass (verifyFileSize /
+verifyMojibake / verifySound). NOT in-game tested.**
+
+**Done (build green; gates pass — awaiting in-game test):**
+- **Shape editor GUI** — `gui/chest/ShapeEditorMenu.java` (new). One button per shape (current one
+  enchant-glinted) + a "reset to full" tile; each click runs the tested `/cb setshape`/`/cb clearshape`
+  via `GuiRouter.runAndReopen`. No shape logic duplicated. Opened by `/cb shapeeditor <id>`.
+- **Face editor GUI** — `gui/chest/FaceEditorMenu.java` (new). One tile per face (down/up/north/south/
+  west/east); **left-click** chat-prefills `/cb paintface <id> <face> ` for a URL paste (the proven
+  long-URL path — URLs don't fit an anvil), **right-click** clears that face, and a tile clears all.
+  Opened by `/cb facechangegui <id>`.
+- **Wiring** — `Nav.Dest` (+`SHAPE_EDITOR`,`FACE_EDITOR`), `GuiRouter.build` (2 cases),
+  `ChestGuiCommands` (`shapeeditor`/`facechangegui` commands; `editor` refactored to share a new
+  `openFor(dest,id)` helper).
+- **Spec-name face aliases** — `FaceCommands.java`: `/cb setface` (= `paintface`) and `/cb clearallfaces`
+  (= `clearface <id> all`). Pure aliases over the tested handlers — no new texture logic.
+- **`/cb shapepreview <shape>`** — `ShapeCommands.java`. Floats a vanilla stand-in block (slab→stone
+  slab, stairs→stone stairs, cross→poppy, …) ~2.5 blocks ahead at eye level, auto-removed after 5s.
+  Built by orchestrating the vanilla `summon block_display` / `kill @e[tag=…]` as the player via the
+  command parser (the mod has **no** entity code, and `BlockDisplayEntity` exposes no clean setter),
+  each spawn uniquely tagged; cleanup runs on the daemon-thread idiom → `server.execute`. Player + op
+  only (summon needs level 2); both vanilla commands run on a `withSilent()` source so only our own
+  friendly message shows.
+
+**Decisions:**
+- Per-face textures were ALREADY built in Group 06/M4 (`paintface` / `clearface <face|all>` +
+  `TextureStore` face I/O + `ServerPackGenerator` per-face cube). Group 08's `setface`/`clearallfaces`
+  are just spec-named aliases over them — nothing re-implemented.
+- Face GUI uses **chat-prefill** for the URL (not the literal "anvil" the spec mentions): the anvil
+  rename box can't hold a full image URL, and chat-prefill is the mod's established URL-input pattern
+  (Retexture, Rainbow Rectangle). Functionally satisfies G08.11.
+
+**Decision on shapepreview:** developer chose the **summon-display** approach (over a temp real block /
+deferring) — chosen because the NBT parser handles the geometry, it looks native, and the daemon-thread
+auto-kill matches the mod's idiom. Trade-off: it needs the player to be op (summon = level 2), which the
+server owner is.
+
+**Editor links:** added **Shape** (stonecutter, slot 25) + **Faces** (item frame, slot 26) tiles to
+`EditorMenu` — `/cb editor <id>` now reaches both new GUIs (navigate, so Back returns to the editor).
+
+**Still queued:** `bulkshape`; `customtriangle`/`trianglemode` (triangular geometry vs the existing
+Group 06 colour-variant "Triangle" — needs a design chat). New idea parked for discussion: a per-voxel
+**custom-shape sculpt tool** as an Omni-Tool mode (could grow into its own group) — see notes below / chat.
+
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_08_TESTING_GUIDE.md` (new) — shape commands
+(§1), shape editor GUI (§2), face commands/aliases (§3), face editor GUI (§4), shape preview (§5).
+
+**Next (after the above pass):** `bulkshape`; then discuss the triangle features.
+
+---
+
+## 2026-06-13 (later 7) — bulkreid ✅ (partial) · starting Group 08 (Shapes & Per-Face)
+
+`/cb bulkreid` command **passes in-game** ✅ — developer marked it **partial / needs polish**: the
+Step1→Step2 GUI for reid + a Hub tile + a polish pass are **parked for later** (revisit with bulk
+recolor). Then asked to **implement Group 08 (Shape System & Per-Face Textures) entirely**.
+
+**Parked (bulkreid follow-ups):** reid GUI op in `BulkActionMenu` + Hub tile + repoint no-arg + polish.
+
+**Group 08 — scope (the largest group; deep rendering/pack work, both features greenfield in -B):**
+shapes (slab/top·bottom, thin, carpet, wall, pane, stairs, cross, pillar, custom AABB) + per-face
+textures (6 faces) + 2 chest GUIs (shape editor, face editor) + shape preview + ~14 commands
+(setshape/add/remove/clear, shapelist, shapepreview, setface/clearface/clearallfaces, facechangegui,
+customtriangle, trianglemode, bulkshape). Spec: `docs/Finale Fix/GROUP_08_SHAPES.md`. Built in
+verifiable slices (one tested before the next), same rhythm as the bulk rounds — see below.
+
+---
+
+## 2026-06-13 (later 6) — /cb bulkreid command built (command-first; GUI after it passes)
+
+Developer asked to do **bulkreid next** (recolor deferred), then move to the next group. Following the
+proven reid/export rhythm: **command first → in-game test → then the GUI**. Built the new
+`/cb bulkreid` command. **Build green with JDK 21; gates pass; jar deployed 18:06. NOT in-game tested.**
+
+**Design (mirrors `/cb bulkrename`, but transforms the ID not the display name):**
+- `/cb bulkreid <filter> prefix <text> | suffix <text> | replace <old> <new>` — changes each matched
+  block's custom id by the pattern, **keeping the slot** (textures + placed blocks untouched, no pack
+  rebuild — same as single `/cb reid`).
+- Per block SKIPS + reports: locked · no-change · invalid id (must match the create/word charset) ·
+  **collisions** — a newId already taken by a block or already claimed earlier in the same batch (this
+  also rules out unsafe id swaps).
+- ONE undo entry: a `BATCH` of `REID` children (HistoryCommands already reverses REID inside a batch),
+  so a single `/cb undo` re-ids them all back. Big/"all" batches held for `/cb confirm` like the others.
+
+**Done (build green; gates pass — NOT in-game tested):**
+- `command/handlers/BulkReidCommands.java` (new) — the command above. Reuses `BulkScope`,
+  `SlotManager.reId`/`hasId`, `UndoManager.recordBatch`, `BulkConfirm`, `BulkChat`, `HudSync` — no new
+  id/undo machinery. Tab-complete via the existing `BulkSuggestions.RENAME_ARGS` (same token layout).
+- `command/CommandRegistrar.java` — registers `BulkReidCommands`.
+- No-arg `/cb bulkreid` prints usage **this round** (the GUI doesn't exist yet); it will open the
+  builder once the reid op is added to `BulkActionMenu`.
+
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` → new **§A2**
+(pattern re-id · undo the batch · collision skipped · big-batch confirm · guards).
+
+**Next (after §A2 passes):** add the **reid** op to the Step1→Step2 GUI (thin front-end over this
+command — `BulkActionMenu` reid branch using mode+text controls, like rename) + a Bulk Hub tile +
+repoint the no-arg command to open Step 1. Then move on to the next group.
+
+---
+
+## 2026-06-13 (later 5) — ALL bulk ops Step1→Step2 ✅ verified in-game · dead dashboard removed
+
+Developer confirmed **all 7 remaining ops pass in-game** ✅ (edit · delete · rename · category ·
+duplicate · lock · favorite — export already passed). The two-step bulk GUI rollout is **done**.
+
+**✅ Verified in-game (developer, 2026-06-13):** every bulk op through Step1→Step2 (all 8 incl. export).
+
+**Done (cleanup — code only, no behaviour change; build green, gates pass, jar redeployed 17:55):**
+- Deleted the now-unreachable old single-screen dashboard: `gui/chest/BulkPropertyMenu.java` and
+  `gui/chest/BulkFilterMenu.java`.
+- Removed their `Nav.Dest` entries (`BULK_PROPERTY`, `BULK_FILTER`) and `GuiRouter` routes.
+- Removed the orphaned `BulkSession` helpers they were the only callers of (`prettyFilter`,
+  `toggleExportFormat`) + the now-unused `Locale` import; refreshed stale "Called by" javadoc that
+  pointed at the deleted classes.
+- Backend untouched. The bulk subsystem is now exactly: Hub → `BulkSelectMenu` (Step 1) →
+  `BulkActionMenu` (Step 2) → tested `bulk…` command paths, with `BulkStyle` for shared styling.
+
+**Next:** the §D backlog — bulk **recolor(edge)** and bulk **reid** (each via the same Step1→Step2 flow).
+
+---
+
+## 2026-06-13 (later 4) — Step 1 → Step 2 GUI rolled out to ALL bulk ops
+
+Developer confirmed the export Step1→Step2 flow + despeckle v2 **pass in-game** ✅, and asked to
+extend the flow to every bulk op — "all, but one consistent pattern, no mistakes." Generalized the
+export flow into a shared selector + one per-op action screen, and routed every entry point through it.
+**Build green with JDK 21; all three gates pass. The other ops are NOT in-game tested — that's the handoff.**
+
+**✅ Verified in-game (developer, 2026-06-13):** export Step1→Step2 flow · despeckle v2 (before/after screenshot).
+
+**Done (build green; gates pass — non-export ops awaiting in-game test):**
+- **Generalized Step 1** — `gui/chest/BulkSelectMenu.java` (new) replaces the export-only
+  `BulkExportSelectMenu`. Op-agnostic: reads `BulkSession.op` only to colour/label; the selection
+  (Option A filter-cycle / Option B hand-pick + 🟩 green-concrete confirm) is identical for every op.
+- **Generalized Step 2** — `gui/chest/BulkActionMenu.java` (new) replaces `BulkExportActionMenu`.
+  One op-driven screen: 🔍 Review + the op's controls + ✔ Apply. Controls per op — edit: setting+value ·
+  rename: mode+text(s) · category: target · export: format · lock/favorite: direction · delete &
+  duplicate: none. Apply delegates to the existing tested `applyXFromGui` paths with the Step-1 scope.
+- **Shared styling** — `gui/chest/BulkStyle.java` (new): per-op frame/header/icon palette, shared by
+  both new menus.
+- **Selection state generalized** on `BulkSession`: `export*` selection fields/methods renamed to
+  generic `sel*` (`selMode`/`selFilterKind`/`selFilterValue`, `selScopeExpr`, `selHasSelection`,
+  `selLabel`, `cycleSelFilterKind`, `selKindLabel`); `listPickForExport` → `listPickForBulk`. Export
+  format helpers kept (`EXPORT_FORMATS`, `cycleExportFormat`).
+- **Every entry point routed through the new flow:** `BulkHubMenu` all 8 op tiles → Step 1 (op set +
+  `resetSelection`); each `/cb bulk<op>` no-arg → Step 1 via the shared `BulkCommands.openOpBuilder`
+  (added rename + lock/unlock/favorite/unfavorite no-arg openers too); `BlockListMenu` green-concrete
+  confirm now returns to the generic Step 1. `Nav` dests `BULK_EXPORT_*` → `BULK_SELECT`/`BULK_ACTION`.
+- **Backend untouched:** `BulkScope`, `ListSelection`, and every `bulk…` command path are unchanged —
+  no bulk/export logic duplicated or rewritten. All files under the §9.3 gates.
+- **Left in place (now unreachable, not deleted):** the old single-screen `BulkPropertyMenu` +
+  `BulkFilterMenu` (and their `BULK_PROPERTY`/`BULK_FILTER` routes). Safe to remove once the new flow
+  passes in-game — flagged as a follow-up.
+
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` → new **§A1**
+(every op through Step1→Step2: edit · delete · rename · category · duplicate · lock · favorite — export
+already ✅). Confirm each op's Step 2 controls work and Apply changes only the selected blocks.
+
+**Next (after §A1 passes):** delete the dead `BulkPropertyMenu`/`BulkFilterMenu` + their routes.
+
+---
+
+## 2026-06-13 (later 3) — bulk export GUI redesign built (Step 1 → Step 2) · the template
+
+Built the approved two-step bulk-export GUI — export first, as the template for the other bulk ops.
+**Build green with JDK 21; all three gates pass (verifyFileSize / verifyMojibake / verifySound).
+NOT in-game tested — that's the handoff.**
+
+**Done (build green; gates pass — awaiting in-game test):**
+- **Step 1 — Selection GUI** (`gui/chest/BulkExportSelectMenu.java`, new). Opens at
+  **"None selected currently"**. *Option A*: a Filter tile that cycles All blocks / Category /
+  Favorited / Locked / Name contains / ID starts; the three text kinds reveal an anvil value tile.
+  *Option B*: "Select specific blocks" → the block list in pick mode → a 🟩 green-concrete
+  **"Use these N block(s)"** confirm returns here. **Next →** lights only once the selection resolves
+  to ≥1 block.
+- **Step 2 — Action GUI** (`gui/chest/BulkExportActionMenu.java`, new). 🔍 Review (the exact block
+  ids), 📄 Format chooser cycling **all** formats (json · txt · png · csv · md · html · yaml), and
+  **✔ Click to Export** beside it → delegates to the tested
+  `BulkExportCommands.applyExportFromGui` (i.e. `/cb bulkexport <scope> <format>`).
+- **Backend reused, not rewritten:** selection state rides on `BulkSession` (new export-flow fields
+  + helpers: `exportSelMode`/`exportFilterKind`/`exportFilterValue`, `exportScopeExpr`,
+  `exportHasSelection`, `exportSelLabel`, `cycleExportFormat`); picks reuse `ListSelection`; the
+  resolve is the same `BulkScope`; the export is the same command path. No bulk/export logic duplicated.
+- **Wiring:** `Nav` (+`BULK_EXPORT_SELECT`,`BULK_EXPORT_ACTION`), `GuiRouter` (2 routes),
+  `BlockListMenu` (green-concrete confirm shown only in export-pick mode — normal "Bulk actions on N"
+  unchanged otherwise), `BulkExportCommands.openBuilder` + `BulkHubMenu` Export tile now open Step 1.
+  The old export branch in `BulkPropertyMenu` is left intact (just no longer the front door). All
+  files under the §9.3 gates.
+
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` → new **§A0**
+(`/cb bulkexport` → Step 1 selection → Step 2 review/format/export, all 7 formats, green-concrete pick).
+
+**Next (after §A0 passes):** replicate the Step 1 → Step 2 flow to the other bulk ops, one at a time.
+
+---
+
+## 2026-06-13 (later 2) — testing-guide overhaul (v3 style) · bulk GUI redesign queued
+
+Developer confirmed the reid GUI + listgui A/B/C **all pass in-game** ✅. Then asked for (1) a docs
+overhaul and (2) a multi-step bulk GUI redesign. Style + build-order approved via question.
+
+**Done — docs (no code, no build needed):**
+- **New v3 testing-guide blueprint** (`Reports/_TESTING_GUIDE_TEMPLATE.md`) — readable style: a
+  🗺️ "At a glance" map first, two big dividers (🎯 Test now / ✅ Passed), soft 💡 What-it-does +
+  🧰 Before-you-start intros, **one test = one bullet** with ✅ Pass / ❌ Broken-if, 📋 scorecards,
+  emoji grouping. Goal: less overwhelm.
+- **Rewrote all 7 group testing guides** to v3: `GROUP_02`, `03`, `04`, `05`, `06`, `07`, `25`
+  (`Reports/*_TESTING_GUIDE.md`). Every existing test preserved; long prose history condensed into
+  scannable bullets. Group 06's M4 moved from "coming" to "test now" (it's built); Group 07 notes
+  the upcoming Step1→Step2 redesign.
+
+**Queued — bulk GUI redesign (approved: export-first as the template):**
+- New **Step 1 selection GUI**: shows "None selected currently"; Option A filter-cycle
+  (All / Category / Favorited / Locked / Name / ID), Option B "Select specific blocks" → listgui →
+  🟩 green-concrete confirm. Then **Next →**.
+- New **Step 2 action GUI** (export): 🔍 Review (the matched blocks) · Format chooser (json·txt·png·
+  csv·md·html·yaml) · ✅ Click to Export. Delegates to the tested `/cb bulkexport` command.
+- Reuses `ListSelection`, `BlockListMenu`, `BulkScope`, `BulkSession`, the bulk commands.
+- **Next session:** build the export flow, build green, hand off for test; then replicate to the
+  other bulk commands.
+
+---
+
+## 2026-06-13 (later) — listgui upgrades: search + multi-select + bulk-on-selection (A → B → C)
+
+Developer asked for "advanced bulk + advanced search, one by one." Built the first three slices on
+`/cb listgui` in one pass (they'll test the batch together); slice D (advanced search operators) is next.
+
+**Done (build green; gates pass — NOT in-game tested):**
+- **Slice A — in-list search.** `/cb listgui` gains a Search tile (anvil) that filters the list by
+  id / name / category (case-insensitive contains). The query rides on the `MenuKey` arg so paging
+  keeps it; right-click Search clears it.
+- **Slice B — tick-many multi-select.** New `gui/chest/ListSelection.java` (per-player, order-preserving
+  id set). In the list, **left-click ticks/unticks** a block (glint + ✔), **right-click opens the
+  editor** (was left-click). Footer adds "N selected" (click clears) and "Select all shown".
+- **Slice C — bulk actions on the selection.** A "Bulk actions on N selected" tile seeds
+  `BulkSession.filter` with the ticked ids (`BulkScope` already resolves a comma id-list) and opens
+  the existing, tested **Bulk Hub** — so delete / lock / favourite / category / duplicate / export /
+  property / rename all work on the hand-picked set. **No bulk logic duplicated.**
+- **Files:** `gui/chest/ListSelection.java` (new), `gui/chest/BlockListMenu.java` (rewritten),
+  `gui/chest/GuiRouter.java` (routes the search query). All under the §9.3 gates.
+
+**Behaviour change to call out:** in the list, **left-click now selects, right-click edits**
+(previously left-click opened the editor). Documented in the Group 07 listgui test note.
+
+**TEST IN-GAME (developer):** the new 🎯 "listgui upgrades" section in
+`docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` (search · multi-select · bulk-on-selection).
+
+**Next (after this passes):** slice D — advanced search operators (compound filters: category +
+locked + name-contains, saved filters) + "more stuff", one by one.
+
+---
+
+## 2026-06-13 (reid command ✅ verified · reid GUI slice B built · export ✅ working · docs synced)
+
+Developer confirmed the `/cb reid` command works in-game → **slice A ✅ verified**. Also confirmed
+**export works** (polish pending — see the export entry below). Then built slice B (the reid GUI) +
+wired reid into the block editor, synced the testing guide, and logged a chat-polish item.
+
+**✅ Verified in-game (developer, 2026-06-13):**
+- `/cb reid <id> <newId>` command — slice A (the whole command + undo + id-migration entry below).
+- Export formats incl. PNG (build + in-game) — **polish pending**, not blocking.
+
+**Done (build green; gates pass — GUI NOT in-game tested yet):**
+- **Reid GUI — slice B.** New `gui/chest/ReIdMenu.java`:
+  - no-arg `/cb reid` → a paginated **pick-a-block** menu; click a block → anvil pre-filled with
+    its current id; type a new id, take the result.
+  - single-arg `/cb reid <id>` → **straight to the anvil** (checks the block exists + isn't locked
+    first, so a typo or locked block fails cleanly instead of opening a dead prompt).
+  - shared `ReIdMenu.openAnvil(player, id, onCancel)` → on submit **delegates to the tested
+    `/cb reid <id> <newId>` command** (lock check, id-key migration, undo, chat all unchanged); on
+    cancel reopens the source menu. The rules stay in one place — the GUI is a thin front-end.
+  - `Nav.Dest.REID` added + routed in `GuiRouter`.
+- **`/cb editor <id>` → new "Change ID" button** (anvil icon, slot 28, left of Rename) → same
+  `openAnvil`. So reid is reachable from the block editor too.
+- **Files:** `gui/chest/ReIdMenu.java` (new), `gui/chest/EditorMenu.java`, `gui/chest/Nav.java`,
+  `gui/chest/GuiRouter.java`, `command/handlers/ReIdCommands.java`. All under the §9.3 gates.
+
+**Docs synced:**
+- `docs/Finale Fix/Reports/GROUP_25_TESTING_GUIDE.md` (new) — reid command (☑️ passed 2026-06-13) +
+  reid GUI (🎯 test now), in the v2 per-group format. Testing lives **per group**, not in the old
+  V1 batch guide.
+- `docs/CHANGELOG.md` — reid marked verified + reid GUI added.
+- `docs/Finale Fix/GROUP_04_CHAT.md` — new **Chat-polish backlog**: the `/cb rename` message reads
+  `Renamed "X" to "X"` when id == new display name and doesn't label which is the id vs the name.
+
+**TEST IN-GAME (developer) — reid GUI (slice B):**
+```
+/cb reid                       → pick-a-block menu opens; click a block → anvil shows its id
+   (edit to a new id, take the result)   → "Changed id <old> to <new>." ; /cb list shows it
+/cb reid <id>                  → anvil opens straight away for that block
+/cb editor <id>  → Change ID   → same anvil
+/cb reid <lockedId>            → refused up front ("locked, unlock first") — no dead anvil
+press Esc on the anvil         → returns to the picker / editor, nothing changed
+```
+
+**Next (after the GUI passes):** the item after reid — **Fix 1: tick-many picker + in-list search
+on `/cb listgui`**. Needs a quick design chat first: does the multi-select picker **replace** or
+**complement** the existing filter model (`BulkFilterMenu`)? (See the export entry's "Also pending".)
+
+---
+
+## 2026-06-12 (/cb reid — command + undo + id migration · GUI deferred to slice B)
+> **✅ Slice A verified in-game by the developer 2026-06-13.** Slice B (the GUI) was built the
+> same day — see the top entry.
+
+Started the `/cb reid` work the previous entry handed off. Developer chose **command first, GUI
+after in-game test** (their usual "GUI is a thin front-end over the tested command" pattern).
+
+**Done (build green; gates pass; jar staged 16:12 — NOT in-game tested):**
+- **`SlotManager.reId(oldId, newId)`** — changes the id, **keeps the slot index** (so the baked
+  texture, keyed by index, does NOT move and placed `slot_N` blocks are unaffected → **no pack
+  rebuild needed**). Guards: oldId exists, newId non-blank / not equal / not taken. Migrates every
+  id-keyed reference, then `saveAll()`. Records no undo (caller's job).
+- **Id-ref migration — audited the whole tree, these are ALL of them.** New `renameId(old,new)`
+  mover on each: `LockManager`, `FavoritesManager` (per-player, moves across **every** player's
+  set, order preserved), `BlockNotesManager`, `DraftManager`. Category rides on `SlotData` (free).
+  `MutationLog` is an audit log → left as-is (records what happened). TemplateManager /
+  MagicItemsManager key by template-name / tool-id, NOT block id → untouched.
+- **Undo — `Kind.REID`.** reId is its **own inverse** (the migration is a pure move), so undo just
+  re-ids back: `UndoManager.recordReid(before,after)`; `HistoryCommands` REID cases call
+  `SlotManager.reId(after,before)` (undo) / `reId(before,after)` (redo). No snapshot/texture
+  machinery added. `describe()` shows `reid old → new`.
+- **New `command/handlers/ReIdCommands.java`** (split out — CreationCommands is 381 lines, near the
+  400 gate): `/cb reid <id> <newId>`, both `word()` args, tab-complete on the existing id via
+  `BlockSuggestions.IDS`, locked-block refusal (same rule as rename/delete/retexture), clear
+  per-case errors, HUD re-sync. Registered in `CommandRegistrar` (after CreationCommands).
+
+**Files:** `core/SlotManager.java`, `core/LockManager.java`, `core/FavoritesManager.java`,
+`core/BlockNotesManager.java`, `core/DraftManager.java`, `core/UndoManager.java`,
+`command/handlers/HistoryCommands.java`, `command/handlers/ReIdCommands.java` (new),
+`command/CommandRegistrar.java`.
+
+**TEST IN-GAME (developer):**
+```
+/cb create reidtest ReidTest          → make a block
+/cb fav reidtest · /cb lock reidtest · /cb note reidtest hello   → attach state
+/cb lock reidtest  →  /cb reid reidtest x   → refused ("locked, unlock first")
+/cb unlock reidtest
+/cb reid reidtest newname             → "Changed id reidtest to newname"
+/cb list                              → shows newname (same slot #), reidtest gone, texture intact
+/cb favs · /cb locked · /cb note newname   → state followed the new id (newname fav/locked/noted)
+/cb undo                              → back to reidtest, state follows back
+/cb redo                              → newname again
+/cb reid newname existingId           → "already taken" error (no change)
+```
+
+**Next (slice B, after pass):** the GUI — no-arg `/cb reid` → pick-a-block menu (clone
+`BlockListMenu`), click → `AnvilPrompt` for the new id → runs the verified backend. Single-arg
+`/cb reid <id>` → straight to the anvil.
+
+---
+
+## 2026-06-12 (export formats incl. PNG · recolor parked · reid handoff)
+
+Developer originally had these 3 done in the **old `CustomBlocks/` reference repo by mistake**; that
+repo has been **reverted to original** (only my 6 edits there were undone; their other uncommitted
+work was left untouched). A patch of that throwaway work sits at `Coding/cb-3fixes.patch` — **reference
+only, do NOT apply to -B** (different architecture). The 3 asks were re-scoped onto -B:
+
+**✅ WORKING (developer confirmed in-game 2026-06-13) — polish pending, see note below.**
+
+**Done (build green; gates pass; jar staged 15:48):**
+- **More export formats incl. PNG.** `BlockExporter` now does `png`, `csv`, `md`, `html`, `yaml` on
+  top of `json`/`txt`. PNG reads the baked `TextureStore.load(index)` and writes real `.png` images.
+  - `/cb export png` → every block's texture → `exports/textures-<stamp>/<id>.png`
+  - `/cb export <id> png` → one block's image → `exports/<id>.png`
+  - `/cb export csv|md|html|yaml` (whole list) and `/cb bulkexport <filter> <format>` (filtered)
+  - Clickable format buttons added to `/cb list` and `/cb export`.
+  - Files: `core/BlockExporter.java`, `command/handlers/UtilityCommands.java`,
+    `command/handlers/BulkExportCommands.java`, `command/handlers/BulkSuggestions.java`. All under gates.
+
+**Polish pending (export works, revisit later — not blocking):** revisit formatting/UX of the new
+formats (csv/md/html/yaml layout, PNG output path naming, clickable-button polish). Deferred; no
+crash, just rough edges. Pick up after reid.
+
+**Parked — needs a design decision (NOT built):**
+- **`/cb recolor`** — developer is unsure what it should do. Two candidates discussed:
+  (A) make a recoloured **variant** block (`mars` → `mars_red`, background recoloured, design kept) — a
+  thin wrapper over the existing, tested `ColorVariantService.createVariant` (records CREATE undo); or
+  (B) repaint the original block **in place** — needs a new texture pipeline + extending UndoManager
+  for texture undo (deliberately deferred). **Decide A vs B with the developer before building.**
+
+**NEXT — START HERE: `/cb reid` (its own session, per the developer).** -B has **no `reId`** today
+(`SlotManager.rename` is display-name only; ids are keyed in several places). Build it carefully + tested:
+  - `SlotManager.reId(oldId, newId)` — change the id; the **slot index stays**, so `TextureStore`
+    files (keyed by index) do NOT move. Persist via `SlotDataStore`. Guard: newId free, valid, not taken.
+  - **Migrate every id reference:** `LockManager`, `FavoritesManager`, `BlockNotesManager`,
+    `DraftManager` (check each for id-keyed state), plus categories travel on the SlotData itself.
+    Audit with a grep for `customId`/id-keyed maps before finishing — a missed one = a dangling ref.
+  - **Undo:** `UndoManager` currently has no id-change/texture undo (see its header note). A reid op
+    changes the map key, so a plain MODIFY won't reverse cleanly — design a reid undo (reid back +
+    restore refs) or a dedicated Op kind.
+  - Command `/cb reid` + a **cool GUI**: no-arg → pick-a-block menu (model on `BlockListMenu`), click →
+    `AnvilPrompt` for the new id. Single-arg `/cb reid <id>` → straight to the anvil. `<id> <newid>` → direct.
+  - Keep all new files under -B's gates (≤500 / handlers ≤400). Test in-game before marking done.
+
+**Also pending (after reid):**
+- **Fix 1 — tick-many picker + in-list search on `/cb listgui`.** Developer wants a multi-select block
+  picker; -B currently uses a **filter model** (`BulkFilterMenu`: all/fav/locked/category + `name:`/`id:`).
+  These are different UX. **Needs a quick design chat** (does the picker replace or complement the filter?).
+
+**Build on this machine (user 66664, not POTATO):** PATH `java` is Java 8; set JDK 21 explicitly —
+`$env:JAVA_HOME="C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot"; .\gradlew.bat build --no-daemon -x test`.
+
+**Next:** developer tests the export jar (15:48), then a fresh session builds `/cb reid`.
+
+---
+
+## 2026-06-12 (create-bug fix · despeckle v2 · bulk duplicate + export · Hub passed)
+
+Developer verified the Hub (✅ passed) and said despeckle works but wants it better; reported the
+broken-link create bug; asked to continue the leftover Group 07 ops.
+
+**Done (build green; jar staged 09:49):**
+- **Bug fix — broken link no longer makes an empty block.** `/cb create <id> <name> <url>` now
+  downloads + decodes the image FIRST (off-thread) and only allocates the slot if that succeeds
+  (`CreationCommands.createWithTexture`). A 404 / non-image / decode failure creates nothing. No-URL
+  create is unchanged (immediate).
+- **Despeckle v2 — edge-aware smart fill.** The black/white background fill is now chosen from the
+  subject's **silhouette** (the foreground ring touching the background), not just whole-subject
+  brightness: if ≥45% of the silhouette is dark (a dark-outlined logo, e.g. the Jordan emblem),
+  the fill goes WHITE so the outline stays visible instead of vanishing into black. Constants
+  `EDGE_DARK_VALUE` / `EDGE_DARK_FRACTION`. Bright-edged subjects still get black (no regression).
+- **`SlotManager.dupe` fixed** — it used to make an EMPTY copy (no texture, no attributes). Now it
+  clones the display name, glow/hardness/sound/collision/category, and the baked texture + source
+  image. (Single `/cb dupe` benefits too.)
+- **Bulk duplicate** — `BulkDuplicateCommands`: `/cb bulkduplicate <filter>`, unique `<id>_copy`
+  ids, ONE undo batch (CREATEs), ONE pack rebuild, confirm guard, slot-exhaustion reported.
+- **Bulk export** — `BulkExportCommands`: `/cb bulkexport <filter> [json|txt]`, the filtered
+  counterpart of `/cb export json` (read-only, no undo). Reuses `BlockExporter.exportAll`.
+- **Dashboard + Hub** — both new ops added: Operation cycle is now 8 (Edit · Delete · Rename ·
+  Category · Duplicate · Export · Lock · Favorite), Duplicate (white frame, book) and Export (brown
+  frame, map, json/txt toggle) have full tiles; Hub shows all 8 in two rows. Tab-complete:
+  `BulkSuggestions.EXPORT_ARGS`; duplicate reuses `FILTER_ONLY`.
+
+**Held for a fresh session (told developer):** bulk **recolor(edge)** — needs a no-undo decision
+first (recolour replaces texture like retexture); bulk **reid** — needs id-key migration across
+locks/favorites/notes/drafts. Doing these at the tail of a long session risks the exact untested
+mess we avoid; they get their own session.
+
+**Next:** developer tests jar 09:49 (create-bug · despeckle v2 · duplicate · export · 8-op hub),
+then recolor + reid.
+
+---
+
+## 2026-06-12 (Bulk Hub + Despeckle — built, awaiting in-game test)
+
+Group 07 verified + closed earlier today. Developer picked: build the Bulk Hub, then the
+despeckle fix, then they test both.
+
+**Done (build green; jar staged 09:24):**
+- **Bulk Hub** (`BulkHubMenu.java`, new `Dest.BULK_HUB`) — the front door for bulk work: one
+  colour-coded tile per op (edit/rename/category/lock/favorite/delete, matching each op's
+  dashboard frame colour), the remembered op glints, clicking a tile sets `BulkSession.op` and
+  navigates into the dashboard (so Back returns to the hub). Plus an "⊞ Open the dashboard" tile.
+  - `/cb bulkgui` and new `/cb bulkhub` now open the Hub. `/cb bulkproperty` (no args) still goes
+    straight to the dashboard in Edit mode (now sets op=property explicitly). MainMenu's Bulk tile
+    points at the Hub.
+- **Despeckle background-removal fix** (`BackgroundRemover` Stage 1c) — the agreed fix for the
+  old "tiny edge pixels block removal" bug, **without touching tolerance**: after the flood-fill
+  builds the bg mask, a 1-px morphological **close** (dilate→erode, 4-neighbour) bridges hairline
+  gaps/pinholes that walled off the fill, then tiny isolated **foreground specks** (area ≤
+  max(4, w·h/20000)) are dropped into the background. Constants `SPECK_MIN` / `SPECK_DIVISOR` are
+  named for easy tuning. Wrapped by the existing try/catch (never breaks a retexture).
+
+**Tuning note:** despeckle uses sensible defaults; developer to send a sample image where bg
+removal previously failed so the close radius / speck threshold can be dialled in if needed.
+
+**Next:** developer tests Hub + despeckle. Remaining roadmap: bulk duplicate · export · reid ·
+recolor(edge). A git checkpoint of the verified Group 07 work is also on the table.
+
+---
+
+## 2026-06-12 (GROUP 07 — ✅ VERIFIED IN-GAME, group closed)
+
+Developer ran the full `GROUP_07_TESTING_GUIDE.md` and **all of it passed**: every bulk op
+(property · delete · rename · lock/unlock · favorite/unfavorite · category) as both command and
+dashboard, tab-complete everywhere, Dashboard 2.0 (frame/colours/sounds/previews/typed filters),
+Back→home fix, and the clickable command twin. Jar 09:11.
+
+**Group 07 is DONE.** Nothing outstanding. CHANGELOG caveats dropped; testing guide marked all
+passed (per-step kept for regression).
+
+**Next (not started — pick one, small):** despeckle background-removal fix · bulk reid ·
+bulk duplicate · bulk export · bulk recolor(edge) · the full Bulk Hub menu. See bottom of this
+entry / the roadmap in the Bible §8.
+
+---
+
+## 2026-06-12 (GROUP 07 — command-twin click + bulk category move)
+
+Developer confirmed lock/favorite all good. Two asks: (1) command-twin tile should drop the
+command into chat on click + reword its last lore line; (2) continue to the next bulk op.
+
+**Done (build green; jar staged 09:11):**
+- **Command twin is now clickable** — clicking it closes the dashboard and posts a one-click
+  chat line (`GuiRouter.typeInChat`, SUGGEST_COMMAND) that fills the chat box with the exact
+  command (editable, not auto-run). Last lore line reworded to "§eClick here §7to auto-type it
+  in chat". (Engine note: no API types into chat without that one chat-link click — this is the
+  closest possible.)
+- **Bulk category move** — new op, the batch twin of `/cb setcategory`:
+  - **`BulkCategoryCommands.java`** (own handler so BulkCommands stays under the 400 gate):
+    `/cb bulkcategory <filter> <category>` (`none` clears). BulkScope filter, BulkConfirm guard
+    for big/all, BulkChat hover list, ONE UndoManager batch entry, locked-skip. Category is
+    metadata only — no pack rebuild (mirrors the single setter). Tab-complete via new
+    `BulkSuggestions.CATEGORY_ARGS` (filter, then existing categories + none).
+  - **Dashboard op** "Move to category" (cyan frame, CHEST icon): ③ Category tile types the
+    name in an anvil (existing names hinted, `none` clears); Apply disabled until set. Preview,
+    command twin (`/cb bulkcategory …`) wired.
+  - Registered in `CommandRegistrar`. `BulkSession` got `category` + the op in OPS/prettyOp.
+
+**Op cycle is now:** Edit · Delete · Rename · Move to category · Lock · Favorite.
+
+**Next:** developer tests command-twin click + bulk category (command + dashboard). Then:
+reid · duplicate · move(world?) · export · recolor(edge) · full hub · despeckle.
+
+---
+
+## 2026-06-11 (GROUP 07 — Lock + Favorite added to the dashboard)
+
+Developer switched to Opus, said continue (will test the 4 polish checks later). Next roadmap
+item = **lock/favorite dashboard tiles**. Backend (`BulkFlagCommands`) was already built + passed
+as commands; this wires them into the dashboard as two new operations.
+
+**Done (build green; jar staged 23:34):**
+- **Two new dashboard operations** — cycle is now Edit ⇄ Delete ⇄ Rename ⇄ **Lock** ⇄ **Favorite**.
+  Each has a **Direction** tile (③): Lock⇄Unlock, Favorite⇄Unfavorite (mirrors Rename's mode tile).
+  No value/text step — just op, filter, direction, Apply.
+- **Design-guide colours:** Lock = green frame (safe/reversible — green corners, §2 title,
+  TRIPWIRE_HOOK icon); Favorite = magenta/purple frame (special — NETHER_STAR icon). Preview,
+  command twin (`/cb bulklock <filter>` etc.), and Apply all follow.
+- **`BulkSession`:** added `flagOn` + `toggleFlag()` + `flagCommandOp()` (maps op+direction →
+  lock/unlock/favorite/unfavorite). `OPS` + `prettyOp` extended.
+- **`BulkFlagCommands.applyFlagFromGui(player, op, filter)`** — closes the screen, runs the
+  already-tested `run(...)` path. No new mutation logic (non-destructive, self-inverse, no undo
+  entry — the opposite command is the undo, with a chat `[undo]` button).
+
+**Not changed:** the flag commands themselves (already passed). GUI is a thin front-end.
+
+**Next:** developer tests the 4 polish checks (Back/frame/twin) + lock/favorite ops in the
+dashboard. Then: reid · duplicate · move · export · recolor(edge) · full hub · despeckle.
+
+---
+
+## 2026-06-11 (GROUP 07 — Back-button fix + Dashboard polish round 2 + GUI Design Guide)
+
+Developer test results: tab-complete (all steps) ✅ · filter tiles ✅ · end-to-end op ✅ ·
+dashboard "amazing" — asked for even more polish + a design-guide doc. One bug: **Back on a
+command-opened GUI closed it** instead of going back.
+
+**Done (build green; jar staged 23:22):**
+- **Back-button fix** (`GuiRouter.back`): empty stack after pop (menu opened straight from a
+  command, e.g. /cb bulkgui) now goes **home to the Main Menu** instead of closing. ✖ Close
+  still closes. Applies to every menu. `Icons.back()` lore updated to say so.
+- **Polish round 2:** new `ChestMenu.frame(edge, corner)` — two-tone "picture frame" (darker
+  corners: blue/black/orange per op); chest **title** now tinted per op (§3/§4/§6); quiet `§8»`
+  connector panes walk the eye ①»②»③; new **Command twin** tile (chain command block, slot 49)
+  shows the exact chat command the screen equals; **page-turn sound** when the dashboard opens
+  from a command (`GuiFx.open`). Filter picker got the same frame + title treatment.
+- **`docs/GUI_DESIGN_GUIDE.md` (new)** — the design language written down: colour semantics
+  (red = danger, blue = calm…), two-tone frames, the 6-row grid, radio-style choice tiles,
+  icon vocabulary, lore voice, the sound matrix, consequences-before-commit, the Back/Close
+  contract, and a copy-paste checklist for new menus. BulkPropertyMenu is the reference impl.
+
+**Next:** developer re-tests (Back behaviour + new frame/title/twin tile), then: lock/favorite
+dashboard tiles · reid · duplicate · move · export · recolor(edge) · full hub · despeckle.
+
+---
+
+## 2026-06-11 (GROUP 07 — tab-complete fix + Dashboard 2.0) — read this first
+
+Developer confirmed the whole Group 07 test sheet **works** (rename GUI, bulk lock/favorite, all).
+Then asked: (1) fix autocomplete after subcommands across the mod, (2) upgrade the basic-looking
+bulk dashboard.
+
+**Done (build green; jar staged 21:39):**
+- **Tab-complete audit of every /cb subcommand.** Root cause: the bulk commands use greedy
+  strings, which Brigadier can't suggest into without a custom provider. New
+  `BulkSuggestions.java` — token-aware providers (`FILTER_ONLY` / `PROPERTY_ARGS` /
+  `RENAME_ARGS`): re-tokenizes the typed tail, offsets the builder to the current token,
+  suggests filters (incl. live categories + block ids + after-comma id lists), property names,
+  and per-property values. Wired into `BulkCommands` (bulkproperty/bulkdelete/bulkrename) and
+  `BulkFlagCommands` (all four).
+- **Other suggestion gaps filled:** `/cb video extract <file>` (lists .mp4 names from the videos
+  folder), `/cb arabic letter <name>` (28 letter names), `/cb retextureall <px>` (16…512).
+  All other handlers already had providers (audited one by one).
+- **Dashboard 2.0** (`BulkPropertyMenu` + `BulkFilterMenu`): op-coloured frame (blue edit / red
+  delete / yellow rename), numbered step tiles, radio-style option lists (▸ on current; long
+  lists collapse to prev ▸ next), new **Matched** spyglass tile sampling the actual ids, filter
+  picker glints the current pick, wool-coloured category tiles, and typed **name:** / **id:**
+  filters via anvil prompt (chat command no longer required for those).
+- **GUI sounds** — new `gui/chest/GuiFx.java`, palette recycled from old FeedbackHelper:
+  amethyst chime (click/select), XP orb (apply), note-bass `.value()` (danger/deny, NFR-12 ok).
+
+**Not changed:** all mutation paths (BulkCommands apply/delete/rename) untouched — GUI is still
+a thin front-end over the tested command backend.
+
+**Next:** developer runs the new "Test now" section in `GROUP_07_TESTING_GUIDE.md` (tab-complete
++ Dashboard 2.0). Then: lock/favorite dashboard tiles · reid · duplicate · move · export ·
+recolor(edge) · full hub · despeckle.
+
+---
+
+## 2026-06-11 (GROUP 07 — rename GUI + lock/favorite ops) — read this first
+
+Developer wants ALL the old bulk ops rebuilt (command + GUI), plus the rename GUI. Despeckle later.
+
+**Done (build green; jar 17:11):**
+- **Rename in the dashboard** — Operation tile now cycles Edit ⇄ Delete ⇄ Rename; rename mode has a
+  prefix/suffix/replace toggle + anvil text entry (via `AnvilPrompt`), then Apply → `bulkRename`.
+- **New ops** `BulkFlagCommands.java`: `/cb bulklock` `/cb bulkunlock` `/cb bulkfavorite`
+  `/cb bulkunfavorite`. Self-inverse (no undo entry — the opposite command IS the undo; chat shows
+  a `[undo]` button that runs it). No confirm guard (non-destructive). Favorites are per-player.
+- **Refactor:** extracted the shared confirm/pending mechanism into `BulkConfirm.java`
+  (`actor` / `request` / `confirm` / `cancel`). `BulkCommands` 409 → 328, back under the 400 gate.
+  Property/delete/rename confirm flow unchanged — just relocated.
+
+**Files now:** `BulkCommands` (property/delete/rename + GUI bridges), `BulkFlagCommands` (lock/fav),
+`BulkConfirm` (confirm), `BulkChat` (hover list + confirm line), `BulkValues` (value parse),
+`BulkScope` (filters). Dashboard = `gui/chest/BulkPropertyMenu` + `BulkFilterMenu` + `BulkSession`.
+
+**Next:** lock/favorite dashboard tiles · reid · duplicate · move · export · recolor(edge) · full hub.
+Then despeckle (background removal). Roadmap: bring every old bulk op, command + GUI, upgraded.
+
+---
+
+## 2026-06-11 (GROUP 07 — bulk ops now command + GUI; rename added)
+
+Developer confirmed bulk (property + delete) **works**. Then asked: bulk ops should NOT be
+GUI-only — want `/cb bulkdelete`, `/cb bulkrename` etc. as commands too, with full GUI support.
+
+**Done (build green; jar 16:58):**
+- Re-added commands: `/cb bulkproperty`, `/cb bulkdelete` (no-args opens the dashboard; with args runs).
+- New `/cb bulkrename <filter> prefix|suffix|replace …` — batch undo, clickable confirm. **Command only so far** (GUI rename mode is next).
+- Refactor: shared chat helpers → new `BulkChat.java`; kept `BulkCommands` under the 400 gate (353).
+- Tightened the testing guide (developer asked for straightforward docs).
+
+**Not done:** rename in the dashboard GUI (anvil text box) · despeckle bg fix.
+
+**Next:** (1) rename GUI mode, (2) **despeckle** for background removal — developer picked "despeckle
+the mask"; still want a sample failing image to tune. Background-removal note: new mod has the SAME
+core flood-fill as old, so the "tiny edge pixels block removal" bug is present; despeckle the mask
+(morphological close + drop specks) is the agreed fix, doesn't touch tolerance.
+
+---
+
+## 2026-06-11 (GROUP 07 — Bulk DELETE added to dashboard, awaiting in-game test)
+
+Built the **delete** operation as a second mode of the Bulk Dashboard (per "bulkgui is the only
+way" — no `/cb bulkdelete` command). Destructive, so done carefully with full batch undo.
+
+### What was built (NOT verified — golden rule)
+- **`BulkValues.java` (new)** — value parsing/validation split out of `BulkCommands` to stay under
+  the 400-line handler gate (§5.1 "split first"). `BulkCommands` now uses `BulkValues.parse(...)`.
+- **`BulkCommands` delete** — `applyDeleteFromGui` / `bulkDelete` / `applyDelete` /
+  `sendDeleteConfirmPrompt`. Deletes every non-locked matched block, capturing each texture via
+  `TextureStore.load` BEFORE delete (mirrors single `/cb delete`), records the batch as ONE undo
+  entry of `Kind.DELETE` children, then ONE `updatePack()` (debounced → single rebuild). Red
+  clickable `[✔ DELETE] / [✖ Keep]` confirm for big/all batches.
+- **Dashboard delete mode** — `BulkSession.op` ("property"/"delete") + `toggleOp`; `BulkPropertyMenu`
+  got an **Operation** tile (top-left) that switches modes: Edit setting hides → red **Delete N**
+  button. `BulkFilterMenu` reused unchanged.
+- Undo of a bulk delete uses the existing `Kind.BATCH` path in `HistoryCommands` (DELETE children →
+  restoreSnapshot + TextureStore.save + updatePack, debounced to one rebuild). No HistoryCommands
+  change needed.
+
+### Why no HistoryCommands change
+`ResourcePackServer.updatePack()` is debounced ~500ms and coalesces — N delete/undo calls in a tick
+collapse to ONE rebuild. So batch delete + its undo each trigger a single pack rebuild already.
+
+### State right now
+- **Build green** (compile + 3 gates; verifyFileSize OK after the split). Jar staged →
+  `.minecraft\mods\customblocks-1.0.0.jar` (**16:26**).
+- Nothing committed since `df4d74e`. Don't commit unless asked.
+
+### Next step
+Developer runs `GROUP_07_TESTING_GUIDE.md` §1 (bulk delete: toggle → filter → red Delete → undo
+restores incl. texture; locked skipped; big batch confirm). Then: developer wants to **discuss
+background removal** before more bulk ops. After that, remaining bulk ops + full hub.
+
+---
+
+## 2026-06-11 (GROUP 07 — Bulk CONFIRMED working; rebrand to Bulk Dashboard)
+
+Developer tested slice 2: **"everything is working about bulk."** ✅ Three follow-ups handled:
+
+### 1. Investigated "no resource-pack prompt / no reload" — NOT a bug
+Read every `ResourcePackServer.updatePack()` caller: the pack only rebuilds on **texture** changes
+(create / retexture / paint / recolor / delete / video / arabic / hex). `bulkproperty` changes
+glow/hardness/sound/collision — server-side settings read live (glow relights placed blocks via
+`SlotLighting.applyToPlaced`; the rest apply on next break/step). No texture changed → nothing to
+reload → correctly no prompt. Documented as an FYI in the testing guide. No code change.
+
+### 2. Rebrand + lock to GUI-only (developer request)
+- **Removed `/cb bulkproperty` and `/cb bulk` commands.** `/cb bulkgui` is now the ONLY entry.
+- GUI Apply no longer dispatches a chat command — calls new `BulkCommands.applyFromGui(player,
+  filter, prop, value)` directly (same validate + confirm-guard + batch-undo path).
+- **Rebranded "Bulk — Edit Property" → "Bulk Dashboard"** everywhere visible: menu titles, header,
+  the dashboard tile, and the middle tile "Property:" → "Setting:". Undo label "bulkproperty…" →
+  "bulk-edit…". `/cb confirm` + `/cb cancel` stay (they back the clickable chat buttons).
+
+### 3. Statuses set (developer request)
+Testing guide: **bulk = ☑️ working**; **GUI polishing = 🟡 PARTIAL**; **chat system = 🟡 PARTIAL polish**.
+
+### State right now
+- **Build green** (compile + 3 gates). Jar staged → `.minecraft\mods\customblocks-1.0.0.jar`
+  (**15:28**, 4,655,168 bytes).
+- Nothing committed since `df4d74e`. Don't commit unless asked.
+
+### Next step
+Quick re-confirm (guide §1): `/cb bulkproperty` gone · `/cb bulkgui` opens "Bulk Dashboard" · Apply
+still works. Then build the **bulkdelete** slice (destructive — command-backed + dashboard tile,
+batch undo, own test), then the rest of the bulk ops + a full hub.
+
+---
+
+## 2026-06-11 (GROUP 07 — Slice 2: Bulk GUI + cleaner chat, awaiting in-game test)
+
+Developer tested slice 1: **functionality passes** ("everything else passes"), but the bulk
+**chat output was a wall of text** (screenshot: 12 ids + "+13 more" inline) and they want
+`bulkproperty` to be **mainly a GUI**, with clickable confirm + hover-for-details. Built that.
+
+### What was built (NOT verified — golden rule)
+- **Chat QOL** (`Chat.java` + `BulkCommands.java`):
+  - Added reusable rich-chat helpers to `Chat`: `runButton` (click→run cmd), `suggestButton`
+    (click→prefill), `hover` (tooltip), `line` (branded rich line).
+  - Bulk **result is now ONE line**: `Set glow=12 on §e3 blocks§r  [↩ Undo] ✔` — the full id
+    list moved to a **hover** tooltip (5/row), `[↩ Undo]` is a clickable button. No more flood.
+  - Confirm prompt is now **clickable**: `Apply to N blocks? [✔ Confirm] [✖ Cancel]` — hover the
+    count for the list. No typing `/cb confirm`.
+- **Bulk GUI** (new `gui/chest/`): `BulkSession` (per-player filter/property/value),
+  `BulkPropertyMenu` (builder: filter · property · value · live count · Apply), `BulkFilterMenu`
+  (click-pick All / Favorited / Locked / per-category). Wired `Nav.Dest.BULK_PROPERTY` +
+  `BULK_FILTER`, `GuiRouter` cases, a **Bulk Edit** tile on the dashboard (`MainMenu` slot 31).
+  GUI is a **thin front-end** — Apply runs the tested `/cb bulkproperty` command (so confirm +
+  batch-undo are unchanged).
+- `/cb bulkproperty` (no args) / `/cb bulkgui` / `/cb bulk` → open the builder.
+
+### Deliberately deferred (told the developer)
+- **`bulkdelete` (command + GUI)** — it's **destructive**; doing it as its own next slice with
+  proper batch-undo + its own test, NOT bundled into this drop. (They asked for the no-args→GUI
+  pattern; the builder pattern here is exactly what it'll reuse.)
+- `id:`/`name:` filters in the GUI need typed text (anvil) — kept on the chat command for now.
+
+### State right now
+- **Build green** (compile + 3 gates). Jar staged → `.minecraft\mods\customblocks-1.0.0.jar`
+  (**15:13**, 4,655,064 bytes).
+- Nothing committed since the `df4d74e` checkpoint. Don't commit unless asked.
+
+### Next step — developer runs §1 of `GROUP_07_TESTING_GUIDE.md`
+Open `/cb bulkproperty` → build a bulkproperty by clicking → Apply → check the one-line chat +
+hover + clickable Undo/Confirm. If pass → build the **bulkdelete** slice (command + GUI), then the
+rest of the bulk ops + a full hub.
+
+---
+
+## 2026-06-11 (GROUP 07 — Slice 1 built, awaiting in-game test)
+
+Pushed the full Group 01–06 working tree to GitHub as a checkpoint (`main`, commit `df4d74e`,
+`bin/` now gitignored). Then read the **old mod** (`Coding/CustomBlocks/`) to recycle its proven
+bulk logic, and built Group 07 slice 1.
+
+### What was built (NOT verified — golden rule: nothing ✅ until in-game test)
+- **`core/BulkScope.java`** (new) — filter resolver, ported + upgraded from old `BulkScope`.
+  Core filters `all / category: / id:<prefix> / name:`; **`id:<prefix>` is new** (old mod only
+  had exact id). Bonus filters kept from the old resolver: `name:<prefix>*` wildcard,
+  `favorite:yes|no`, `locked:yes|no`, comma id-list, exact id.
+- **`command/handlers/BulkCommands.java`** (new) — `/cb bulkproperty <filter> <glow|hardness|
+  sound|collision> <value>`, plus `/cb confirm` and `/cb cancel` (pending-action, 60s expire).
+  Locked blocks skipped (reported, not errored). Value parsing mirrors `AttributeCommands`.
+- **Confirm guard** — `bulkConfirmThreshold` (default 10) added to `CustomBlocksConfig`. Fires
+  when N > threshold OR filter is `all`.
+- **Batch undo** — added `UndoManager.Kind.BATCH` + `recordBatch()`; `HistoryCommands` reverts/
+  re-applies all children as ONE step. One `/cb undo` reverts the whole batch (test G07.2).
+- **`CommandRegistrar`** — `BulkCommands.register(root)` wired in.
+
+### State right now
+- **Build green** (compile + 3 gates: verifyFileSize, verifyMojibake, verifySound). 7s.
+- **Jar staged** → `.minecraft\mods\customblocks-1.0.0.jar` (**13:09**, 4,643,997 bytes).
+- Nothing committed for slice 1 yet (the GitHub push was the pre-Group-07 checkpoint). Don't
+  commit unless the developer asks.
+- Env still contaminated (texture rendering unreliable) — but slice 1 verifies by command output
+  + `/cb list`, not visuals. Safe to test.
+
+### Next step — developer runs tests G07.1–G07.4 in-game
+```
+/cb create g07a BulkTest1   (repeat g07b/g07c, then /cb setcategory each → bulktest)
+/cb bulkproperty category:bulktest glow 8     → "Set glow=8 on 3 block(s): g07a, g07b, g07c"
+/cb undo                                       → all 3 revert with ONE undo (G07.2)
+/cb bulkproperty all glow 0                    → confirm prompt if >10 blocks (G07.3)
+/cb confirm                                    → executes (G07.4)
+```
+If pass → build slice 2 (next bulk ops + `bulkgui`). G07 spec doc updated to match this build.
+
+---
+
+## 2026-06-11 (HANDOFF → START GROUP 07 — Bulk Operations)
 
 Developer wrapped the bug-fix session (below) and called it: **start Group 07 in a fresh convo.**
 

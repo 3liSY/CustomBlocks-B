@@ -1,115 +1,115 @@
-# Testing Guide — Format Standard (v2)
+# 🧪 Testing Guide — Blueprint (v3)
 
-> **Copy this skeleton for every group's testing guide.** Goal: the developer's eye lands on what to
-> test **right now**; everything else is scannable, never a dump. (v1 established with Group 06;
-> v2 upgrade — status table + ①② test blocks + scorecard — established 2026-06-11, see
-> `GROUP_06_TESTING_GUIDE.md` for a live example.)
-
-**Rules**
-- The **"Where Group NN stands" status table** is the first thing in the file: one row per status
-  (🎯 / ☑️ / 🟡 / ⏳), TEST NOW always the top row, each row linking its section.
-- Two big `#` dividers split the file: `# 🎯 TEST NOW` (the work) and
-  `# ☑️ PASSED — kept for re-test reference` (the history). New stuff goes under TEST NOW;
-  when the developer confirms it, mark the section ☑️, tick its scorecard, move it below the
-  PASSED divider.
-- Every TEST NOW section opens with **"In one line:"** (what the feature does, plain words) and a
-  🧰 **"Before you start"** quote (everything to prepare, so no test dies mid-run on a missing block).
-- Each test is its own `### ① <title>` block (circled numbers ①②③…): the command in a code
-  block, then ONE bold **Expect:** line. Add *Broken if:* only when the failure mode isn't obvious.
-- End each TEST NOW section with a **Scorecard** table (`✓ | # | Proves`) using the same ①②…
-  markers, and a ↩️ **reset tip** if the tests changed any state.
-- **No fake test steps for unbuilt features** — they live in the ⏳ Coming table only.
-- Keep status honest — built ≠ done (Golden Rule). Partials get 🟡 in BOTH the status table and §Polish.
-- Keep it short. Deep history goes to the progress log, not this file.
-
-**Legend:**  🎯 test now  ·  ☑️ confirmed in-game  ·  🟡 works, polish later  ·  ⏳ not built yet
+> **Copy the skeleton below for every group's testing guide.**
+> 🎯 Goal: the developer's eye lands on **what to test right now** in seconds — everything else is
+> calm, scannable, and never a wall of text.
+>
+> *(v1 = Group 06 · v2 = status table + ①② blocks · **v3 = bullets + emoji grouping + soft intros**,
+> set 2026-06-13. Look at `GROUP_25_TESTING_GUIDE.md` for a live v3 example.)*
 
 ---
 
-### Skeleton (copy below this line)
+## 🎨 The style in 6 rules
+
+- 🗺️ **Open with a one-glance map.** The first thing in the file is the **At a glance** table —
+  one row per status, 🎯 TEST NOW always on top, each row pointing to its section.
+- ✂️ **Two halves, one big divider each:** `# 🎯 Test now` (the work) and `# ✅ Passed` (the
+  history). New stuff lands under *Test now*; once you confirm it, tick its scorecard and move it
+  down to *Passed*.
+- 💡 **Start every section soft:** a one-line **What it does** + a 🧰 **Before you start** bullet
+  list (everything to prep, so no test dies mid-run on a missing block).
+- 🟦 **One test = one bullet.** Circled number + title, the command in `code`, then a ✅ **Pass**
+  line (add ❌ **Broken if** only when the failure isn't obvious). No dense paragraphs.
+- 📋 **End each section with a Scorecard** (`✓ | # | Proves`) and a ↩️ **Undo the test** line if it
+  changed anything.
+- 🤝 **Honest > impressive.** Built ≠ done (Golden Rule). Partials are 🟡 in *both* the map and the
+  Polish section. Deep history goes to the progress log, not here.
+
+**Legend:**  🎯 test now · ✅ confirmed in-game · 🟡 works, polish later · ⏳ not built yet
+
+---
+
+## 📐 Skeleton — copy everything below this line
 
 ```
-# Group NN — Testing Guide
+# 🧪 Group NN — <Name> — Testing
 
-*One green build proves it compiles — nothing is done until you confirm it in-game.*
+> 🟢 Build green = it compiles.   ✋ Only you, in-game, can say it works.
+> 📦 Jar: `.minecraft\mods\customblocks-1.0.0.jar`
 
-**Legend:**  🎯 test now  ·  ☑️ confirmed  ·  🟡 polish later  ·  ⏳ not built
+**Legend:**  🎯 test now · ✅ confirmed · 🟡 polish later · ⏳ not built
 
 ---
 
-## Where Group NN stands
+## 🗺️ At a glance
 
 | | What | Where |
-|---|---|---|
-| 🎯 **TEST NOW** | **<the new thing>.** Build green, jar in `.minecraft\mods`, **never run in-game.** | **§1** |
-| ☑️ Passed <date> | <feature> (n/n) · <feature> (n/n) | §2 · §3 |
-| ☑️ Working | <verified features, dot-separated> | §4 |
-| 🟡 Polish later | <partial items, dot-separated> | §5 |
-| ⏳ Coming | <queued items, dot-separated> | §6 |
+|:--:|---|:--:|
+| 🎯 **TEST NOW** | **<the new thing>** | §1 |
+| ✅ Passed <date> | <feature> · <feature> | §2 |
+| 🟡 Polish later | <partial item> | §3 |
+| ⏳ Coming | <queued> · <queued> | §4 |
 
 ---
 
-# 🎯 TEST NOW
+# 🎯 Test now
 
 ## §1 · <thing to test>
 
-**In one line:** <what it does, one sentence, plain words>.
+> 💡 **What it does:** <one plain sentence>.
 
-> 🧰 **Before you start:** <blocks to place, items to grab, commands to run once>.
+> 🧰 **Before you start:**
+> - <block to place / item to grab>
+> - <command to run once>
 
----
+**Try these:**
 
-### ① <short test title>
-​```
-<command>
-​```
-**Expect:** <result>. *Broken if:* <symptom — only when not obvious>.
+- **① <short title>**
+  `<command>`
+  - ✅ **Pass:** <result>
+  - ❌ **Broken if:** <symptom>   ← *(only when not obvious)*
 
-### ② <short test title>
-<action, no command needed>
-**Expect:** <result>.
+- **② <short title>** — <action, no command needed>
+  - ✅ **Pass:** <result>
 
----
-
-### Scorecard
+**📋 Scorecard**
 
 | ✓ | # | Proves |
-|---|---|---|
-| ⬜ | ① | <one-line claim this test proves> |
+|:--:|:--:|---|
+| ⬜ | ① | <one-line claim> |
 | ⬜ | ② | <…> |
 
-> ↩️ **Put it back anytime:** <reset commands, if the tests changed state>.
+> ↩️ **Undo the test:** `<reset commands>`
 
 ---
 
-# ☑️ PASSED — kept for re-test reference
+# ✅ Passed — kept for re-test reference
 
-## ☑️ §2 · <passed feature> — ALL n TESTS PASSED <date>
+## ✅ §2 · <feature> — passed <date>
 
-> ✅ Confirmed in-game on <date>. Kept for re-test reference.
+> Confirmed in-game <date>. Kept so you can re-check after future changes.
 
-<the section, unchanged, scorecard ticked ☑️>
+<the section, scorecard ticked ✅>
 
 ---
 
-## ☑️ §4 · Already working — re-test only if something feels off
+# 🟡 Polishing later  *(known, not bugs)*
 
-| Feature | Quick check |
+- <item> — <why it's parked>
+
+# ⏳ Coming next  *(not built — nothing to test yet)*
+
+| Feature | What it'll do |
 |---|---|
+| <x> | <y> |
 
-## 🟡 §5 · Polishing later (known, not bugs)
-- <item> — <why later>
+---
 
-## ⏳ §6 · Coming next (not built — nothing to test)
+## 🆘 If a test fails, send me
+- 🔢 the step number
+- 👀 what happened vs what you expected (📸 a screenshot helps)
+- 📄 the last ~20 lines of `.minecraft\logs\latest.log`
 
-| | Feature | What it'll do |
-|---|---|---|
-
-## If a test fails
-Send: the step number, what happened vs expected (screenshot helps), last ~20 lines of `latest.log`.
-
-## Cleanup
-​```
-<cleanup commands>
-​```
+## 🧹 Cleanup
+`<commands to remove the test blocks>`
 ```

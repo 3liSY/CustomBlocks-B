@@ -51,9 +51,15 @@ public final class MainMenu {
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.REDO)));
         m.set(30, Icons.of(Items.CLOCK, "§eEdit history", "§7Who changed what, and when"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.HISTORY)));
+        m.set(31, Icons.of(Items.COMMAND_BLOCK, "§5§lBulk Operations", "§7Edit, delete, rename, move,",
+                        "§7lock or favorite many blocks at once"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.BULK_HUB)));
+        m.set(32, Icons.of(Items.BRUSH, "§b§lColoring", "§7Backgrounds, palettes, gradients,",
+                        "§7variants — every colour tool in one place"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.COLORS)));
         m.set(34, Icons.of(Items.LEVER, "§6§lConfig", "§7Open the server config",
-                        "§8Live server settings"),
-                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.CONFIG)));
+                        "§8Live server settings — asks to confirm first"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.CONFIG_CONFIRM)));
 
         m.set(49, Icons.close(), (p, b, a) -> p.closeHandledScreen());
         return m;

@@ -13,6 +13,9 @@ package com.customblocks.command;
 
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.text.ClickEvent;
+import net.minecraft.text.HoverEvent;
+import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
 public final class Chat {
@@ -44,5 +47,32 @@ public final class Chat {
     /** Neutral/info line (no glyph). */
     public static void info(ServerCommandSource src, String body) {
         src.sendFeedback(() -> Text.literal(PREFIX + "§7" + body), false);
+    }
+
+    // ── Rich chat: clickable + hoverable components (QOL — less flooding, more interactive) ──
+
+    /** Send a pre-built rich component as a branded [CB] line. */
+    public static void line(ServerCommandSource src, MutableText body) {
+        src.sendFeedback(() -> Text.literal(PREFIX).append(body), false);
+    }
+
+    /** A clickable [label] that RUNS {@code command} when clicked, showing {@code hover} on hover. */
+    public static MutableText runButton(String label, String command, String hover) {
+        return Text.literal(label).styled(s -> s
+                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
+    }
+
+    /** A clickable [label] that PRE-FILLS {@code command} into the chat box, with a hover tooltip. */
+    public static MutableText suggestButton(String label, String command, String hover) {
+        return Text.literal(label).styled(s -> s
+                .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
+    }
+
+    /** Plain {@code label} that reveals {@code hoverText} (which may contain "\n") on hover — no click. */
+    public static MutableText hover(String label, String hoverText) {
+        return Text.literal(label).styled(s -> s
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hoverText))));
     }
 }

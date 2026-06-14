@@ -15,6 +15,7 @@ package com.customblocks;
 
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.CommandRegistrar;
+import com.customblocks.core.AutoBackup;
 import com.customblocks.core.OnboardingManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -25,6 +26,8 @@ import com.customblocks.network.payloads.ChatPrefillPayload;
 import com.customblocks.network.payloads.HudStatePayload;
 import com.customblocks.network.payloads.HudSyncPayload;
 import com.customblocks.network.payloads.OpenGuiPayload;
+import com.customblocks.network.payloads.GuiBackPayload;
+import com.customblocks.network.payloads.RecolorApplyPayload;
 import com.customblocks.network.payloads.SilentPackPayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
@@ -72,6 +75,25 @@ public class CustomBlocksMod implements ModInitializer {
         PayloadTypeRegistry.playS2C().register(HudStatePayload.ID,  HudStatePayload.CODEC);
         PayloadTypeRegistry.playS2C().register(ChatPrefillPayload.ID, ChatPrefillPayload.CODEC); // Group 04
         PayloadTypeRegistry.playS2C().register(SilentPackPayload.ID, SilentPackPayload.CODEC);   // Group 05
+        // Group 10: client→server live-recolour Apply. Server bakes; client only previews.
+        PayloadTypeRegistry.playC2S().register(RecolorApplyPayload.ID, RecolorApplyPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                RecolorApplyPayload.ID, (payload, context) -> {
+                    var player = context.player();
+                    player.server.execute(() -> com.customblocks.core.ColorToolService.applyRecolor(
+                            player, payload.id(), payload.hue(), payload.sat(), payload.light()));
+                });
+
+        // Group 10: client→server "go back" — cancelling a colour client screen reopens the menu
+        // the player came from (Nav.current), instead of dropping them to the world.
+        PayloadTypeRegistry.playC2S().register(GuiBackPayload.ID, GuiBackPayload.CODEC);
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                GuiBackPayload.ID, (payload, context) -> {
+                    var player = context.player();
+                    com.customblocks.gui.chest.Nav.MenuKey prev =
+                            com.customblocks.gui.chest.Nav.current(player.getUuid());
+                    if (prev != null) com.customblocks.gui.chest.GuiRouter.render(player, prev);
+                });
 
         SlotManager.registerAll(maxSlots);
         SlotManager.loadAll();
@@ -85,8 +107,10 @@ public class CustomBlocksMod implements ModInitializer {
             ResourcePackServer.setServer(server);
             ResourcePackServer.start();
             ResourcePackServer.updatePack();
+            AutoBackup.start(server); // Group 09 / Slice 3 — timed auto-backups + prune
         });
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> SlotManager.saveAll());
+        // Stop the auto-backup timer first, THEN flush slots, so no auto-backup fires mid-shutdown.
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { AutoBackup.stop(); SlotManager.saveAll(); });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> ResourcePackServer.stop());
 
         // On player join: tell the client our silent-pack preference FIRST (so the pack

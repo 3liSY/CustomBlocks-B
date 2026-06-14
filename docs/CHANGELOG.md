@@ -5,7 +5,154 @@ progress by **phase milestones** (see CustomBlocks_Engineering_Bible.md §8).
 
 ## [Unreleased]
 
+### Fixed
+- **Back button no longer closes command-opened menus** — clicking Back in a GUI you opened
+  straight from a command (like `/cb bulkgui`) now takes you to the Main Menu; only ✖ Close
+  closes the screen.
+- **Background removal: tiny edge pixels no longer block it.** The mask is now despeckled — a 1-px
+  morphological close bridges hairline gaps that used to wall off the flood-fill, and tiny stray
+  specks are dropped — so backgrounds clear cleanly. The colour tolerance is unchanged.
+- **Background fill keeps dark-outlined logos visible** — the removed background is filled white
+  (instead of black) when the subject has a dark outline, so e.g. a black-bordered emblem no longer
+  disappears into a black fill.
+- **A broken image link no longer creates an empty block** — `/cb create <id> <name> <url>` now
+  fetches the image first and only creates the block if it succeeds; a bad/non-image link creates
+  nothing.
+- **`/cb dupe` now copies the texture and settings** — duplicates were coming out blank; a copy is
+  now visually identical to the original.
+
+### Changed
+- **Coloring redesign (🟢 built, gates pass; ⏳ not in-game verified).**
+  - **`/cb colors` → `/cb coloring`** (old name still works); rebuilt as one polished hub for every colour
+    tool, plus a **Coloring** tile on the `/cb` dashboard.
+  - **`/cb bgstudio` with no id opens a block picker** first; `/cb bgstudio <id>` still opens the studio
+    directly. The same picker backs the hub's Background Studio / Colour Variants / Live Recolour.
+  - **`/cb tolerance <value> [id]`** — value first. No id sets the **global** default; an id sets just that
+    block's strength (saved per-block; the global default is left alone) and re-applies it.
+  - **Palette is now a shared colour source** — your saved swatches show up as one-click quick-picks in the
+    Background Studio fill picker, the Gradient Builder endpoints, and Custom Colour.
+  - **Background Studio polish** — plainer mode names (Keep / Remove background / Remove background + gaps /
+    ★ Smart auto), the header shows whether the strength is per-block or global, Apply remembers the block's
+    strength, and an **↩ Undo last change** button gives an apply → look → revert loop.
+  - **`/cb gradient` with no args now opens the Gradient Builder GUI** (it used to be an error).
+
 ### Added
+- **Group 10 — colour & image tools, rest of group (🟢 built, gates pass; ⏳ not in-game verified).**
+  - **Background Studio:** `/cb bgstudio <id>` — a per-block GUI to re-run background removal on demand
+    (None / Background only / Background + enclosed / **Smart**). The first three are the same engine
+    `/cb config` already uses; **Smart** is a new *offline* mode (pure local code, no AI download) that keeps
+    only the main subject. `/cb tolerance <id> <0-100>` sets the strength and applies it now. Both undoable.
+  - **Colour Variants panel:** from `/cb editor <id>` — lighter / darker / vivid / muted / complementary /
+    split-complement swatches; click one to spin off a new colour-shifted block (undoable).
+  - **Palette:** `/cb palette add/clear/save/load/list/delete` and `/cb colors` (Colour Tools hub) — keep a
+    working set of colours and save named palettes, per player.
+  - **Export download link:** `/cb exportpng <id>` now adds a clickable **[download]** link that opens the PNG
+    in your browser (served over the mod's localhost HTTP server).
+  - **Live recolour slider** *(client)* — `/cb livecolor <id>` opens a screen with Hue/Saturation/Lightness
+    bars and a live preview; Apply commits to the block (server-side, undoable).
+  - **Screen eyedrop** *(client)* — `/cb eyedrop` lets you click any pixel of your Minecraft screen to grab its
+    colour straight into your palette.
+- **Group 09 — backups, Slice 1 (🟢 built, compiles; ⏳ not in-game verified).** `/cb backup save [name]`
+  snapshots your current blocks (slot data + textures + originals + config) into
+  `config/customblocks/backups/<name>/`; `/cb backup list` shows them newest-first with timestamp + block
+  count. Saves are atomic (built in a temp dir, then renamed) and **only read** live data — they can't
+  change or break anything. Auto-names if you omit a name; refuses duplicate or unsafe names.
+- **Group 09 — backups, Slice 2: restore (🟢 built, compiles; ⏳ not in-game verified).** `/cb backup
+  restore <name>` replaces your current blocks with a saved backup — and **auto-saves your current state
+  first** (as `pre-restore-…`), so a restore is itself undoable. It asks for `/cb confirm`. Also:
+  `/cb backup delete <name>` (removes a backup; never touches live data), `/cb backup panic` (emergency —
+  restore the newest immediately, no confirm), and `/cb recover` (restore the newest, with confirm).
+  (Auto-backup, trash browser and migration are coming in later slices.)
+- **Group 08 — block shapes & per-face textures (🟢 built, compiles; ⏳ not in-game verified).**
+  - **Shapes:** `/cb setshape <id> <shape>`, `/cb clearshape <id>`, `/cb shapelist` — slabs (top/bottom),
+    carpet, thin, pane, wall, pillar, stairs, cross, full. The shape drives both the live collision/outline
+    and the generated pack model from one source, is undoable, and is refused on locked blocks.
+  - **Shape editor GUI:** `/cb shapeeditor <id>` — a chest menu with a button per shape (current one
+    glinted) + a "reset to full" tile; every click runs the tested `setshape`/`clearshape` command.
+  - **Face editor GUI:** `/cb facechangegui <id>` — a chest menu with one tile per face; left-click pastes
+    a URL onto that face, right-click clears it, and a tile clears all faces. Delegates to the existing
+    paint/clear commands.
+  - **Spec-name aliases:** `/cb setface <id> <face> <url>` (= `paintface`) and `/cb clearallfaces <id>`
+    (= `clearface <id> all`), so the Group 08 command names work as written.
+  - **Shape preview:** `/cb shapepreview <shape>` — floats a stand-in block in front of you for 5 seconds
+    so you can see a shape before applying it; it removes itself. (Op only.)
+- **`/cb bulkreid` — change many block IDs by a pattern (✅ command in-game verified 2026-06-13; GUI + polish pending).** The id
+  counterpart of `/cb bulkrename`: `/cb bulkreid <filter> prefix <text> | suffix <text> | replace <old>
+  <new>` transforms each matched block's custom id while keeping its slot (textures + placed blocks
+  untouched, no pack rebuild — like single `/cb reid`). Skips locked / no-change / invalid / colliding
+  ids (reported); one `/cb undo` re-ids the whole batch back; big/"all" batches confirm in chat. A GUI
+  for it lands once the command passes in-game.
+- **Every bulk op now uses the two-step GUI (✅ all 8 in-game verified 2026-06-13).** One shared
+  pattern for **all** bulk ops — edit a setting, delete, rename, move to category, duplicate, export,
+  lock, favorite. (The old single-screen Bulk Dashboard was removed once the new flow passed.)
+  - **Step 1 — choose blocks (shared).** Shows "None selected currently" until you choose. *Option A*:
+    a Filter tile that cycles All blocks / Category / Favorited / Locked / Name contains / ID starts
+    (the text kinds prompt for a value). *Option B*: "Select specific blocks" → opens the block list to
+    tick blocks, then a §agreen-concrete§r tile confirms the picks. §aNext →§r lights once something
+    resolves to ≥1 block.
+  - **Step 2 — options (per op).** 🔍 Review (the exact blocks) + the op's own controls (setting+value
+    / rename mode+text / category / export format / lock·favorite direction; delete & duplicate have
+    none) + ✔ Apply. Apply runs the SAME tested `/cb bulk…` command underneath (confirm-guard +
+    one-undo batch unchanged).
+  - **Reachable from** the Bulk Hub's op tiles, and from each `/cb bulk<op>` with no args.
+- **Bulk Hub** — `/cb bulkgui` (and `/cb bulkhub`) open a hub with one tile per bulk operation;
+  click one to start that op's two-step builder.
+- **Bulk duplicate (built, not yet in-game tested)** — `/cb bulkduplicate <filter>` copies every
+  matched block (texture + settings) into new `<id>_copy` blocks; one `/cb undo` removes them all.
+- **Bulk export (built, not yet in-game tested)** — `/cb bulkexport <filter> [json|txt]` writes just
+  the matched blocks to a file, the filtered version of `/cb export json`.
+- **More export formats incl. PNG (✅ in-game verified 2026-06-13 — polish pending)** — exports now
+  cover `png`, `csv`, `md`, `html`, `yaml` on top of `json`/`txt`. `/cb export png` saves every
+  block's texture as a `.png` image (into `exports/textures-<stamp>/`); `/cb export <id> png` saves
+  one block's image; `/cb export csv|md|html|yaml` write the block list in those formats;
+  `/cb bulkexport <filter> <format>` does the filtered version of any of them. New formats are
+  clickable in `/cb list` and `/cb export`. (Formatting/path polish is a later pass.)
+- **`/cb reid` — change a block's id (✅ command verified in-game 2026-06-13; GUI built, not yet tested).**
+  - `/cb reid <id> <newId>` changes a block's custom id while **keeping its slot index**, so the
+    baked texture and any placed blocks are unaffected (no pack rebuild). Guards: the id exists, the
+    new id is non-blank, different, and free; locked blocks are refused.
+  - **Migrates every id-keyed reference** — locks, favorites (per-player), notes, drafts; the
+    category rides on the slot data. Undoable: `/cb undo` re-ids back (reid is its own inverse).
+  - **GUI:** bare `/cb reid` opens a pick-a-block menu → anvil for the new id; `/cb reid <id>` goes
+    straight to the anvil; and `/cb editor <id>` gains a **Change ID** button. All three delegate to
+    the same tested command.
+- **`/cb listgui` upgrades — search, multi-select, bulk-on-selection (built, not yet in-game tested).**
+  - **Search** — a Search tile filters the block list by id / name / category (the query survives
+    paging; right-click clears it).
+  - **Multi-select** — left-click ticks/unticks blocks (**right-click now opens the editor**);
+    "N selected", "Select all shown" and a one-click clear live in the footer. Selection is per-player.
+  - **Bulk actions on the selection** — hands the ticked ids to the existing Bulk Hub (as a comma
+    id-list filter), so delete / lock / favourite / category / duplicate / export / property / rename
+    all work on a hand-picked set. New `ListSelection` holds the set; no bulk logic is duplicated.
+
+### Added
+- **Group 07 — Bulk Dashboard 2.0 + tab-complete everywhere (✅ verified in-game 2026-06-12).**
+  - **Tab-complete after every bulk subcommand** — `/cb bulkproperty`, `bulkdelete`,
+    `bulkrename`, `bulklock/unlock`, `bulkfavorite/unfavorite` now suggest filters
+    (`all`, live `category:` names, block ids, `locked:`/`favorite:` flags, even after a
+    comma in an id list), then property names, then valid values, token by token.
+    Also added: `/cb video extract` suggests your .mp4 files, `/cb arabic letter` the 28
+    letter names, `/cb retextureall` the standard sizes.
+  - **Bulk Dashboard 2.0** — colour-coded frame per operation (blue Edit / red Delete /
+    yellow Rename), numbered steps, every choice tile shows its options with a ▸ marker,
+    a spyglass **Matched** tile lists the actual blocks the filter hits, and the filter
+    picker gained wool-coloured category tiles, a glint on the current pick, and typed
+    **Name contains… / ID starts with…** filters via anvil — no chat needed.
+  - **GUI sounds** — chime on clicks, XP blip on apply, deep bass on delete/disabled,
+    page-turn when the dashboard opens.
+  - **Dashboard polish round 2** — two-tone picture frame (darker corners), the chest title
+    tints with the operation, » connectors between the steps, and a **Command twin** tile
+    showing the exact chat command the screen will run.
+  - **`docs/GUI_DESIGN_GUIDE.md`** — the written design language for every future GUI:
+    colour meanings, frames, layout grid, icon vocabulary, sound matrix, and a checklist.
+  - **Lock & Favorite in the dashboard** — the Operation cycle now also offers **Lock blocks**
+    (green frame) and **Favorite blocks** (purple frame), each with a Lock⇄Unlock /
+    Favorite⇄Unfavorite direction tile. No typing — pick op, filter, direction, Apply.
+  - **Bulk category move** — `/cb bulkcategory <filter> <category>` (use `none` to clear), and a
+    matching **Move to category** dashboard op (cyan frame); type the category in an anvil.
+    One `/cb undo` reverts the whole batch.
+  - **Command twin is clickable** — click the tile to drop its command straight into your chat
+    box (edit it or press Enter to run).
 - **Group 06 / M4 — paint single block faces from a URL (built, not yet in-game tested).**
   - **Rainbow Rectangle, right-click a face** → chat opens pre-filled with
     `/cb paintface <id> <face> ` — paste an image URL and only that face changes; the other
