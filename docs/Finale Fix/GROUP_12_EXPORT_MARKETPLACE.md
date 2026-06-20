@@ -10,6 +10,28 @@
 
 ---
 
+> ## ⚙️ Implementation status — 2026-06-14 (built, build green, NOT in-game tested)
+>
+> Scope was set with the developer: the **offline core** is built now; the **online vault** parts and
+> the **advanced formats** are deferred and marked partial (revisit at the end).
+>
+> | Test | State |
+> |---|---|
+> | G12.1 dashboard GUI | ✅ built (already existed) |
+> | G12.2 single JSON + link | ✅ built (now `cloud_exports/`, dashboard tile + link) |
+> | G12.3 single PNG + link | ✅ built (PNG link fixed → `cloud_exports/`) |
+> | G12.4 Export All → ZIP | ✅ built (`/cb export zip` + tile, `all-<stamp>.zip` + link) |
+> | G12.5 category ZIP + link | ✅ built (now a clickable `[download]`) |
+> | G12.6 Blueprint item | ✅ built (`/cb exportblock` + `/cb importblock` from hand) |
+> | G12.7 share-code round-trip | ⏸️ **partial — deferred** (needs the cloud vault deployed) |
+> | G12.8 marketplace | ⏸️ **partial — deferred** (needs the cloud vault deployed) |
+> | litematic / .schem / vanilla RP | ⏸️ **partial — deferred** (heavy binary formats) |
+>
+> **Note on download links:** they resolve from `httpHost` (default `127.0.0.1`) — fine for
+> single-player / same machine. Remote friends need a reachable `host:port`.
+
+---
+
 ## What this group restores / adds
 
 | Area | Old CustomBlocks | New CustomBlocks-B | This Group |

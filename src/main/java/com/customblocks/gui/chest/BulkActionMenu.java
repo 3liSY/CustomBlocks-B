@@ -15,11 +15,6 @@
  */
 package com.customblocks.gui.chest;
 
-import com.customblocks.command.handlers.BulkCategoryCommands;
-import com.customblocks.command.handlers.BulkCommands;
-import com.customblocks.command.handlers.BulkDuplicateCommands;
-import com.customblocks.command.handlers.BulkExportCommands;
-import com.customblocks.command.handlers.BulkFlagCommands;
 import com.customblocks.core.BulkScope;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -154,7 +149,7 @@ public final class BulkActionMenu {
                     "§7Set the " + (replace ? "find + replace" : s.renameMode) + " text above.");
             return Icons.glint(Items.LIME_DYE, "§a§l✔ Rename " + count + " block(s)",
                     "§7" + renameDesc(s) + " on §e" + count + " §7block(s).",
-                    "§8Large batches confirm in chat.");
+                    "§8Next: a Yes/No confirm.");
         }
         if (category) {
             if (s.category.isEmpty()) return Icons.of(Items.GRAY_DYE, "§8Pick a category first",
@@ -163,12 +158,12 @@ public final class BulkActionMenu {
             return Icons.glint(Items.LIME_DYE, "§a§l✔ Move " + count + " block(s)",
                     "§7" + (clear ? "Clear the category of" : "Move to §b" + s.category + "§7,")
                             + " §e" + count + " §7block(s).",
-                    "§8Large batches confirm in chat.");
+                    "§8Next: a Yes/No confirm.");
         }
         if (delete) return Icons.glint(Items.TNT, "§4§l⚠ Delete " + count + " block(s)",
                 "§cPermanently delete §e" + count + " §cblock(s).",
                 "§7Locked blocks are skipped. §8/cb undo restores them.",
-                "§8Large batches confirm in chat.");
+                "§8Next: a Yes/No confirm.");
         if (duplicate) return Icons.glint(Items.BOOK, "§a§l✔ Duplicate " + count + " block(s)",
                 "§7Make a textured copy of §e" + count + " §7block(s).",
                 "§8Copies are named <id>_copy. §8/cb undo removes them.");
@@ -184,32 +179,21 @@ public final class BulkActionMenu {
         }
         return Icons.glint(Items.LIME_DYE, "§a§l✔ Apply to " + count + " block(s)",
                 "§7Set §b" + s.property + "§7=§b" + s.value + "§7 on §e" + count + " §7block(s).",
-                "§8Large batches confirm in chat.");
+                "§8Next: a Yes/No confirm.");
     }
 
+    /** Step 2 → the shared Yes/No confirm (BulkConfirmMenu runs the op). Readiness is re-checked here. */
     private static ChestMenu.Click applyClick(String op, int count, BulkSession s) {
         return (p, b, a) -> {
             BulkSession ss = BulkSession.get(p.getUuid());
             String scope = ss.selScopeExpr(p.getUuid());
             if (count == 0 || scope.isBlank()) { GuiFx.deny(p); return; }
-            switch (op) {
-                case "delete" -> { GuiFx.danger(p); BulkCommands.applyDeleteFromGui(p, scope); }
-                case "rename" -> {
-                    boolean replace = "replace".equals(ss.renameMode);
-                    if (ss.renameA.isEmpty() || (replace && ss.renameB.isEmpty())) { GuiFx.deny(p); return; }
-                    GuiFx.apply(p);
-                    BulkCommands.applyRenameFromGui(p, scope, ss.renameMode, ss.renameA, ss.renameB);
-                }
-                case "category" -> {
-                    if (ss.category.isEmpty()) { GuiFx.deny(p); return; }
-                    GuiFx.apply(p);
-                    BulkCategoryCommands.applyCategoryFromGui(p, scope, ss.category);
-                }
-                case "duplicate" -> { GuiFx.apply(p); BulkDuplicateCommands.applyDuplicateFromGui(p, scope); }
-                case "export"    -> { GuiFx.apply(p); BulkExportCommands.applyExportFromGui(p, scope, ss.exportFormat); }
-                case "lock", "favorite" -> { GuiFx.apply(p); BulkFlagCommands.applyFlagFromGui(p, ss.flagCommandOp(), scope); }
-                default -> { GuiFx.apply(p); BulkCommands.applyFromGui(p, scope, ss.property, ss.value); }
-            }
+            if ("rename".equals(op)) {
+                boolean replace = "replace".equals(ss.renameMode);
+                if (ss.renameA.isEmpty() || (replace && ss.renameB.isEmpty())) { GuiFx.deny(p); return; }
+            } else if ("category".equals(op) && ss.category.isEmpty()) { GuiFx.deny(p); return; }
+            GuiFx.select(p);
+            GuiRouter.navigate(p, MenuKey.of(Dest.BULK_CONFIRM));
         };
     }
 

@@ -49,7 +49,14 @@ public final class HelpTopics {
 
             new Category("Organize", Items.BOOKSHELF, "Categories, notes, locks, favorites", List.of(
                     new Topic("setcategory", "/cb setcategory <id> <category>", "Put a block in a category"),
-                    new Topic("categories", "/cb categories", "List all categories"),
+                    new Topic("categories", "/cb categories", "Browse blocks by category (chest GUI)"),
+                    new Topic("category", "/cb category", "Category tools (rename, merge, delete, color, desc, icon…)"),
+                    new Topic("category edit", "/cb category edit <category>", "Open the category editor GUI"),
+                    new Topic("category rename", "/cb category rename <old> <new>", "Rename a category"),
+                    new Topic("category merge", "/cb category merge <source> <target>", "Merge two categories"),
+                    new Topic("category color", "/cb category color <category> <color>", "Tint the category name"),
+                    new Topic("category desc", "/cb category desc <category> <text>", "Set a category's description"),
+                    new Topic("category give", "/cb category give <category>", "Get one of every block in a category"),
                     new Topic("note", "/cb note <id> <text>", "Attach a note to a block"),
                     new Topic("lock", "/cb lock <id>", "Protect a block from edits"),
                     new Topic("unlock", "/cb unlock <id>", "Remove a block's edit lock"),
@@ -84,7 +91,10 @@ public final class HelpTopics {
                     new Topic("config hud", "/cb config hud toggle", "Turn the HUD overlay on/off"))),
 
             new Category("Sharing", Items.ENDER_CHEST, "Export, import and integrations", List.of(
-                    new Topic("export", "/cb export", "Export blocks to JSON/TXT or the Vault"),
+                    new Topic("export", "/cb export", "Export dashboard (opens chest GUI)"),
+                    new Topic("category export", "/cb category export <category>", "ZIP a whole category (textures + JSON)"),
+                    new Topic("category share", "/cb category share <category>", "Upload a category, get a share code"),
+                    new Topic("category import", "/cb category import <code>", "Import a shared category by code"),
                     new Topic("importfolder", "/cb importfolder", "Import block JSONs from a folder"),
                     new Topic("vault", "/cb vault", "Cloud Block Vault"),
                     new Topic("discord", "/cb discord test", "Discord webhook notifications"))),

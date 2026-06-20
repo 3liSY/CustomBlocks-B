@@ -57,6 +57,7 @@ public final class SlotDataStore {
                 if (d.noCollision()) o.addProperty("noCollision", true); // omit the common default
                 if (!d.category().isEmpty()) o.addProperty("category", d.category()); // omit when uncategorized
                 if (!d.shape().equals(SlotData.DEFAULT_SHAPE)) o.addProperty("shape", d.shape()); // omit "full"
+                if (d.isAnimated()) o.add("anim", animToJson(d.anim())); // Group 14 — only present for animated blocks
                 arr.add(o);
             }
             JsonObject root = new JsonObject();
@@ -89,11 +90,55 @@ public final class SlotDataStore {
                 boolean noCollision = o.has("noCollision") && o.get("noCollision").getAsBoolean();
                 String category = o.has("category") ? o.get("category").getAsString() : SlotData.DEFAULT_CATEGORY;
                 String shape = o.has("shape") ? o.get("shape").getAsString() : SlotData.DEFAULT_SHAPE;
-                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape));
+                AnimData anim = o.has("anim") && o.get("anim").isJsonObject()
+                        ? animFromJson(o.getAsJsonObject("anim")) : AnimData.NONE;
+                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape, anim));
             }
         } catch (Exception e) {
             LOGGER.error("[CustomBlocks] Failed to load slot data (starting empty)", e);
         }
         return out;
+    }
+
+    // ── Group 14 — animation (de)serialization (plain numbers only, never a baked mcmeta) ──
+
+    /** Serialize AnimData to JSON. The original per-frame times are written as a plain int array. */
+    private static JsonObject animToJson(AnimData a) {
+        JsonObject o = new JsonObject();
+        o.addProperty("frameCount", a.frameCount());
+        o.addProperty("uniformTicks", a.uniformTicks()); // 0 = play at the original per-frame timing
+        o.addProperty("loopMode", a.loopMode());
+        o.addProperty("interpolate", a.interpolate());
+        o.addProperty("trimStart", a.trimStart());
+        o.addProperty("trimEnd", a.trimEnd());
+        if (a.transparency()) o.addProperty("transparency", true); // omit the common default
+        if (!a.frameTimes().isEmpty()) {
+            JsonArray ft = new JsonArray();
+            for (int t : a.frameTimes()) ft.add(t);
+            o.add("frameTimes", ft);
+        }
+        return o;
+    }
+
+    /** Read AnimData back; any missing field falls back to the AnimData defaults. */
+    private static AnimData animFromJson(JsonObject o) {
+        int frameCount = o.has("frameCount") ? o.get("frameCount").getAsInt() : 0;
+        String loop    = o.has("loopMode")   ? o.get("loopMode").getAsString() : AnimData.LOOP;
+        boolean interp = o.has("interpolate") ? o.get("interpolate").getAsBoolean() : AnimData.DEFAULT_INTERPOLATE;
+        int trimStart  = o.has("trimStart")  ? o.get("trimStart").getAsInt() : 0;
+        int trimEnd    = o.has("trimEnd")    ? o.get("trimEnd").getAsInt()   : frameCount - 1;
+        boolean transp = o.has("transparency") && o.get("transparency").getAsBoolean();
+        List<Integer> frameTimes = new ArrayList<>();
+        if (o.has("frameTimes") && o.get("frameTimes").isJsonArray()) {
+            for (JsonElement e : o.getAsJsonArray("frameTimes")) frameTimes.add(e.getAsInt());
+        }
+        // uniformTicks (new) is canonical. Back-compat with the first Group 14 build, which stored a
+        // "frametime" + an empty frameTimes for a uniform clip (per-frame clips stored frameTimes):
+        // old uniform → uniformTicks = that frametime; old per-frame → uniformTicks = 0 (original).
+        int uniformTicks;
+        if (o.has("uniformTicks")) uniformTicks = o.get("uniformTicks").getAsInt();
+        else if (o.has("frametime")) uniformTicks = frameTimes.isEmpty() ? o.get("frametime").getAsInt() : 0;
+        else uniformTicks = 0;
+        return new AnimData(frameCount, uniformTicks, loop, interp, trimStart, trimEnd, transp, frameTimes);
     }
 }

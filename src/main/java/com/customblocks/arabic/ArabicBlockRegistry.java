@@ -22,6 +22,7 @@ import com.google.gson.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -35,6 +36,55 @@ public final class ArabicBlockRegistry {
     private static final Path FILE = DIR.resolve("arabic_registry.json");
 
     private ArabicBlockRegistry() {}
+
+    /**
+     * Create the bundled NUMBER blocks (Eastern A0-A9 + Western E0-E9, x4 colors = 80) from the JAR
+     * PNGs, skipping any that already exist. Saves slot data ONCE and (when {@code rebuild}) rebuilds
+     * the pack once. Idempotent: a second call with everything present does no work. Boot passes
+     * rebuild=false (the SERVER_STARTED handler builds the pack); the /cb arabic import command true.
+     *
+     * The 144 LETTER blocks are NO LONGER created here — the auto-join system (customblocks:arabic_letter,
+     * zero-slot NBT variants) replaced them. Numbers never join, so they stay as static slot blocks.
+     */
+    public static ImportResult importArt(boolean rebuild) {
+        int created = 0, skipped = 0, failed = 0;
+        boolean anyNew = false;
+        for (ArabicArt.Glyph g : ArabicArt.ALL) {
+            if (g.group() == ArabicArt.Group.LETTER) continue; // letters retired → auto-join only
+            for (String color : ArabicArt.COLORS) {
+                String id = ArabicArt.blockId(g, color);
+                if (SlotManager.getById(id) != null) { skipped++; continue; }
+                byte[] png = readResource(ArabicArt.resource(g, color));
+                if (png == null) {
+                    failed++;
+                    LOG.warn("[CustomBlocks/Arabic] Bundled art missing: {}", ArabicArt.resource(g, color));
+                    continue;
+                }
+                SlotData d = SlotManager.createNoSave(id, ArabicArt.displayName(g, color), ArabicArt.category(g));
+                if (d == null) { failed++; continue; } // no free slot
+                TextureStore.save(d.index(), png);
+                created++;
+                anyNew = true;
+            }
+        }
+        if (anyNew) {
+            SlotManager.saveAll();
+            if (rebuild) ResourcePackServer.updatePack();
+        }
+        LOG.info("[CustomBlocks/Arabic] Art import: {} created, {} skipped, {} failed.",
+                created, skipped, failed);
+        return new ImportResult(created, skipped, failed);
+    }
+
+    /** Read a bundled JAR resource fully, or null if absent. */
+    private static byte[] readResource(String path) {
+        try (InputStream in = ArabicBlockRegistry.class.getResourceAsStream(path)) {
+            return in == null ? null : in.readAllBytes();
+        } catch (Exception e) {
+            LOG.warn("[CustomBlocks/Arabic] Failed reading bundled art {}: {}", path, e.getMessage());
+            return null;
+        }
+    }
 
     /** Import all 28 base letters. Returns a result summary. */
     public static ImportResult importAll(int textColor, int bgColor) {
@@ -74,6 +124,16 @@ public final class ArabicBlockRegistry {
 
     /** Render custom Arabic text and create/update a block. Returns null on success or an error string. */
     public static String importWord(String text, String id, String displayName, int textColor, int bgColor) {
+        return importWord(text, id, displayName, textColor, bgColor, true);
+    }
+
+    /**
+     * As {@link #importWord(String, String, String, int, int)}, but {@code rebuildPack == false} skips
+     * the resource-pack rebuild. Used by the live preview: the throwaway texture is served pack-free
+     * over the {@code /tex/<id>} endpoint (straight from TextureStore), so the pack never needs the slot
+     * — no rebuild, no client pack prompt.
+     */
+    public static String importWord(String text, String id, String displayName, int textColor, int bgColor, boolean rebuildPack) {
         try {
             byte[] tex = ArabicWordRenderer.render(text, textColor, bgColor);
             if (tex == null) return "Renderer failed — check font config";
@@ -85,7 +145,7 @@ public final class ArabicBlockRegistry {
             } else {
                 TextureStore.save(existing.index(), tex);
             }
-            ResourcePackServer.updatePack();
+            if (rebuildPack) ResourcePackServer.updatePack();
             return null;
         } catch (Exception e) {
             return e.getMessage();

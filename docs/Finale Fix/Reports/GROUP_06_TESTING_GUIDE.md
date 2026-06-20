@@ -1,15 +1,27 @@
 # 🧪 Group 06 — Tools, Colour Variants & Per-Face Paint — Testing
 
-> 🟢 Build green = it compiles.   ✋ Only you, in-game, can say it works.
+> 🟢 Build green = compiles. ✋ Only in-game confirms it works.
 > 📦 Jar: `.minecraft\mods\customblocks-1.0.0.jar`
 
-**Legend:**  🎯 test now · ✅ confirmed · 🟡 polish later · ⏳ not built
+**Legend:** 🎯 test now · ✅ confirmed · 🟡 polish later · ⏳ not built
+
+---
+
+## 🚦 Status
+
+| | |
+|---|---|
+| **Verdict** | 🟡 Partial |
+| **Progress** | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 · 20 / 47 passed |
+| **Last tested** | 2026-06-11 (§D·§E·§F) |
+| **Jar** | 1.0.0 |
+| **Tester** | — |
 
 ---
 
 ## 🗺️ At a glance
 
-| | What | Where |
+| | What | § |
 |:--:|---|:--:|
 | 🎯 **TEST NOW** | Round-2 fixes + **M4 per-face paint** — clean Red Triangle · reload waits for ANY open GUI · paint one face from a URL | §A |
 | 🎯 Re-confirm | Hex setters (`/cb config hex`) · Config-GUI hex editor + Color Studio | §B · §C |
@@ -33,38 +45,47 @@
 
 **Try these:**
 
-- **① Red Triangle looks right** — look at the Red Triangle (+ a changed-hex colour's tools)
+- **① Red Triangle looks right** 🟡 — look at the Red Triangle (+ a changed-hex colour's tools)
   - ✅ **Pass:** clean, symmetric triangle like the yellow one (fill · lighter highlight · dark outline). Changed-hex tools keep the style; Color Studio pairs use the clean shape too.
-- **② Reload waits for ANY open GUI** — `/cb config` → Variant Colours → edit red's hex in the anvil, **even with no `_red` blocks placed**
+
+- **② Reload waits for ANY open GUI** 🔴 — `/cb config` → Variant Colours → edit red's hex in the anvil, **even with no `_red` blocks placed**
   - ✅ **Pass:** chat confirms, you land back in the editor, and **no reload happens while a CustomBlocks menu/anvil is open**. Close it → reload arrives a moment later.
   - ❌ **Broken if:** the rebuild log fires the same second (the old bug).
-- **③ Rectangle paints one face** — Rainbow Rectangle → right-click the **north** face
+
+- **③ Rectangle paints one face** 🔴 — Rainbow Rectangle → right-click the **north** face
   - ✅ **Pass:** chat pre-fills `/cb paintface <id> north ` → paste a URL → after one reload **only** that face changes; the other five keep the base.
-- **④ More faces + direct command** — paint `up` with another URL; also `/cb paintface <id> east <url>`
+
+- **④ More faces + direct command** 🔴 — paint `up` with another URL; also `/cb paintface <id> east <url>`
   - ✅ **Pass:** each face holds its own image; the rest stay base.
-- **⑤ Clear a face / all** — `/cb clearface <id> north` then `/cb clearface <id> all`
+
+- **⑤ Clear a face / all** 🔴 — `/cb clearface <id> north` then `/cb clearface <id> all`
   - ✅ **Pass:** north → base, then every painted face resets; "No painted faces" when none left.
-- **⑥ Area selector moved to sneak** — **sneak + right-click** two blocks with the Rectangle
+
+- **⑥ Area selector moved to sneak** 🟡 — **sneak + right-click** two blocks with the Rectangle
   - ✅ **Pass:** corner 1 / corner 2 messages as before (Omni-Tool Area mode unaffected).
-- **⑦ Errors bounce cleanly** — `paintface <id> sideways <url>` → "pick a face" · bad URL → "couldn't get a texture", face unchanged · `paintface nope north <url>` → "no block called".
-- **⑧ Survives restart** — restart with painted faces present
-  - ✅ **Pass:** every painted face stays (files in `config/customblocks/textures/slot_N_<face>.png`); `/cb clearface` still works.
-- **⑨ Deleting cleans up** — delete a block with painted faces, then make a new one
+
+- **⑦ Errors bounce cleanly** 🟡 — `paintface <id> sideways <url>` → "pick a face" · bad URL → "couldn't get a texture", face unchanged · `paintface nope north <url>` → "no block called".
+
+- **⑧ Survives restart** 🔴 — restart with painted faces present
+  - ✅ **Pass:** every painted face stays; `/cb clearface` still works.
+
+- **⑨ Deleting cleans up** 🔴 — delete a block with painted faces, then make a new one
   - ✅ **Pass:** no leftover face art bleeds onto other blocks.
 
 **📋 Scorecard**
 
 | ✓ | # | Proves |
 |:--:|:--:|---|
-| ⬜ | ① | Red Triangle art clean; changed-hex tools keep the style |
-| ⬜ | ② | reload waits for ANY open GUI (the re-fix) |
-| ⬜ | ③ | Rectangle paints one face only |
-| ⬜ | ④ | multiple faces + direct command |
-| ⬜ | ⑤ | clearface (one / all) resets |
-| ⬜ | ⑥ | sneak area-selector unaffected |
-| ⬜ | ⑦ | bad face / URL / id → clean errors |
-| ⬜ | ⑧ | painted faces survive a restart |
-| ⬜ | ⑨ | deleting leaves no face leftovers |
+| 🟥 | ① | Red Triangle art clean; changed-hex tools keep the style |
+| 🟥 | ② | reload waits for ANY open GUI (the re-fix) |
+| 🟥 | ③ | Rectangle paints one face only |
+| 🟥 | ④ | multiple faces + direct command |
+| 🟥 | ⑤ | clearface (one / all) resets |
+| 🟥 | ⑥ | sneak area-selector unaffected |
+| 🟥 | ⑦ | bad face / URL / id → clean errors |
+| 🟥 | ⑧ | painted faces survive a restart |
+| 🟥 | ⑨ | deleting leaves no face leftovers |
+| — | **0 / 9** | |
 
 ---
 
@@ -77,16 +98,23 @@
 
 **Try these:**
 
-- **① Status line** — `/cb config hex`
+- **① Status line** 🟡 — `/cb config hex`
   - ✅ **Pass:** all four on one line — red `#EE3333` · yellow `#F0C814` · green `#1E8C1E` · black `#0A0A0A`.
-- **② Change → confirm pops** — `/cb config hex red #FF8800`
+
+- **② Change → confirm pops** 🔴 — `/cb config hex red #FF8800`
   - ✅ **Pass:** "Red `#EE3333` → `#FF8800`…", then (because `_red` blocks exist) the **Yes / Info / No** chest opens.
-- **③ Yes repaints** — click **Yes** → "Recoloured N block(s)"; after reload the placed `vart_red` background is **orange**, design intact.
-- **④ Art + names follow** — Red Square + Red Triangle read `… [#FF8800]` and the icons are orange-tinted.
-- **⑤ New variants use it** — Red Triangle on a different block → orange background.
-- **⑥ Bad input bounces** — `… red banana` → "use #RRGGBB" · `… purple #112233` → "pick red/yellow/green/black". Nothing changes.
-- **⑦ No keeps blocks** — `… green #00FFAA` → **No** → existing greens unchanged; new ones + art use `#00FFAA`.
-- **⑧ Survives restart** — `/cb config hex` still shows your custom hexes (saved to `config.json`).
+
+- **③ Yes repaints** 🔴 — click **Yes** → "Recoloured N block(s)"; after reload the placed `vart_red` background is **orange**, design intact.
+
+- **④ Art + names follow** 🟡 — Red Square + Red Triangle read `… [#FF8800]` and the icons are orange-tinted.
+
+- **⑤ New variants use it** 🟡 — Red Triangle on a different block → orange background.
+
+- **⑥ Bad input bounces** 🔴 — `… red banana` → "use #RRGGBB" · `… purple #112233` → "pick red/yellow/green/black". Nothing changes.
+
+- **⑦ No keeps blocks** 🔴 — `… green #00FFAA` → **No** → existing greens unchanged; new ones + art use `#00FFAA`.
+
+- **⑧ Survives restart** 🔴 — `/cb config hex` still shows your custom hexes (saved to the config file).
 
 > ↩️ **Undo the test:** `/cb config hex red #EE3333` · `/cb config hex green #1E8C1E` (default art returns automatically).
 
@@ -102,16 +130,25 @@
 
 **Try these:**
 
-- **① Config → Variant Colours** — `/cb config` → glowing **Variant Colours** (red dye) → sub-GUI with four dyes, each showing its hex, default, and `_colour` block count.
-- **② Edit a hex** — click **Red dye** → anvil "Set Red hex" → `#FF8800`, take output → same flow as the command (confirm; Yes/Info/No if `_red` placed; else back to the editor showing the new hex).
-- **③ Bad input + cancel** — `banana` → "use #RRGGBB", back to editor · **ESC** → straight back, nothing changed.
-- **④ Reload waits for the confirm** — with `_red` blocks: `/cb config hex red #22AAFF` → the Yes/Info/No opens **without** a reload first; reload only after you answer.
-- **⑤ Color Studio opens** — `/cb customcolor` → 6-row studio, 29 colours as dyes (hex + RGB) + a glowing **Custom Hex…** button.
-- **⑥ Preset → pair** — click **Purple** → "Gave you the Purple Square + Triangle (#7700CC)", two glinting purple-tinted tools; studio stays open.
-- **⑦ Custom hex → pair** — **Custom Hex…** → `#FF1493` → a pair lands in inventory. `lavender` works; `banana` errors and returns.
-- **⑧ Custom tools work** — Triangle on `foo` → `foo_hex_ff1493` (design intact); Square swaps the placed original; no variant → "make one with the Triangle first".
-- **⑨ Direct form** — `/cb customcolor pink` · `#00CED1` · `banana` → pink pair · teal pair · error with suggestions.
-- **⑩ Survives restart** — tools keep colour/name/tint + still work; the hex variant block + texture survive; `/cb config hex` keeps your edits.
+- **① Config → Variant Colours** 🟡 — `/cb config` → glowing **Variant Colours** (red dye) → sub-GUI with four dyes, each showing its hex, default, and `_colour` block count.
+
+- **② Edit a hex** 🔴 — click **Red dye** → anvil "Set Red hex" → `#FF8800`, take output → same flow as the command (confirm; Yes/Info/No if `_red` placed; else back to the editor showing the new hex).
+
+- **③ Bad input + cancel** 🟡 — `banana` → "use #RRGGBB", back to editor · **ESC** → straight back, nothing changed.
+
+- **④ Reload waits for the confirm** 🔴 — with `_red` blocks: `/cb config hex red #22AAFF` → the Yes/Info/No opens **without** a reload first; reload only after you answer.
+
+- **⑤ Color Studio opens** 🟡 — `/cb customcolor` → 6-row studio, 29 colours as dyes (hex + RGB) + a glowing **Custom Hex…** button.
+
+- **⑥ Preset → pair** 🔴 — click **Purple** → "Gave you the Purple Square + Triangle (#7700CC)", two glinting purple-tinted tools; studio stays open.
+
+- **⑦ Custom hex → pair** 🔴 — **Custom Hex…** → `#FF1493` → a pair lands in inventory. `lavender` works; `banana` errors and returns.
+
+- **⑧ Custom tools work** 🔴 — Triangle on `foo` → `foo_hex_ff1493` (design intact); Square swaps the placed original; no variant → "make one with the Triangle first".
+
+- **⑨ Direct form** 🟡 — `/cb customcolor pink` · `#00CED1` · `banana` → pink pair · teal pair · error with suggestions.
+
+- **⑩ Survives restart** 🔴 — tools keep colour/name/tint + still work; the hex variant block + texture survive; `/cb config hex` keeps your edits.
 
 ---
 
@@ -120,13 +157,11 @@
 ## ✅ §D · Square swap (M3) + marker purge — 8/8 passed 2026-06-11
 
 > Confirmed in-game 2026-06-11.  🟡 one PARTIAL: hotbar wording (works, reads rough — queued in §H).
-> **What changed:** right-click a placed block with a **Square** → it changes IN PLACE to that
-> colour's variant (made earlier by a Triangle). Squares never create; Black Square with no `_black`
-> → back to base. Swapping is its own undo.
+> Right-click a placed block with a **Square** → it changes IN PLACE to that colour's variant. Squares never create; Black Square with no `_black` → back to base.
 
 > 🧰 Setup: `vart` + `vart_red` + `vart_black` (Red/Black Triangles on a placed `vart`); grab all four Squares.
 
-- ☑️ **1** Red Square on placed `vart` → `vart_red`, "Swapped to vart_red", no new item *(broken if old "tagged at (x,y,z)")*
+- ☑️ **1** Red Square on placed `vart` → `vart_red`, "Swapped to vart_red", no new item
 - ☑️ **2** Black Square → `vart_black`
 - ☑️ **3** Green Square (no variant) → "create one with the Green Triangle first"; `/cb list` shows no `vart_green`
 - ☑️ **4** delete `vart_black`, Black Square → swaps back to base `vart`
@@ -151,9 +186,8 @@
 
 ## ✅ §F · Retexture-all + source store — 6/6 passed 2026-06-11
 
-> Confirmed 2026-06-11. A source store keeps each block's original image
-> (`config/customblocks/sources/slot_N.src`) so it can be re-rendered **sharper**; a confirm GUI +
-> `/cb retextureall [16-512]` batch-resize all existing blocks.
+> Confirmed 2026-06-11. A source store keeps each block's original image so it can be re-rendered
+> sharper; a confirm GUI + `/cb retextureall [16-512]` batch-resize all existing blocks.
 
 - ☑️ **1** `/cb config texturesize` → pick a size (≥1 block) → Yes/Info/No opens; Info shows count + est. pack size
 - ☑️ **2** Yes → "complete — N re-rendered, N upscaled, N skipped"; placed blocks change resolution after one reload
@@ -179,17 +213,17 @@
 
 ---
 
-## 🟡 §H · Polishing later  *(known, not bugs)*
+## 🟡 §H · Polish later
 
 - 🗨️ **Hotbar wording** (Square swap errors, tool feedback) — works, reads rough; **PARTIAL**, queued with chat-formatting polish.
 - ✂️ **Bg removal fringe** (thin light halo on hard edges) + **low-contrast eat** (high strength) — **parked**; eyedropper/despeckle (§I) are the real fix.
 - 💬 **Chat flooding** — still happening; PARTIAL, fix later.
 - 🪟 **Partial GUIs** (Group 02 chests, Omni-Tool config GUI…) — final polish pass queued.
-- 📜 **Item lore** — general tone pass queued ("marker"/"tagging" already purged).
+- 📜 **Item lore** — general tone pass queued.
 
 ---
 
-## ⏳ §I · Coming next  *(not built — nothing to test)*
+## ⏳ §I · Not built
 
 | | Feature | What it'll do |
 |:--:|---|---|
@@ -197,12 +231,15 @@
 | B | Despeckle | auto-wipe leftover confetti specks |
 | C | Preview | pick from a few strength results |
 | — | Held-block glow | dynamic light on a held block (deferred) |
-| — | Old `.dat` migration | 770 old high-res blocks → new scheme; **parked** (keep native 256, delete 20 junk test blocks) |
+| — | Old `.dat` migration | 770 old high-res blocks → new scheme; **parked** |
 
 ---
 
-## 🆘 If a test fails, send me
-- 🔢 the step number · 👀 what happened vs expected (📸 helps) · 📄 last ~20 lines of `.minecraft/logs/latest.log`
+## 🆘 If a test fails
+
+- 🔢 Step number
+- 👀 What happened vs expected (📸 helps)
+- 📄 Last ~20 lines of `.minecraft/logs/latest.log`
 
 ## 🧹 Cleanup
 `/cb delete vart` · `/cb delete vart_red` · `/cb delete vart_black`

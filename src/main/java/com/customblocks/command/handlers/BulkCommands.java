@@ -37,7 +37,6 @@ import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -62,17 +61,17 @@ public final class BulkCommands {
                 .executes(ctx -> openBuilder(ctx.getSource()))
                 .then(CommandManager.argument("args", StringArgumentType.greedyString())
                         .suggests(BulkSuggestions.PROPERTY_ARGS)
-                        .executes(ctx -> bulkProperty(ctx.getSource(), StringArgumentType.getString(ctx, "args")))));
+                        .executes(ctx -> bulkProperty(ctx.getSource(), StringArgumentType.getString(ctx, "args"), false))));
         root.then(CommandManager.literal("bulkdelete")
                 .executes(ctx -> openDeleteBuilder(ctx.getSource()))
                 .then(CommandManager.argument("filter", StringArgumentType.greedyString())
                         .suggests(BulkSuggestions.FILTER_ONLY)
-                        .executes(ctx -> bulkDelete(ctx.getSource(), StringArgumentType.getString(ctx, "filter")))));
+                        .executes(ctx -> bulkDelete(ctx.getSource(), StringArgumentType.getString(ctx, "filter"), false))));
         root.then(CommandManager.literal("bulkrename")
                 .executes(ctx -> openOpBuilder(ctx.getSource(), "rename"))
                 .then(CommandManager.argument("args", StringArgumentType.greedyString())
                         .suggests(BulkSuggestions.RENAME_ARGS)
-                        .executes(ctx -> bulkRename(ctx.getSource(), StringArgumentType.getString(ctx, "args")))));
+                        .executes(ctx -> bulkRename(ctx.getSource(), StringArgumentType.getString(ctx, "args"), false))));
 
         root.then(CommandManager.literal("confirm").executes(ctx -> BulkConfirm.confirm(ctx.getSource())));
         root.then(CommandManager.literal("cancel").executes(ctx -> BulkConfirm.cancel(ctx.getSource())));
@@ -81,6 +80,7 @@ public final class BulkCommands {
     /** Open the Bulk Hub (the operation picker) for a player; console can't drive the GUI. */
     private static int openHub(ServerCommandSource src) {
         if (src.getEntity() instanceof ServerPlayerEntity p) {
+            BulkSession.get(p.getUuid()).prePicked = false; // fresh /cb bulkgui, not a pre-picked set
             com.customblocks.gui.chest.GuiFx.open(p);
             GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.BULK_HUB));
             return 1;
@@ -118,7 +118,7 @@ public final class BulkCommands {
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            bulkProperty(player.getCommandSource(), (filter + " " + property + " " + value).trim());
+            bulkProperty(player.getCommandSource(), (filter + " " + property + " " + value).trim(), true);
         });
     }
 
@@ -131,13 +131,13 @@ public final class BulkCommands {
                 : filter + " " + mode + " " + a;
         s.execute(() -> {
             player.closeHandledScreen();
-            bulkRename(player.getCommandSource(), args.trim());
+            bulkRename(player.getCommandSource(), args.trim(), true);
         });
     }
 
     // ── /cb bulkproperty <filter> <property> <value> ──────────────────────────
 
-    private static int bulkProperty(ServerCommandSource src, String args) {
+    private static int bulkProperty(ServerCommandSource src, String args, boolean force) {
         String[] parts = args.trim().split("\\s+");
         if (parts.length < 3) { usageProperty(src); return 0; }
         String value = parts[parts.length - 1];
@@ -155,7 +155,7 @@ public final class BulkCommands {
         boolean needConfirm = BulkScope.isAll(scope) || blocks.size() > threshold;
 
         Runnable action = () -> applyProperty(src, blocks, prop, pv);
-        if (needConfirm) {
+        if (needConfirm && !force) {
             String summary = "bulkproperty " + prop + "=" + pv.display + " on " + blocks.size() + " block(s)";
             BulkConfirm.request(src, action, summary);
             String hoverList = "§7Would set §b" + prop + "§7=§b" + pv.display + "§7 on:\n§f"
@@ -221,12 +221,12 @@ public final class BulkCommands {
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            bulkDelete(player.getCommandSource(), filter);
+            bulkDelete(player.getCommandSource(), filter, true);
         });
     }
 
     /** Resolve the filter and either delete now (small) or hold for /cb confirm (big / all). */
-    private static int bulkDelete(ServerCommandSource src, String filter) {
+    private static int bulkDelete(ServerCommandSource src, String filter, boolean force) {
         List<SlotData> blocks = BulkScope.resolve(filter, BulkConfirm.actor(src));
         if (blocks.isEmpty()) { Chat.error(src, "No blocks matched filter: " + filter); return 0; }
 
@@ -234,7 +234,7 @@ public final class BulkCommands {
         boolean needConfirm = BulkScope.isAll(filter) || blocks.size() > threshold;
 
         Runnable action = () -> applyDelete(src, blocks);
-        if (needConfirm) {
+        if (needConfirm && !force) {
             BulkConfirm.request(src, action, "delete " + blocks.size() + " block(s)");
             String hoverList = "§cWill delete " + blocks.size() + " block(s):\n§f"
                     + BulkChat.columns(BulkChat.ids(blocks));
@@ -283,7 +283,7 @@ public final class BulkCommands {
     // ── Bulk rename (prefix / suffix / replace — display name only, no pack rebuild) ──
 
     /** /cb bulkrename &lt;filter&gt; prefix &lt;text&gt; | suffix &lt;text&gt; | replace &lt;old&gt; &lt;new&gt; */
-    private static int bulkRename(ServerCommandSource src, String args) {
+    private static int bulkRename(ServerCommandSource src, String args, boolean force) {
         String[] t = args.trim().split("\\s+");
         if (t.length < 3) { usageRename(src); return 0; }
         String filter = t[0];
@@ -308,7 +308,7 @@ public final class BulkCommands {
 
         final String fmode = mode, fa = a, fb = b;
         Runnable action = () -> applyRename(src, blocks, fmode, fa, fb);
-        if (needConfirm) {
+        if (needConfirm && !force) {
             BulkConfirm.request(src, action, "rename " + blocks.size() + " block(s)");
             String what = renameWhat(mode, a, b);
             String hoverList = "§7" + what + " on:\n§f" + BulkChat.columns(BulkChat.ids(blocks));

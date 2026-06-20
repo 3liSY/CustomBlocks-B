@@ -40,6 +40,16 @@ dependencies {
     include implementation("org.jcodec:jcodec:0.2.5")
     include implementation("org.jcodec:jcodec-javase:0.2.5")
 
+    // Group 14 — TwelveMonkeys WebP ImageIO plugin (pure Java, no native code). Adds WebP read
+    // support to ImageIO so /cb create accepts .webp (static, and animated where the plugin exposes
+    // frames). Transitive TwelveMonkeys artifacts are listed explicitly so `include` JiJ's them all
+    // (Loom's include does not pull transitives), or the reader would ClassNotFound at runtime.
+    include implementation("com.twelvemonkeys.imageio:imageio-webp:3.12.0")
+    include implementation("com.twelvemonkeys.imageio:imageio-core:3.12.0")
+    include implementation("com.twelvemonkeys.common:common-lang:3.12.0")
+    include implementation("com.twelvemonkeys.common:common-io:3.12.0")
+    include implementation("com.twelvemonkeys.common:common-image:3.12.0")
+
     // Phase 16 — Mod Menu config screen integration (compile-only; not shipped)
     modCompileOnlyApi "com.terraformersmc:modmenu:11.0.2"
 

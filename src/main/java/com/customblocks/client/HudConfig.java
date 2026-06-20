@@ -1,151 +1,121 @@
 /**
- * HudConfig.java
+ * HudConfig.java — GROUP 27 §G27.4 (Lego HUD Builder). CLIENT-SIDE ONLY.
  *
- * Responsibility: Client-side configuration + persistence for the CustomBlocks HUD
- * overlay — visibility, position, scale, text color, background opacity, and which
- * fields to show. Persisted to config/customblocks/data/hud-config-server.json with an
- * atomic write (temp file + ATOMIC_MOVE), matching the project's NFR-13 file pattern.
+ * Responsibility: live client state for the brick-based HUD — box-level globals (master
+ * visible, snap on/off, master scale, global default background, recent colours, hover-sound
+ * settings) plus the ordered list of HudField "bricks". Disk I/O + migration of the old flat
+ * format live in HudConfigStore (keeps this file under the 300-line *Config gate); per-brick
+ * (de)serialisation lives in HudField.
  *
- * Scope note: although the file name ends in "-server", the HUD is a client render
- * concern, so this client class owns the file. In single-player / integrated-server
- * (how the mod is tested) the client and server share the run directory, so the path
- * resolves to the same place a dedicated server would use.
+ * Scope note: although the file name ends in "-server", the HUD is a client render concern.
+ * In single-player / integrated-server the run directory is shared, so the path matches.
  *
- * Depends on: CustomBlocksConfig (initial enabled default), Gson
- * Called by: HudRenderer (reads), HudEditorScreen (edits + saves), CustomBlocksClient
- *            (loads on init), ConfigCommands / HudStatePayload receiver (toggle).
+ * Depends on: CustomBlocksConfig (initial enabled default), HudField, HudFieldType.
+ * Called by: HudRenderer (reads), HudEditorScreen + inspector (edit + save), HudConfigStore
+ *            (load/save), CustomBlocksClient (load on init), HudStatePayload receiver (toggle).
  */
 package com.customblocks.client;
 
 import com.customblocks.CustomBlocksConfig;
-import com.google.gson.Gson;
-import com.google.gson.JsonObject;
+import com.customblocks.client.hud.HudField;
+import com.customblocks.client.hud.HudFieldType;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
 
 @Environment(EnvType.CLIENT)
 public final class HudConfig {
 
     private HudConfig() {}
 
-    private static final String FILE = "config/customblocks/data/hud-config-server.json";
-    private static final Gson GSON = new Gson();
+    // ── Defaults ─────────────────────────────────────────────────────────────
+    public static final boolean DEF_VISIBLE      = true;
+    public static final boolean DEF_SNAP         = true;
+    public static final int     DEF_BG_COLOR     = 0x000000;
+    public static final float   DEF_BG_OPACITY   = 0.4f;
+    public static final float   DEF_MASTER_SCALE = 1.0f;
+    public static final int     DEF_HOVER_TRIGGER= 0;        // 0 = none, 1 = custom only, 2 = any
+    public static final String  DEF_HOVER_SOUND  = "none";
+    public static final int     DEF_HOVER_VOLUME = 70;       // 0..100
+    public static final int     RECENT_MAX       = 10;
 
-    // ── Defaults (spec GROUP_03) ───────────────────────────────────────
-    public static final int     DEF_X         = 5;
-    public static final int     DEF_Y         = 5;
-    public static final float   DEF_SCALE     = 1.0f;
-    public static final int     DEF_COLOR     = 0xFFFFFF;
-    public static final float   DEF_BG        = 0.4f;
-    public static final boolean DEF_SHOW_ID   = true;
-    public static final boolean DEF_SHOW_NAME = true;
+    // ── Box-level globals ────────────────────────────────────────────────────
+    /** Master HUD on/off (mirrors CustomBlocksConfig.hudEnabled / /cb config hud). */
+    public static boolean visible      = DEF_VISIBLE;
+    /** Magnetic snap enabled in the editor. */
+    public static boolean snapEnabled  = DEF_SNAP;
+    /** Global default background colour (0xRRGGBB) behind un-overridden bricks. */
+    public static int     bgColor      = DEF_BG_COLOR;
+    /** Global default background opacity (0..1; 0 = none). */
+    public static float   bgOpacity    = DEF_BG_OPACITY;
+    /** Master scale multiplier applied on top of each brick's own size. */
+    public static float   masterScale  = DEF_MASTER_SCALE;
+    /** Hover-sound trigger (0 none / 1 custom only / 2 any block). */
+    public static int     hoverTrigger = DEF_HOVER_TRIGGER;
+    /** Hover-sound key (see HudHoverSound). */
+    public static String  hoverSound   = DEF_HOVER_SOUND;
+    /** Hover-sound volume (0..100). */
+    public static int     hoverVolume  = DEF_HOVER_VOLUME;
+    /** Recently picked colours (most-recent first, capped at RECENT_MAX). */
+    public static final List<Integer>  recentColors = new ArrayList<>();
+    /** Ordered brick list; index 0 draws first (lowest z-order). */
+    public static final List<HudField> fields       = new ArrayList<>(defaultFields());
 
-    // ── Live state ─────────────────────────────────────────────
-    /** Whether the HUD overlay is currently visible (mirrors CustomBlocksConfig.hudEnabled). */
-    public static boolean visible   = true;
-    /** X position (pixels from left edge). */
-    public static int     x         = DEF_X;
-    /** Y position (pixels from top edge). */
-    public static int     y         = DEF_Y;
-    /** Text scale multiplier (0.5 .. 3.0). */
-    public static float   scale     = DEF_SCALE;
-    /** Text color as 0xRRGGBB. */
-    public static int     color     = DEF_COLOR;
-    /** Background rectangle opacity (0.0 .. 1.0; 0 = no background). */
-    public static float   bgOpacity = DEF_BG;
-    /** Show the block ID line. */
-    public static boolean showId    = DEF_SHOW_ID;
-    /** Show the display-name line. */
-    public static boolean showName  = DEF_SHOW_NAME;
-
-    // ── Preset color palette (for the editor's "Color" cycle button) ────────────
-    public static final int[]    PALETTE       = {
-            0xFFFFFF, 0xFFFF55, 0x55FF55, 0x55FFFF, 0xFF5555, 0xFF55FF, 0xFFAA00, 0xAAAAAA
-    };
-    public static final String[] PALETTE_NAMES = {
-            "White", "Yellow", "Green", "Aqua", "Red", "Pink", "Gold", "Gray"
-    };
-
-    /** Human-readable name of the current color (falls back to hex). */
-    public static String colorName() {
-        for (int i = 0; i < PALETTE.length; i++) if (PALETTE[i] == (color & 0xFFFFFF)) return PALETTE_NAMES[i];
-        return toHex(color);
+    // ── Default fresh layout (spec: Name larger on top, ID smaller beneath, top-left) ─
+    public static List<HudField> defaultFields() {
+        List<HudField> list = new ArrayList<>();
+        HudField name = new HudField(HudFieldType.DISPLAY_NAME, 6, 6, HudField.Anchor.TL, 1.4f);
+        name.bold = true;
+        list.add(name);
+        HudField id = new HudField(HudFieldType.BLOCK_ID, 6, 26, HudField.Anchor.TL, 0.8f);
+        id.color = 0xAAAAAA;
+        list.add(id);
+        return list;
     }
 
-    /** Advance the color to the next palette entry. */
-    public static void cycleColor() {
-        int idx = -1;
-        for (int i = 0; i < PALETTE.length; i++) if (PALETTE[i] == (color & 0xFFFFFF)) { idx = i; break; }
-        color = PALETTE[(idx + 1) % PALETTE.length];
-    }
-
-    /** Restore every field to its spec default (does not persist; call save() to commit). */
+    /** [Reset] — restore the default brick list + background globals (does not persist). */
     public static void resetDefaults() {
-        x = DEF_X; y = DEF_Y; scale = DEF_SCALE; color = DEF_COLOR;
-        bgOpacity = DEF_BG; showId = DEF_SHOW_ID; showName = DEF_SHOW_NAME;
+        snapEnabled = DEF_SNAP;
+        bgColor     = DEF_BG_COLOR;
+        bgOpacity   = DEF_BG_OPACITY;
+        masterScale = DEF_MASTER_SCALE;
+        setFields(defaultFields());
+    }
+
+    /** Replace the brick list with deep copies of the given fields. */
+    public static void setFields(List<HudField> newFields) {
+        fields.clear();
+        for (HudField f : newFields) fields.add(f.copy());
+    }
+
+    /** Deep-copied snapshot of the current brick list (for undo / preview). */
+    public static List<HudField> snapshotFields() {
+        List<HudField> out = new ArrayList<>(fields.size());
+        for (HudField f : fields) out.add(f.copy());
+        return out;
+    }
+
+    /** Record a freshly picked colour at the front of the recents list. */
+    public static void pushRecent(int rgb) {
+        int c = rgb & 0xFFFFFF;
+        recentColors.remove(Integer.valueOf(c));
+        recentColors.add(0, c);
+        while (recentColors.size() > RECENT_MAX) recentColors.remove(recentColors.size() - 1);
     }
 
     /** Seed the visible flag from the server config (first-run fallback only). */
-    public static void syncFromConfig() {
-        visible = CustomBlocksConfig.hudEnabled;
-    }
+    public static void syncFromConfig() { visible = CustomBlocksConfig.hudEnabled; }
 
-    // ── Persistence ──────────────────────────────────────────
+    // ── Persistence (delegated to HudConfigStore) ────────────────────────────
+    public static void load() { HudConfigStore.load(); }
+    public static void save() { HudConfigStore.save(); }
 
-    /**
-     * Load saved settings from disk. If the file is missing/unreadable, seed the visible
-     * flag from CustomBlocksConfig and leave the rest at defaults.
-     */
-    public static void load() {
-        try {
-            Path p = Path.of(FILE);
-            if (!Files.exists(p)) { syncFromConfig(); return; }
-            JsonObject o = GSON.fromJson(Files.readString(p, StandardCharsets.UTF_8), JsonObject.class);
-            if (o == null) { syncFromConfig(); return; }
-            visible   = getBool (o, "hudEnabled",   CustomBlocksConfig.hudEnabled);
-            x         = getInt  (o, "hudX",         DEF_X);
-            y         = getInt  (o, "hudY",         DEF_Y);
-            scale     = clampScale(getFloat(o, "hudScale", DEF_SCALE));
-            color     = parseHex(getString(o, "hudColor", toHex(DEF_COLOR)), DEF_COLOR);
-            bgOpacity = clamp01(getFloat(o, "hudBgOpacity", DEF_BG));
-            showId    = getBool (o, "hudShowId",    DEF_SHOW_ID);
-            showName  = getBool (o, "hudShowName",  DEF_SHOW_NAME);
-        } catch (Exception ignored) {
-            syncFromConfig();
-        }
-    }
-
-    /** Persist current settings with an atomic write (temp file + ATOMIC_MOVE). */
-    public static void save() {
-        try {
-            Path file = Path.of(FILE);
-            Files.createDirectories(file.getParent());
-            JsonObject o = new JsonObject();
-            o.addProperty("hudEnabled",   visible);
-            o.addProperty("hudX",         x);
-            o.addProperty("hudY",         y);
-            o.addProperty("hudScale",     scale);
-            o.addProperty("hudColor",     toHex(color));
-            o.addProperty("hudBgOpacity", bgOpacity);
-            o.addProperty("hudShowId",    showId);
-            o.addProperty("hudShowName",  showName);
-            Path tmp = file.resolveSibling("hud-config-server.json.tmp");
-            Files.writeString(tmp, GSON.toJson(o), StandardCharsets.UTF_8);
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (Exception ignored) {}
-    }
-
-    // ── Helpers ───────────────────────────────────────────────
-
-    public static float clampScale(float s) { return Math.max(0.5f, Math.min(3.0f, s)); }
-    public static float clamp01(float v)     { return Math.max(0.0f, Math.min(1.0f, v)); }
-
-    public static String toHex(int rgb) { return String.format("#%06X", rgb & 0xFFFFFF); }
+    // ── Shared helpers ───────────────────────────────────────────────────────
+    public static float  clampScale(float s) { return Math.max(0.5f, Math.min(3.0f, s)); }
+    public static float  clamp01(float v)     { return Math.max(0.0f, Math.min(1.0f, v)); }
+    public static String toHex(int rgb)       { return String.format("#%06X", rgb & 0xFFFFFF); }
 
     public static int parseHex(String hex, int fallback) {
         try {
@@ -153,18 +123,5 @@ public final class HudConfig {
             if (h.startsWith("#")) h = h.substring(1);
             return Integer.parseInt(h, 16) & 0xFFFFFF;
         } catch (Exception e) { return fallback; }
-    }
-
-    private static boolean getBool(JsonObject o, String k, boolean def) {
-        return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsBoolean() : def;
-    }
-    private static int getInt(JsonObject o, String k, int def) {
-        return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt() : def;
-    }
-    private static float getFloat(JsonObject o, String k, float def) {
-        return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsFloat() : def;
-    }
-    private static String getString(JsonObject o, String k, String def) {
-        return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsString() : def;
     }
 }

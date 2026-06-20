@@ -105,7 +105,7 @@ public final class ConfigCommands {
         root.then(CommandManager.literal("config")
                 .then(CommandManager.literal("texturesize")
                         .executes(ConfigCommands::openTextureSizeMenu)
-                        .then(CommandManager.argument("px", IntegerArgumentType.integer(16, 512))
+                        .then(CommandManager.argument("px", IntegerArgumentType.integer(16, CustomBlocksConfig.MAX_TEXTURE_SIZE))
                                 .suggests((c, b) -> { b.suggest(16); b.suggest(32); b.suggest(64); b.suggest(128); b.suggest(256); b.suggest(512); return b.buildFuture(); })
                                 .executes(ctx -> setTextureSize(ctx, IntegerArgumentType.getInteger(ctx, "px"))))));
 
@@ -290,17 +290,27 @@ public final class ConfigCommands {
 
     private static int textureSizeStatus(CommandContext<ServerCommandSource> ctx) {
         Chat.info(ctx.getSource(), "Texture size: §e" + CustomBlocksConfig.textureSize
-                + "px §8(/cb config texturesize 16-512 · higher = sharper, bigger pack)");
+                + "px §8(/cb config texturesize 16-" + CustomBlocksConfig.MAX_TEXTURE_SIZE
+                + " · higher = sharper, bigger pack)");
         return 1;
     }
 
     private static int setTextureSize(CommandContext<ServerCommandSource> ctx, int px) {
-        CustomBlocksConfig.textureSize = px;
+        int size = CustomBlocksConfig.sanitizeTextureSize(px); // pow2; ≤256 is atlas-safe, 512 needs the own-texture renderer
+        CustomBlocksConfig.textureSize = size;
         CustomBlocksConfig.save();
-        Chat.success(ctx.getSource(), "Texture size → §e" + px + "px§r. "
-                + "Re-create or retexture a block to see it at the new resolution"
-                + (px >= 512 ? " §7(512px = sharpest, but a much heavier resource pack)."
-                             : px >= 256 ? " §7(256px+ = sharp, but a heavier resource pack)." : "."));
+        String note;
+        if (px != size) {
+            note = " §7(snapped from " + px + "px — sizes are powers of two up to "
+                    + CustomBlocksConfig.MAX_TEXTURE_SIZE + "px).";
+        } else if (size > 256) {
+            note = " §e(heads up: " + size + "px is past the atlas-safe 256px — current blocks render via the"
+                    + " atlas and may soften at this size until the own-texture renderer ships. See ADR-008.)";
+        } else {
+            note = " §7(" + size + "px is atlas-safe and crisp).";
+        }
+        Chat.success(ctx.getSource(), "Texture size → §e" + size + "px§r. "
+                + "Re-create or retexture a block to see it at the new resolution" + note);
         return 1;
     }
 

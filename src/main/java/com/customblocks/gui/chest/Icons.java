@@ -51,6 +51,11 @@ public final class Icons {
         return of(Items.LIGHT_BLUE_STAINED_GLASS_PANE, " ");
     }
 
+    /** Amber/gold frame pane — the Arabic Studio's premium theme accent (Group 13 Area 2). */
+    public static ItemStack amber() {
+        return of(Items.ORANGE_STAINED_GLASS_PANE, " ");
+    }
+
     /** Standard back-arrow button. */
     public static ItemStack back() {
         return of(Items.ARROW, "§eBack", "§8Previous menu — or home if you started here");

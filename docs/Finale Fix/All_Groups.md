@@ -577,7 +577,8 @@ older text above, this section wins.**
 - **Physical items kept:** Omni-Tool, Deleter, Square marker, Triangle marker. Chisel, Lumina, Hexagon, Rectangle, and Triangle collapse into **Omni-Tool modes**.
 
 ### D. AI textures (resolves 17.22 / P3)
-- **No API key.** Primary: **Pollinations.ai** (keyless HTTP GET, request texture size directly). Automatic fallback: **Stable Horde** (anonymous key `0000000000`). HuggingFace SDXL dropped (now needs a token + heavy rate limits).
+- ~~**No API key.** Primary: **Pollinations.ai** (keyless HTTP GET, request texture size directly). Automatic fallback: **Stable Horde** (anonymous key `0000000000`). HuggingFace SDXL dropped.~~
+- **SUPERSEDED 2026-06-20.** Group 15 is **PARTIAL / PARKED** (cool bonus, not a backbone — revisit later). Keyless Pollinations proved too slow (free shared queue, 2–40s) and low quality. **Pivot: Cloudflare Workers AI — Flux Schnell** (free API key, ~1–2s, reliable). Owner will use Cloudflare but **wants more discussion before implementing**. This **breaks the keyless goal** (accepted trade). See `GROUP_15_AI_TEXTURES.md` status banner.
 
 ### E. Silent resource pack (resolves 17.1 / Req §6)
 - **Auto-accept mixin + `silentPack` config toggle.** Server-forced (`required=true`) packs still show a prompt, so they do not achieve silence. The mixin auto-confirms the vanilla pack prompt; the toggle lets an owner restore it. Safe because the mod ships client+server and is pinned to MC 1.21.1.

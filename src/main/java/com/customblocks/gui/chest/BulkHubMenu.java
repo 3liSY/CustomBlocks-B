@@ -28,10 +28,18 @@ public final class BulkHubMenu {
         ChestMenu m = new ChestMenu("§3Bulk Operations", 6).fill()
                 .frame(Icons.accent(), Icons.of(Items.BLUE_STAINED_GLASS_PANE, " "));
 
-        m.set(4, Icons.glint(Items.COMMAND_BLOCK, "§b§lBulk Operations",
-                "§7Do one thing to many blocks at once.",
-                "§7Blocks on the server: §f" + SlotManager.usedSlots() + "§7/§f" + SlotManager.getMaxSlots(),
-                "§8Pick an op → choose blocks → confirm."));
+        if (s.prePicked) {
+            int picked = ListSelection.size(player.getUuid());
+            m.set(4, Icons.glint(Items.COMMAND_BLOCK, "§b§lBulk Operations",
+                    "§aActing on your §e" + picked + " §apicked block(s).",
+                    "§8Pick an action → confirm. No re-choosing blocks.",
+                    "§7Back returns to your list."));
+        } else {
+            m.set(4, Icons.glint(Items.COMMAND_BLOCK, "§b§lBulk Operations",
+                    "§7Do one thing to many blocks at once.",
+                    "§7Blocks on the server: §f" + SlotManager.usedSlots() + "§7/§f" + SlotManager.getMaxSlots(),
+                    "§8Pick an op → choose blocks → confirm."));
+        }
 
         // Two tidy rows of operation tiles. Each opens that op's two-step builder.
         opTile(m, 20, s, "property",  Items.COMPARATOR, "§b§lEdit a setting",
@@ -56,17 +64,30 @@ public final class BulkHubMenu {
         return m;
     }
 
-    /** One operation tile — glints if it's the remembered op; opens the op's Step-1 builder. */
+    /** Operations that need an options screen first (the rest go straight to the confirm). */
+    private static boolean isParamOp(String op) {
+        return "property".equals(op) || "rename".equals(op) || "category".equals(op) || "export".equals(op);
+    }
+
+    /** One operation tile — glints if it's the remembered op; opens the op's next step.
+     *  Pre-picked (from /cb listgui): skip Step 1 → options (param ops) or straight to confirm. */
     private static void opTile(ChestMenu m, int slot, BulkSession s, String op, Item icon,
                                String name, String desc) {
         boolean current = op.equals(s.op);
-        String hint = current ? "§a✔ last used — §eclick to start" : "§eClick §7to start";
+        String hint = s.prePicked ? "§eClick §7→ confirm on your picks"
+                : (current ? "§a✔ last used — §eclick to start" : "§eClick §7to start");
         ItemStack stack = current
                 ? Icons.glint(icon, name, "§7" + desc, "", hint)
                 : Icons.of(icon, name, "§7" + desc, "", hint);
         m.set(slot, stack, (p, b, a) -> { GuiFx.select(p);
                 BulkSession ss = BulkSession.get(p.getUuid());
-                ss.op = op; ss.resetSelection();
-                GuiRouter.navigate(p, MenuKey.of(Dest.BULK_SELECT)); });
+                ss.op = op;
+                if (ss.prePicked) {
+                    // Keep the hand-picked selection (selMode "picked") — skip Step 1.
+                    GuiRouter.navigate(p, MenuKey.of(isParamOp(op) ? Dest.BULK_ACTION : Dest.BULK_CONFIRM));
+                } else {
+                    ss.resetSelection();
+                    GuiRouter.navigate(p, MenuKey.of(Dest.BULK_SELECT));
+                } });
     }
 }

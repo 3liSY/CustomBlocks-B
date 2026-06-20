@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>/cb create — Block Creation Studio (organized full blueprint)</title>
+<style>
+  :root{ --gold:#FFC83D; --gold-dim:#9c7a25; --gold-line:rgba(255,200,61,.55);
+    --green:#5DE06B; --red:#FF5555; --cyan:#39E0C8; --orange:#FFA23A;
+    --panel:#16161c; --panel2:#1d1d26; --strip:rgba(0,0,0,.66);
+    --txt:#e8e8ea; --mut:#9a9aa2; --dim:#6a6a72; --ui:1; }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; background:radial-gradient(120% 90% at 50% 0%, #20303a 0%, #0c1118 55%, #06080c 100%);
+    font-family:"Segoe UI",system-ui,sans-serif; color:var(--txt);
+    display:flex; align-items:center; justify-content:center; padding:14px; overflow:hidden;}
+  body.reduce *{animation:none!important; transition:none!important}
+  .world{position:fixed; inset:0; z-index:0; opacity:.55;
+    background:linear-gradient(transparent 0 62%, #4a7a3a 62% 64%, #6b4a2a 64% 100%),
+      repeating-linear-gradient(90deg,#2a3a44 0 40px,#26343d 40px 80px); filter:saturate(.7) brightness(.82);}
+  .worldhide{position:fixed; inset:0; z-index:0; background:#05070b; display:none}
+  .dim{position:fixed; inset:0; z-index:1; background:#000; opacity:var(--dimv,.55); transition:.15s;}
+
+  .screen{position:relative; z-index:2; width:1060px; max-width:100%; transform:scale(var(--ui));
+    background:linear-gradient(180deg,#0f0f15,#090910); border:1px solid var(--gold-line);
+    border-radius:12px; box-shadow:0 24px 80px rgba(0,0,0,.8), 0 0 0 1px rgba(0,0,0,.5) inset, 0 0 60px rgba(255,200,61,.07);
+    overflow:hidden; display:flex; flex-direction:column; height:730px;}
+  .screen[dir=rtl]{direction:rtl}
+
+  .titlebar{background:linear-gradient(180deg,rgba(255,200,61,.13),rgba(255,200,61,.02) 60%,var(--strip));
+    border-bottom:1px solid var(--gold-line); padding:9px 12px 7px;}
+  .titlerow{display:flex; align-items:center; gap:8px}
+  .title{font-weight:800; color:var(--gold); letter-spacing:.3px; font-size:16px;
+    text-shadow:0 1px 0 #000,0 0 18px rgba(255,200,61,.25); flex:1}
+  .tb{display:flex; align-items:center; gap:6px; border:1px solid var(--gold-line); border-radius:7px;
+    background:rgba(0,0,0,.35); color:var(--gold); cursor:pointer; font-size:12px; padding:3px 8px; user-select:none; transition:.12s}
+  .tb:hover{background:rgba(255,200,61,.18); box-shadow:0 0 12px rgba(255,200,61,.3); transform:translateY(-1px)}
+  .iconbtn{width:27px; height:25px; justify-content:center; padding:0}
+  .hint{color:var(--mut); font-size:12px; margin-top:5px}
+  .hint .crumb{color:var(--gold)} .hint .crumb .dimmed{color:var(--gold-dim)}
+  .hint2{color:var(--dim); font-size:11.5px; margin-top:2px}
+  kbd{background:#23232c; border:1px solid #34343f; border-bottom-width:2px; border-radius:4px;
+    padding:0 5px; font-size:10.5px; color:#cfcfd6; font-family:inherit}
+
+  .body{display:flex; flex:1; min-height:0}
+  .sidebar{width:330px; border-right:1px solid rgba(255,200,61,.22);
+    background:linear-gradient(180deg,#13131a,#0f0f15); padding:11px; overflow-y:auto; display:flex; flex-direction:column; transition:width .22s ease}
+  .sidebar.expanded{width:520px;}
+  /* two-column field grid for expanded panels */
+  .fg2{display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; margin-bottom:10px}
+  .fg3{display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px 10px; margin-bottom:10px}
+  .fg2 .full{grid-column:1/-1}
+  .sechead{display:flex; align-items:center; gap:10px; margin-bottom:14px; padding-bottom:10px; border-bottom:1px solid rgba(255,200,61,.15)}
+  .sechead .t{font-size:15px; font-weight:800; color:var(--gold); flex:1}
+  .sechead .xb{padding:4px 9px; background:rgba(0,0,0,.4); border:1px solid #2e2e3c; border-radius:6px; color:var(--mut); cursor:pointer; font-size:12px}
+  .sechead .xb:hover{border-color:var(--gold-line); color:var(--txt)}
+  .secgroup{background:rgba(0,0,0,.25); border:1px solid rgba(255,255,255,.05); border-radius:9px; padding:10px 12px; margin-bottom:10px}
+  .secgroup .gl{color:var(--gold-dim); font-size:10.5px; text-transform:uppercase; letter-spacing:.55px; margin-bottom:7px}
+  .sidebar::-webkit-scrollbar{width:8px} .sidebar::-webkit-scrollbar-thumb{background:#2a2a34;border-radius:4px}
+  .stage{flex:1; position:relative; display:flex; flex-direction:column; min-width:0;
+    background:radial-gradient(75% 65% at 50% 42%,rgba(255,200,61,.06),transparent 72%);}
+
+  /* quick-start cluster */
+  .qstart{display:flex; gap:6px; margin-bottom:9px}
+  .qstart .tb{flex:1; justify-content:center}
+  .sep{height:1px; background:rgba(255,200,61,.18); margin:9px 0}
+  .foldhead{display:flex; align-items:center; gap:6px; color:var(--gold-dim); font-size:11px;
+    letter-spacing:.6px; text-transform:uppercase; cursor:pointer; margin:4px 2px 8px; user-select:none}
+  .foldhead .fc{transition:.15s} .foldhead.closed .fc{transform:rotate(-90deg)}
+
+  .srow{width:100%; text-align:left; margin-bottom:7px; padding:9px 10px;
+    background:linear-gradient(180deg,#1d1d27,#141420); border:1px solid #2e2e3c; border-bottom-color:#0c0c12; border-radius:9px;
+    color:var(--txt); cursor:pointer; transition:.12s; position:relative;
+    box-shadow:0 2px 0 rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.04);}
+  .srow:hover{border-color:rgba(255,200,61,.45); box-shadow:0 3px 10px rgba(0,0,0,.5),0 0 0 1px rgba(255,200,61,.15),inset 0 1px 0 rgba(255,200,61,.08); transform:translateY(-1px)}
+  .srow .h{display:flex; align-items:center; gap:8px; font-size:13px; font-weight:600}
+  .srow .sub{color:var(--mut); font-size:11px; margin-top:3px; padding-left:25px}
+  .chev{margin-left:auto; color:var(--gold-dim)}
+  .pin{margin-left:6px; opacity:.35; cursor:pointer; font-size:12px}
+  .pin.on{opacity:1; filter:drop-shadow(0 0 4px var(--gold))}
+  .stat{width:17px; height:17px; border-radius:5px; display:inline-flex; align-items:center;
+    justify-content:center; font-size:11px; font-weight:800}
+  .ok{background:rgba(93,224,107,.16); color:var(--green); border:1px solid rgba(93,224,107,.4)}
+  .miss{background:rgba(255,162,58,.14); color:var(--orange); border:1px solid rgba(255,162,58,.45)}
+  .pulse{animation:pulse 1s ease-in-out 3}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,162,58,0)}50%{box-shadow:0 0 0 3px rgba(255,162,58,.6)}}
+  .advwrap.closed{display:none}
+
+  /* readiness meter */
+  .ready{margin-top:auto; padding-top:10px; border-top:1px solid rgba(255,200,61,.18)}
+  .ready .bar{height:7px; background:#23232c; border-radius:4px; overflow:hidden; margin:6px 0 4px}
+  .ready .fill{height:100%; background:linear-gradient(90deg,var(--orange),var(--green)); width:80%; transition:.25s}
+  .ready .chk{font-size:11px; color:var(--mut); display:flex; flex-wrap:wrap; gap:8px}
+  .ready .chk b{cursor:pointer} .chk .y{color:var(--green)} .chk .n{color:var(--orange)}
+
+  /* panels */
+  .panel{display:none} .panel.active{display:block; animation:slidein .16s ease}
+  @keyframes slidein{from{opacity:0; transform:translateX(8px)}to{opacity:1}}
+  .ptitle{color:var(--gold); font-weight:700; font-size:13px; margin:2px 0 10px; text-transform:uppercase; letter-spacing:.6px}
+  label.fld{display:block; color:var(--mut); font-size:11px; margin:9px 0 4px; text-transform:uppercase; letter-spacing:.4px}
+  input.txt,textarea.txt,select.sel{width:100%; background:#0b0b10; border:1px solid #2e2e38; border-radius:7px;
+    color:var(--txt); padding:7px 9px; font-family:inherit; font-size:13px}
+  input.txt:focus,textarea.txt:focus,select.sel:focus{outline:none; border-color:var(--gold-line); box-shadow:0 0 0 2px rgba(255,200,61,.18)}
+  input.err{border-color:var(--red)!important; box-shadow:0 0 0 2px rgba(255,85,85,.25)!important}
+  .note{font-size:11px; margin-top:4px} .note.good{color:var(--green)} .note.bad{color:var(--red)} .note.mut{color:var(--dim)}
+  .smallbtn{margin-top:8px; padding:6px 10px; background:var(--panel2); border:1px solid #34343f; border-radius:7px;
+    color:var(--txt); cursor:pointer; font-size:12px; transition:.12s}
+  .smallbtn:hover{border-color:var(--gold-line); transform:translateY(-1px)}
+  .back{margin-top:13px}
+  .row2{display:flex; gap:6px} .row2>*{flex:1}
+
+  .chips{display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px}
+  .chip{padding:6px 10px; font-size:11.5px; cursor:pointer; background:var(--panel); border:1px solid #2a2a34;
+    border-radius:7px; color:var(--mut); transition:.12s}
+  .chip.on{color:#1a1306; background:linear-gradient(180deg,#ffe07a,var(--gold)); border-color:var(--gold); font-weight:700}
+  .chip:hover{transform:translateY(-1px)}
+  .glabel{color:var(--gold-dim); font-size:10.5px; text-transform:uppercase; letter-spacing:.5px; margin:8px 0 4px}
+  .tcontent{display:none} .tcontent.on{display:block}
+  .toggle{display:flex; align-items:center; gap:8px; background:#0b0b10; border:1px solid #2e2e38;
+    border-radius:7px; padding:5px 8px; font-size:12px; margin-bottom:8px}
+  .toggle .seg{display:flex; gap:3px; margin-left:auto}
+  .toggle .seg span{padding:3px 9px; border-radius:5px; cursor:pointer; color:var(--mut); font-size:11px}
+  .toggle .seg span.on{background:var(--gold); color:#1a1306; font-weight:700}
+
+  .pal{display:grid; grid-template-columns:repeat(6,1fr); gap:6px; margin-top:4px}
+  .sw{aspect-ratio:1; border-radius:6px; cursor:pointer; border:1px solid rgba(0,0,0,.4); transition:.1s}
+  .sw:hover{transform:scale(1.14); box-shadow:0 0 10px rgba(255,200,61,.5)}
+  .slider{display:flex; align-items:center; gap:8px; margin:7px 0; font-size:12px}
+  .slider input{flex:1; accent-color:var(--gold)} .slider .val{width:50px; text-align:right; color:var(--gold)}
+
+  .presets{display:grid; grid-template-columns:repeat(3,1fr); gap:6px}
+  .pchip{padding:5px 4px 6px; text-align:center; font-size:10px; cursor:pointer; background:var(--panel);
+    border:1px solid #2a2a34; border-radius:8px; color:var(--txt); display:flex; flex-direction:column; align-items:center; gap:3px; transition:.12s}
+  .pchip:hover{background:var(--panel2); transform:translateY(-1px)}
+  .pchip.on{border-color:var(--gold); color:var(--gold); box-shadow:0 0 0 1px var(--gold-line)}
+  .pchip.soon{opacity:.55; cursor:not-allowed; border-style:dashed}
+  .mini{width:30px; height:30px; perspective:120px}
+  .mini .mc{width:18px; height:18px; margin:6px auto; position:relative; transform-style:preserve-3d; animation:spin 6s linear infinite}
+  .mini .mf{position:absolute; width:18px; height:18px; background:var(--gold-dim); border:1px solid #0008}
+  .mf.a{transform:translateZ(9px)} .mf.b{transform:rotateY(90deg) translateZ(9px); filter:brightness(.8)}
+  .mf.c{transform:rotateX(90deg) translateZ(9px); filter:brightness(1.15)}
+
+  /* stage */
+  .stagetabs{display:flex; gap:6px; padding:9px 12px 0}
+  .stab{padding:6px 16px; font-size:12.5px; cursor:pointer; color:var(--mut); border:1px solid transparent; border-bottom:none; border-radius:8px 8px 0 0}
+  .stab.on{color:var(--gold); background:rgba(255,200,61,.08); border-color:var(--gold-line)}
+  .stageview{flex:1; position:relative; display:none; flex-direction:column; align-items:center; justify-content:center; gap:12px}
+  .stageview.on{display:flex}
+  .cubewrap{position:relative; perspective:780px; width:230px; height:230px; display:flex; align-items:center; justify-content:center; cursor:grab}
+  .grid{position:absolute; width:300px; height:120px; transform:translateY(104px) rotateX(74deg);
+    background-image:linear-gradient(rgba(255,200,61,.10) 1px,transparent 1px),linear-gradient(90deg,rgba(255,200,61,.10) 1px,transparent 1px);
+    background-size:25px 25px; mask:radial-gradient(closest-side,#000,transparent); opacity:.6}
+  .platform{position:absolute; width:190px; height:48px; border-radius:50%;
+    background:radial-gradient(closest-side,rgba(0,0,0,.55),transparent); transform:translateY(100px) rotateX(74deg); filter:blur(3px)}
+  .cube{width:134px; height:134px; position:relative; transform-style:preserve-3d; animation:spin 9s linear infinite; transition:transform .35s}
+  @keyframes spin{from{transform:var(--base,rotateX(-22deg)) rotateY(0)}to{transform:var(--base,rotateX(-22deg)) rotateY(360deg)}}
+  .face{position:absolute; width:134px; height:134px; border:1px solid rgba(0,0,0,.35); background-size:cover; overflow:hidden}
+  .face::after{content:''; position:absolute; inset:0; pointer-events:none;
+    background-image:linear-gradient(rgba(0,0,0,.12) 1px,transparent 1px),linear-gradient(90deg,rgba(0,0,0,.12) 1px,transparent 1px);
+    background-size:8.375px 8.375px;}
+  .f-front{transform:translateZ(67px)} .f-back{transform:rotateY(180deg) translateZ(67px); filter:brightness(.6)}
+  .f-right{transform:rotateY(90deg) translateZ(67px); filter:brightness(.82)} .f-left{transform:rotateY(-90deg) translateZ(67px); filter:brightness(.82)}
+  .f-top{transform:rotateX(90deg) translateZ(67px); filter:brightness(1.12)} .f-bottom{transform:rotateX(-90deg) translateZ(67px); filter:brightness(.5)}
+  .cube.wire .face{outline:2px solid var(--cyan); outline-offset:-1px}
+  .glowing .cube{filter:drop-shadow(0 0 22px var(--glowc,#ffd95e))}
+  .facepick .face{cursor:pointer} .facepick .face:hover{outline:3px solid var(--gold); outline-offset:-1px}
+
+  /* view strip — vertical icon bar on right edge of stage */
+  .vstrip{position:absolute; right:10px; top:50%; transform:translateY(-50%); z-index:5;
+    display:flex; flex-direction:column; gap:3px;
+    background:rgba(10,10,16,.82); border:1px solid var(--gold-line); border-radius:10px; padding:6px 3px;
+    box-shadow:0 4px 18px rgba(0,0,0,.55); backdrop-filter:blur(4px);}
+  .vico{width:32px; height:28px; display:flex; align-items:center; justify-content:center;
+    border-radius:6px; cursor:pointer; font-size:13px; color:var(--mut); transition:.1s; position:relative; user-select:none}
+  .vico:hover{background:rgba(255,200,61,.15); color:var(--gold);}
+  .vico.on{background:rgba(255,200,61,.22); color:var(--gold); box-shadow:inset 0 0 0 1px rgba(255,200,61,.3)}
+  .vico .tip{display:none; position:absolute; right:calc(100% + 8px); top:50%; transform:translateY(-50%);
+    background:#1a1a24; border:1px solid var(--gold-line); border-radius:6px; padding:3px 8px;
+    font-size:11px; color:var(--txt); white-space:nowrap; pointer-events:none}
+  .vico:hover .tip{display:block}
+  .vsep{height:1px; background:var(--gold-line); margin:3px 4px; opacity:.5}
+  .readout{position:absolute; left:12px; bottom:10px; color:var(--dim); font-size:11px}
+  .badge{position:absolute; top:10px; right:14px; font-size:11px; color:var(--dim); background:rgba(0,0,0,.4);
+    border:1px solid #2a2a34; border-radius:6px; padding:3px 8px}
+  .spinner{position:absolute; width:44px; height:44px; border:4px solid rgba(255,200,61,.25); border-top-color:var(--gold);
+    border-radius:50%; animation:rot 1s linear infinite; display:none} @keyframes rot{to{transform:rotate(360deg)}}
+  .retry{position:absolute; display:none; flex-direction:column; align-items:center; gap:8px}
+  .retry .rb{padding:6px 14px; background:var(--gold); color:#1a1306; border:none; border-radius:7px; font-weight:700; cursor:pointer}
+  /* variants contact sheet */
+  .vgrid{display:grid; grid-template-columns:repeat(4,1fr); gap:10px; padding:18px; width:100%; max-width:520px}
+  .vcell{aspect-ratio:1; border-radius:8px; border:2px solid transparent; cursor:pointer; position:relative; transition:.12s}
+  .vcell:hover{transform:translateY(-2px)} .vcell.pick{border-color:var(--green); box-shadow:0 0 0 2px rgba(93,224,107,.4)}
+  .vcell .tk{position:absolute; top:3px; right:5px; color:var(--green); font-weight:800; display:none}
+  .vcell.pick .tk{display:block}
+
+  /* action bar — dock-bottom is in normal flex flow (no overlap); left/right/dragging = absolute */
+  .actionbar{position:relative; z-index:25; display:flex; align-items:center; gap:6px;
+    background:linear-gradient(180deg,rgba(255,200,61,.08),rgba(0,0,0,.5)); border-top:1px solid var(--gold-line);
+    box-shadow:inset 0 1px 0 rgba(255,200,61,.14); backdrop-filter:blur(3px); transition:.18s}
+  .actionbar.dock-bottom{padding:8px 14px;}
+  .actionbar.dock-left{position:absolute; left:12px; top:120px; bottom:52px; width:138px; padding:8px; border-radius:11px; border:1px solid var(--gold-line); flex-direction:column; align-items:stretch; box-shadow:0 8px 26px rgba(0,0,0,.5)}
+  .actionbar.dock-right{position:absolute; right:12px; top:120px; bottom:52px; width:138px; padding:8px; border-radius:11px; border:1px solid var(--gold-line); flex-direction:column; align-items:stretch; box-shadow:0 8px 26px rgba(0,0,0,.5)}
+  .actionbar.dragging{position:absolute; border:1px solid var(--gold-line); border-radius:11px; transition:none; opacity:.92; box-shadow:0 14px 40px rgba(0,0,0,.7),0 0 0 1px var(--gold)}
+  .grip{color:var(--gold-dim); cursor:grab; font-size:14px; letter-spacing:-2px; padding:2px 4px; user-select:none}
+  .barbtns{display:flex; align-items:center; gap:6px; flex:1}
+  .actionbar.dock-left .barbtns,.actionbar.dock-right .barbtns{flex-direction:column; align-items:stretch}
+  .btn{padding:6px 12px; border-radius:7px; font-size:11.5px; cursor:pointer; white-space:nowrap;
+    border:1px solid #3a3a4a; border-bottom-color:#0e0e14;
+    background:linear-gradient(180deg,#22222e 0%,#17171f 100%);
+    color:var(--txt); transition:.1s;
+    box-shadow:0 2px 0 rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.05);}
+  .btn:hover{border-color:var(--gold-line); transform:translateY(-1px); box-shadow:0 3px 8px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,200,61,.1)}
+  .btn:active{transform:translateY(1px); box-shadow:0 0 0 rgba(0,0,0,.4)}
+  .btn.primary{background:linear-gradient(180deg,#72f080,#38c44b); color:#04210a; border-color:#2faa3f; border-bottom-color:#1a6626; font-weight:800; text-shadow:0 1px 0 rgba(255,255,255,.3); box-shadow:0 2px 0 rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2)}
+  .btn.primary.draft{background:linear-gradient(180deg,#ffe07a,#d9a82e); color:#3a2a05; border-color:#c89a2f; border-bottom-color:#8a6010; box-shadow:0 2px 0 rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.2)}
+  .btn.flash{animation:flash .6s ease} @keyframes flash{0%,100%{box-shadow:0 0 0 0 rgba(93,224,107,0)}40%{box-shadow:0 0 0 5px rgba(93,224,107,.65)}}
+  .spacer{flex:1} .actionbar.dock-left .spacer,.actionbar.dock-right .spacer{display:none}
+  .collapse{width:22px; height:20px; border:1px solid var(--gold-line); background:rgba(0,0,0,.35); color:var(--gold); border-radius:5px; cursor:pointer; font-size:11px}
+  .actionbar.collapsed .barbtns{display:none}
+  .actionbar.collapsed.dock-bottom{justify-content:flex-end; padding:4px 10px; min-height:32px;}
+  .dockzone{position:absolute; z-index:24; border:2px dashed var(--gold-line); border-radius:11px; background:rgba(255,200,61,.07); display:none; pointer-events:none}
+  .dragging-now .dockzone{display:block}
+  .dz-bottom{left:14px; right:14px; bottom:12px; height:44px} .dz-left{left:12px; top:120px; bottom:62px; width:138px} .dz-right{right:12px; top:120px; bottom:62px; width:138px}
+
+  /* overlays */
+  .overlay{position:absolute; inset:0; z-index:40; display:none; align-items:center; justify-content:center}
+  .overlay.show{display:flex; animation:fade .14s ease} @keyframes fade{from{opacity:0}to{opacity:1}}
+  .scrim{position:absolute; inset:0; background:rgba(0,0,0,.66)}
+  .card{position:relative; width:470px; max-width:92%; max-height:88%; overflow:auto;
+    background:linear-gradient(180deg,#17171f,#101015); border:1px solid var(--gold-line); border-radius:12px;
+    box-shadow:0 24px 60px rgba(0,0,0,.65); animation:rise .16s ease}
+  @keyframes rise{from{transform:translateY(10px); opacity:.6}to{transform:none; opacity:1}}
+  .cardhead{display:flex; align-items:center; padding:11px 13px; border-bottom:1px solid var(--gold-line);
+    background:linear-gradient(180deg,rgba(255,200,61,.13),transparent); position:sticky; top:0}
+  .cardhead .t{color:var(--gold); font-weight:800; flex:1}
+  .xbtn{width:25px; height:22px; display:flex; align-items:center; justify-content:center; background:rgba(255,85,85,.16);
+    border:1px solid rgba(255,85,85,.55); color:var(--red); border-radius:6px; cursor:pointer; font-weight:800}
+  .xbtn:hover{background:rgba(255,85,85,.32)} .cardbody{padding:14px 16px}
+  .hgroup{color:var(--gold-dim); font-size:11px; letter-spacing:.6px; margin:12px 0 6px; text-transform:uppercase} .hgroup:first-child{margin-top:2px}
+  .krow{display:flex; justify-content:space-between; padding:5px 0; font-size:12.5px; border-bottom:1px solid rgba(255,255,255,.04)} .krow span:last-child{color:var(--mut)}
+  .setrow{display:flex; align-items:center; gap:10px; margin:10px 0; font-size:13px} .setrow label{flex:1} .setrow input[type=range]{accent-color:var(--gold)}
+  .gal{display:grid; grid-template-columns:repeat(3,1fr); gap:10px}
+  .gcard{background:var(--panel); border:1px solid #2a2a34; border-radius:9px; padding:8px; text-align:center; cursor:pointer; transition:.12s}
+  .gcard:hover{border-color:var(--gold-line); transform:translateY(-2px)} .gcard .gn{font-size:11.5px; margin-top:4px} .gcard .gid{font-size:10px; color:var(--dim)}
+  .confirm .cardbody{text-align:center} .confirm p{margin:6px 0 16px}
+  /* command palette */
+  #palette .card{width:430px} .pinput{width:100%; background:#0b0b10; border:1px solid var(--gold-line); border-radius:8px; color:var(--txt); padding:10px; font-size:14px}
+  .presult{padding:8px 10px; border-radius:7px; cursor:pointer; font-size:13px; display:flex; gap:8px; align-items:center}
+  .presult:hover,.presult.sel{background:rgba(255,200,61,.14)} .presult .k{margin-left:auto; color:var(--dim); font-size:11px}
+
+  .coach{position:absolute; z-index:50; background:linear-gradient(180deg,#1d1d27,#15151c); border:1px solid var(--gold-line);
+    border-radius:10px; padding:10px 12px; width:236px; box-shadow:0 12px 34px rgba(0,0,0,.6); display:none}
+  .coach.show{display:block; animation:rise .2s ease} .coach .ct{color:var(--gold); font-weight:700; font-size:12.5px; margin-bottom:4px}
+  .coach p{margin:0 0 8px; font-size:12px; color:var(--mut)} .coach .gotit{padding:5px 11px; background:var(--gold); color:#1a1306; border:none; border-radius:6px; font-weight:700; cursor:pointer; font-size:12px}
+  .toast{position:fixed; left:50%; bottom:30px; transform:translateX(-50%); z-index:99; background:#16161d; border:1px solid var(--gold-line);
+    color:#ffe; padding:9px 18px; border-radius:9px; font:13px "Segoe UI"; box-shadow:0 10px 28px #000a; animation:rise .16s}
+  .toast.good{border-color:rgba(93,224,107,.6)} .toast.bad{border-color:rgba(255,85,85,.6)}
+  .matgrid{display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-top:6px}
+  .matcard{padding:10px; border-radius:9px; border:1px solid #2a2a34; background:var(--panel); cursor:pointer; transition:.12s}
+  .matcard:hover{border-color:var(--gold-line); transform:translateY(-2px)} .matcard b{display:block; color:var(--gold)} .matcard small{color:var(--mut); font-size:11px}
+
+  /* ── deep panel polish ─────────────────── */
+  /* real toggle switch */
+  .tsw{position:relative; width:38px; height:22px; flex-shrink:0; cursor:pointer}
+  .tsw input{opacity:0; width:0; height:0; position:absolute}
+  .tsw .trk{position:absolute; inset:0; border-radius:11px; background:#1e1e28; border:1px solid #3a3a4a; transition:.18s}
+  .tsw .trk::before{content:''; position:absolute; left:3px; top:3px; width:14px; height:14px; border-radius:50%; background:#4a4a5a; transition:.18s; box-shadow:0 1px 3px rgba(0,0,0,.5)}
+  .tsw input:checked ~ .trk{background:rgba(255,200,61,.2); border-color:var(--gold)}
+  .tsw input:checked ~ .trk::before{transform:translateX(16px); background:var(--gold); box-shadow:0 0 6px rgba(255,200,61,.6)}
+  /* toggle row */
+  .trow{display:flex; align-items:center; gap:10px; padding:9px 12px; background:rgba(0,0,0,.2); border:1px solid rgba(255,255,255,.04); border-radius:8px; margin-bottom:7px}
+  .trow .ico{font-size:16px; width:22px; text-align:center; flex-shrink:0}
+  .trow .lbl{flex:1}
+  .trow .lbl b{display:block; font-size:12.5px; font-weight:600; color:var(--txt)}
+  .trow .lbl small{color:var(--dim); font-size:11px}
+  /* glow bar */
+  .glowbar{height:10px; border-radius:5px; margin-top:8px; transition:.2s; background:var(--glowc,#ffd95e); opacity:.4}
+  .glowbar.lit{opacity:1; box-shadow:0 0 12px 3px var(--glowc,#ffd95e)}
+  /* hardness quick-chips */
+  .hardchips{display:flex; gap:5px; margin-top:8px; flex-wrap:wrap}
+  .hardchip{padding:4px 9px; border-radius:6px; font-size:11px; cursor:pointer; background:#1a1a24; border:1px solid #2e2e3c; color:var(--mut); transition:.1s}
+  .hardchip:hover{border-color:var(--gold-line); color:var(--txt)} .hardchip.on{background:rgba(255,200,61,.18); border-color:var(--gold); color:var(--gold)}
+  /* sound chips */
+  .sndchips{display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:6px}
+  .sndchip{padding:7px 4px; text-align:center; border-radius:8px; background:#1a1a24; border:1px solid #2e2e3c; cursor:pointer; font-size:11px; color:var(--mut); transition:.12s}
+  .sndchip:hover{border-color:var(--gold-line); color:var(--txt)} .sndchip.on{background:rgba(255,200,61,.18); border-color:var(--gold); color:var(--gold)}
+  .sndchip .si{font-size:18px; display:block; margin-bottom:2px}
+  /* identity tooltip preview */
+  .idpreview{background:#100c1c; border:2px solid #5a3aaa; border-radius:3px; padding:7px 10px; margin-top:10px; font-family:monospace}
+  .idpreview .iname{color:#fff; font-size:13px; font-weight:700; text-shadow:0 0 6px rgba(200,160,255,.5)}
+  .idpreview .iid{color:#aaa; font-size:11px; margin-top:2px}
+  .idpreview .idesc{color:#b0a0d8; font-size:11px; margin-top:4px; font-style:italic}
+  /* source/tool icon chips */
+  .icochips{display:flex; gap:6px; flex-wrap:wrap}
+  .icochip{display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 10px; border-radius:8px; background:#1a1a24; border:1px solid #2e2e3c; cursor:pointer; font-size:10.5px; color:var(--mut); transition:.12s; min-width:52px}
+  .icochip .ii{font-size:18px}
+  .icochip:hover{border-color:var(--gold-line); color:var(--txt)} .icochip.on{background:rgba(255,200,61,.18); border-color:var(--gold); color:var(--gold)}
+</style>
+</head>
+<body style="--dimv:.55; --glowc:#ffd95e">
+  <div class="world"></div><div class="worldhide"></div><div class="dim"></div>
+
+  <div class="screen" id="screen">
+    <!-- TITLE BAR -->
+    <div class="titlebar">
+      <div class="titlerow">
+        <div class="title" id="title">Block Creation Studio</div>
+        <div class="tb" onclick="show('surprise')">✦ Surprise</div>
+        <div class="tb" onclick="show('aidesign')">✨ AI Design</div>
+        <div class="tb" onclick="show('palette');setTimeout(()=>document.getElementById('pq').focus(),50)" title="Ctrl+K">⌘K</div>
+        <div class="tb iconbtn" title="Settings" onclick="show('settings')">⚙</div>
+        <div class="tb iconbtn" title="Help" onclick="show('help')">?</div>
+      </div>
+      <div class="hint" id="crumb"><span class="crumb">Main</span></div>
+      <div class="hint2"><kbd>Ctrl+Z</kbd> undo · <kbd>Ctrl+K</kbd> palette · <kbd>Enter</kbd> create · <kbd>Shift+drag</kbd> move · <kbd>?</kbd> help</div>
+    </div>
+
+    <div class="body">
+      <!-- SIDEBAR -->
+      <div class="sidebar">
+        <!-- quick-start cluster -->
+        <div class="qstart">
+          <div class="tb" onclick="clearAll()">⟲ Clear</div>
+          <div class="tb" onclick="show('library')">📚 Library</div>
+          <div class="tb" onclick="show('material')">🧱 Material</div>
+        </div>
+
+        <!-- MAIN list -->
+        <div class="panel active" id="p-main">
+          <div class="foldhead" style="cursor:default">Quick</div>
+          <button class="srow" onclick="go('identity')">
+            <div class="h"><span class="stat ok" id="st-identity">✔</span> 🏷 Identity <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+            <div class="sub" id="sub-identity">ID: my_block · My Block</div></button>
+          <button class="srow" onclick="go('texture')">
+            <div class="h"><span class="stat miss" id="st-texture">⬜</span> 🖼 Texture <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+            <div class="sub" id="sub-texture">(not set — required)</div></button>
+
+          <div class="foldhead closed" id="advhead" onclick="toggleAdv()"><span class="fc">▾</span> Advanced <span style="color:var(--dim);font-weight:400;font-size:10px;margin-left:4px">6 sections</span></div>
+          <div class="advwrap closed" id="advwrap">
+            <button class="srow" onclick="go('shape')">
+              <div class="h"><span class="stat ok" id="st-shape">✔</span> 📐 Shape <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+              <div class="sub" id="sub-shape">Full</div></button>
+            <button class="srow" onclick="go('attributes')">
+              <div class="h"><span class="stat ok">✔</span> ⚙ Attributes <span style="color:var(--dim);font-weight:400">+ Sound</span> <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+              <div class="sub" id="sub-attr">Glow 0 · Wood</div></button>
+            <button class="srow" onclick="go('fx')">
+              <div class="h"><span class="stat ok">✔</span> ✨ FX <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+              <div class="sub" id="sub-fx">None</div></button>
+            <button class="srow" onclick="go('behavior')">
+              <div class="h"><span class="stat ok">✔</span> 🎮 Behavior <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+              <div class="sub" id="sub-beh">Static</div></button>
+            <button class="srow" onclick="go('lore')">
+              <div class="h"><span class="stat ok">✔</span> 📖 Lore / Attribution <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+              <div class="sub">optional</div></button>
+            <button class="srow" onclick="go('organize')">
+              <div class="h"><span class="stat ok">✔</span> 🗂 Organize <span class="chev">›</span><span class="pin" onclick="pin(event,this)">📌</span></div>
+              <div class="sub" id="sub-org">No category</div></button>
+          </div>
+        </div>
+
+        <!-- IDENTITY -->
+        <div class="panel" id="p-identity">
+          <div class="sechead"><span class="t">🏷 Identity</span><button class="xb" onclick="go('main')">‹ Back</button></div>
+          <div class="fg2">
+            <div class="secgroup full" style="margin:0">
+              <div class="gl">Block ID <span style="color:var(--dim);font-weight:400">— unique · lowercase · underscores only</span></div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <span style="color:var(--dim);font-size:12px">cb:</span>
+                <input class="txt" id="in-id" value="my_block" oninput="checkId()" style="flex:1">
+                <button class="smallbtn" style="margin:0;white-space:nowrap" onclick="autoId()">⤵ Auto-ID</button>
+              </div>
+              <div class="note good" id="id-note" style="margin-top:5px">✔ available — cb:my_block</div>
+            </div>
+            <div class="secgroup full" style="margin:0">
+              <div class="gl">Display Name <span style="color:var(--dim);font-weight:400">· العربية accepted</span></div>
+              <div style="display:flex;gap:6px;align-items:center">
+                <input class="txt" id="in-name" value="My Block" oninput="nameCount()" style="flex:1">
+                <button class="smallbtn" style="margin:0;white-space:nowrap" onclick="toast('AI suggested: Amethyst Slab','good')">✨ Auto-name</button>
+              </div>
+              <div class="note mut" id="name-count" style="margin-top:5px">7 / 64 chars</div>
+            </div>
+          </div>
+          <div class="gl" style="margin-top:4px;margin-bottom:6px">In-game tooltip preview</div>
+          <div class="idpreview">
+            <div class="iname" id="prev-name">My Block</div>
+            <div class="iid" id="prev-id">cb:my_block</div>
+            <div class="idesc">Custom block · CustomBlocks-B</div>
+          </div>
+        </div>
+
+        <!-- TEXTURE -->
+        <div class="panel" id="p-texture">
+          <div class="sechead"><span class="t">Texture</span><button class="xb" onclick="go('main')">‹ Back</button></div>
+
+          <div class="secgroup" style="margin-bottom:8px">
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+              <span style="color:var(--mut);font-size:12px">Faces</span>
+              <div style="display:flex; gap:6px">
+                <div class="chip on" style="font-size:12px;padding:4px 10px" onclick="perface(false,this)">All faces</div>
+                <div class="chip" style="font-size:12px;padding:4px 10px" onclick="perface(true,this)">Per-face</div>
+              </div>
+              <div id="facehint" class="note mut" style="display:none;flex-basis:100%;margin:4px 0 0">Click a cube face → highlights gold → source/tool paints that face.</div>
+            </div>
+          </div>
+
+          <div class="fg2" style="gap:8px">
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Source</div>
+              <div style="display:flex; gap:5px; flex-wrap:wrap">
+                <div class="chip on" data-t="url" onclick="tab('url')">URL</div>
+                <div class="chip" data-t="drop" onclick="tab('drop')">Eyedrop</div>
+                <div class="chip" data-t="ai" onclick="tab('ai')">AI ✨</div>
+              </div>
+            </div>
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Tools</div>
+              <div style="display:flex; gap:5px; flex-wrap:wrap">
+                <div class="chip" data-t="color" onclick="tab('color')">Color</div>
+                <div class="chip" data-t="gradient" onclick="tab('gradient')">Gradient</div>
+                <div class="chip" data-t="pattern" onclick="tab('pattern')">Pattern</div>
+                <div class="chip" data-t="animate" onclick="tab('animate')">Animate</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="secgroup">
+            <div class="tcontent on" id="t-url">
+              <div class="gl">Image / GIF URL</div>
+              <input class="txt" placeholder="https://…" style="margin-bottom:8px">
+              <div class="row2"><button class="smallbtn" onclick="loadUrl(true)">Load</button><button class="smallbtn" onclick="loadUrl(false)">Load (sim fail)</button></div>
+            </div>
+            <div class="tcontent" id="t-drop">
+              <div class="gl">Eyedrop</div>
+              <div class="note mut" style="margin-bottom:8px">Opens EyedropScreen → sample a pixel from any image.</div>
+              <button class="smallbtn" onclick="setColor('#39E0C8')">⊙ Sample pixel (demo)</button>
+            </div>
+            <div class="tcontent" id="t-ai">
+              <div class="gl">AI Style</div>
+              <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px">
+                <div class="chip on">Pixel</div><div class="chip">Realistic</div><div class="chip">Cartoon</div><div class="chip">Arabic ۞</div>
+              </div>
+              <textarea class="txt" rows="2" placeholder="describe the texture… or paste a reference image URL" style="margin-bottom:8px"></textarea>
+              <div class="row2"><button class="smallbtn" onclick="aiGen()">✦ Generate</button><button class="smallbtn" onclick="toast('4 variations → Variants tab','good')">⨯4 variations</button></div>
+              <button class="smallbtn" style="margin-top:6px" onclick="toast('Prompt-edit loaded texture')">✎ Edit existing with prompt</button>
+            </div>
+            <div class="tcontent" id="t-color">
+              <div class="gl">Palette <span style="color:var(--dim);font-weight:400">· right-click ★ · keys 1–9</span></div>
+              <div class="pal" id="pal" style="margin-bottom:12px"></div>
+              <input class="txt" id="in-hex" value="#FF4400" oninput="setColor(this.value)" style="margin-bottom:8px">
+              <div class="gl">Tune HSL</div>
+              <div class="slider">H <input type="range" min="-180" max="180" value="0" oninput="hsl('h',this.value)"><span class="val" id="vh">0°</span></div>
+              <div class="slider">S <input type="range" min="0" max="200" value="100" oninput="hsl('s',this.value)"><span class="val" id="vs">100%</span></div>
+              <div class="slider">L <input type="range" min="0" max="200" value="100" oninput="hsl('l',this.value)"><span class="val" id="vl">100%</span></div>
+              <button class="smallbtn" style="margin-top:6px" onclick="toast('Opens EyedropScreen')">⊙ Eyedrop · 🖼 pull palette from image</button>
+            </div>
+            <div class="tcontent" id="t-gradient">
+              <div class="gl">Gradient builder</div>
+              <div class="row2" style="margin-bottom:8px"><input class="txt" value="#FF4400" oninput="setColor(this.value)"><input class="txt" value="#9B59E8"></div>
+              <div style="display:flex; gap:5px"><div class="chip on">Linear</div><div class="chip">Radial</div><div class="chip">+ stop</div></div>
+            </div>
+            <div class="tcontent" id="t-pattern">
+              <div class="gl">Pattern / noise</div>
+              <div style="display:flex; gap:5px; flex-wrap:wrap; margin-bottom:8px">
+                <div class="chip on" onclick="setColor('#5a4a3a')">Checker</div><div class="chip" onclick="setColor('#7a5230')">Bricks</div><div class="chip" onclick="setColor('#3a4a5a')">Stripes</div><div class="chip" onclick="setColor('#444')">Noise</div>
+              </div>
+              <div class="slider">Scale <input type="range" min="1" max="16" value="4"><span class="val">4</span></div>
+            </div>
+            <div class="tcontent" id="t-animate">
+              <div class="gl">Frame animation</div>
+              <div style="display:flex; gap:5px; margin-bottom:8px"><div class="chip on">Frames</div><div class="chip">Scroll</div></div>
+              <div class="note mut" style="margin-bottom:8px">Stack textures as frames + set speed → animated block (.mcmeta). Animated-tint lives in FX.</div>
+              <div class="slider">Speed <input type="range" min="1" max="20" value="8"><span class="val">8</span></div>
+            </div>
+          </div>
+
+          <div class="toggle">Connected textures (CTM) <div class="seg"><span class="on">Off</span><span onclick="toast('CTM: neighbors blend seamlessly')">On</span></div></div>
+        </div>
+
+        <!-- SHAPE -->
+        <div class="panel" id="p-shape">
+          <div class="sechead"><span class="t">Shape</span><button class="xb" onclick="go('main')">‹ Back</button></div>
+          <div class="secgroup">
+            <div class="gl">Presets · live mini-3D preview</div>
+            <div class="presets" id="presets" style="grid-template-columns:repeat(4,1fr)"></div>
+          </div>
+          <div class="secgroup">
+            <div class="gl">Custom AABB <span style="color:var(--dim);font-weight:400">· freeform box editor</span></div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap">
+              <button class="smallbtn" style="margin:0">+ Box</button>
+              <button class="smallbtn" style="margin:0">− Box</button>
+              <select class="sel" style="flex:1;min-width:100px"><option>Snap 1/16</option><option>1/8</option><option>free</option></select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ATTRIBUTES + SOUND -->
+        <div class="panel" id="p-attributes">
+          <div class="sechead"><span class="t">⚙ Attributes + Sound</span><button class="xb" onclick="go('main')">‹ Back</button></div>
+
+          <div class="secgroup">
+            <div class="gl">Glow level <span style="color:var(--dim);font-weight:400">· 0 = none · 15 = fullbright</span></div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input type="range" min="0" max="15" value="0" oninput="glow(this.value)" style="flex:1;accent-color:var(--gold)">
+              <span class="val" id="vg" style="min-width:24px;text-align:right">0</span>
+            </div>
+            <div class="glowbar" id="glowbar" style="width:0%"></div>
+          </div>
+
+          <div class="secgroup">
+            <div class="gl">Hardness</div>
+            <div style="display:flex;align-items:center;gap:10px">
+              <input type="range" min="0" max="100" value="20" id="hardslider" oninput="hard(this.value)" style="flex:1;accent-color:var(--gold)">
+              <span class="val" id="vhard" style="min-width:32px;text-align:right">2.0</span>
+            </div>
+            <div class="hardchips">
+              <div class="hardchip" onclick="setHard(5)">🌿 Soft</div>
+              <div class="hardchip on" onclick="setHard(20)">🪵 Wood</div>
+              <div class="hardchip" onclick="setHard(30)">🪨 Stone</div>
+              <div class="hardchip" onclick="setHard(50)">⚙ Iron</div>
+              <div class="hardchip" onclick="setHard(100)">💎 Hard</div>
+            </div>
+          </div>
+
+          <div class="fg2" style="gap:8px">
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Collision</div>
+              <select class="sel"><option>Solid</option><option>Passable</option></select>
+            </div>
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Transparent</div>
+              <select class="sel"><option>Opaque</option><option>Transparent</option></select>
+            </div>
+          </div>
+
+          <div class="secgroup">
+            <div class="gl">Sound set <span style="color:var(--dim);font-weight:400">· break / place / step</span></div>
+            <div class="sndchips" id="sndchips">
+              <div class="sndchip" onclick="pickSnd('Wood',this)"><span class="si">🪵</span>Wood</div>
+              <div class="sndchip on" onclick="pickSnd('Stone',this)"><span class="si">🪨</span>Stone</div>
+              <div class="sndchip" onclick="pickSnd('Glass',this)"><span class="si">🪟</span>Glass</div>
+              <div class="sndchip" onclick="pickSnd('Wool',this)"><span class="si">🧶</span>Wool</div>
+              <div class="sndchip" onclick="pickSnd('Sand',this)"><span class="si">🏖</span>Sand</div>
+              <div class="sndchip" onclick="pickSnd('Amethyst',this)"><span class="si">🔮</span>Amethyst</div>
+            </div>
+            <button class="smallbtn" style="margin-top:8px" onclick="beep(700,.12,.06);toast('▶ preview sound')">▶ Preview break/place/step</button>
+          </div>
+        </div>
+
+        <!-- FX -->
+        <div class="panel" id="p-fx">
+          <div class="sechead"><span class="t">✨ FX <span style="color:var(--dim);font-weight:400;font-size:12px">· stackable</span></span><button class="xb" onclick="go('main')">‹ Back</button></div>
+          <div class="trow"><div class="ico">🌟</div><div class="lbl"><b>Emissive</b><small>Fullbright — no shadows cast, renders at max light</small></div><label class="tsw"><input type="checkbox" onchange="fxTogSw('Emissive',this.checked)"><span class="trk"></span></label></div>
+          <div class="trow"><div class="ico">💓</div><div class="lbl"><b>Pulse</b><small>Block brightness slowly breathes in and out</small></div><label class="tsw"><input type="checkbox" onchange="fxTogSw('Pulse',this.checked)"><span class="trk"></span></label></div>
+          <div class="trow"><div class="ico">✦</div><div class="lbl"><b>Glint shimmer</b><small>Enchantment-style rainbow shimmer overlay</small></div><label class="tsw"><input type="checkbox" onchange="fxTogSw('Glint',this.checked)"><span class="trk"></span></label></div>
+          <div class="trow"><div class="ico">🌈</div><div class="lbl"><b>Color-cycle</b><small>Tint shifts through hue wheel over time</small></div><label class="tsw"><input type="checkbox" onchange="fxTogSw('Cycle',this.checked)"><span class="trk"></span></label></div>
+          <div class="trow"><div class="ico">〰</div><div class="lbl"><b>Animated tint / pulse-flow</b><small>Color animates from texture palette without per-frame work</small></div><label class="tsw"><input type="checkbox" onchange="fxTogSw('Tint',this.checked)"><span class="trk"></span></label></div>
+        </div>
+
+        <!-- BEHAVIOR -->
+        <div class="panel" id="p-behavior">
+          <div class="sechead"><span class="t">🎮 Behavior <span style="color:var(--dim);font-weight:400;font-size:12px">· gameplay</span></span><button class="xb" onclick="go('main')">‹ Back</button></div>
+          <div class="trow"><div class="ico">⬇</div><div class="lbl"><b>Gravity</b><small>Block falls when unsupported, like sand</small></div><label class="tsw"><input type="checkbox" onchange="behTogSw('Gravity',this.checked)"><span class="trk"></span></label></div>
+          <div class="trow"><div class="ico">↑↓</div><div class="lbl"><b>Bounce</b><small>Entities bounce off the top face, like slime</small></div><label class="tsw"><input type="checkbox" onchange="behTogSw('Bounce',this.checked)"><span class="trk"></span></label></div>
+          <div class="trow"><div class="ico">🧊</div><div class="lbl"><b>Slippery</b><small>Entities slide across the surface, like ice</small></div><label class="tsw"><input type="checkbox" onchange="behTogSw('Slippery',this.checked)"><span class="trk"></span></label></div>
+          <div class="secgroup" style="margin-top:4px">
+            <div class="gl">Step-on effect</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              <div class="hardchip on" onclick="pickStep('None',this)">None</div>
+              <div class="hardchip" onclick="pickStep('Damage',this)">⚔ Damage</div>
+              <div class="hardchip" onclick="pickStep('Heal',this)">💚 Heal</div>
+              <div class="hardchip" onclick="pickStep('Speed',this)">⚡ Speed</div>
+              <div class="hardchip" onclick="pickStep('Particles',this)">🌸 Particles</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- LORE -->
+        <div class="panel" id="p-lore">
+          <div class="sechead"><span class="t">Lore / Attribution <span style="color:var(--dim);font-weight:400;font-size:12px">· all optional</span></span><button class="xb" onclick="go('main')">‹ Back</button></div>
+          <div class="fg2">
+            <div class="secgroup full" style="margin:0">
+              <div class="gl">Author / credit <span style="color:var(--dim);font-weight:400">— auto-fills on Remix</span></div>
+              <input class="txt" placeholder="Your name…">
+            </div>
+            <div class="secgroup full" style="margin:0">
+              <div class="gl">Lore tooltip</div>
+              <textarea class="txt" rows="3" placeholder="flavor text…"></textarea>
+            </div>
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Source URL</div>
+              <input class="txt" placeholder="where the texture came from">
+            </div>
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Version</div>
+              <input class="txt" placeholder="v1 · first release">
+            </div>
+          </div>
+        </div>
+
+        <!-- ORGANIZE -->
+        <div class="panel" id="p-organize">
+          <div class="sechead"><span class="t">Organize</span><button class="xb" onclick="go('main')">‹ Back</button></div>
+          <div class="fg2">
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Category</div>
+              <select class="sel" onchange="sub('sub-org',this.value==='None'?'No category':this.value)"><option>None</option><option>Nature</option><option>Tech</option><option>Decor</option></select>
+              <button class="smallbtn" style="margin-top:6px;width:100%">Browse…</button>
+            </div>
+            <div class="secgroup" style="margin:0">
+              <div class="gl">Flags</div>
+              <button class="smallbtn" id="favbtn" onclick="favTog()" style="width:100%;margin-bottom:6px">★ Favorite</button>
+              <button class="smallbtn" id="draftbtn" onclick="draftTog()" style="width:100%">📄 Draft: Off</button>
+            </div>
+            <div class="secgroup full" style="margin:0">
+              <div class="gl">Tags</div>
+              <input class="txt" placeholder="glowing, purple, slab…">
+            </div>
+            <div class="secgroup full" style="margin:0">
+              <div class="gl">Notes</div>
+              <textarea class="txt" rows="2"></textarea>
+            </div>
+          </div>
+          <button class="smallbtn" onclick="toast('Saved as blueprint','good')">💾 Save as Blueprint</button>
+        </div>
+
+        <!-- readiness meter -->
+        <div class="ready">
+          <div class="chk" id="chk"></div>
+          <div class="bar"><div class="fill" id="rfill"></div></div>
+          <div style="font-size:11px;color:var(--mut)" id="rpct">80% ready</div>
+        </div>
+      </div>
+
+      <!-- STAGE -->
+      <div class="stage">
+        <div class="stagetabs">
+          <div class="stab on" id="vt-view" onclick="vtab('view')">View</div>
+          <div class="stab" id="vt-test" onclick="vtab('test')">Test</div>
+          <div class="stab" id="vt-variants" onclick="vtab('variants')">Variants</div>
+        </div>
+
+        <!-- VIEW -->
+        <div class="stageview on" id="sv-view">
+          <div class="badge" id="badge">§8 No texture</div>
+          <div class="cubewrap" id="cubewrap">
+            <div class="grid"></div><div class="platform"></div>
+            <div class="spinner" id="spinner"></div>
+            <div class="retry" id="retry"><div style="color:var(--red);font-size:12px">§c URL failed</div><button class="rb" onclick="loadUrl(true)">↻ Retry</button></div>
+            <div class="cube" id="cube"><div class="face f-front" data-f="front"></div><div class="face f-back" data-f="back"></div><div class="face f-right" data-f="right"></div><div class="face f-left" data-f="left"></div><div class="face f-top" data-f="top"></div><div class="face f-bottom" data-f="bottom"></div></div>
+          </div>
+          <div class="vstrip" id="vstrip">
+            <div class="vico on" id="v-iso" onclick="view('iso')">⬡<span class="tip">Isometric</span></div>
+            <div class="vico" id="v-front" onclick="view('front')">▣<span class="tip">Front</span></div>
+            <div class="vico" id="v-top" onclick="view('top')">⊞<span class="tip">Top</span></div>
+            <div class="vsep"></div>
+            <div class="vico" onclick="cycBackdrop()" id="bdbtn">⛰<span class="tip" id="bdtip">Backdrop: grass</span></div>
+            <div class="vico" onclick="toast('In-world placement preview')">🏠<span class="tip">In-world</span></div>
+            <div class="vico" onclick="toast('GIF: ▶ play / scrub frames')">▶<span class="tip">GIF</span></div>
+            <div class="vico" onclick="toast('Before/after wipe — drag the split')">◐<span class="tip">Wipe</span></div>
+          </div>
+          <div class="readout" id="readout">spin 100% · zoom 100%</div>
+        </div>
+
+        <!-- TEST -->
+        <div class="stageview" id="sv-test">
+          <div class="badge">§e Behavior test</div>
+          <div class="cubewrap"><div class="grid"></div><div class="platform"></div>
+            <div class="cube" id="cube2"><div class="face f-front"></div><div class="face f-back"></div><div class="face f-right"></div><div class="face f-left"></div><div class="face f-top"></div><div class="face f-bottom"></div></div></div>
+          <div class="vstrip">
+            <div class="vico" onclick="mineTest()">⛏<span class="tip">Break/mine test</span></div>
+            <div class="vico" onclick="glowTest()">🌑<span class="tip">Glow light-spill</span></div>
+            <div class="vico" onclick="toast('Day↔night cycle running')">🌗<span class="tip">Day ↔ Night</span></div>
+          </div>
+          <div class="readout">hardness + sound + glow tested here</div>
+        </div>
+
+        <!-- VARIANTS -->
+        <div class="stageview" id="sv-variants">
+          <div class="badge">tick → Create as set</div>
+          <div class="vgrid" id="vgrid"></div>
+          <button class="btn primary" style="margin-bottom:18px" onclick="toast('Created 3 blocks as a matched set','good')">＋ Create ticked as a set</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- dock zones -->
+    <div class="dockzone dz-bottom"></div><div class="dockzone dz-left"></div><div class="dockzone dz-right"></div>
+
+    <!-- ACTION BAR -->
+    <div class="actionbar dock-bottom" id="bar">
+      <span class="grip" id="grip" title="drag to dock (Shift+drag in-game)">⠿</span>
+      <div class="barbtns">
+        <button class="btn" onclick="toast('Undo')">Undo</button>
+        <button class="btn" onclick="toast('Redo')">Redo</button>
+        <button class="btn" onclick="show('checkpoints')">🏁 Checkpoints</button>
+        <div class="spacer"></div>
+        <button class="btn primary draft" id="draftBtn" onclick="create(true)">Draft</button>
+        <button class="btn primary" id="createBtn" onclick="create(false)">Create &amp; Publish</button>
+        <div class="spacer"></div>
+        <button class="btn" onclick="show('share')">Share</button>
+        <button class="btn" onclick="tryCancel()">Cancel</button>
+      </div>
+      <button class="collapse" id="collapseBtn" onclick="collapseBar()">▾</button>
+    </div>
+
+    <!-- OVERLAYS -->
+    <div class="overlay" id="help"><div class="scrim" onclick="nudge()"></div><div class="card" style="width:430px">
+      <div class="cardhead"><div class="t">Keyboard Shortcuts</div><div class="xbtn" onclick="hide('help')">✕</div></div>
+      <div class="cardbody"><div class="hgroup">View</div>
+        <div class="krow"><span>Rotate / move cube</span><span>drag / Shift+drag</span></div>
+        <div class="krow"><span>Spin · Zoom · Reset</span><span>scroll · Shift+scroll · R</span></div>
+        <div class="hgroup">Edit</div>
+        <div class="krow"><span>Undo / Redo</span><span>Ctrl+Z / Ctrl+Y</span></div>
+        <div class="krow"><span>Copy / Paste config</span><span>Ctrl+C / Ctrl+V</span></div>
+        <div class="krow"><span>Command palette</span><span>Ctrl+K</span></div>
+        <div class="krow"><span>Quick swatch</span><span>1–9</span></div>
+        <div class="krow"><span>Create / Cancel</span><span>Enter / Esc</span></div></div></div></div>
+
+    <div class="overlay" id="settings"><div class="scrim" onclick="hide('settings')"></div><div class="card" style="width:410px">
+      <div class="cardhead"><div class="t">⚙ Settings <span style="color:var(--dim);font-weight:400;font-size:11px">· global</span></div><div class="xbtn" onclick="hide('settings')">✕</div></div>
+      <div class="cardbody">
+        <div class="setrow"><label>Background dim</label><input type="range" min="0" max="90" value="55" oninput="setDim(this.value)"></div>
+        <div class="setrow"><label>Hide world</label><input type="checkbox" onchange="hideWorld(this.checked)"></div>
+        <div class="setrow"><label>UI scale</label><input type="range" min="80" max="125" value="100" oninput="setUi(this.value)"></div>
+        <div class="setrow"><label>Large text preset</label><select class="sel" style="flex:0 0 110px" onchange="setUi(this.value)"><option value="100">Normal</option><option value="112">Large</option><option value="125">XL</option></select></div>
+        <div class="setrow"><label>Reduced motion</label><input type="checkbox" onchange="reduceMotion(this.checked)"></div>
+        <div class="setrow"><label>Master sound</label><input type="checkbox" id="sndchk" checked onchange="sound=this.checked"></div>
+        <div class="setrow"><label>Stay open after Create</label><input type="checkbox" id="stayopen" checked></div>
+        <div class="setrow"><label>Confirm before discard</label><input type="checkbox" id="confdiscard" checked></div>
+        <div class="setrow"><label>العربية · Arabic + RTL</label><input type="checkbox" onchange="rtl(this.checked)"></div>
+        <div class="setrow"><button class="smallbtn" style="margin:0" onclick="toast('Saved current as your default new-block')">⭳ Set as my default</button><button class="smallbtn" style="margin:0" onclick="resetBar()">Reset positions</button></div>
+      </div></div></div>
+
+    <div class="overlay" id="library"><div class="scrim" onclick="hide('library')"></div><div class="card">
+      <div class="cardhead"><div class="t">📚 Library</div><div class="xbtn" onclick="hide('library')">✕</div></div>
+      <div class="cardbody">
+        <div class="chips"><div class="chip on" onclick="libTab('Templates',this)">Templates</div><div class="chip" onclick="libTab('Blueprints',this)">Blueprints</div><div class="chip" onclick="libTab('Import',this)">Import</div></div>
+        <input class="txt" placeholder="🔎 search…" style="margin-bottom:12px">
+        <div class="gal" id="gal"></div>
+        <div class="note mut" style="margin-top:10px" id="libnote">Templates: load from an existing block; ID cleared for a new one.</div>
+      </div></div></div>
+
+    <div class="overlay" id="share"><div class="scrim" onclick="hide('share')"></div><div class="card" style="width:430px">
+      <div class="cardhead"><div class="t">Share</div><div class="xbtn" onclick="hide('share')">✕</div></div>
+      <div class="cardbody">
+        <div class="krow" onclick="toast('Share code copied','good')" style="cursor:pointer"><span>🔡 Share code</span><span>copy / paste</span></div>
+        <div class="krow" onclick="toast('Exported .json + PNG','good')" style="cursor:pointer"><span>💾 Export to file</span><span>exports/ folder</span></div>
+        <div class="krow" onclick="toast('Published to CloudVault gallery','good')" style="cursor:pointer"><span>☁ Publish to cloud gallery</span><span>CloudVault</span></div>
+        <div class="krow" onclick="toast('Bundled into a collection pack','good')" style="cursor:pointer"><span>📦 Pack / Collection export</span><span>set of blocks</span></div>
+        <div class="krow" onclick="toast('Promo turntable link generated','good')" style="cursor:pointer"><span>🔗 Promo link (turntable)</span><span>web preview</span></div>
+      </div></div></div>
+
+    <div class="overlay" id="material"><div class="scrim" onclick="hide('material')"></div><div class="card" style="width:430px">
+      <div class="cardhead"><div class="t">🧱 Material macro</div><div class="xbtn" onclick="hide('material')">✕</div></div>
+      <div class="cardbody"><div class="note mut" style="margin-top:0">One click sets texture-feel + sound + hardness + FX together.</div>
+        <div class="matgrid">
+          <div class="matcard" onclick="material('Metal','#9AA0A6')"><b>Metal</b><small>sheen · anvil · hard</small></div>
+          <div class="matcard" onclick="material('Glass','#bfe9ff')"><b>Glass / Crystal</b><small>transparent · glass · glint</small></div>
+          <div class="matcard" onclick="material('Neon','#39E0C8')"><b>Neon / Energy</b><small>emissive · glow15 · pulse</small></div>
+          <div class="matcard" onclick="material('Organic','#5a7a3a')"><b>Organic / Stone</b><small>matte · grass · earthy</small></div>
+        </div></div></div></div>
+
+    <div class="overlay" id="surprise"><div class="scrim" onclick="hide('surprise')"></div><div class="card" style="width:380px">
+      <div class="cardhead"><div class="t">✦ Surprise me</div><div class="xbtn" onclick="hide('surprise')">✕</div></div>
+      <div class="cardbody">
+        <label class="fld">Theme</label><select class="sel"><option>Nature</option><option>Tech</option><option>Fantasy</option><option>Stone</option></select>
+        <div class="note mut" style="margin-top:8px">📌 Pinned sections are kept; only unpinned fields reroll.</div>
+        <button class="btn primary" style="width:100%;margin-top:12px" onclick="surprise()">🎲 Generate</button>
+      </div></div></div>
+
+    <div class="overlay" id="aidesign"><div class="scrim" onclick="hide('aidesign')"></div><div class="card" style="width:430px">
+      <div class="cardhead"><div class="t">✨ AI Design — whole block</div><div class="xbtn" onclick="hide('aidesign')">✕</div></div>
+      <div class="cardbody"><div class="note mut" style="margin-top:0">One prompt fills texture + shape + glow + sound + name. Review before Create.</div>
+        <textarea class="txt" rows="2" placeholder="a glowing cracked amethyst slab" style="margin-top:8px"></textarea>
+        <button class="smallbtn" onclick="toast('Or: match a screenshot →')">🖼 Match a screenshot instead</button>
+        <button class="btn primary" style="width:100%;margin-top:10px" onclick="aiDesign()">✨ Design it</button>
+      </div></div></div>
+
+    <div class="overlay" id="checkpoints"><div class="scrim" onclick="hide('checkpoints')"></div><div class="card" style="width:380px">
+      <div class="cardhead"><div class="t">🏁 Checkpoints</div><div class="xbtn" onclick="hide('checkpoints')">✕</div></div>
+      <div class="cardbody"><div class="krow"><span>blue version</span><span style="cursor:pointer;color:var(--gold)" onclick="toast('Jumped to: blue version')">restore</span></div>
+        <div class="krow"><span>before glow</span><span style="cursor:pointer;color:var(--gold)" onclick="toast('Jumped to: before glow')">restore</span></div>
+        <input class="txt" placeholder="name this state…" style="margin-top:10px"><button class="btn primary" style="width:100%;margin-top:8px" onclick="toast('Checkpoint saved','good')">＋ Save checkpoint</button>
+      </div></div></div>
+
+    <div class="overlay" id="palette"><div class="scrim" onclick="hide('palette')"></div><div class="card">
+      <div class="cardbody" style="padding:12px"><input class="pinput" id="pq" placeholder="jump to anything… (glow, mirror x, share, behavior)" oninput="filterPal(this.value)">
+        <div id="presults" style="margin-top:8px"></div></div></div></div>
+
+    <div class="overlay confirm" id="confirm"><div class="scrim"></div><div class="card" style="width:340px">
+      <div class="cardhead"><div class="t">Discard changes?</div></div>
+      <div class="cardbody"><p>Unsaved changes in the studio.</p>
+        <button class="btn" onclick="hide('confirm')">Keep editing</button>
+        <button class="btn primary draft" onclick="hide('confirm');toast('Closed')">Yes, discard</button></div></div></div>
+
+    <div class="coach" id="coach" style="left:14px; bottom:70px"><div class="ct">Everything's organized into tabs</div>
+      <p>Sidebar = the block · center tabs (View/Test/Variants) = preview · 🧱Material & ✨AI-Design seed a block fast. Bar is movable — drag ⠿.</p>
+      <button class="gotit" onclick="hideCoach()">Got it</button></div>
+  </div>
+
+<script>
+let cur='main',texTab='url',tex=false,color='#FF4400',glowVal=0,shape='Full',fav=false,draft=false,
+    sound=true,autoSpin=true,dock='bottom',collapsed=false,perFace=false,advOpen=false,backdrop=0,viewMode='iso',fxList=[],behList=[];
+const COLORS=['#FF4400','#E8B53A','#5DE06B','#39E0C8','#4A90E2','#9B59E8','#FF5577','#FFFFFF','#9AA0A6','#5A3A1E','#1E1E24','#0d8a4a'];
+const SHAPES=['Full','Slab↓','Slab↑','Thin','Carpet','Pillar','Pane','Cross','Button','Plate'];
+const SHAPE_TF={Full:'',['Slab↓']:'scaleY(.5) translateY(33px)',['Slab↑']:'scaleY(.5) translateY(-33px)',Thin:'scaleZ(.18)',Carpet:'scaleY(.08) translateY(61px)',Pillar:'scaleX(.55) scaleZ(.55)',Pane:'scaleX(.14)',Cross:'scaleX(.4) scaleZ(.4)',Button:'scaleY(.3) scaleX(.5) scaleZ(.5) translateY(46px)',Plate:'scaleY(.07) translateY(62px)'};
+const TEMPLATES=[['Mossy Stone','mossy_stone','#4a7a3a'],['Neon Panel','neon_panel','#39E0C8'],['Ruby Block','ruby_block','#FF3355'],['Gold Brick','gold_brick','#E8B53A'],['Deep Slate','deep_slate','#33343c'],['Amethyst','amethyst','#9B59E8']];
+const BACKDROPS=[['⛰ grass','linear-gradient(transparent 0 62%,#4a7a3a 62% 64%,#6b4a2a 64% 100%)'],['🪨 cave','#1a1614'],['❄ snow','linear-gradient(#bfe9ff,#e8f4ff)'],['⬜ white','#dfe3e8'],['⬛ black','#050505']];
+const PALCMDS=['Identity','Texture','Shape','Attributes','FX','Behavior','Lore','Organize','Glow','Mirror X','Create & Publish','Share','Surprise me','AI Design','Library','Material macro','Checkpoints'];
+
+let actx;function beep(f,d,v){if(!sound)return;try{actx=actx||new(window.AudioContext||window.webkitAudioContext)();const o=actx.createOscillator(),g=actx.createGain();o.type='sine';o.frequency.value=f;g.gain.value=v||.04;o.connect(g);g.connect(actx.destination);o.start();g.gain.exponentialRampToValueAtTime(.0001,actx.currentTime+(d||.06));o.stop(actx.currentTime+(d||.07));}catch(e){}}
+let lastH=0;function tick(){const t=Date.now();if(t-lastH>60){beep(1500,.025,.012);lastH=t;}}
+function click(){beep(560,.05,.04);}function chime(){beep(880,.12,.05);setTimeout(()=>beep(1320,.16,.05),90);}
+
+function go(name){click();document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));document.getElementById('p-'+name).classList.add('active');cur=name;crumb();document.querySelector('.sidebar').classList.toggle('expanded',name!=='main');}
+function crumb(){let h='<span class="crumb">Main</span>';if(cur!=='main'){const cap=cur[0].toUpperCase()+cur.slice(1);h='<span class="crumb"><span class="dimmed">‹ Main › </span>'+cap;if(cur==='texture')h+='<span class="dimmed"> › '+texTab[0].toUpperCase()+texTab.slice(1)+'</span>';h+='</span>';}document.getElementById('crumb').innerHTML=h;}
+function toggleAdv(){advOpen=!advOpen;document.getElementById('advwrap').classList.toggle('closed',!advOpen);document.getElementById('advhead').classList.toggle('closed',!advOpen);click();}
+
+function paint(){document.querySelectorAll('#cube .face,#cube2 .face').forEach(f=>{f.style.background=tex?color:'repeating-conic-gradient(#3a3a44 0 25%,#2a2a32 0 50%) 0/24px 24px';});
+  [document.getElementById('cube'),document.getElementById('cube2')].forEach(c=>{c.classList.toggle('wire',shape!=='Full');});
+  applyView();document.body.classList.toggle('glowing',glowVal>0||fxList.includes('Emissive'));document.body.style.setProperty('--glowc',color);
+  document.getElementById('badge').textContent=tex?(shape!=='Full'?'§e '+shape:'§a ready'):'§8 No texture';ready();}
+function setColor(c){color=c;markTex('Color '+c.toUpperCase());paint();}
+function markTex(t){tex=true;document.getElementById('st-texture').className='stat ok';document.getElementById('st-texture').textContent='✔';document.getElementById('sub-texture').textContent=t;}
+function loadUrl(ok){document.getElementById('retry').style.display='none';document.getElementById('cube').style.visibility='hidden';document.getElementById('spinner').style.display='block';
+  setTimeout(()=>{document.getElementById('spinner').style.display='none';if(ok){document.getElementById('cube').style.visibility='visible';color='#7a5230';markTex('URL loaded');paint();toast('Texture loaded','good');chime();}else{document.getElementById('retry').style.display='flex';toast('URL failed — grey fallback + retry','bad');}},650);}
+function aiGen(){color='#6b4a8a';markTex('AI texture');paint();toast('AI texture generated','good');chime();}
+
+function buildPal(){const p=document.getElementById('pal');COLORS.forEach((c,i)=>{const d=document.createElement('div');d.className='sw';d.style.background=c;d.title=c+' (key '+(i<9?i+1:'–')+')';d.onclick=()=>{document.getElementById('in-hex').value=c;setColor(c);click();};d.oncontextmenu=e=>{e.preventDefault();toast('★ favourite '+c);};p.appendChild(d);});}
+function hsl(k,v){const m={h:'vh',s:'vs',l:'vl'};document.getElementById(m[k]).textContent=v+(k==='h'?'°':'%');markTex('HSL color');paint();}
+
+function buildShapes(){const g=document.getElementById('presets');SHAPES.forEach((s,i)=>{const c=document.createElement('div');c.className='pchip'+(i===0?' on':'');c.innerHTML='<div class="mini"><div class="mc"><div class="mf a"></div><div class="mf b"></div><div class="mf c"></div></div></div>'+s;c.querySelector('.mc').style.transform=SHAPE_TF[s]?SHAPE_TF[s].replace(/[\d.]+px/g,m=>(parseFloat(m)*.13)+'px'):'';c.onclick=()=>{document.querySelectorAll('#presets .pchip').forEach(x=>x.classList.remove('on'));c.classList.add('on');shape=s;document.getElementById('sub-shape').textContent=s;paint();click();};g.appendChild(c);});
+  const soon=document.createElement('div');soon.className='pchip soon';soon.innerHTML='<div class="mini"><div class="mc" style="opacity:.5"><div class="mf a"></div><div class="mf b"></div><div class="mf c"></div></div></div>🔒 Custom';soon.onclick=()=>toast('Freeform carve — soon');g.appendChild(soon);}
+
+function glow(v){glowVal=+v;document.getElementById('vg').textContent=v;const bar=document.getElementById('glowbar');if(bar){bar.style.width=(v/15*100)+'%';bar.classList.toggle('lit',v>0);}updAttr();paint();}
+const HARD=[[5,'Soft'],[20,'Wood'],[30,'Stone'],[50,'Iron'],[100,'Hard']];
+function hard(v){document.getElementById('vhard').textContent=(v/10).toFixed(1);let l='Custom';HARD.forEach(([hv,hl])=>{if(Math.abs(hv-v)<=4)l=hl;});document.getElementById('hardchips')?.querySelectorAll('.hardchip').forEach(c=>c.classList.toggle('on',c.textContent.includes(l)));}
+function setHard(v){document.getElementById('hardslider').value=v;hard(v);}
+function updAttr(){let snd=document.querySelector('#sndchips .sndchip.on')?.textContent.trim()||'Wood';document.getElementById('sub-attr').textContent='Glow '+glowVal+' · '+snd;}
+function fxTog(n,el){const seg=el.parentNode;seg.querySelectorAll('span').forEach(s=>s.classList.remove('on'));el.classList.add('on');const on=el.textContent==='On';fxList=fxList.filter(x=>x!==n);if(on)fxList.push(n);document.getElementById('sub-fx').textContent=fxList.length?fxList.join(' · '):'None';paint();click();}
+function fxTogSw(n,on){fxList=fxList.filter(x=>x!==n);if(on)fxList.push(n);document.getElementById('sub-fx').textContent=fxList.length?fxList.join(' · '):'None';paint();click();}
+function behTog(n,el){if(el){const seg=el.parentNode;seg.querySelectorAll('span').forEach(s=>s.classList.remove('on'));el.classList.add('on');const on=el.textContent==='On';behList=behList.filter(x=>x!==n);if(on)behList.push(n);}else{behList=behList.filter(x=>['Gravity','Bounce','Slippery'].includes(x));if(n!=='None')behList.push(n);}document.getElementById('sub-beh').textContent=behList.length?behList.join(' · '):'Static';click();}
+function behTogSw(n,on){behList=behList.filter(x=>x!==n);if(on)behList.push(n);document.getElementById('sub-beh').textContent=behList.length?behList.join(' · '):'Static';click();}
+function pickSnd(name,el){document.querySelectorAll('#sndchips .sndchip').forEach(c=>c.classList.remove('on'));el.classList.add('on');updAttr();beep(700,.1,.04);toast('Sound: '+name);}
+function pickStep(name,el){el.parentNode.querySelectorAll('.hardchip').forEach(c=>c.classList.remove('on'));el.classList.add('on');behList=behList.filter(x=>['Gravity','Bounce','Slippery'].includes(x));if(name!=='None')behList.push(name);document.getElementById('sub-beh').textContent=behList.length?behList.join(' · '):'Static';click();}
+
+function checkId(){const v=document.getElementById('in-id').value.trim().toLowerCase().replace(/[^a-z0-9_]/g,'_');const taken=['stone','dirt'];const n=document.getElementById('id-note'),inp=document.getElementById('in-id');if(!v){n.textContent='✗ ID required';n.className='note bad';inp.classList.add('err');}else if(taken.includes(v)){n.textContent='✗ taken — pick another';n.className='note bad';inp.classList.add('err');}else{n.textContent='✔ available — cb:'+v;n.className='note good';inp.classList.remove('err');}document.getElementById('sub-identity').textContent='ID: '+(v||'—')+' · '+document.getElementById('in-name').value;const pid=document.getElementById('prev-id');if(pid)pid.textContent='cb:'+(v||'…');ready();}
+function nameCount(){const v=document.getElementById('in-name').value;document.getElementById('name-count').textContent=v.length+' / 64 chars';document.getElementById('sub-identity').textContent='ID: '+document.getElementById('in-id').value+' · '+v;const pn=document.getElementById('prev-name');if(pn)pn.textContent=v||'Unnamed Block';}
+function autoId(){const v=document.getElementById('in-name').value.trim().toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');document.getElementById('in-id').value=v;checkId();toast('ID → '+v);}
+function favTog(){fav=!fav;document.getElementById('favbtn').textContent=fav?'★ Favorited':'★ Favorite';}
+function draftTog(){draft=!draft;document.getElementById('draftbtn').textContent='📄 Draft: '+(draft?'On':'Off');}
+function sub(id,t){document.getElementById(id).textContent=t;}
+
+function tab(t){texTab=t;click();document.querySelectorAll('#p-texture .chip[data-t]').forEach(x=>x.classList.toggle('on',x.dataset.t===t));document.querySelectorAll('#p-texture .tcontent').forEach(x=>x.classList.remove('on'));document.getElementById('t-'+t).classList.add('on');crumb();if(t==='drop')toast('Opens EyedropScreen');}
+function perface(on,el){perFace=on;el.parentNode.querySelectorAll('span').forEach(s=>s.classList.remove('on'));el.classList.add('on');document.getElementById('facehint').style.display=on?'block':'none';document.getElementById('cube').classList.toggle('facepick',on);toast(on?'Per-face: click a cube face':'All faces');}
+
+function vtab(t){click();['view','test','variants'].forEach(x=>{document.getElementById('vt-'+x).classList.toggle('on',x===t);document.getElementById('sv-'+x).classList.toggle('on',x===t);});if(t==='variants')buildVariants();}
+function view(v){viewMode=v;click();['iso','front','top'].forEach(x=>document.getElementById('v-'+x).classList.toggle('on',x===v));applyView();document.getElementById('readout').textContent=(v==='iso'&&autoSpin?'spin 100%':'spin 0%')+' · zoom 100% · '+v;}
+function applyView(){const tf=SHAPE_TF[shape]||'';[document.getElementById('cube'),document.getElementById('cube2')].forEach(c=>{if(!c)return;if(viewMode==='iso'&&autoSpin){c.style.animation='';c.style.setProperty('--base','rotateX(-22deg) '+tf);c.style.transform='';}else{c.style.animation='none';const b=viewMode==='front'?'rotateX(0) rotateY(0)':viewMode==='top'?'rotateX(-78deg) rotateY(0)':'rotateX(-22deg) rotateY(-35deg)';c.style.transform=b+' '+tf;}});}
+function autospin(on){autoSpin=on;applyView();}
+function cycBackdrop(){backdrop=(backdrop+1)%BACKDROPS.length;const[l,bg]=BACKDROPS[backdrop];document.querySelector('.world').style.background=bg;const t=document.getElementById('bdtip');if(t)t.textContent='Backdrop: '+l;toast('Backdrop: '+l);}
+function mineTest(){const c=document.getElementById('cube2');c.animate([{filter:'brightness(1)'},{filter:'brightness(.4) contrast(1.5)'},{filter:'brightness(1)'}],{duration:700});beep(300,.12,.05);toast('⛏ mining — speed from hardness, sound from set');}
+function glowTest(){document.querySelector('.world').style.filter='brightness(.05)';document.body.classList.add('glowing');toast('🌑 dark — glow casts real light falloff');setTimeout(()=>document.querySelector('.world').style.filter='',2500);}
+function buildVariants(){const g=document.getElementById('vgrid');if(g.childElementCount)return;const base=color;['#FF4400','#FF8800','#FFCC00','#5DE06B','#39E0C8','#4A90E2','#9B59E8','#FF5577'].forEach((c,i)=>{const d=document.createElement('div');d.className='vcell'+(i<3?' pick':'');d.style.background=c;d.innerHTML='<span class="tk">✓</span>';d.onclick=()=>{d.classList.toggle('pick');};g.appendChild(d);});}
+
+function ready(){let n=0;const items=[['Identity',true],['Texture',tex],['Name',!!document.getElementById('in-name').value]];let html='';items.forEach(([k,v])=>{if(v)n++;html+='<b class="'+(v?'y':'n')+'">'+(v?'✓':'✗')+' '+k+'</b>';});const pct=Math.round(n/items.length*100);document.getElementById('chk').innerHTML=html;document.getElementById('rfill').style.width=pct+'%';document.getElementById('rpct').textContent=pct+'% ready';}
+
+function create(d){click();if(!tex){go('texture');tab('color');toast('§c Texture required','bad');beep(200,.18,.05);setTimeout(()=>{go('main');const r=document.getElementById('st-texture').closest('.srow');r.classList.add('pulse');setTimeout(()=>r.classList.remove('pulse'),3000);},20);return;}const b=document.getElementById(d?'draftBtn':'createBtn');b.classList.add('flash');setTimeout(()=>b.classList.remove('flash'),600);chime();const id=document.getElementById('in-id').value;toast(d?"§a Block '"+id+"' saved as draft.":"§a✔ Block '"+id+"' created.",'good');}
+function tryCancel(){click();if(document.getElementById('confdiscard').checked)show('confirm');else toast('Closed');}
+function clearAll(){click();tex=false;color='#FF4400';glowVal=0;shape='Full';fxList=[];behList=[];document.getElementById('st-texture').className='stat miss';document.getElementById('st-texture').textContent='⬜';document.getElementById('sub-texture').textContent='(not set — required)';document.getElementById('sub-shape').textContent='Full';document.getElementById('sub-fx').textContent='None';document.getElementById('sub-beh').textContent='Static';paint();toast('Cleared');go('main');}
+
+function material(name,c){hide('material');color=c;markTex(name+' material');shape=name==='Glass'?'Full':shape;if(name==='Neon'){glowVal=15;document.getElementById('vg').value=15;document.getElementById('vg').textContent=15;fxList=['Emissive','Pulse'];}else if(name==='Glass'){fxList=['Glint'];}else fxList=[];document.getElementById('sub-fx').textContent=fxList.length?fxList.join(' · '):'None';updAttr();paint();toast('🧱 '+name+' → texture+sound+hardness+FX set','good');chime();}
+function surprise(){hide('surprise');const c=COLORS[Math.floor(Math.random()*COLORS.length)];const s=SHAPES[Math.floor(Math.random()*SHAPES.length)];color=c;shape=s;markTex('Surprised');document.querySelectorAll('#presets .pchip').forEach(x=>x.classList.toggle('on',x.textContent.includes(s)));document.getElementById('sub-shape').textContent=s;paint();toast('🎲 Random block (pinned kept)','good');chime();}
+function aiDesign(){hide('aidesign');color='#9B59E8';shape='Slab↓';glowVal=10;document.getElementById('vg').value=10;document.getElementById('vg').textContent=10;markTex('AI-designed');document.getElementById('in-name').value='Amethyst Slab';nameCount();document.getElementById('in-id').value='amethyst_slab';checkId();document.querySelectorAll('#presets .pchip').forEach(x=>x.classList.toggle('on',x.textContent.includes('Slab↓')));document.getElementById('sub-shape').textContent='Slab↓';paint();toast('✨ Whole block designed — review & Create','good');chime();}
+
+function pin(e,el){e.stopPropagation();el.classList.toggle('on');toast(el.classList.contains('on')?'📌 pinned (protected + reroll-lock)':'unpinned');}
+function show(id){click();document.getElementById(id).classList.add('show');}
+function hide(id){document.getElementById(id).classList.remove('show');}
+function nudge(){const c=document.querySelector('#help .card');c.animate([{transform:'translateX(-4px)'},{transform:'translateX(4px)'},{transform:'none'}],{duration:160});}
+function libTab(t,el){el.parentNode.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));el.classList.add('on');document.getElementById('libnote').textContent=t==='Templates'?'Templates: load from an existing block; ID cleared.':t==='Blueprints'?'Blueprints: your saved studio configs.':'Import: paste a share-code or load a .json.';}
+function buildGal(){const g=document.getElementById('gal');TEMPLATES.forEach(t=>{const d=document.createElement('div');d.className='gcard';d.innerHTML='<div class="mini" style="margin:0 auto"><div class="mc"><div class="mf a" style="background:'+t[2]+'"></div><div class="mf b" style="background:'+t[2]+'"></div><div class="mf c" style="background:'+t[2]+'"></div></div></div><div class="gn">'+t[0]+'</div><div class="gid">'+t[1]+'</div>';d.onclick=()=>{hide('library');color=t[2];markTex('From '+t[0]);document.getElementById('in-id').value='';checkId();document.getElementById('in-name').value=t[0];nameCount();paint();go('main');toast('Pre-filled from '+t[0],'good');};g.appendChild(d);});}
+
+function setDim(v){document.body.style.setProperty('--dimv',v/100);}
+function hideWorld(on){document.querySelector('.worldhide').style.display=on?'block':'none';document.querySelector('.world').style.display=on?'none':'block';}
+function setUi(v){document.documentElement.style.setProperty('--ui',v/100);}
+function reduceMotion(on){document.body.classList.toggle('reduce',on);}
+function rtl(on){document.getElementById('screen').setAttribute('dir',on?'rtl':'ltr');document.getElementById('title').textContent=on?'استوديو إنشاء الكتل':'Block Creation Studio';toast(on?'العربية + RTL':'English LTR');}
+function hideCoach(){document.getElementById('coach').classList.remove('show');}
+
+function filterPal(q){const r=PALCMDS.filter(c=>c.toLowerCase().includes(q.toLowerCase()));document.getElementById('presults').innerHTML=r.slice(0,7).map(c=>'<div class="presult" onclick="palGo(\''+c+'\')">'+c+'<span class="k">↵</span></div>').join('');}
+function palGo(c){hide('palette');const map={Identity:'identity',Texture:'texture',Shape:'shape',Attributes:'attributes',FX:'fx',Behavior:'behavior',Lore:'lore',Organize:'organize'};if(map[c])go(map[c]);else if(c==='Create & Publish')create(false);else if(c==='Share')show('share');else if(c==='Surprise me')show('surprise');else if(c==='AI Design')show('aidesign');else if(c==='Library')show('library');else if(c==='Material macro')show('material');else if(c==='Checkpoints')show('checkpoints');else if(c==='Glow'){go('attributes');}else toast('→ '+c);}
+
+const bar=document.getElementById('bar'),grip=document.getElementById('grip'),screen=document.getElementById('screen');let dragging=false;
+grip.addEventListener('pointerdown',e=>{dragging=true;const br=bar.getBoundingClientRect(),sr=screen.getBoundingClientRect();bar.style.left=(br.left-sr.left)+'px';bar.style.top=(br.top-sr.top)+'px';bar.style.width=br.width+'px';bar.style.right='auto';bar.style.bottom='auto';bar.classList.add('dragging');screen.classList.add('dragging-now');grip.setPointerCapture(e.pointerId);e.preventDefault();});
+grip.addEventListener('pointermove',e=>{if(!dragging)return;const r=screen.getBoundingClientRect();bar.style.left=(e.clientX-r.left-60)+'px';bar.style.top=(e.clientY-r.top-16)+'px';bar.style.right='auto';bar.style.bottom='auto';bar.style.width='auto';});
+grip.addEventListener('pointerup',e=>{if(!dragging)return;dragging=false;bar.classList.remove('dragging');screen.classList.remove('dragging-now');const r=screen.getBoundingClientRect(),x=e.clientX-r.left;let d='bottom';if(x<r.width*.22)d='left';else if(x>r.width*.78)d='right';setDock(d);beep(700,.05,.04);});
+function setDock(d){dock=d;bar.style.cssText='';bar.className='actionbar dock-'+d+(collapsed?' collapsed':'');toast('Bar docked: '+d);}
+function collapseBar(){collapsed=!collapsed;bar.classList.toggle('collapsed',collapsed);document.getElementById('collapseBtn').textContent=collapsed?'▸':'▾';click();}
+function resetBar(){collapsed=false;document.getElementById('collapseBtn').textContent='▾';setDock('bottom');}
+
+document.querySelectorAll('#cube .face').forEach(f=>f.onclick=()=>{if(perFace){document.querySelectorAll('#cube .face').forEach(x=>x.style.outline='');f.style.outline='3px solid var(--gold)';toast('Editing face: '+f.dataset.f);}});
+document.addEventListener('mouseover',e=>{if(e.target.closest('.btn,.srow,.tb,.vbtn,.chip,.sw,.pchip,.smallbtn,.stab'))tick();});
+let toastEl;function toast(m,t){if(toastEl)toastEl.remove();toastEl=document.createElement('div');toastEl.className='toast'+(t?' '+t:'');toastEl.textContent=m.replace(/§./g,'');document.body.appendChild(toastEl);setTimeout(()=>{if(toastEl){toastEl.remove();toastEl=null;}},1900);}
+addEventListener('keydown',e=>{if(e.key==='Escape'){['help','settings','confirm','library','share','material','surprise','aidesign','checkpoints','palette'].forEach(hide);}if((e.ctrlKey||e.metaKey)&&e.key==='k'){e.preventDefault();show('palette');setTimeout(()=>document.getElementById('pq').focus(),50);}if(e.key==='?'&&!e.target.matches('input,textarea'))show('help');if(e.key==='Enter'&&!e.target.matches('input,textarea'))create(false);if(/^[1-9]$/.test(e.key)&&cur==='texture'&&texTab==='color'){const c=COLORS[+e.key-1];if(c){document.getElementById('in-hex').value=c;setColor(c);}}});
+
+buildPal();buildShapes();buildGal();filterPal('');paint();
+setTimeout(()=>document.getElementById('coach').classList.add('show'),700);
+</script>
+</body>
+</html>

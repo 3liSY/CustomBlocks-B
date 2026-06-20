@@ -27,6 +27,7 @@ package com.customblocks.core;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.image.BackgroundRemover;
+import com.customblocks.image.CbToneMath;
 import com.customblocks.image.ColorMath;
 import com.customblocks.image.ImageProcessor;
 import com.customblocks.network.ResourcePackServer;
@@ -189,9 +190,10 @@ public final class ColorToolService {
 
     // ── Live recolour commit (the slider's Apply) ───────────────────────────────────────────────
 
-    /** Commit an HSL shift onto {@code id} in place (live recolour Apply). Undoable. */
+    /** Commit an HSL shift + §C3 tone tools onto {@code id} in place (live recolour Apply). Undoable. */
     public static void applyRecolor(ServerPlayerEntity player, String id,
-                                    double hueDeg, double satFactor, double lightFactor) {
+                                    double hueDeg, double satFactor, double lightFactor,
+                                    double temp, double contrast, double shadowLift, double highlightDrop, int filter) {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         SlotData d = SlotManager.getById(id);
@@ -208,7 +210,8 @@ public final class ColorToolService {
         final UUID who = player.getUuid();
         Thread worker = new Thread(() -> {
             try {
-                byte[] after = ColorMath.hslShift(before, hueDeg, satFactor, lightFactor);
+                byte[] shifted = ColorMath.hslShift(before, hueDeg, satFactor, lightFactor);
+                final byte[] after = CbToneMath.apply(shifted, temp, contrast, shadowLift, highlightDrop, filter); // §C3 tone pass
                 server.execute(() -> {
                     TextureStore.save(index, after);
                     ResourcePackServer.updatePack();

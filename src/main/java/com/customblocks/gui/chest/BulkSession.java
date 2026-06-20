@@ -64,6 +64,11 @@ public final class BulkSession {
     public String selFilterValue = "";
     /** True only while the block list is being used to hand-pick blocks for the current bulk op. */
     public boolean listPickForBulk = false;
+    /** True when the player arrived from /cb listgui with blocks already ticked — skip Step 1
+     *  (the picks ARE the scope) and go straight to the per-op confirm. Cleared on a fresh hub open. */
+    public boolean prePicked = false;
+    /** True while the block list is being used to hand-pick blocks for the Export Dashboard ("Bulk Choose"). */
+    public boolean listPickForExport = false;
 
     private static final String[] OPS =
             {"property", "delete", "rename", "category", "duplicate", "export", "lock", "favorite"};
@@ -88,6 +93,8 @@ public final class BulkSession {
         selFilterKind = "all";
         selFilterValue = "";
         listPickForBulk = false;
+        listPickForExport = false;
+        prePicked = false;
     }
 
     /** Cycle the Step-1 filter kind and switch to filter mode. */

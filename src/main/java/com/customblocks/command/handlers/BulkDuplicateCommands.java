@@ -47,7 +47,7 @@ public final class BulkDuplicateCommands {
                 .executes(ctx -> openBuilder(ctx.getSource()))
                 .then(CommandManager.argument("filter", StringArgumentType.greedyString())
                         .suggests(BulkSuggestions.FILTER_ONLY)
-                        .executes(ctx -> bulkDuplicate(ctx.getSource(), StringArgumentType.getString(ctx, "filter")))));
+                        .executes(ctx -> bulkDuplicate(ctx.getSource(), StringArgumentType.getString(ctx, "filter"), false))));
     }
 
     private static int openBuilder(ServerCommandSource src) {
@@ -60,11 +60,11 @@ public final class BulkDuplicateCommands {
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            bulkDuplicate(player.getCommandSource(), filter);
+            bulkDuplicate(player.getCommandSource(), filter, true);
         });
     }
 
-    private static int bulkDuplicate(ServerCommandSource src, String filter) {
+    private static int bulkDuplicate(ServerCommandSource src, String filter, boolean force) {
         List<SlotData> blocks = BulkScope.resolve(filter, BulkConfirm.actor(src));
         if (blocks.isEmpty()) { Chat.error(src, "No blocks matched filter: " + filter); return 0; }
 
@@ -72,7 +72,7 @@ public final class BulkDuplicateCommands {
         boolean needConfirm = BulkScope.isAll(filter) || blocks.size() > threshold;
 
         Runnable action = () -> applyDuplicate(src, blocks);
-        if (needConfirm) {
+        if (needConfirm && !force) {
             BulkConfirm.request(src, action, "duplicate " + blocks.size() + " block(s)");
             String hoverList = "§7Will copy " + blocks.size() + " block(s):\n§f"
                     + BulkChat.columns(BulkChat.ids(blocks));

@@ -75,6 +75,7 @@ public final class ImageToolCommands {
         root.then(CommandManager.literal("colors").executes(ImageToolCommands::colors));
 
         root.then(CommandManager.literal("livecolor")
+                .executes(ImageToolCommands::livecolorPick) // G27 §C1 — no id → block picker
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
                         .executes(ctx -> livecolor(ctx, StringArgumentType.getString(ctx, "id")))));
@@ -145,6 +146,14 @@ public final class ImageToolCommands {
     }
 
     // ── /cb livecolor + /cb eyedrop (client screens) ───────────────────────────
+
+    /** /cb livecolor (no id) — open the chest block-picker; clicking a block opens the recolour slider. */
+    private static int livecolorPick(CommandContext<ServerCommandSource> ctx) {
+        ServerPlayerEntity p = player(ctx);
+        if (p == null) { Chat.error(ctx.getSource(), "Only a player can open the live recolour slider."); return 0; }
+        GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.COLOR_PICK, "livecolor"));
+        return 1;
+    }
 
     private static int livecolor(CommandContext<ServerCommandSource> ctx, String id) {
         ServerPlayerEntity p = player(ctx);

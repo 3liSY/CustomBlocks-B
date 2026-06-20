@@ -121,7 +121,7 @@ All commands listed below are required. Priority groupings:
 - `tolerance` — configure background removal sensitivity
 - `snapshots` — open snapshot manager GUI
 - `panic` — emergency 2-step rollback to last snapshot
-- `edithud` — open HUD drag editor
+- `edithud` — open the Lego HUD builder (free-floating bricks, snap, colours, presets — see GROUP_27 §G27.4)
 - `arabic` — open Arabic letter browser / import / text commands
 - `macro` — record, play, list, delete macros
 - `deleter` — manage deleter tool

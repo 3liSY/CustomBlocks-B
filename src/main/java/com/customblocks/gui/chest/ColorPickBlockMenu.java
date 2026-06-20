@@ -8,7 +8,8 @@
  * it. No block logic here — it only navigates.
  *
  * Actions (MenuKey.arg): "bgstudio" → Background Studio · "variants" → Colour Variants panel ·
- *                        "livecolor" → live recolour slider (client screen, via command).
+ *                        "livecolor" → live recolour slider · "shapeeditor" → 3D Shape Editor
+ *                        (both client screens, opened via command).
  *
  * Depends on: ChestMenu, Icons, Layout, GuiRouter/Nav, SlotManager/SlotData/SlotBlock.
  * Called by:  GuiRouter.build (Dest.COLOR_PICK); opened from ImageToolCommands + ColorsMenu.
@@ -16,6 +17,7 @@
 package com.customblocks.gui.chest;
 
 import com.customblocks.block.SlotBlock;
+import com.customblocks.core.CategoryMetadataStore;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.chest.Nav.Dest;
@@ -68,26 +70,38 @@ public final class ColorPickBlockMenu {
 
     /** Open the chosen tool for {@code id}. */
     private static void route(ServerPlayerEntity p, String action, String id) {
+        if (action.startsWith("caticon:")) {
+            String cat = action.substring(8);
+            CategoryMetadataStore.setDisplayBlock(cat, id);
+            GuiFx.apply(p);
+            GuiRouter.back(p); // back to CategoryEditMenu
+            return;
+        }
         switch (action) {
-            case "variants"  -> GuiRouter.navigate(p, MenuKey.of(Dest.COLOR_VARIANTS, id));
-            case "livecolor" -> GuiRouter.runCommand(p, "livecolor " + id);
-            default          -> GuiRouter.navigate(p, MenuKey.of(Dest.BGSTUDIO, id));
+            case "variants"    -> GuiRouter.navigate(p, MenuKey.of(Dest.COLOR_VARIANTS, id));
+            case "livecolor"   -> GuiRouter.runCommand(p, "livecolor " + id);
+            case "shapeeditor" -> GuiRouter.runCommand(p, "shapeeditor " + id); // G27 §F2 → 3D Shape Editor
+            default            -> GuiRouter.navigate(p, MenuKey.of(Dest.BGSTUDIO, id));
         }
     }
 
     private static String title(String action) {
+        if (action.startsWith("caticon:")) return "Pick icon for " + action.substring(8);
         return switch (action) {
-            case "variants"  -> "Colour Variants";
-            case "livecolor" -> "Live Recolour";
-            default          -> "Background Studio";
+            case "variants"    -> "Colour Variants";
+            case "livecolor"   -> "Live Recolour";
+            case "shapeeditor" -> "Shape Editor";
+            default            -> "Background Studio";
         };
     }
 
     private static String verb(String action) {
+        if (action.startsWith("caticon:")) return "set as category icon";
         return switch (action) {
-            case "variants"  -> "open its colour variants";
-            case "livecolor" -> "open the live recolour slider";
-            default          -> "open the Background Studio";
+            case "variants"    -> "open its colour variants";
+            case "livecolor"   -> "open the live recolour slider";
+            case "shapeeditor" -> "open the 3D shape editor";
+            default            -> "open the Background Studio";
         };
     }
 }

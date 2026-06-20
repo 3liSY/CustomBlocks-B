@@ -108,9 +108,23 @@ public final class BlockListMenu {
                     GuiRouter.repage(p, new MenuKey(Dest.BLOCK_LIST, q, page));
                 });
 
-        // 52 — confirm the ticked set. In bulk-pick mode a green-concrete tile returns to the
-        // bulk Step-1 builder; otherwise it hands off to the Bulk Hub (slice C). Disabled at 0 ticked.
-        if (BulkSession.get(player.getUuid()).listPickForBulk) {
+        // 52 — confirm the ticked set. In export-pick mode ("Bulk Choose") it returns to the
+        // Export Dashboard's format screen for the picked set; in bulk-pick mode a green-concrete
+        // tile returns to the bulk Step-1 builder; otherwise it hands off to the Bulk Hub (slice C).
+        // Disabled at 0 ticked.
+        if (BulkSession.get(player.getUuid()).listPickForExport) {
+            m.set(52, sel == 0
+                            ? Icons.of(Items.GRAY_CONCRETE, "§8Export selection", "§8Tick some blocks first")
+                            : Icons.glint(Items.GREEN_CONCRETE, "§a✔ Export these " + sel + " block(s)",
+                                    "§7Pick an export format next.",
+                                    "§8Opens the Export Dashboard."),
+                    (p, b, a) -> {
+                        if (ListSelection.size(p.getUuid()) == 0) { GuiFx.deny(p); return; }
+                        BulkSession.get(p.getUuid()).listPickForExport = false;
+                        GuiFx.select(p);
+                        GuiRouter.navigate(p, MenuKey.of(Dest.EXPORT_DASHBOARD, "selection"));
+                    });
+        } else if (BulkSession.get(player.getUuid()).listPickForBulk) {
             m.set(52, sel == 0
                             ? Icons.of(Items.GRAY_CONCRETE, "§8Confirm selection", "§8Tick some blocks first")
                             : Icons.glint(Items.GREEN_CONCRETE, "§a✔ Use these " + sel + " block(s)",
@@ -128,11 +142,16 @@ public final class BlockListMenu {
             m.set(52, sel == 0
                             ? Icons.of(Items.GRAY_DYE, "§8Bulk actions", "§8Tick some blocks first")
                             : Icons.glint(Items.CHEST, "§dBulk actions on " + sel + " selected",
-                                    "§7Opens the Bulk Hub on just these blocks",
+                                    "§7Pick an action — it runs on just these blocks.",
                                     "§8(delete / lock / favourite / category / export …)"),
                     (p, b, a) -> {
                         if (ListSelection.size(p.getUuid()) == 0) { GuiFx.deny(p); return; }
-                        BulkSession.get(p.getUuid()).filter = ListSelection.joined(p.getUuid());
+                        // Carry the ticked set as the scope and SKIP Step 1 — the op picker goes
+                        // straight to a Yes/No confirm on exactly these blocks (Area 4 fix).
+                        BulkSession s = BulkSession.get(p.getUuid());
+                        s.selMode = "picked";
+                        s.prePicked = true;
+                        s.listPickForBulk = false;
                         GuiFx.open(p);
                         GuiRouter.navigate(p, MenuKey.of(Dest.BULK_HUB));
                     });

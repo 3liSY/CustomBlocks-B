@@ -1,15 +1,27 @@
 # 🧪 Group 03 — HUD Overlay & ESC-Menu Buttons — Testing
 
-> 🟢 Build green = it compiles.   ✋ Only you, in-game, can say it works.
+> 🟢 Build green = compiles. ✋ Only in-game confirms it works.
 > 📦 Jar: `.minecraft\mods\customblocks-1.0.0.jar`
 
-**Legend:**  🎯 test now · ✅ confirmed · 🟡 polish later · ⏳ not built
+**Legend:** 🎯 test now · ✅ confirmed · 🟡 polish later · ⏳ not built
+
+---
+
+## 🚦 Status
+
+| | |
+|---|---|
+| **Verdict** | 🟡 Partial |
+| **Progress** | 🟥🟥 · 0 / 2 passed |
+| **Last tested** | — |
+| **Jar** | 1.0.0 |
+| **Tester** | — |
 
 ---
 
 ## 🗺️ At a glance
 
-| | What | Where |
+| | What | § |
 |:--:|---|:--:|
 | 🎯 **TEST NOW** | Two easy-to-miss double-checks: **persistence across restart** + **editor Cancel-revert** | §1 |
 | ✅ Working | HUD overlay (id + name) · `/cb config hud` toggle · `/cb edithud` drag editor · ESC-menu buttons | §2 |
@@ -30,13 +42,12 @@
 
 **Try these:**
 
-- **① Persistence survives a restart**
+- **① Persistence survives a restart** 🔴
   `/cb edithud` → set Scale to **1.5x** → Save
-  - ✅ **Pass:** fully quit to title → relaunch → rejoin → `/cb edithud` still reads **1.5x**
-    (`config/customblocks/data/hud-config-server.json` → `"hudScale": 1.5`).
+  - ✅ **Pass:** fully quit to title → relaunch → rejoin → `/cb edithud` still reads **1.5x**.
   - ❌ **Broken if:** it reset to 1.0.
 
-- **② Cancel reverts**
+- **② Cancel reverts** 🔴
   `/cb edithud` → change scale/colour, drag the box → click **Cancel** (or Esc) → reopen
   - ✅ **Pass:** everything is back to before.
   - ❌ **Broken if:** unsaved changes stuck.
@@ -45,10 +56,11 @@
 
 | ✓ | # | Proves |
 |:--:|:--:|---|
-| ⬜ | ① | scale 1.5 survives a full restart |
-| ⬜ | ② | Cancel/Esc discards unsaved editor changes |
+| 🟥 | ① | scale 1.5 survives a full restart |
+| 🟥 | ② | Cancel/Esc discards unsaved editor changes |
+| — | **0 / 2** | |
 
-> ↩️ **Undo the test:** `/cb delete g03a`  *(optionally delete `hud-config-server.json` to reset the HUD look)*
+> ↩️ **Undo the test:** `/cb delete g03a`  *(optionally delete the HUD config file to reset the HUD look)*
 
 ---
 
@@ -66,7 +78,7 @@
 
 ---
 
-## 🟡 §3 · Polishing later  *(known, not bugs)*
+## 🟡 §3 · Polish later
 
 - 🎨 **HUD UI** — works, but a polish pass + revisit is queued before it's "complete".
 - 🌈 **Colour** — a fixed 8-preset cycle (White→Yellow→Green→Aqua→Red→Pink→Gold→Gray), not a free RGB picker.
@@ -74,11 +86,12 @@
 
 ---
 
-## 🆘 If a test fails, send me
-- 🔢 the step number
-- 👀 expected vs actual (📸 screenshot for HUD/editor/ESC visuals)
-- 📄 `logs/latest.log` lines (esp. any `Exception`/mixin error naming `ScreenInvoker`, `HudEditorScreen`, `EscMenuButtons`)
-- 💾 for persistence: the contents of `hud-config-server.json`
+## 🆘 If a test fails
+
+- 🔢 Step number
+- 👀 What happened vs expected (📸 screenshot helps for HUD/editor/ESC visuals)
+- 📄 Last ~20 lines of `.minecraft\logs\latest.log`
+- 💾 For persistence: the contents of the HUD config file
 
 ## 🧹 Cleanup
-`/cb delete g03a`  *(optionally delete `config/customblocks/data/hud-config-server.json` to reset HUD settings)*
+`/cb delete g03a`  *(optionally reset your HUD settings file if you want the defaults back)*

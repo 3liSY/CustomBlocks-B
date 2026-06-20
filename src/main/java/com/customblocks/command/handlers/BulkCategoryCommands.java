@@ -49,7 +49,7 @@ public final class BulkCategoryCommands {
                 .executes(ctx -> openBuilder(ctx.getSource()))
                 .then(CommandManager.argument("args", StringArgumentType.greedyString())
                         .suggests(BulkSuggestions.CATEGORY_ARGS)
-                        .executes(ctx -> bulkCategory(ctx.getSource(), StringArgumentType.getString(ctx, "args")))));
+                        .executes(ctx -> bulkCategory(ctx.getSource(), StringArgumentType.getString(ctx, "args"), false))));
     }
 
     /** Open the two-step builder pre-set to the "Move to category" operation. */
@@ -63,13 +63,13 @@ public final class BulkCategoryCommands {
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            bulkCategory(player.getCommandSource(), (filter + " " + category).trim());
+            bulkCategory(player.getCommandSource(), (filter + " " + category).trim(), true);
         });
     }
 
     // ── /cb bulkcategory <filter> <category> ──────────────────────────────────
 
-    private static int bulkCategory(ServerCommandSource src, String args) {
+    private static int bulkCategory(ServerCommandSource src, String args, boolean force) {
         String[] parts = args.trim().split("\\s+");
         if (parts.length < 2) { usage(src); return 0; }
         String catRaw = parts[parts.length - 1];
@@ -83,7 +83,7 @@ public final class BulkCategoryCommands {
         boolean needConfirm = BulkScope.isAll(scope) || blocks.size() > threshold;
 
         Runnable action = () -> applyCategory(src, blocks, cat);
-        if (needConfirm) {
+        if (needConfirm && !force) {
             String what = cat.isEmpty() ? "clear the category of" : "move to \"" + cat + "\"";
             BulkConfirm.request(src, action, "move " + blocks.size() + " block(s)");
             String hoverList = "§7Will " + what + ":\n§f" + BulkChat.columns(BulkChat.ids(blocks));

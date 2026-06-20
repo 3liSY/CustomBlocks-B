@@ -313,6 +313,32 @@ If anything shows ❌ — paste:
 
 ---
 
+## 💡 Parked idea — `/cb setall <setting> <value>` shorthand (revisit later)
+
+> **Status:** idea captured **2026-06-20**, **marked WILL-REVISIT — not scheduled, not built.** Kept here
+> so it isn't lost. Dev asked to park it for now.
+
+**The idea:** a friendly one-liner — `/cb setall glow 15` — that sets a setting on **every custom block in
+the mod** at once.
+
+**Why it's mostly already here:** this is `/cb bulkproperty all <setting> <value>` (Test G07.1/G07.3). The
+`all` filter already means *every custom block*, and that path already has the **confirm guard** and the
+**single-entry batch undo** the dev wants. So `setall` would be a **thin alias** over the existing tested
+engine — reuse, don't fork (CLAUDE.md §5).
+
+**What's decided (for whenever it's revisited):**
+- **Build as an alias** of `bulkproperty all …` → inherits confirm + one-shot `/cb undo` for free.
+- **Auto-backup before EVERY setall** (dev pick) — snapshot all block data first (route through the
+  Group 09 backup rail), so a bad `setall` is always recoverable beyond undo.
+
+**Still open (decide on revisit):**
+- **Which settings** `setall` accepts. `bulkproperty` today covers **glow, hardness, sound, collision**;
+  the dev said "all settings in the mod" (would also want **category**, maybe **shape** via Group 08).
+  Coverage was **left undecided** when parking.
+- Backup retention (keep-all vs prune to last N) if auto-backup-every-time piles up files.
+
+---
+
 ## Cleanup
 
 ```

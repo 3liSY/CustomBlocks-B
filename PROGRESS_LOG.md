@@ -1,6 +1,2335 @@
 # Progress Log
 
+## 2026-06-20 (Group 15) — AI textures PARKED as PARTIAL; provider pivot to Cloudflare (pending discussion)
+
+Continued from the Group 15 timeout fix (shipped earlier today — AI fetch 60s + retry + WARN log). Tuned the
+AI quality/speed in a **browser mockup** (`docs/mockups/ai_tab_mockup.html`) the owner can drive without
+launching MC: prompt recipes (surface vs single-object — fixes the "many cats" collage), model picker,
+Draft(turbo)/Final-HQ(flux) split, post-create **refine bar** ("add a red background"), timing log.
+
+**Conclusion (owner):** the **keyless Pollinations provider is the ceiling** — slow (free shared queue,
+2–40s, unpredictable) and low quality. Recipe/model tuning helped but can't fix the provider. Researched
+alternatives → **pivot to Cloudflare Workers AI / Flux Schnell** (~1–2s, reliable edge, free tier 10k
+neurons/day, no card). Cost: a **free API key** (breaks the old keyless goal — accepted). Runner-up: Gemini
+"Nano Banana" (gemini-2.5-flash-image, ~500/day free).
+
+**Owner decisions:**
+- **Group 15 = PARTIAL / PARKED.** It's a **cool bonus, not a backbone** of the mod. Revisit later.
+- **Will use Cloudflare, but wants more discussion before implementing.**
+
+**Marked in:** `docs/Finale Fix/GROUP_15_AI_TEXTURES.md` (status banner), `All_Groups.md` §D (decision
+superseded), this log, and `HANDOFF_group15_ai_not_generating.md` (status header). No code changed this step.
+
+**Next (when resumed):** finalize Cloudflare; add a POST+Bearer+base64 fetch path (current `ImageDownloader`
+is GET-only); port the mockup UX (recipe picker, draft/HQ, log, refine bar) into the Java AI tab; unify
+preview+create size so Create is a cache hit; drop legacy AI key fields.
+
+## 2026-06-20 (Group 14, Phase 1b — Slice B+C) — OFF-ATLAS animated renderer BUILT (build-green, awaiting in-game)
+
+Owner reported (screenshots) the muffle/pixelation still present on the Slice-A jar (expected — Slice A was
+plumbing only) and is rightly out of patience ("solved 5 times"). So this session I **proved the root cause
+with evidence** before writing the renderer, then built it.
+
+**Proof (not a guess):** extracted the actual baked strips from the live game files
+(`%APPDATA%\.minecraft\config\customblocks\textures\slot_285.png` = the WebP "Tset", `slot_25.png` = webp1).
+**The baked PNGs are crisp** — sharp text, no speckle. So the decode is perfect; **Minecraft's block atlas
+adds the muffle** (mipmaps + atlas overflow). Also found some strips baked at **512px** (slot_25, slot_279) —
+a 512×8192 sprite overflows the atlas and forces MC to degrade the WHOLE atlas → speckle even close-up. The
+fix is to **not use the atlas for placed animated blocks** — exactly Phase 1b.
+
+**Done (Slice B+C — off-atlas world renderer; 4 files touched + 2 new, build-green, gates pass, deployed):**
+- `client/render/AnimFrameCache.java` (new) — per animated slot, reads the **full-res** strip straight from
+  the pack file (`textures/block/slot_N.png`, the crisp raw PNG, NOT the atlas) + parses `slot_N.png.mcmeta`
+  for the playback order/timing. Uploads ONE `NativeImageBackedTexture` per slot with **`setFilter(false,
+  false)` = nearest, NO mipmap** → crisp. Vanilla's own animation trick (one strip, shift V per frame).
+  `clear()` on resource reload so a re-skin re-reads fresh.
+- `client/render/AnimSlotBER.java` (new) — BlockEntityRenderer; draws the 6 cube faces off-atlas, V-banded to
+  the current frame. Modeled on the proven `ArabicLetterBlockEntityRenderer`. Static slots → draws nothing.
+- `network/ServerPackGenerator.java` — animated slot now emits an **invisible** placed-block model (vanilla
+  barrier pattern: particle only, no geometry) so only the BER paints it (no atlas cube, no double-draw); the
+  strip + `.mcmeta` still ship and the **item model is decoupled** to `cube_all` so the inventory/hand icon
+  still animates via the atlas (fine at icon size). New `invisibleBlockModelJson` helper.
+- `client/CustomBlocksClient.java` — registers `AnimSlotBER` for `AnimSlotRegistry.BLOCK_ENTITY`.
+- `client/ResourcePackGenerator.java` — `AnimFrameCache.clear()` after each silent reload.
+
+**Decisions:** client reads everything from the pack (strip dims + mcmeta) → zero server-sync changes. Nearest
+filter (matches the crisp Arabic path; flip to linear later if a photo GIF wants smoothing). One full-strip
+texture per slot on the GPU (vanilla-style UV frame shift) — simplest + lowest-risk; revisit memory if many
+high-frame blocks. **Known limitation this jar:** the inventory atlas strips are unchanged, so if the atlas was
+already overflowing, *static* blocks may still look muffled — fixable next by shrinking the inventory strips
+(the placed animated block — the actual complaint — is now fully off-atlas).
+
+**Failure mode to watch in-game:** placed animated block now relies on the BER. If the BER can't read the strip,
+the block shows **invisible** (model is intentionally empty). Invisible animated block = BER/strip read issue.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass; remapJar
+OK. Jar deployed to `%APPDATA%\.minecraft\mods\` + `OneDrive\Desktop\MODS\mods\`. **NOT in-game tested.**
+**Next:** owner restarts MC, looks at an animated block close-up → is it finally crisp? does it animate? Report
+(a screenshot). If placed blocks are crisp but nearby static blocks still muffled → I shrink the atlas strips next.
+
+## 2026-06-20 (Group 15 fix) — AI "couldn't generate" = 20s timeout too short (build-green, awaiting in-game)
+
+Acted on `HANDOFF_group15_ai_not_generating.md`. Root cause confirmed by reading the path: `ImageDownloader.fetch`
+hardcoded a **20s** per-request timeout, but Pollinations generates on the FIRST hit (cache miss) which measured
+~18.5s — any extra latency crosses 20s → timeout → `download()` throws → `load()` returns null → grey
+"couldn't generate" badge. Same 20s also hit the server-side **Create & Publish** re-fetch (512px = a fresh
+generation). Owner chose **Option A** (AI-only longer timeout; leave the global 20s for normal links).
+
+**Done (5 files, build-green, all gates pass, deployed — NOT in-game tested):**
+- `ai/AiTextureGenerator.java` — added `FETCH_TIMEOUT_SECONDS = 60` and `isAiUrl(url)` (true for Pollinations links).
+- `image/ImageDownloader.java` — refactored: `download(url)` keeps the 20s single-shot path; new
+  `download(url, timeoutSeconds)` overload **retries once** (Pollinations 5xx's the first hit sometimes); the
+  per-request timeout is now threaded through `fetch(url, timeoutSeconds)` instead of hardcoded 20s.
+- `client/gui/StudioTextureLoader.java` — new `load(url, timeoutSeconds)` AI overload; on failure it now **logs the
+  real exception** (`CustomBlocks/AI` WARN) instead of swallowing it silently (a timeout/404/no-internet all looked
+  identical before). The plain `load(url)` is unchanged (delegates with timeout 0 = default).
+- `client/gui/StudioAiPanel.java` — preview fetch uses the 60s path; status text now reads
+  "§b✦ generating… §8(can take ~30s)" so a slow-but-working gen doesn't read as an error.
+- `command/handlers/CreationCommands.java` — both server fetch sites (`createWithTexture` + `applyTexture`) use the
+  60s+retry path **only when `isAiUrl(url)`**; non-AI links keep the fast 20s feedback. (392 lines, under the 400 gate.)
+
+**Decisions:** Option A over B — AI gets the long timeout, the rest of the mod keeps fast failure on genuinely-broken
+links. Retry-once + WARN-log added per the handoff so the next failure (if any) shows its real reason in `latest.log`.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL in 18s; verifyFileSize / verifyMojibake / verifySound pass;
+remapJar OK. Jar (8,224,762 B) deployed to `%APPDATA%\.minecraft\mods\` and `OneDrive\Desktop\MODS\mods\`
+(customblocks-1.0.0.jar, ~11:13). **NOT in-game tested.**
+
+**Next:** owner restarts MC (replace jar with the game CLOSED — see prior note about replacing a running jar) and runs
+`/cb ai glowing red crystal`. Expect the badge to show "generating… (can take ~30s)" then a texture, not an instant
+"couldn't generate." Then test **Create & Publish** to confirm the 512px server re-fetch also succeeds. If it still
+fails, check `latest.log` for the new `CustomBlocks/AI` WARN line — it now names the real reason.
+
+## 2026-06-20 (Group 14, Phase 1b — Slice A) — BlockEntity on every slot block (build-green, awaiting in-game)
+
+Owner priority this session: **the muffling + pixelation of placed blocks** (chosen over the polish bugs /
+Phase-2 confirm). That maps to **Phase 1b — the own-texture world renderer** (the only path that escapes the
+atlas mipmaps). Building it in the doc's small slices. **This is Slice A only: the plumbing, no visual fix yet.**
+
+**Done (Slice A — 6 changes, build-green, all gates pass, deployed — NOT in-game tested):**
+- **Atticed the `screen_test` cluster** (8 files) to `docs/_attic/screen_test/` instead of hard-deleting — the
+  files were **untracked** (not in git), so `rm` would be unrecoverable. Same effect on the build (out of the
+  source roots), fully reversible. Files: `ScreenTestBlock/BlockEntity/Registry/BlockEntityRenderer/Images.java`
+  + `blockstates/models(block,item)/screen_test.json`.
+- **Stripped the 3 live `ScreenTest` registration sites:** `CustomBlocksMod.register()` call + creative-tools-tab
+  entry, and the client BER registration in `CustomBlocksClient`. (Two leftover refs are comments only — harmless.)
+- **`SlotBlock` now `implements BlockEntityProvider`** — `createBlockEntity()` returns an `AnimSlotBlockEntity`.
+  Render type stays MODEL (unchanged) — atlas model still draws every block exactly as before. The BE is the hook
+  the world renderer will use in Slice B.
+- **`AnimSlotBlockEntity.java` (new)** — data-less; reads its slot index from the SlotBlock at its pos. No NBT,
+  no sync, never ticks → no chunk-save cost beyond the entity existing.
+- **`AnimSlotRegistry.java` (new)** — registers ONE `BlockEntityType` (`customblocks:anim_slot`) over **all**
+  slot blocks (`SlotBlock[]` passed as covariant `Block...` varargs). Called from `CustomBlocksMod` AFTER
+  `SlotManager.registerAll()`.
+- **`SlotManager.allBlocks()` (new accessor)** — exposes the slot-block array to build the type.
+
+**Decisions:** one shared BlockEntityType for all 1028 blocks (any slot can become animated at runtime, so the
+BE must exist on all of them; the type is fixed at registration). BE stores nothing — slot index is derived from
+the block, so no persistence/sync. Static blocks are unaffected; the renderer (Slice B) will skip them.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL in 18s; verifyFileSize / verifyMojibake / verifySound pass;
+remapJar OK. Jar deployed to `%APPDATA%\.minecraft\mods\` and `OneDrive\Desktop\MODS\mods\` (customblocks-1.0.0.jar).
+**NOT in-game tested.**
+
+**Next:** owner runs `GROUP_14_TESTING_GUIDE.md` §5 **Slice A** — place an animated block, break it, replace it,
+relog — confirm placement/breaking still behave normally (this proves the BlockEntity-on-every-block change is
+safe). **No muffle/crispness change expected yet** — that lands in Slice B (the AnimFrameCache + AnimSlotBER
+renderer + transparent placed model). If Slice A is clean in-game → build Slice B.
+
+## 2026-06-20 (Group 15 build) — AI texture tab BUILT (build-green, awaiting in-game)
+
+Built the locked Group 15 slice (AI textures in the Block Creation Studio). Owner go-ahead on the design
+documented last entry. **Build-green + all gates pass + deployed — NOT yet confirmed in-game.**
+
+**Done (10 files):**
+- `ai/AiTextureGenerator.java` — repurposed from the null stub into the keyless **Pollinations.ai URL builder**
+  (prompt + ", seamless tileable block texture, <aiTextureStyle>" + size + deterministic seed). No key check.
+  Nothing referenced the old `generate()/isConfigured()`, so the swap was safe.
+- `client/gui/StudioAiPanel.java` (new) — the AI tab's brain: 0.8s debounce, prompt-derived seed, request-id
+  **stale-guard**, no-flicker swap (keeps the last good texture until the new one decodes), generating/fail
+  status. Preview fetches at 256; writes the 512 url into `st.url` so **Create re-fetches the same seed full-size**.
+- `client/gui/StudioEditLoad.java` (new) — extracted the edit-mode load helpers OUT of the screen (it was at
+  the 500-line gate) so the AI additions fit. Behaviour identical, just relocated.
+- `client/gui/BlockCreationStudioScreen.java` — new `Section.AI` **before Category**; prompt field + ↻ Regenerate;
+  AI generation badge; **on-screen notice banner** replaces the chat warning when Create is pressed with no id/name.
+  Now 464/500 lines.
+- `client/gui/StudioSections.java` — routes the AI tab to `StudioAiPanel`; `aiRegenerate`.
+- `command/handlers/AiCommands.java` (new) + `CommandRegistrar` — `/cb ai [prompt]` opens the studio's AI tab
+  (prompt rides in `OpenGuiPayload` data as `ai:<prompt>` — no new payload).
+- `client/CustomBlocksClient.java` — parses the `ai:` prefix on CREATE_STUDIO → opens on the AI tab with the prompt.
+- `CustomBlocksConfig.java` — added `aiTextureStyle` (default `pixel_art`); trimmed blanks to stay at the 300 gate.
+- `StudioState.java` — added `aiPrompt`.
+
+**Decisions:** preview 256 / create 512 (512 ≥ any server textureSize, so full quality regardless of config);
+st.url holds the create-size url so the existing Create & Publish rail re-fetches it server-side — **zero new
+server creation code**. Legacy `aiApiKey`/`aiTextureEnabled` left in place (removal deferred to G15.7).
+
+**Verified:** `gradlew build` green; verifyFileSize / verifyMojibake / verifySound pass; remapJar OK. Jar deployed
+to `%APPDATA%\.minecraft\mods\` and `Desktop\MODS\mods\` (customblocks-1.0.0.jar, ~10:39). **NOT in-game tested.**
+**Next:** owner runs `GROUP_15_TESTING_GUIDE.md` §1 (①–⑧) — needs internet on the server. `/cb ai glowing red crystal`.
+
+## 2026-06-20 (round 5) — Group 14: Phase 1b scrapped and redesigned from scratch; docs updated
+
+**Owner decision: abandon every previous Phase 1b attempt. Start clean.**
+
+All prior Phase 1b work (the "hybrid" renderer, the `screen_test` block cluster) had no confirmed in-game proof.
+Owner reported muffling still not fixed and animation still choppy. Root cause of repeated failure: every attempt
+patched the atlas pipeline, which is fundamentally incompatible with crisp high-res animation. No atlas setting,
+size cap, or .mcmeta trick can escape Minecraft's block atlas mipmapping.
+
+**Research done this session (web + mod source analysis):**
+- Minecraft's own `MapRenderer.MapTexture` uses `NativeImageBackedTexture` + `setFilter(bilinear, mipmapOFF)` —
+  maps are crisp because they completely bypass the atlas.
+- The **Slideshow mod** (DistrictOfJoban/Slideshow, 1.21-compatible) does exactly what we need: GIFs on placed
+  blocks, crisp, smooth, via direct GL texture + per-frame update + real-millisecond frame timing. Proven in
+  production.
+
+**New Phase 1b design (clean slate — 3 files):**
+1. `AnimSlotBlockEntity` — holds slotIndex only. Registered for all 1028 SlotBlocks.
+2. `AnimFrameCache` — client singleton. `slotIndex → NativeImageBackedTexture` (one per slot). Frame advance =
+   update NativeImage pixels + `texture.upload()`. `setFilter(true, false)` = linear, NO mipmap. Full 512px.
+   Reuses `AnimationDecoder` + `AnimData` unchanged.
+3. `AnimSlotBER` — BlockEntityRenderer. 6 faces via `RenderLayer.getEntityCutoutNoCull(textureId)`. Frame timing:
+   `(tick + partialTick) * 50ms` → real ms → frame index. Smooth at 60fps. Respects bounce/reverse/loop.
+
+**What gets deleted before building:**
+- `block/ScreenTestBlock.java`, `block/ScreenTestBlockEntity.java`, `block/ScreenTestRegistry.java`
+- `client/render/ScreenTestBlockEntityRenderer.java`, `client/render/ScreenTestImages.java`
+
+**What stays unchanged:** atlas path for inventory/hand, `AnimationDecoder`, `AnimData`, all studio/command code.
+Placed animated block model becomes transparent — BER handles the placed visual.
+
+**Docs updated:** GROUP_14_ANIMATION_VIDEO.md (Phase 1b rewritten), GROUP_14_TESTING_GUIDE.md (new §5 added).
+**Build:** not started — owner confirms plan → delete screen_test cluster → build 3 files → in-game test.
+
+---
+
+## 2026-06-20 (Group 15) — AI textures: design locked + docs written (NO code yet)
+
+Started Group 15 (AI texture generation). Read the old stub plan, the existing stubs, the studio rail, and
+the URL→block pipeline, then re-scoped with the owner via UI questions. **Nothing built this entry — design
++ documentation only**, per owner ("document everything to the group and testing guide first").
+
+**Owner decisions (locked):**
+- AI is a **new tab in the Block Creation Studio**, not a chat command flow. Tab sits **before Category**.
+- **Live** generation (debounced ~0.8s, deterministic seed, stale-guard, no-flicker swap) + a **Regenerate**
+  button for variants. Owner: "live would be really cool if u can try making it perfect."
+- **No auto-fill** of id/name — an **on-screen** notice (not chat) when a spec is missing.
+- `/cb ai <prompt>` opens the studio on the AI tab and **auto-generates**; bare `/cb ai` opens it empty.
+- Keyless **Pollinations.ai** only for v1. Prompt auto-enhanced with `, seamless tileable block texture,
+  <aiTextureStyle>` (new config, default `pixel_art`). Preview small (256), Create re-fetches at real size.
+
+**Why this is small:** the studio cube already previews any URL (`StudioTextureLoader.load`), and
+**Create & Publish already re-fetches the image URL server-side** (`CreateStudioPayload` → `createFromStudio`
+→ `doCreate`). The AI tab just turns a prompt into a seeded Pollinations URL → preview == created block.
+Create = keep, Cancel = discard (nothing exists server-side until Create). Near-zero new server code.
+
+**Deferred (later slices):** Stable Horde fallback, variations grid, `--style` flag, removing legacy
+`aiApiKey`/`aiWorkerUrl`/`aiServerToken`/`aiTextureEnabled` config fields (touches the config GUI).
+
+**Docs:** rewrote `docs/Finale Fix/GROUP_15_AI_TEXTURES.md` (spec, status-free) to the studio-tab design;
+created `docs/Finale Fix/Reports/GROUP_15_TESTING_GUIDE.md` (template v4, 8 tests, 🔴 not-built banner).
+
+**Verified:** nothing — no code written. **Next:** owner go-ahead → build the 5-step slice (AiCommands
+`/cb ai`, AI Section before Category, live-debounce generation via repurposed `AiTextureGenerator` URL
+builder, on-screen notices, `aiTextureStyle` config) → green + gates + deploy → hand back for §1 tests.
+
+## 2026-06-20 (round 4) — Group 14: muffle + earth marked PARTIAL/deferred; Fix 4 tab-landing corrected
+
+Owner decision: **stop chasing the muffle + earth this round — mark them 🟡 partial, come back later** via the
+Phase 1b own-texture renderer (the only path that escapes the atlas mipmaps). Testing guide §0 + scorecard updated
+to deferred; no more "test crispness" asks in this jar.
+
+Then audited the 3 remaining small Group-14 issues the owner suspected were "already implemented but not correct":
+
+1. **Fix 4 (`/cb anim` on a non-animated block) was implemented but WRONG.** The server note said "load a GIF in
+   the **Texture** tab," but the screen dropped non-animated edits on the **Identity** tab
+   (`BlockCreationStudioScreen` line 106 fell back to `IDENTITY`). **Fixed:** non-animated edits now land on the
+   **Texture** tab, and the chat note is reworded to match. (Build gate caught a +2-line comment pushing the file
+   to 501/500 — trimmed to a one-line comment; green.)
+2. **Keep anim settings on a new GIF — half-implemented, NOT fixed.** The re-skin path (`StudioReskin.finishAnimated`)
+   builds a FRESH `AnimData`, and `saveFromStudio` returns before the anim-knob merge → loop/speed get wiped. Open.
+3. **Re-fill background on an animated block — genuinely not built.** `saveFromStudio` step 4 re-fills static blocks
+   only. Open.
+
+**Files:** `client/gui/BlockCreationStudioScreen.java` (non-animated → Texture tab), `command/handlers/
+CreationStudioBridge.java` (reworded note).
+
+**Gates:** compileJava OK; verifyMojibake / verifySound / verifyFileSize pass; full `build` + `remapJar` green.
+**Jar:** rebuilt + installed to `%APPDATA%\.minecraft\mods\` and `Desktop\MODS\mods\` (2026-06-20 ~01:49).
+**Verified:** build-green only — NOT in-game. Fix 4 tab landing pending owner test.
+**Next (owner's call):** either (a) finish issue #2 (carry loop/smoothing/speed across a new-GIF load, reset only
+trim since frame count changes), or (b) start Phase 1b slice 1 (own-texture renderer for placed animated blocks).
+
+## 2026-06-20 (round 3) — Group 14: muffle ROOT CAUSE found = the block atlas itself; decode-scope fix
+
+Round-2 atlas cap did NOT fix the nyan muffle (owner re-tested, still speckled). Investigated the actual render
+path + the OLD mod. **Root cause (high confidence): the vanilla block atlas applies mipmaps + filtering to every
+sprite. A detailed/text image minified through atlas mipmaps = the speckled "muffle." NO texture size, `.mcmeta`,
+or `blur` setting escapes atlas mipmapping.** That's why every atlas-path patch failed.
+
+**The OLD mod was crisp because it did NOT use the atlas for the picture** — `client/texture/TextureCache.java`
+registered a `NativeImageBackedTexture` (mipmaps off) and drew blocks from it (map-style). That's the "old system"
+the owner wants. **This repo already has that technique working: the `screen_test` block**
+(`ScreenTestBlockEntityRenderer` + `ScreenTestImages`, ADR-008 Phase 1b prototype) — and its gallery already loads
+the player's OWN animated blocks at full res through the crisp path. Directed owner to place it as the PROOF
+before committing to the big wiring.
+
+**Decode-scope bug fixed this build:** round-2 hard-capped ALL `AnimationDecoder.decode` at 256, which also
+throttled the own-texture/screen_test path (meant for 512). Now `decode` honors up to 512; the **atlas callers**
+(`AnimCommands.maybeCreateAnimated`, `StudioReskin`) pass `min(ATLAS_MAX_SIZE=256, textureSize)`; the own-texture
+path (`ScreenTestImages`) keeps 512. `ATLAS_MAX_SIZE` made public.
+
+**Earth "slow/not smooth":** the atlas frame budget caps it at 32 frames @256px (steppy); "Normal" now = the GIF's
+true speed (use Faster to speed up). Real smoothness fix = the own-texture renderer (no atlas frame cap).
+
+**Decision (owner): build the own-texture renderer for placed animated blocks ("old system, upgraded") = ADR-008
+Phase 1b.** Large core-render change → build in small, owner-tested slices. NEXT once owner confirms the
+screen_test proof looks crisp: slice 1 = give animated slot blocks a BlockEntity + BER that draws the placed block
+from a client NativeImage strip (mipmaps off), keep atlas for inventory/hand.
+
+**Fix 4** (`/cb anim` on non-animated → warn + still open) — owner: WORKING, polish later.
+
+## 2026-06-20 (round 2) — Group 14: follow-up fixes after first in-game test (BUILT + INSTALLED — pending confirm)
+
+Owner tested round 1 and reported: GIF spins too fast, nyan WebP still muffled, the Animation tab still feels
+bloated. `/cb anim` list PASSED. Fixed each:
+
+1. **GIF too fast — timing bug in round-1's frame sampling.** When I sampled a long clip down to fewer frames I
+   kept each kept frame's ORIGINAL delay, so dropping frames shortened the total cycle → it sped up. Fixed in
+   `AnimationDecoder`: the display time of every sampled-OUT frame is now FOLDED into the kept frame it follows
+   (`keptCs` accumulator), so the clip keeps its true original duration. "Normal" speed now = the real clip speed.
+2. **Nyan WebP muffled — atlas overflow from a 512px config.** The owner's `textureSize` is 512 (re-enabled
+   earlier for the own-texture renderer, which isn't wired into animated blocks yet). A 512px animated strip
+   overflows the shared block atlas → mipmaps off → the speckled/muffled look. Added `ATLAS_MAX_SIZE = 256` and
+   the animated decoder now clamps to it regardless of config (ADR-007/008: atlas layer stays ≤256). This also
+   bumps the frame budget from 16 → 32 frames at 256px.
+3. **Animation tab redesign v2 — plain-language, de-jargoned.** Owner: "think of an artist / a normal human."
+   Removed all fps/ticks readouts, the "N frames · fps · loop" summary line, the inline helper sentences and the
+   divider rules. Now: **Speed = Slower · Normal · Faster** (no numbers; Normal = clip's own speed), **Loop =
+   Forward · Bounce · Reverse**, **Smooth motion On/Off**, **Trim** (compact, at the bottom), and a numberless
+   moving playback bar. Slower/Faster scale the current speed ×1.5 (clamped 20fps..0.2fps).
+4. **`/cb anim <id>` on a non-animated block** now still opens the studio but first sends a gentle chat note that
+   the block isn't animated and the Animation tab stays locked until a GIF/WebP is loaded (`CreationStudioBridge`).
+
+**⚠️ Existing animated blocks must be RE-CREATED** to pick up the new strip — the strip is baked at create time,
+and `earth`/`nyan` were baked by round 1 (512px / wrong timing). `/cb delete earth` then re-create.
+
+**Files:** `image/AnimationDecoder.java` (timing fold + 256 atlas cap), `client/gui/StudioAnimPanel.java`
+(rewrite v2), `command/handlers/CreationStudioBridge.java` (non-animated note).
+
+**Gates:** compileJava OK; verifyMojibake / verifySound / verifyFileSize pass; full `build` + `remapJar` green;
+jar reinstalled to `%APPDATA%\.minecraft\mods\`.
+
+## 2026-06-20 — Group 14: 3 owner-reported bug fixes (BUILT + INSTALLED — pending in-game confirm)
+
+Implemented the three Group 14 bugs from the 2026-06-19 root-cause session, one by one, in order. Build green
+(`compileJava` + all gates) and the fresh `customblocks-1.0.0.jar` is copied into
+`%APPDATA%\.minecraft\mods\`. Nothing is DONE until the owner confirms in-game.
+
+**Fix 1 — pixelation (decoder invert, ADR-008 interim / Phase 1a).** `image/AnimationDecoder.java`. The old
+`atlasSafeSize` kept frame COUNT by SHRINKING per-frame size — a 256-frame clip collapsed to 32px/frame (the
+blocky garbage). Inverted it: new `atlasFrameCap(size)` = `min(MAX_FRAMES, MAX_STRIP_PX / size)` caps the
+frame COUNT instead, and frames are now rendered at FULL `size` (no shrink). At the default 256px texture that
+keeps 32 crisp frames; short clips (≤cap) keep every frame untouched. Warning text + the unknown-count loop cap
+updated to the new cap; doc comments corrected so they don't lie. **Honest limit:** this is the *interim* atlas
+fix — the real per-distance crispness is Phase 1b (the hybrid own-texture renderer), still not built. So a long
+clip is now crisp-but-fewer-frames rather than smooth-but-mush.
+
+**Fix 2 — `/cb anim` (no id) opened the wrong list.** It opened the FULL block list where a click toggled a
+bulk ✔ / opened the chest editor — neither animated-only nor landing on the Animation tab. Added
+`Nav.Dest.ANIM_LIST` + new `gui/chest/AnimListMenu.java` (animated-only, paginated; a click closes the chest and
+calls the existing `CreationStudioBridge.openStudioEdit` rail — the same one `/cb anim <id>` uses, so it lands on
+the Animation tab in edit mode). Wired `GuiRouter.build` + repointed `AnimCommands.openList` from `BLOCK_LIST`
+to `ANIM_LIST`. The full block list is untouched.
+
+**Fix 3 — Animation tab "unorganized trash".** `client/gui/StudioAnimPanel.java`. Redesigned the crammed ~118px
+panel into a clean GROUPED layout: header summary, then labelled **Speed / Loop / Smoothing / Trim** groups each
+under a gold divider with real spacing, plus a live **playback bar** showing the current frame. Refactored the
+playback clock into a shared `playbackPos()` used by both the cube preview and the bar. All control hit-rects
+keep the same indices, so `mouseClicked` was left unchanged — behaviour identical, only the layout is new.
+
+**Files:** edited `image/AnimationDecoder.java`, `gui/chest/Nav.java`, `gui/chest/GuiRouter.java`,
+`command/handlers/AnimCommands.java`; rewrote `client/gui/StudioAnimPanel.java`; NEW `gui/chest/AnimListMenu.java`.
+
+**Gates:** compileJava OK; verifyMojibake / verifySound / verifyFileSize all pass; full `build` + `remapJar` green.
+
+**Next:** owner runs the combined in-game test (testing guide §0). If the interim crispness is good enough,
+Phase 1b (hybrid renderer) can wait; otherwise it's the next build.
+
+## 2026-06-19 — Group 13 / Build B: delete static letters + reclaim slots (CODE COMPLETE — pending in-game confirm)
+
+Implemented Build B, the deletion half of the static-letter retirement (Build A shipped earlier today). The 144
+OLD static Arabic letter blocks (36 letters × 4 colours) are now permanently deleted; numbers (A0–A9 + E0–E9,
+80 blocks) and the auto-join letter block are untouched. Per the owner: "delete them entirely, keep only the
+auto-joining letters, free space + slots, be careful."
+
+**What was built (all in one jar, in safe order):**
+1. **Boot migration** (`ArabicLetterRetirement.init` → `retireStaticLetters`, idempotent like `migrateDisplayNames`):
+   iterates `ArabicArt.ALL` filtered to `Group.LETTER` × `ArabicArt.COLORS`; for each existing
+   `arabic_<letter>_<colour>` slot it calls the new `SlotManager.retireSlots(...)` — frees the slot, deletes the
+   texture, records the freed index. Wired right after `ArabicBlockRegistry.importArt(false)` in `onInitialize`.
+   A no-op on later boots (ids already gone).
+2. **Placed-copy air-clean:** a `ServerChunkEvents.CHUNK_LOAD` handler scans non-empty sections of each chunk as
+   it loads and replaces any placed `slot_N` whose index is retired with air (deferred to the server thread).
+   A per-session swept-chunk guard avoids rescans; it keeps working across restarts while any retired index remains.
+3. **Slot reclaim — made safe:** new `core/RetiredSlots.java` persists the retired indices to
+   `config/customblocks/retired_slots.json` (atomic write, LockManager-style). `SlotManager.nextFreeSlotIndex`
+   now prefers fresh slots and only reuses a retired index as a last resort, dropping it from the set on reuse —
+   so a reused slot can NEVER show or delete a wrong block (the wrong-block hazard flagged up front).
+4. **Stripped 144 letter PNGs** from `src/main/resources/assets/customblocks/arabic_art/<colour>/` (kept the 20
+   number PNGs per colour: a0–a9 + num_0–num_9). Verified nothing still reads letter art (`importArt` skips
+   LETTER; `ServerPackGenerator` serves generated per-slot textures + unrelated square/triangle item art only).
+
+**Files:** NEW `core/RetiredSlots.java` (96 lines), NEW `arabic/ArabicLetterRetirement.java` (114 lines); edited
+`core/SlotManager.java` (+`retireSlots`, reuse-safe `nextFreeSlotIndex`) and `CustomBlocksMod.java` (wire `init()`).
+
+**Gates:** file-size OK (SlotManager < 500; new files 96 / 114), mojibake-clean (new sources are ASCII).
+
+**NOT built / out of scope (unchanged):** legacy base-28 letters (separate ids, Issue 3 — never created here), O9
+type-a-word auto-build, O8 hide/manage.
+
+**⚠️ Build status — NOT yet compiled.** The assistant sandbox could not build (only JDK 25 present + no network
+for Gradle deps; this project needs JDK 21). The dev must build locally (`./gradlew.bat build`, MC fully closed)
+and confirm in-game per §15B. Nothing is marked DONE until that confirmation.
+
+## 2026-06-19 — Group 14: pixelation root-cause + HYBRID render decision (DISCUSSION + DOCS ONLY — no code)
+
+Owner tested the last Group 14 fix and called the GIF blocks "horrible / pixelated garbage" (screenshot: a
+256-frame clip rendered blocky). Deep search + design discussion; **nothing built this session** — owner's
+instruction was "document everything, deep search, ask more" before any build.
+
+**Three issues confirmed (root-caused, not guessed):**
+1. **Pixelation.** `AnimationDecoder.atlasSafeSize` keeps frames by **shrinking per-frame size**. A 256-frame
+   clip → `atlasSafeSize(256,256)` halves 256→128→64→**32px/frame** (32·256 = 8192 = `MAX_STRIP_PX`). 32px =
+   the blocky mush. The logic is backwards: it should keep resolution and drop frames.
+2. **`/cb anim` list.** `AnimCommands.openList` opens the **full** block list (every block); a click toggles a
+   bulk ✔ or opens the chest editor — neither is animated-only and neither lands on the Animation tab.
+   (`/cb anim <id>` already opens the studio on the Animation tab — that part works.)
+3. **Animation tab.** `StudioAnimPanel` crams everything into ~118px, no grouping/timeline — owner: "unorganized trash".
+
+**Old mod checked (`CustomBlocks/`):** `MAX_SIZE = 256`, same vertical-strip + `.mcmeta` + atlas approach,
+power-of-2 enforced. **It capped at 256 too and never used 512 — no hidden trick to recycle.** 512 is the
+muffle bug itself (atlas overflow → mipmaps off for every block).
+
+**DECISION — HYBRID rendering, LOCKED with owner via in-game-style mockups → ADR-008:**
+- Atlas/`.mcmeta` stays the **universal** layer → animates **everywhere as a normal 3D block item**
+  (hand/inventory/creative/`/cb list`). Owner's worry "render properly in inventories, not 2D" → confirmed:
+  MC draws block items as a 3D cube automatically; nothing is 2D.
+- **Add** a per-block **own-texture renderer** (`NativeImageBackedTexture`, mipmaps off, **512px** — the proven
+  `screen_test` mechanism, un-shelved) for the **placed world block** close-up → crisp at any distance.
+- **LOD fallback** to the atlas when far / off-screen / perf-tight (ties into Phase 5 Auto-perf).
+- **Full Path B rejected** (own-renderer for inventory icons too): a 16px icon is identical, would cost a
+  custom item renderer for ~1028 items.
+- **Interim before the renderer:** invert `atlasSafeSize` — keep resolution, sample frames down to fit.
+
+**Mockups (to explain the choice to a non-coder):** `cb_mockups/1_quality_current_vs_pathB.png` (32px atlas vs
+512px own-texture), `cb_mockups/2_hybrid_vs_full.png` (identical look; hybrid = far less work). Simulations,
+not in-game shots.
+
+**Docs updated:** `docs/adr/ADR-008-hybrid-atlas-plus-own-texture-render.md` (new), `GROUP_14_ANIMATION_VIDEO.md`
+(header + §3 + §4 phase table + §5 reality check), `Reports/GROUP_14_TESTING_GUIDE.md` (screen_test reconciled,
+new locked phases listed as not-built).
+
+**Next (build order, after owner OK):** Phase 1a decoder invert (small, immediate) → Phase 2 animated-only list
++ Animation-tab redesign → Phase 1b hybrid renderer (large, small steps). No code until owner says go.
+
+---
+
+## 2026-06-19 — Group 14 Phase 2 cont.: studio "edit EVERYTHING" + crash post-mortem (jar GREEN, in-game pending)
+
+Follow-up to the entry below. Dev's call: `/cb anim <id>` should open a **full studio that edits literally
+everything**, not just animation + properties. Built that. Also diagnosed the client crash dev hit.
+
+**Crash post-mortem (crash-2026-06-19_20.51.00):** `Failed to load class CbIconButton … ZipException: invalid
+LOC header (bad signature)`. **Not a code bug** — the previous session's *final* build got rate-limited
+before finishing, and the jar in `mods\` had been replaced **while Minecraft was still running** (uptime
+4166s). Java loads classes lazily, so opening the ESC menu read `CbIconButton` from the hot-swapped jar →
+corrupt read. Fix: clean rebuild + reinstall **only while MC is closed**. New rule of thumb: never copy the
+jar into `mods\` with the game open.
+
+**Done (build + gates green, jar reinstalled to `.minecraft\mods` with MC closed):**
+- **Rename the id, safely** — the studio's Identity id field is now live in edit mode. On save, a changed id
+  routes through the existing `SlotManager.reId(old,new)`: the slot **index** is kept, so the baked texture
+  doesn't move and **already-placed blocks (the registry `slot_N`) are untouched** — nothing orphans. reId
+  also migrates locks/favourites/notes/drafts. A taken/blank id is rejected with a message, keeping the old id.
+- **Swap the picture/GIF** — new `StudioReskin` re-bakes an **existing** slot from a new url off-thread
+  (mirrors `createWithTexture`): animated source → strip + **fresh** `AnimData`; static source → square bake +
+  **clear** any prior animation (no "animated flag, still image" mismatch). Background colour fills behind
+  transparent pixels during the bake. A broken link leaves the block untouched (settings still save).
+- **Everything in one save** — `saveFromStudio` now: reId (if changed) → name + shape/glow/hardness/sound/
+  collision/category → if a new url, delegate to `StudioReskin` (it owns the rebuild + message); else merge the
+  anim knobs as before, and re-fill a **static** block's background if a colour was chosen.
+- **Payload** — `StudioSavePayload` grew `origId` + `url` (codec 3→5 fields; url is its own field because a url
+  contains `;`/`=` that the attrs parser splits on). `StudioState` gained `editOrigId` and now counts id+url in
+  its dirty/baseline signature. Screen change kept to ~3 lines (gate: 499/500).
+
+**Decisions / limits (carried to the testing guide §3):**
+- A **new GIF resets** its animation settings (fresh clip = fresh timing); adjust + Save again to set speed/loop.
+- **Animated** blocks can't re-fill background alone (the strip isn't a square png); load a new image to change it.
+- A **re-skin isn't undoable** (matches `/cb retexture`); recording one would revert the anim flag but not the
+  texture (a render mismatch). Settings-only edits without a rename stay undoable.
+- `/cb anim` stays **animated-only** (dev's call — "isn't that logical?"); no `/cb edit` alias.
+
+**Files (new):** `command/handlers/StudioReskin`.
+**Files (changed):** `network/payloads/StudioSavePayload`, `client/gui/studio/StudioState`,
+`client/gui/BlockCreationStudioScreen`, `command/handlers/CreationStudioBridge`, `CustomBlocksMod` (receiver).
+
+**Next:** dev tests §1 Part B in-game (rename survives placed blocks · picture swap static↔animated · combined
+save). On confirm → Phase 3 (timeline editor).
+
+---
+
+## 2026-06-19 — Group 14 Phase 2: Animation tab + live preview + edit-load (jar GREEN, in-game pending)
+
+The headline phase. A GIF block now has a dedicated **Animation tab** inside `/cb create` with a
+**live-playing preview**, and any block can be **re-opened to edit** via `/cb anim <id>`. Built + installed,
+**NOT confirmed in-game** (Golden Rule). Dev dropped the `screen_test` preview ("not needed for g14").
+
+**Done (build + gates green, jar copied to `.minecraft\mods`):**
+- **Animation tab** — new `StudioAnimPanel` (Speed fps presets + Original, Loop/Bounce/Reverse, Smoothing
+  on/off, Trim start/end steppers + Full). Each control returns a new immutable `AnimData` into the studio
+  state. Tab is greyed until a clip loads; unlocks on an animated texture.
+- **Live preview** — the preview cube plays the clip: `StudioAnimPanel.currentFrame` picks the frame from a
+  real-time clock honoring `AnimData.playback()` (trim + loop order + per-frame timing). Frame-swap only
+  (real cross-fade stays in-world).
+- **Multi-frame loader** — `StudioTextureLoader` now decodes **all** frames into preview grids (was first
+  frame only) and can read an existing block's strip back from the active resource pack (`loadFromPack`),
+  so edit mode previews without re-downloading.
+- **Edit-load + Save** — `StudioEditPayload` (S2C) carries a block's full state to the studio;
+  `BlockCreationStudioScreen` gains an edit constructor; "Create & Publish" becomes **"Save changes"**;
+  `StudioSavePayload` (C2S) → `CreationStudioBridge.saveFromStudio` applies name + shape/glow/hardness/
+  sound/collision/category and **merges the anim knobs onto the block's EXISTING AnimData** (frameCount +
+  per-frame source timing preserved — designs out the old "timing lost on save" bug).
+- **Routing** — `/cb anim <id>` → studio Animation tab (edit mode); `/cb anim` (no id) → block list. Typed
+  shortcuts (`fps/ticks/original/loop/smoothing/trim`) kept for scripting. The old `/cb anim` chat card is
+  retired.
+
+**Refactor (to fit the 500-line gate before adding the tab):** moved the studio's section drawing +
+picker hit-testing out of `BlockCreationStudioScreen` (was 498/500) into a new `StudioSections`
+(no behaviour change). Screen now 490; `Section` enum made package-private; added the `ANIMATION` section.
+
+**Decisions:**
+- Scoped this session to **Phase 2 only**; **Phase 3 (timeline) deferred** until Phase 2 is confirmed
+  in-game, because Phase 3 rewrites the same frame-strips Phase 2's edit-load reads — stacking it untested
+  is the trap the dev was burned by.
+- Edit mode does **not** re-bake texture/background (anim numbers + block properties only); a clean
+  edit-mode re-skin is a later phase. Texture stays on `/cb retexture` + the colour tools.
+- Preview decodes at a fixed 128px (downsamples to the cube grid anyway), decoupling the client preview
+  from server texture-size config; frameCount/per-frame timing are size-independent so they match the
+  real block.
+
+**Files (new):** `client/gui/StudioAnimPanel`, `client/gui/StudioSections`,
+`network/payloads/StudioEditPayload`, `network/payloads/StudioSavePayload`.
+**Files (changed):** `client/gui/BlockCreationStudioScreen`, `client/gui/studio/StudioState`,
+`client/gui/StudioTextureLoader`, `command/handlers/CreationStudioBridge`,
+`command/handlers/AnimCommands`, `CustomBlocksMod`, `client/CustomBlocksClient`.
+
+**Verified:** `gradlew build --no-daemon` GREEN (compile + verifyMojibake/verifySound/verifyFileSize);
+jar `build/libs/customblocks-1.0.0.jar` (8.2 MB) copied to `.minecraft\mods`. **Nothing confirmed
+in-game** — not DONE until the dev runs it.
+
+**Next:** dev tests `Reports/GROUP_14_TESTING_GUIDE.md` §1 (restart Minecraft to load the jar). On
+confirmation → Phase 3 (timeline editor).
+
+---
+
+## 2026-06-19 (later) — Group 13 Round 3: the 3 designed items BUILT; jar built (all 6 in jar)
+
+Built the three designed Round-3 items (R3.5 omni removal, R3.1 edge lines, R3.6 C-full readable back). With
+the 3 earlier code fixes (R3.2/R3.3/R3.4) that puts **all 6 reported issues in one jar** —
+`customblocks-1.0.0.jar`. Build green: `compileJava` + `verifyMojibake` + `verifySound` + `verifyFileSize`
+all pass; jar remapped (8.0 MB).
+
+**R3.5 — OmniTool Arabic mode removed.** Six spots, as scoped:
+- `OmniToolState.Mode` — dropped the `ARABIC` constant (cycle is GLOW→HARDNESS→AREA again; old saved
+  `"ARABIC"` falls back to GLOW via `fromName`, no migration needed).
+- `OmniMenu` — removed the slot-17 Arabic button.
+- `OmniToolItem.useOnBlock` — `ours` no longer includes `ArabicLetterBlock`, so the tool PASSes on letters
+  (acts like an empty hand); deleted the whole letter branch.
+- `CustomBlocksMod` — removed the `AttackBlockCallback` (it existed only to feed the direction tool).
+- `ArabicLetterBlock.getPlacementState` — removed the priority-1 `preferredFacing` branch (join-orient +
+  furnace fallback remain).
+- Deleted `ArabicDirectionTool.java`. `ArabicJoinFlow` untouched by this.
+
+**R3.1 — edge lines.** Cause confirmed: BER drew all 6 glyph quads at `z=1.002`, i.e. 0.002 **outside** the
+cube, no-cull → every face poked past the boundary (the "tiny long lines" on edges + at letter seams). Fix:
+moved the quad to `z=0.999` (just **inside** the surface) in `face(...)`. No overhang, no visible gap; front
+tiling and top/bottom/sides unchanged (dev: "only fix the back").
+
+**R3.6 — C-full readable back.** Implemented exactly per the studied design:
+- `ArabicLetterBlockEntity` gained `backLetter` + `backForm` (synced + NBT, like `form`).
+- `ArabicJoinFlow` widened from the bounded ±2 updater to a **capped whole-run walk** (`MAX_RUN=64`): on
+  place/break it collects the contiguous same-facing run (index 0=START/reader's right → N-1=END), computes
+  each block's front form once, then sets each block's back to its **mirror partner's** `(letter, form)`
+  (`back(k) = front(N-1-k)`). Front forms are computed identically to before, so front rendering is
+  unchanged. Runs only on place/break, never per-tick.
+- Renderer: the back face now uses the **partner tile** (`backLetter/backForm`) drawn **U-flipped** (un-does
+  the 180° back-quad mirror); the other five faces keep this block's own tile. `drawGlyphCube` split into a
+  single-tile overload (item icon / lone block, back U-flipped too) and a two-tile overload (own + partner).
+  A lone/unset block (`backLetter==0`) falls back to its own tile, so it still reads from both sides.
+
+**Crash on first jar (fixed).** First in-game test crashed: `IllegalStateException: Not building!` in the
+BER (`vert`). Cause: the two-tile back face fetched BOTH vertex buffers up front (`vc` own + `vcBack`
+partner) and the faces alternated between them — but the buffer provider keeps only ONE RenderLayer
+building at a time, so requesting the second buffer ended the first, and the next write to it threw. Fix:
+split `drawGlyphCube` into `drawOwnFaces` (5 faces) + `drawBackFace` (1, U-flipped) and draw all own faces
+first, THEN fetch the partner buffer and draw the back last — never switch a layer back. (Item icon uses
+one tile → one layer, unaffected.) Rebuilt jar green.
+
+**Files (code):** `core/OmniToolState.java`, `gui/chest/OmniMenu.java`, `item/OmniToolItem.java`,
+`CustomBlocksMod.java`, `block/ArabicLetterBlock.java` (R3.5); `block/ArabicLetterBlockEntity.java`,
+`block/ArabicJoinFlow.java`, `client/render/ArabicLetterBlockEntityRenderer.java` (R3.1 + R3.6);
+**deleted** `block/ArabicDirectionTool.java`.
+**Files (docs):** `Reports/GROUP_13_TESTING_GUIDE.md` (§R3 → all 6 test-now; verdict + at-a-glance),
+`CHANGELOG.md`, this log.
+
+**Verified:** build green (compiles + 3 gates pass) and jar built — **nothing in-game yet.** Golden Rule:
+build green proves it compiles, NOTHING more. Not DONE until the dev confirms all 6 in-game (§R3).
+
+**Next:** dev installs `customblocks-1.0.0.jar` and runs §R3 (6 checks). Watch especially R3.6 from the back
+(is the word un-mirrored and correct both sides?) and R3.1 (any seam/edge line left?).
+
+---
+
+## 2026-06-19 (late) — Group 13 Round 3: 6 reported issues investigated; 3 fixed, 3 designed
+
+Dev reported 6 issues on in-game screenshots (Group 13 auto-join). Investigated all at source; fixed the 3
+low-risk ones in code, designed the 3 bigger ones with the dev. **No jar built yet** — code edits only.
+
+**Fixed in code (build + in-game test pending):**
+- **R3.2 — `/cb arabic join <letter>` gave 16.** Default count was hard-coded `16`
+  (`ArabicCommands.java`). → `1`.
+- **R3.3 — middle-click pick block returned a blank item.** `ArabicLetterBlock` had no `getPickStack`, so
+  vanilla returned a letter-less `arabic_letter` (blank icon, raw `block.customblocks.arabic_letter` key).
+  Added `getPickStack(WorldView,BlockPos,BlockState)` (1.21.1 sig) → reads the BlockEntity, returns
+  `stackFor(letter, colour, lockedForm, 1)`. Picked item now names/renders right and re-joins on placement.
+- **R3.4 — "Place letter blocks" gave non-joinable blocks.** `ArabicMaker.giveLetterBlocks` handed out the
+  old static bundled art (`arabic_<base>_black`). Rewrote it to give the joinable `ArabicLetterBlock`
+  (`stackFor(c,1)`) per Arabic letter; dropped the dead `artLetterBlockId` helper; updated `WordChoiceMenu`
+  lore (removed "once enabled", now describes auto-join).
+
+**Decided + designed (NOT built):**
+- **R3.5 — remove the OmniTool Arabic Direction mode (O5).** Redundant: placement auto-inherits facing from
+  adjacent join letters, so rows join on their own; the tool gave only chat feedback and overlaps O9.
+  Removal touches 6 spots (OmniToolState enum, OmniMenu button, OmniToolItem letter branch, the
+  AttackBlockCallback, the `preferredFacing` priority in `getPlacementState`, and the `ArabicDirectionTool`
+  class). `ArabicJoinFlow` stays.
+- **R3.1 — stray edge lines.** Cause: BER paints all 6 glyph quads at `z=1.002` (outside the cube), no-cull,
+  so buried/side faces poke 0.002 past the boundary → edge lines. Fix direction: kill the overhang (draw at
+  surface) and/or cull faces against a neighbour letter; keep top/bottom/side content (dev: "only fix the back").
+- **R3.6 — readable back, C-full (true two-faced sign).** Dev wants the back to read the **same word
+  correctly** from behind. Key fact: from behind L/R swap, so a block's back shows its **mirror-partner**
+  letter (`back(k)=letter[N-1-k]`). Studied result: **back form == partner's front form**, so one run-walk
+  computes both faces. Plan: on place/break walk the whole run once (capped ≤64), give each block front +
+  back `(letter,form)`; BE gains `backLetter`+`backForm` (synced); renderer draws back face from the
+  partner's cached tile, U-flipped. **Decisions:** placed letter rows only (single-texture block untouched);
+  only the back face changes (top/bottom/sides unchanged); mixed-colour word keeps each block's own bg colour
+  on its back. Trade-off accepted: place/break now re-checks the whole word (relaxes the ±2-neighbour bound),
+  capped to stay instant/reset-safe. Full design → `GROUP_13_ARABIC.md` Round 3.
+
+**Files (code):** `command/handlers/ArabicCommands.java`, `block/ArabicLetterBlock.java`,
+`arabic/ArabicMaker.java`, `gui/chest/WordChoiceMenu.java`.
+**Files (docs):** `GROUP_13_ARABIC.md` (Round 3 design), `Reports/GROUP_13_TESTING_GUIDE.md` (§R3 + at-a-glance),
+`CHANGELOG.md`.
+
+**Verified:** nothing in-game yet — code edits only, jar not built. Golden Rule: not DONE until the dev confirms in-game.
+
+**Next:** build R3.5 (omni removal) + R3.1 (edge lines) + R3.6 (C-full back) on the dev's go, then one jar →
+test §R3.
+
+---
+
+## 2026-06-19 (evening) — Group 13: Fix A v1 REJECTED in-game → stuck-isolated must use the FONT path
+
+Dev deployed + tested Fix A v1 (scale the bundled hand-art down for a stuck-isolated letter). **Rejected** on
+an in-game screenshot: the shrunk waw و beside a connected ra ر is **thinner-stroked, undersized, and lower
+quality — "doesn't look like the others."**
+
+- **Root cause — two different renderers can't match.**
+  - Connected neighbour (ra) → `ArabicTileRenderer` (font): **constant** stroke (ring 12/256, white 3/256),
+    **one shared size metric** for every letter, vector + 4× supersample → crisp and bold.
+  - Stuck-isolated (waw, v1) → bundled hand-art PNG **scaled down**: (1) scaling a raster shrinks its **baked
+    stroke** → thinner than the neighbour; (2) the hand-art size basis ≠ the font's shared metric → it lands
+    **too small**; (3) raster downscale **blurs**, and the hand-drawn **style ≠ the font style** → "not like
+    the others." A scaled raster can never match a vector font tile on stroke **and** size **and** style.
+- **Corrected fix (build on dev's go).** Draw a stuck-isolated letter with the **same renderer as its
+  neighbours**: `isolated + attached → ArabicTileRenderer.render(letter, ISOLATED, …)` (font) — identical
+  stroke, identical shared size metric, identical crispness and style → it matches the neighbour exactly.
+  `isolated + alone` keeps the **bundled hand-art at full size** (nothing to match — the showpiece). Connected
+  forms unchanged. *(This is the original "font in words" path; the in-game result confirms it's the only way
+  to match. Reverses the earlier "keep hand-art, just resize" call — resize proved unmatchable.)*
+- **Trade-off (dev must accept):** a letter stuck isolated INSIDE a word now uses the **font glyph**, not the
+  hand-art; hand-art still shows for a letter placed **ALONE**. Most words already drew their connected letters
+  with the font, so only the stuck non-connectors change.
+- **Code delta (next):** `ArabicLetterBlockEntityRenderer.build()` isolated+attached →
+  `ArabicTileRenderer.render(…ISOLATED…)`; **drop** `loadArtScaled` + `ArabicTileRenderer.isolatedScale/
+  isoHeight`. **Keep** the `attached` flag (BE) + `ArabicJoinFlow` sync (still needed to choose font-isolated
+  vs hand-art) + item renderer `attached=false` (lone icon = hand-art).
+- **Rejected alternative:** regenerate every bundled art PNG at its true natural height + re-bake a matching
+  stroke — keeps hand-art but STILL style-mismatches the font neighbours, and is far more work.
+
+**Current tree = the rejected v1** (built green, never confirmed in-game). The corrected fix replaces it on
+dev's go.
+
+---
+
+## 2026-06-19 (earlier) — Group 13: stuck-isolated letter size fix + colour tools on letters (design locked)
+
+Design session with the dev (real `SHRINK_*` previews). Two fixes for the **auto-join** letters; the
+bundling question was resolved (no new work). Building **one at a time**, dev tests each in-game.
+
+- **Fix A — stuck-isolated letters render too big (waw/dal/ra…).** *Cause:* the BER (`ArabicLetterBlockEntityRenderer.build`)
+  picks the path by FORM: `form==ISOLATED` → bundled hand-art PNG (every art tile is normalised to ~full
+  height), any other form → font tile (natural size). A non-connector (ا أ إ آ د ذ ر ز و ؤ ة ى …) sitting
+  inside a word can't connect, so it keeps ISOLATED form and uses the full-height PNG → it towers over its
+  font neighbours. *Fix (dev-approved on `tools/render_preview/out/SHRINK_*.png`):* keep the hand-art (no
+  font swap), but when an isolated letter is **attached** (has an auto-join, same-facing letter neighbour)
+  scale its art to the letter's **natural height** (ratio from `arabtype.ttf` — same metric
+  `ArabicTileRenderer` uses: tall letters ≈1.0, short letters shrink) and composite it **centred** on the
+  full colour block. *Untouched:* connected forms (zero change), the held/hotbar icon (no neighbours → full),
+  a lone single letter (no neighbour → full), fixed-form decoration (`lockedForm≥0` → never shrinks). All 4
+  colours.
+  - *Wiring:* `ArabicLetterBlockEntity` gains an `attached` flag (synced like `form`); `ArabicJoinFlow.recompute`
+    sets it from the two neighbours and now syncs when EITHER `form` OR `attached` changes (a non-connector
+    gaining a neighbour does NOT change its form, so a form-only sync would miss it — bug caught in review);
+    `ArabicTileRenderer.isolatedScale(letter)` returns the 0..1 natural ratio; the BER's `textureFor`/`build`
+    take `attached` and, for ISOLATED+attached, scale+centre the art; `ArabicLetterItemRenderer` passes
+    `attached=false` so the icon stays full size.
+
+- **Fix B — Square/Triangle colour tools do nothing on letters.** *Cause:* `ShapeToolItem.useOnBlock` only
+  handles `SlotBlock` → PASS on an Arabic letter. *Fix (decided, built AFTER Fix A is confirmed):* add an
+  `ArabicLetterBlock` branch → `be.setColor(colour)` + sync (cache is keyed by colour → tile rebuilds, no
+  reload). Both Square AND Triangle recolour a letter; the Triangle's sneak-confirm is **skipped for letters
+  only** (all colours are bundled — nothing to "create"), normal blocks keep their confirm.
+
+- **Bundling (dev question) — already the architecture.** Dev wants one isolated set that never joins + one
+  that auto-joins, both in the jar. Already true: the **224 static bundled art blocks** (`ArabicBlockRegistry`,
+  isolated, never join — untouched) + the **`arabic_letter` auto-join** letters ("Arabic Letters (Join)" tab).
+  Both ship on the next jar build; no new bundling work.
+
+- **Flag (sort later):** the Join-tab comment says coloured letters stay isolated decoration, but
+  `ArabicJoinFlow` (v2) makes ALL colours auto-join — stale comment vs code; confirm intended behaviour.
+
+**Build order:** docs → Fix A (this jar) → dev tests in-game → Fix B. **Fix A built — jar GREEN (compile +
+verifyFileSize/Mojibake/Sound); not yet tested in-game. Fix B not started (waits for Fix A confirmation).** **NOT done** until the dev confirms
+in-game (Golden Rule).
+
+---
+
+## 2026-06-19 — Group 27: Studio Edit Mode (§G27.9) + Studio Paint (§G27.10) — 📐 design only, no code
+
+Design session with the dev for two new `/cb create` studio features. **Nothing built** — spec written
+into the group doc + testing guide only. Both extend `BlockCreationStudioScreen` (Group 27 §G27.6).
+
+- **Why new sub-sections:** the built studio is **create-only** (always `SlotManager.create`). The existing
+  §G27.6.X *Library/Template* loads a block but **clears the ID** (a clone), and §G27.6.X.C *Color/Gradient/
+  Pattern* are **procedural fills**. Neither is edit-in-place, neither is a freehand pen — so the two ideas
+  are genuinely new. Numbered §G27.9 / §G27.10 (§G27.7 = corrections, §G27.8 = look revamp, both taken).
+
+- **§G27.9 Edit Mode (decisions locked):** no `/cb edit` command — `/cb create` opens a new **Landing
+  chooser** (New / Edit existing / Paint / Continue / Template / Duplicate / Recently edited); Edit reached
+  via a **chest block-picker** (thumbnails + search + category filter + sort + favorites + 3D hover). Pick a
+  block → **all tabs pre-fill**, title "Editing <id>". **ID editable + live taken-check** → in-place re-ID
+  on save. Saves: **[Save changes]** (in-place setters) + **[Save as copy]** (new id/name, copies texture) +
+  keep **Draft**. Locked blocks refuse (unlock first). Animated blocks: settings editable, pen disabled.
+
+- **§G27.10 Paint (decisions locked):** `/cb paint` → top-level **Paint tab** landing on **[Paint existing]
+  / [Paint new]**. **Full-screen canvas overlay**. Res: new = 32×32, existing = block's real res.
+  Tools: pen/eraser/fill/eyedrop/**line/rect/mirror(H,V,4-way,diagonal)/brush 1–3px/undo-redo**. **Full
+  colour picker** (reuse `HudColorPicker`). **Alpha** (eraser → transparent = cutout blocks). **Zoom/pan/
+  grid/fit**. **Reference underlay** (URL / another block / own texture). Per-face = a **toggle**. Live
+  **debounced** 3D preview. Loading a URL after painting **warns before replacing**.
+
+- **Key build gaps (none exist today):** (1) S2C **settings+texture sync** to pre-fill the studio from a
+  real block; (2) a brand-new **C2S pixel-upload payload** (painted PNG → `TextureStore.save`/`saveFace` +
+  `ResourcePackServer.updatePack()`) — the studio has no client→server pixel path; (3) re-ID reuses the
+  existing rail, setters all exist. (4) **Perf:** canvas must be a baked dynamic texture, never per-pixel
+  fills (the §A1 lag lesson). Several new files — watch the 500-line gate.
+
+- **Build order (locked, small slices, dev tests each):** §G27.9 first (it's the foundation Paint-on-
+  existing reuses): 1) load-existing foundation + Landing + picker → 2) Save-changes in-place + guards →
+  3) re-ID + Save-as-copy + Draft → 4) picker polish. Then §G27.10: 5) canvas core + pixel payload (new
+  block) → 6) more tools → 7) symmetry → 8) transparency → 9) nav → 10) reference → 11) per-face →
+  12) paint-on-existing + live preview.
+
+**NOT done** — a plan, not code. Each slice needs in-game confirmation as it's built (Golden Rule).
+Full spec: `docs/Finale Fix/GROUP_27_SCREENS.md §G27.9 + §G27.10`; tests stub'd ⏳ in
+`docs/Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md`.
+
+---
+
+## 2026-06-19 (late+++) — Group 13: placement flash fix + all-colours join (jar GREEN, in-game pending)
+
+Dimming ✅ confirmed by dev. Two more this jar: the black-flash on placement + the all-colours join (Issue 2,
+the parts that are decided). Corners stay OPEN (dev hasn't picked A vs B).
+
+- **Black flash on placement (deep-searched).** *Cause:* the block's base model is a flat **black** cube
+  (`models/block/arabic_letter.json` = `cube_all` + `arabic_letter_bg`), and `getRenderType` wasn't overridden
+  → MC renders that black cube the instant you place, **before** the BlockEntity syncs its letter to the
+  client. The glyph (drawn by the BER) only appears once `letter` arrives → the gap is the flash (and the
+  solid-black 3rd block in the dev's screenshot). *Fix:* `ArabicLetterBlock.getRenderType` → `INVISIBLE`; the
+  block now has **no** base model and the glyph is 100% the BER (the vanilla chest/sign pattern). During the
+  sync gap the block is briefly invisible instead of black — unnoticeable. *Watch:* if a valid letter ever
+  shows **invisible** (gone), that's a texture-build failure, a different bug.
+- **All colours join (Issue 2, decided part).** Reversed the BLACK-only rule the prior jar shipped. Dropped
+  every colour gate: `ArabicJoinFlow.recompute` no longer early-returns non-black to isolated; `letterAt` no
+  longer rejects non-black; `ArabicLetterBlock.getPlacementState` runs the forgiving join-facing for **all**
+  colours (renamed `blackJoinFacing` → `joinFacing`, colour check removed). Each block keeps its own bg colour;
+  the form brain (`ArabicJoining`) is colour-agnostic, so white script flows across a colour seam.
+- **Direction / corners.** Straight rows join from either end along the word axis (the proven forgiving-facing,
+  now for all colours). A **90° corner is NOT connected through** — the turn changes the facing/axis, so it
+  starts a fresh word (the simple "Option B"). "Connect through a corner with a kink" (Option A) needs corner
+  tiles + the dev's A/B pick — **not built**.
+- **Build:** `gradlew build --no-daemon` GREEN (verifyFileSize / verifyMojibake / verifySound). Jar
+  (8,194,557 B) copied to `.minecraft\mods`. Docs: TESTING_GUIDE §10 (+ §7 join/icon items superseded).
+- **Next (in-game → §10):** confirm no flash + all colours connect. Then the corner A/B decision. Nothing ✅
+  DONE until the dev confirms in-game.
+
+---
+
+## 2026-06-19 (late++) — Group 13: icons CONFIRMED + full-bright glyph fix (jar GREEN, brightness in-game pending)
+
+- **Icons ✅ CONFIRMED in-game** — dev: "letter blocks now show in inventory and creative tab etc." Issue 1 done.
+- **Brightness bug confirmed from a screenshot.** Two green jeem, **same** colour + letter: one bright white,
+  one **dark grey**. Identical texture → the difference is **lighting**, not art. The dark block faces into a
+  solid neighbour; the renderer sampled the lightmap at `pos.offset(facing)`, which is dark off a solid block
+  → grey/black glyph. (Same reason the black glyphs read lavender — dim, sky-tinted light.)
+- **Fix (full-bright, locked v2):** `ArabicLetterBlockEntityRenderer` now lights every glyph face with
+  `LightmapTextureManager.MAX_LIGHT_COORDINATE` instead of the offset sample. The white letter renders
+  full-bright regardless of facing or shade. Removed the now-unused `WorldRenderer` import; header + testing
+  guide §6/§9 updated. Build green (compileJava ran); jar (8,194,669 B) copied to `.minecraft\mods`.
+- **Tradeoff to confirm in-game:** full-bright means the glyph **no longer dims with the world** (won't shade
+  at night). Dev to confirm it reads right next to bundled letters; if too flat, we tune.
+- **Next (in-game → TESTING_GUIDE §9):** confirm no glyph reads grey/dark in any facing/colour/shade. Then
+  Issue 2 join rewrite (any-direction + all-colours join) + the corner A/B decision. Nothing ✅ DONE until confirmed.
+
+---
+
+## 2026-06-19 (late+) — Group 13 icon fix v2: item model → builtin/entity (jar GREEN, in-game pending)
+
+The previous "icons fixed" jar **didn't actually fix icons** — the dev tested in-game and join-letter icons
+were still solid black. A fix-pass v2 design session found the real cause + locked the remaining fixes; this
+jar ships the FIRST piece (icons only, per the dev's call). The rest of v2 is design-only, not built.
+
+**Bug — join item icon solid black (the earlier "icons fixed" was incomplete).**
+- *Cause:* `ArabicLetterItemRenderer` (a Fabric `DynamicItemRenderer`) is correct and IS registered, but
+  Fabric only invokes a DynamicItemRenderer when the item's model is `minecraft:builtin/entity`.
+  `models/item/arabic_letter.json` parented `customblocks:block/arabic_letter` (→ `minecraft:block/cube_all`,
+  flat `arabic_letter_bg`), so the game drew the flat black cube and **never called** the renderer.
+- *Fix:* `models/item/arabic_letter.json` → `{ "parent": "minecraft:builtin/entity" }` + a `display` block
+  (copied from `minecraft:block/block`) so the glyph cube sizes correctly in GUI / hand / frame. **No Java
+  changed** — the renderer + its registration in `CustomBlocksClient` were already in place.
+- *Risk to confirm in-game:* centering/size depends on the `display` transforms; if the icon is off-center or
+  wrong size, those transforms get a tweak. (Golden Rule — dev confirms before this is DONE.)
+
+**Build:** `gradlew build --no-daemon` GREEN (verifyFileSize / verifyMojibake / verifySound). Only a resource
+changed → `compileJava` up-to-date. Jar `build/libs/customblocks-1.0.0.jar` (8,192,732 B) copied to `.minecraft\mods`.
+
+**Decisions locked this session (DESIGN ONLY — not built):** all-colours join (**reverses** the BLACK-only
+rule the prior jar shipped), full-bright glyph (**drops** the `pos.offset(facing)` light sample), direction-
+agnostic join (word axis from **neighbours**, a start-dir stored on the BlockEntity, snap-to-word facing),
+flat-only / no vertical. **Corners / 90° turn:** dev chose to see a **3D mockup** before picking A (connect,
+small kink) vs B (turn = new word) — mockup delivered this session.
+
+**Next (in-game test → TESTING_GUIDE §8):** restart MC, `/cb arabic join jeem 3`, confirm the hand/inventory
+icon shows the real letter art, centered + normal size. Then build the join rewrite (Issue 2). Nothing ✅ DONE
+until the dev confirms in-game.
+
+---
+
+## 2026-06-19 — Group 14 Phase 1: the Style toggle (fixes "muffled" pixel-art/text) — jar GREEN, in-game pending
+
+First build of the Display-Block roadmap. Fixes the soft look the dev flagged, as ONE player-facing
+**Style** control (dev rejected separate Sharp/Smooth/blend jargon — "combine them perfectly, not
+overwhelming"). Build GREEN (all 3 gates), jar in `.minecraft\mods`. **NOT done** — dev confirms in-game.
+
+- **Cause:** `AnimationDecoder.cropScaleSquare` scaled frames with bicubic+antialias → soft pixel-art/text
+  (resolution was already 256; it was the filter).
+- **Fix:** `/cb anim` card's old `Smooth [On][Off]` row → one **Style** row: **[Photos & Video]** (default,
+  bicubic + blend-on, current look) vs **[Pixel-art & Text]** (nearest-neighbour + blend-off, crisp). One
+  pick sets both knobs; they're never two switches for the player. New blocks default to Photos & Video.
+- **New plumbing:** first PIXEL-editing `/cb anim` edit — switching Style **re-decodes the strip from the
+  stored source** (off-thread) with the new filter, then saves + one pack rebuild; never re-downloads;
+  preserves speed/loop/trim/timing. No stored source → clean "remake it" message, not a crash.
+- **Persistence:** `AnimData.sharp` (default false); `SlotDataStore` writes it only when true, reads
+  default false — old slots unaffected.
+- Files: `core/AnimData`, `core/SlotDataStore`, `image/AnimationDecoder`, `command/handlers/AnimCommands`.
+  Test: `docs/Finale Fix/Reports/GROUP_14_TESTING_GUIDE.md` §1.
+
+---
+
+## 2026-06-19 — Group 14 v2 design revamp: animated blocks → Display Block platform (📐 design only, no code)
+
+Dev confirmed Group 14 Part A works in-game ("they work") and flagged the animated WebP/pixel-art looking
+soft. Turned the re-test into a full design session and **revamped Group 14** from "restore the GIF editor"
+into the mod's **Display Block platform**. No source changed — rewrote the spec + testing guide + logs.
+
+- **"Muffled" finding:** `AnimationDecoder.cropScaleSquare` scales frames with bicubic+antialias →
+  soft pixel-art/text; `textureSize` already 256, so it's the filter. → Phase 1 = per-block Sharp/Smooth toggle.
+- **Spine locked:** two render paths — Path A (`.mcmeta`: everywhere, cheap, synced, ungateable) vs Path B
+  (client renderer: world-only, per-block cost, independent + gateable). Auto-perf governs Path B only.
+- **Vision locked** (Animation tab + live preview, `/cb anim`→GUI via listgui, timeline editor, grading/
+  chroma/framing, playback polish, Auto-perf, ffmpeg video, video wall, live-data blocks, sync channels,
+  auto-emissive, triggers, interactive, redstone-reactive for ALL blocks). **10-phase build order set.**
+- Full detail: `docs/Finale Fix/GROUP_14_ANIMATION_VIDEO.md` (v2) + `docs/Finale Fix/PROGRESS_LOG.md` (entry).
+
+**NOT done** — a plan, not code. Each phase needs in-game confirmation as it's built.
+
+---
+
+## 2026-06-19 (late) — Group 13 bug-fix jar: item icons + all 6 faces + BLACK-only forgiving join (jar GREEN, in-game pending)
+
+**Three bugs the dev hit in-game with the Step 2 jar, all fixed; plus a locked rule change.** Jar green
+(`verifyFileSize` / `verifyMojibake` / `verifySound` pass), copied to `.minecraft\mods`. **NOT done** —
+Golden Rule: confirmed only when the dev places/looks at the blocks in-game.
+
+**Bug 1 — inventory icons all black.**
+- *Cause:* the join letter's art is drawn by a BlockEntity renderer (BER, ADR-005), which only runs on a
+  *placed* block. In a hand/hotbar/creative slot there is no block entity, so the item fell back to the bare
+  cube model → solid black.
+- *Fix:* new `client/render/ArabicLetterItemRenderer` implements Fabric `BuiltinItemRendererRegistry
+  .DynamicItemRenderer`; it reads letter/colour/locked-form from the stack NBT, resolves the same texture
+  the BER uses (`ArabicLetterBlockEntityRenderer.textureFor`) and draws the glyph cube. Registered in
+  `CustomBlocksClient` for `ArabicLetterRegistry.ITEM`. Items now show their real letter art.
+
+**Bug 2 — placed block only showed the letter on ONE face.**
+- *Cause:* the BER drew a single front quad.
+- *Fix:* `ArabicLetterBlockEntityRenderer` now has `drawGlyphCube(...)` that draws **all 6 faces** via a
+  private `face(matrices, vc, light, axis, degrees)` helper (front +Z 0°, back 180°, left 90°, right −90°,
+  top/bottom rotate on +X ±90°). `render()` rotates by FACING then draws the cube. Same path is reused by
+  the new item renderer, so hand and world match.
+
+**Bug 3 — two isolated jeem placed side by side did not connect.**
+- *Cause:* two things. (a) The join brain was treating every colour as joinable, but placement facing logic
+  only lined up reliably for one type; (b) there was no clean rule for which letters join.
+- *Fix + locked rule (dev decision):* **only BLACK letters auto-join.** Red / green / yellow are pure
+  decoration — they **always** render their isolated hand-art and never join, never reshape a neighbour.
+  - `ArabicJoinFlow.recompute` early-returns to ISOLATED for any non-black block; `letterAt` returns 0
+    (= "nothing to join to") for non-black neighbours, so black letters ignore coloured ones entirely.
+  - `ArabicLetterBlock.getPlacementState`: OmniTool direction still wins; otherwise a **black** block uses
+    new `blackJoinFacing` (a *forgiving straight-line* match — it adopts an adjacent black auto-join
+    letter's facing when that letter sits along the word axis, else faces the player perpendicular), so two
+    blacks placed next to each other line up and join. Non-black falls back to the simple furnace facing.
+
+**Tab cleanup:** `CustomBlocksMod.registerArabicJoinTab` now lists one auto-shaping entry per (letter ×
+colour) — `stackFor(letter, colour, -1, 1)` — instead of three fixed forms each; tab icon is a black jeem.
+
+**Build:** `gradlew build --no-daemon` GREEN. `BlockCreationStudioScreen.java` (Group 14, other chat) had
+briefly pushed past the 500-line gate and blocked the jar; that chat has since split it to 498 lines, so
+this jar builds clean. Jar `build/libs/customblocks-1.0.0.jar` (7.81 MB) → copied to mods.
+
+**Next (in-game test, see TESTING_GUIDE §7):** (1) icons show real art in hand/hotbar/creative; (2) a placed
+block shows the letter on all 6 faces; (3) two **black** jeem placed side by side join; (4) red/green/yellow
+stay isolated decoration and never join. Reminder to dev: **restart Minecraft** to load the new jar.
+
+## 2026-06-19 (night) — Group 14 Part A: animated blocks via commands (jar GREEN, in-game pending)
+
+**What shipped (build-verified only — NOT confirmed in-game).** Animated blocks driven by a Minecraft
+pack `.mcmeta` (vertical frame-strip + sidecar), so they animate **everywhere** automatically
+(world/hand/inventory/creative tab/`/cb list`). A live BlockEntity renderer was rejected in the locked
+design because it would NOT animate in inventories. Built clean from scratch — old project STUDIED for
+algorithm only, no code copied.
+
+**New / changed files**
+- `core/AnimData.java` (new) — immutable record: frameCount, frametime, loopMode (loop/bounce/reverse),
+  interpolate, trim in/out, transparency, per-frame `frameTimes[]`. Owns the Loop/Bounce/Reverse
+  frame-INDEX ordering (`playback()`); never stores a baked mcmeta string.
+- `core/SlotData.java` — added `anim` as ONE field (canonical ctor now 10-arg; all `withX` thread it;
+  new `withAnim` + `isAnimated()`). Back-compat ctors default to `AnimData.NONE`.
+- `core/SlotDataStore.java` — persists an optional `"anim"` object, omitted for static blocks (G14.4).
+- `core/SlotManager.java` — `animFor(index)`, `setAnim(id, anim)`, dupe clones anim.
+- `image/AnimationDecoder.java` (new) — generic multi-frame `ImageReader` decode (GIF for sure;
+  animated WebP if TwelveMonkeys exposes frames). GIF disposal(0/1/2/3)+offset compositing, real
+  per-frame delay→ticks (`max(1, cs/5)`), center-crop square + normalize each frame to textureSize,
+  vertical strip. Two-pass even-sample down to 256 frames (composites every frame for disposal
+  correctness, snapshots only the kept ones → bounded memory). Heap/timeout/dim guards. Off-thread.
+- `network/ServerPackGenerator.java` — `emit()` writes `slot_N.png.mcmeta` for animated slots
+  (deterministic from AnimData; only when a real strip exists, never the 1×1 placeholder), forces
+  cube_all. Single source of truth → server-zip + client-loose both get it.
+- `image/ImageDownloader.java` + `image/LinkResolver.java` (new) — share-link resolution: an HTML page
+  (Tenor/Giphy/Imgur/etc.) is re-fetched via its OpenGraph/Twitter image meta, preferring a `.gif`.
+- `command/handlers/AnimCommands.java` (new) — `maybeCreateAnimated` rail (hooked into
+  `CreationCommands.createWithTexture` after download; returns false → static fallback) + `/cb anim
+  <id> ticks|fps|loop|smoothing|trim` (edits the numbers → regenerate mcmeta + ONE pack rebuild, no
+  re-download). Registered in `CommandRegistrar`.
+- `command/handlers/CreationCommands.java` — `retextureAll` now SKIPS animated slots (toBlockPng would
+  crop the tall strip into one square and destroy the animation); retired the stale "retexture-all NOT
+  built" comment to stay under the 400-line handler cap.
+- `build.gradle` — added TwelveMonkeys `imageio-webp` 3.12.0 (+ imageio-core, common-image/lang/io),
+  all `include`d (JiJ — verified all 5 nested jars + the WebP `ImageReaderSpi` service file present).
+  `CustomBlocksMod` calls `ImageIO.scanForPlugins()` under the mod classloader so Fabric finds the SPI.
+
+**Old-project bugs designed OUT (per handoff):** per-frame timing is stored as plain numbers and the
+mcmeta is regenerated every build (old bug: animMeta-as-string lost timing on save); frames normalized
+to a uniform square (old bug: frame sizes not normalized); strip is strictly size×size·N, frame count
+never inferred from pixels (old bug: boundaries misdetected).
+
+**Build:** `gradlew build --no-daemon` GREEN — verifyFileSize / verifyMojibake / verifySound pass; jar
+`build/libs/customblocks-1.0.0.jar` (7.81 MB, WebP jars bundled). **NOT done** — Golden Rule: animated
+blocks are confirmed only when the dev places one in-game.
+
+**Next (in-game test, see TESTING_GUIDE §1z):** G14.1 create from GIF, "animate everywhere" check,
+G14.3 speed/loop change, G14.4 restart-persist, G14.5 webp + Tenor/Giphy page links. Then Part B
+(unified studio Texture-tab editor + edit mode + keybind) and Part C (video→animated).
+
+## 2026-06-19 (night) — Group 13 Step 2 BUILT (naming + virtual id + live form labels + HUD); jar green, NOT confirmed
+
+**What shipped this session (jar green, in-game NOT confirmed — Golden Rule).** Step 2 of the locked
+build order, plus the already-coded brightness fix riding along in the same jar.
+
+- **Clean names, computed live (not baked).** Stopped baking `CUSTOM_NAME` in `ArabicLetterBlock.stackFor`;
+  deleted the old `displayName` (`jeem · black (join)`). New `arabic/ArabicNaming` builds the
+  display name + virtual id from (letter, colour, form): `Jeem Black` / `Jeem Black Ini|Mid|Fin`
+  (isolated has no form word; Title-Case letter keeps digits — Ta2, Ha2; id uses underscores). A new
+  `block/ArabicLetterItem extends BlockItem` overrides `getName` to compute the name from NBT, so the
+  held item + creative tab show clean names with zero bake.
+- **Live, server-driven form labels.** 3 new config fields `arabicForm{Ini,Mid,Fin}` (CustomBlocksConfig,
+  now 296/300 lines). A common `arabic/ArabicLabels` holder is the runtime source the naming reads.
+  New `command/handlers/ArabicFormCommands` = `/cb config arabicforms [show|reset|ini|mid|fin <label>]`
+  (own handler so ConfigCommands stays under the 400-line gate). On change it saves, updates ArabicLabels,
+  and broadcasts the new `ArabicLabelsPayload` to all clients → every block re-labels instantly, **no pack
+  reload** (text ≠ texture). On a dedicated server the client gets the labels via the payload (sent on
+  JOIN + on change); client resets to Ini/Mid/Fin on disconnect (same pattern as SilentPack, Group 05).
+- **HUD on placed blocks.** `HudRenderer.buildContext` now has a branch for `ArabicLetterBlock`: reads the
+  synced BlockEntity and shows the **live** name + virtual id (tracks neighbours + label edits).
+- **Brightness fix (from last session) is in this jar** — `ArabicLetterBlockEntityRenderer` samples light
+  at `pos.offset(facing)`. First time it's built into a jar; confirm grey→bright in-game.
+
+**Files:** new — ArabicNaming, ArabicLabels, ArabicLetterItem, ArabicLabelsPayload, ArabicFormCommands.
+Edited — ArabicLetterBlock (no bake), ArabicLetterRegistry (uses ArabicLetterItem), CustomBlocksConfig
+(+3 fields), HudRenderer (branch), CustomBlocksMod (register payload + seed labels + JOIN send),
+CustomBlocksClient (receiver + disconnect reset), CommandRegistrar (wire handler).
+
+**Build:** `gradlew build --no-daemon` GREEN — verifyFileSize / verifyMojibake / verifySound pass; jar
+remapped → `build/libs/customblocks-1.0.0.jar`, copied to `.minecraft\mods\`. **NOT done** until the dev
+confirms in-game (see GROUP_13_TESTING_GUIDE §6).
+
+**Deferred from Step 2 (told the dev, small follow-ups):** the Config-**GUI** tile for the 3 labels (the
+command path fully works + proves the live-update mechanism); accepting a virtual id as give/search input
+(name search already works via the join tab). **Next:** confirm §6 in-game, then Step 3 = O7 bundled-224
+→ editable/deletable config with recoverable restore.
+
+## 2026-06-19 (evening) — Group 13: brightness fix (coded) + naming/id/config + bundled-mirror plan LOCKED
+
+**In-game result this session:** auto-join **works** (dev placed `/cb arabic join jeem` letters, they
+connect). One defect: the join letter renders **grey/dim** next to the bright bundled letter.
+
+**Brightness fix — DONE in code, NOT built, NOT confirmed in-game.**
+- **Root cause (proven, not guessed):** the glyph is an overlay quad drawn by
+  `client/render/ArabicLetterBlockEntityRenderer`, lit with the BlockEntity `light` param. The game
+  samples that light at the block's **own** position — inside a solid cube, skylight 0 → dark → the
+  white glyph is multiplied down to grey. A bundled letter is a normal block, lit per-face from the
+  **air in front** → bright.
+- **Proof it is lighting, not the texture:** sampled `arabic_art/black/jeem_black.png` → glyph is
+  **pure white (255,255,255)** on bg (10,10,10); the identical file ×0.45 reproduces the screenshot's
+  grey (`tools/render_preview/out/DIM_PROOF.png`). Same file the bundled (bright) block loads.
+- **Fix:** sample light at `be.getPos().offset(facing)` (the air the face points into) via
+  `WorldRenderer.getLightmapCoordinates`, and use it for all four glyph verts. One file changed:
+  `ArabicLetterBlockEntityRenderer.java` (+`WorldRenderer` import, `faceLight`).
+
+**Decisions LOCKED with dev (design only, not built — full detail in ADR-006 + GROUP_13_ARABIC O6/O7):**
+- **Naming:** isolated = default, **no form word**. `Jeem Black` / `Jeem Black Ini` / `…Mid` / `…Fin`.
+  Order Letter_Colour_Form; Title-Case letter (digits kept: Ta2, Ha2); id uses underscores, display
+  uses spaces. Bundled 224 names unchanged (they're already isolated). Numbers stay `A0 Black` etc.
+- **Virtual id (Way A):** one block + NBT computes id ⇄ (letter,colour,form). Zero registrations, zero
+  slots, no migration.
+- **Live config labels:** Ini/Mid/Fin editable in `/cb config` (GUI **and** command); names computed at
+  display time → 1 label change updates every block instantly, **no resource-pack reload**.
+- **HUD:** wire join blocks into the CB HUD so a placed block shows its live name.
+- **Bundled 224 → config mirror:** editable + deletable; original 224 kept in jar as fallback;
+  **delete is recoverable** via a `/cb` restore command.
+
+**Build order (locked):** 1) brightness fix → confirm in-game · 2) naming + virtual id + live config
+labels + HUD · 3) bundled→config mirror. One step per jar, in-game confirm before the next.
+
+**Next (fresh chat):** build step 1 (brightness fix is already in source), copy jar, dev confirms the
+grey→bright fix in-game. Then step 2. See `Reports/GROUP_13_AUTOJOIN_HANDOFF.md`.
+
+## 2026-06-19 — Group 13 Arabic auto-join: colour + form + facing + searchable tab
+
+- Joinable letter block now carries a **colour** and an optional **fixed form**; renderer draws
+  isolated = hand-art PNG, connected = matching-colour font, cache keyed by letter+form+colour.
+- **Facing auto-inherit** on placement so rows actually join (the in-game bug).
+- New **"Arabic Letters (Join)"** creative tab: every letter, 4 forms, 4 colours — all NBT variants
+  of the single arabic_letter block, so **zero new registrations, zero slots**. Fixed-form variants
+  are searchable decoration that never reshape and never drive neighbours.
+- Files: ArabicLetterBlock, ArabicLetterBlockEntity, ArabicJoinFlow,
+  ArabicLetterBlockEntityRenderer, CustomBlocksMod. Source-only (build on a JDK machine).
+
+
 One entry per work session. Newest at the top. See the Engineering Bible §9.2.
+
+---
+
+## 2026-06-18 (Group 13 · Pass 4 — tile-clip fix) — jeem/ha bowl no longer cut off (jar GREEN, in-game pending)
+
+Dev approved the connected-tile look (`tools/render_preview/out/TILE_LOOK_v3.png`) but caught a **fatal flaw**:
+**jeem ج and ha ح were cut off at the bottom** in their isolated/final forms.
+
+**Cause.** `ArabicTileRenderer.ensureMetrics()` computed the shared font size + baseline from each letter's
+**medial** form only (`ZWJ+letter+ZWJ`). Jeem/ha sit on the bar in medial (shallow bottom) but have a much
+**deeper bowl** in isolated/final — so the measured max-descent underestimated the real descent, the shared
+baseline was placed too low, and the bowl dropped past the tile's bottom edge. Ya ي was in the same class.
+
+**Fix.** The metric now measures **every form the renderer can draw** (isolated/initial/medial/final) for all
+28 letters, taking the max ascent/descent across them. The shared size+baseline now reserve room for the
+deepest bowl, so nothing clips. Still ONE size + baseline for every tile → seams still meet. Net effect:
+letters ~5% smaller (extra bottom headroom); dev approved ("good enough").
+
+**Verified (preview only, NOT in-game):** rebuilt a faithful mirror harness `tools/render_preview/TileFixPreview.java`
+(same metric/kashida math) → `out/TILE_LOOK_v4.png`: jeem ج, ha ح, ya ي bowls now fully inside the tile in
+all four forms; bars still align across letters.
+
+**Build green** (`gradlew build --no-daemon`: verifyFileSize / verifyMojibake / verifySound pass; jar remapped →
+`build/libs/customblocks-1.0.0.jar`). **NOT done** — confirmed only when the dev places the letters in-game.
+
+**Note for the dev to confirm in-game:** the runtime now routes **all** forms (incl. isolated) through the
+font tile renderer (one uniform look), NOT the bundled hand-art for isolated. This matches the approved
+TILE_LOOK previews; flag in-game if bundled isolated art is wanted back.
+
+**Files — changed:** `arabic/ArabicTileRenderer.java` (ensureMetrics all-form metric). **New (throwaway):**
+`tools/render_preview/TileFixPreview.java`. **Docs:** GROUP_13 testing guide §5 (clip-fix line + deep-bowl test).
+
+**Next:** dev in-game batch test per TESTING_GUIDE §5 (G13.5–G13.8 + deep-bowl check + OmniTool O5).
+
+## 2026-06-18 (Group 13 · Pass 4 — 4b–4e) — auto-join FULL FEATURE built in one batch (jar GREEN, in-game pending)
+
+Dev asked to build all of Pass 4 at once for a single in-game test. Built on top of 4a's joining brain.
+**Build green** (`gradlew build`: verifyFileSize / verifyMojibake / verifySound all pass; jar remapped).
+**NOT done** — nothing is confirmed until the dev places letters in-game.
+
+**New joinable block (4b).** `arabic_letter` — ONE registered block; the letter is per-instance data on a
+new `ArabicLetterBlockEntity` (letter + computed form), synced via the standard BE update packet (no pack,
+no reload — ADR-005). Distinct from the 1028 SlotBlocks and 224 static letter blocks (untouched). Base model
+= flat-black cube (`arabic_letter_bg.png` + blockstate/model/item jsons, mirroring screen_test).
+
+**Live render (4b).** `ArabicLetterBlockEntityRenderer` (graduated from the screen_test spike) draws the glyph
+on the FACING face from a live `NativeImageBackedTexture`, cached by (letter+form). **Isolated** = the bundled
+hand-art PNG used exactly. **Connected** (initial/medial/final) = new `ArabicTileRenderer` — the dev-approved
+FormsPreview **kashida** method graduated to runtime: fixed shape-independent size+baseline, the letter's own
+connecting hand fused + extended to the tile edge so touching tiles meet seamlessly; stroke dilated to bundled
+weight (RING 18/256, WHITE 7/256 — tunable). Reuses the shared arabtype font via `ArabicWordRenderer.arabicFont()`.
+
+**Re-flow (4c).** `ArabicJoinFlow` — bounded sibling of `SlotLighting`: on place/break, recomputes this block
++ its ≤2 in-axis neighbours only (no world scan, no recursion), via `ArabicJoining.form`.
+
+**Facing (4d).** `FACING` blockstate (HORIZONTAL_FACING), set at placement so the glyph faces the player; the
+word axis is perpendicular to FACING; only blocks sharing the same FACING join, so two words coexist.
+
+**Direction tool (4e).** `OmniToolState.Mode.ARABIC` + `ArabicDirectionTool` + an `AttackBlockCallback`:
+right-click a letter = line start, left-click the other end = re-face + re-flow that whole line and remember
+the facing for the player's next-placed letters. OmniMenu gained a 4th mode button. Left-click never mines a
+letter while holding the OmniTool.
+
+**Placement.** `/cb arabic join <letter> [count]` (new subcommand, reuses letter-name tab-complete) hands out
+the joinable blocks. (Word-GUI batch placement not wired this pass — give command is the test path.)
+
+**Decisions / notes.**
+- FACING on the blockstate (not the BE as ADR-005 said) — idiomatic + cheap for the neighbour-axis check;
+  letter+form stay on the BE. Minor refinement of ADR-005, behaviour unchanged.
+- Connected-form weight set to the handoff's "bundled weight" (18/7), NOT ArabicWordRenderer's word recipe
+  (12/3) — preview rendered (`tools/render_preview/out/PASS4_FORMS.png`) for the dev to approve/tune.
+- v1 render simplifications to verify in-game: glyph orientation per facing (mirror/upright), and the
+  connected-vs-isolated weight match. Readable-back still deferred.
+
+**Files — new:** `block/ArabicLetterBlock`, `block/ArabicLetterBlockEntity`, `block/ArabicLetterRegistry`,
+`block/ArabicJoinFlow`, `block/ArabicDirectionTool`, `arabic/ArabicGlyphs`, `arabic/ArabicTileRenderer`,
+`client/render/ArabicLetterBlockEntityRenderer`, + `assets/customblocks/{blockstates,models/block,models/item}/arabic_letter.json`
++ `textures/block/arabic_letter_bg.png`.
+**Changed:** `CustomBlocksMod` (register + AttackBlockCallback), `CustomBlocksClient` (BER), `ArabicCommands`
+(`join`), `OmniToolState` (ARABIC), `OmniToolItem` (letter handling), `OmniMenu` (4th button),
+`ArabicWordRenderer` (font getter).
+
+**Next:** dev in-game batch test per TESTING_GUIDE §5 (G13.5–G13.8 + OmniTool O5). Report orientation +
+weight match; then tune and mark ✅.
+
+## 2026-06-18 (Group 13 · Pass 4 — step 4a) — auto-join JOINING BRAIN built + logic-proved (no render yet, no jar)
+
+Built the pure joining-decision class `arabic/ArabicJoining.java` — the brain Pass 4 needs before any
+rendering. No Minecraft imports, so it runs standalone.
+
+**What it does.** `form(self, right, left)` → 0 isolated · 1 initial · 2 medial · 3 final (the ADR-005
+FORM order). `right` = the letter touching this block toward the word START (RTL → right side);
+`left` = toward the word END; char `0` = no joining neighbour (gap / number / non-letter ends the word).
+Full real-Arabic joining table: 23 DUAL letters (join both sides) + 13 non-connectors that join
+**right-only** (ا آ أ إ د ذ ر ز و ؤ ة ى ء) — never initial/medial, so the block to their left starts a
+fresh word. Numbers + unknown chars → never join. Arabic chars are literal UTF-8 (like `ArabicLetterMap`).
+
+**Proved (logic only, JDK 21 standalone run — NOT in-game):** every official scenario picks the right form —
+- G13.5 lone Jeem → ISOLATED.
+- G13.6 Jeem|Ba → Jeem INITIAL, Ba FINAL.
+- G13.7 Jeem|Ba|Ba → INITIAL, MEDIAL, FINAL.
+- G13.8 diagonal (no in-axis neighbour) → ISOLATED.
+- Non-connector words (Lam·Alef·Meem and Seen·Dal·Seen) → the letter after the non-connector correctly
+  starts fresh (ISOLATED), not joined.
+- Ba beside an Eastern number → both ISOLATED.
+
+**Scope note.** The handoff listed "letter BlockEntity stores letter + computed form" under 4a too, but a
+data-only BlockEntity with no block/type/renderer can't be placed or tested in-game — so it's folded into
+**4b** (real `ArabicLetterBlockEntity` + BER), where it's actually exercised. 4a ships the brain alone.
+
+**Status:** build-green-able (pure file compiles under JDK 21; ~140 lines, under the 500 gate). **NOT done** —
+nothing visible in-game yet by design; the brain is verified by the logic run above, not by the dev.
+
+**Next:** 4b — graduate the screen_test renderer into a real `ArabicLetterBlockEntity` + `BlockEntityRenderer`
+(isolated = bundled PNG, connected = font), texture cache keyed (letter+form+colour). Tests G13.5–G13.7.
+
+**File — new:** `arabic/ArabicJoining.java`.
+
+## 2026-06-18 (Group 27 · G27.6) — studio slice 3 "fixes + UI upgrade + Category manager" BUILT (build-green, ONE in-game test pending)
+
+Dev tested slice 2 and asked for 4 changes + "make the UI 100× better, all in order, I test once." Built all in one batch.
+
+**1 — Enter never publishes.** `keyPressed` used to call `create()` on Enter anywhere (even mid-typing in a
+field) → typing a category + Enter made the block. Now Enter only confirms the focused field
+(`onFieldEnter` → Category tab adds/assigns, every other field blurs); **only the Create & Publish button
+creates.** Help row + breadcrumb text updated to match.
+
+**2 — Hex button overlap.** The `Use hex` button was drawn at `PX+96` over a 200-wide field (`PX..PX+200`).
+Fixed: hex field is now 96 wide at `PX`, button beside it at `PX+102` — no overlap.
+
+**3 — Background colour (was "base colour").** Old `pickColour` set `useColor` and **blanked the URL** →
+picking a colour wiped the image. Reworked so colour and image **coexist**: the colour fills **behind** the
+image's transparent pixels. `StudioState.useColor/colorArgb` → `hasBg/bgArgb`. Preview composites via new
+`PreviewCube.compositeOver` (cached `displayGrid()` so the cube only re-bakes on change). Server: new
+`ImageProcessor.fillBackground`; `doCreate`/`createWithTexture` gained an optional `bgArgb` (CLI passes null →
+unchanged snap-to-black; studio passes the colour → fill-behind, skips the black snap). Added a **✖ clear**
+swatch. Colour-with-no-image still bakes a flat block (`createSolidColour`, unchanged).
+
+**4 — UI upgrade.** Per-tab green **✔** when a section has a real value (`sectionDone`); subtle panel **cards**
+behind nav + section; **hover hints** for Glow/Hardness/Sound/Collision; swatch hover highlight; badge now
+reads "image + background" / "background set".
+
+**5 — "Organize" → "Category" manager.** New client `StudioCategoryPanel` (custom-drawn chips + 5 action
+buttons + §colour swatches). Reads the live category list from `ClientSlotCache` (no new "list" packet — names
+already arrive via `HudSync`; added category colour tags `_meta` + `_default` to that JSON, with ClientSlotCache
+skipping underscore keys). Chips = assign-this-block; **Add** (additive, never renames) · **Rename / Colour /
+Set Default / Delete** act on the selected existing category server-side via new C2S `CategoryAdminPayload` →
+`CategoryAdminBridge` (reuses `SlotManager.setCategory` + `CategoryMetadataStore` rename/delete/colorTag; new
+tiny `DefaultCategoryStore`). Delete is two-click confirm.
+
+**Caught in triple-check (before build):** the first cut had ONE combined "Add / Rename" button that silently
+**renamed** the selected category when the user meant to add a new one (would move every block in it). Split
+into separate **Add** vs **Rename** — Add never touches other categories.
+
+**Reuse, not rewrite:** colour-tag/rename/delete already existed in `CategoryMetadataStore`; only `bgArgb`,
+`DefaultCategoryStore`, and the two new payloads/panel are new. No category subsystem duplicated.
+
+**Deferred (not built):** category **icon** picking (needs a block picker), syncing category metadata to *all*
+players (only the acting player re-syncs), and many-categories-per-block (backend is single-string).
+
+**Files — new:** `client/gui/StudioCategoryPanel`, `core/DefaultCategoryStore`,
+`network/payloads/CategoryAdminPayload`, `command/handlers/CategoryAdminBridge`.
+**Changed:** `BlockCreationStudioScreen` (500/500), `StudioState`, `PreviewCube`, `ImageProcessor`,
+`CreationCommands` (398/400), `CreationStudioBridge`, `HudSync`, `ClientSlotCache`, `CustomBlocksMod` (+payload).
+
+**Build:** `gradlew build` green — `verifyFileSize` / `verifyMojibake` / `verifySound` all pass; jar remapped.
+**Gate note:** screen landed at exactly **500/500** and `CreationCommands` **398/400** after trimming comments.
+
+## 2026-06-18 (Group 27 · G27.6) — slice 2 "sidebar + sections" BUILT + deployed (build-green, NOT yet in-game tested)
+
+**Slice 1 CONFIRMED in-game by the dev** (studio opens, frame/cube/fields, no regressions) — marked ✅ in
+testing guide §6. Then, at the dev's request ("build everything one by one but correctly, in one batch I can
+test at once"), built slice 2: the flat form → a **studio with a left section sidebar**.
+
+**Sections (left nav, click to switch, gold marker + breadcrumb):**
+- **Identity** — id + name fields + **Auto-ID from name** (snake_case).
+- **Texture** — URL + Load (works), **and** a base-colour picker (8 swatches + `#hex`) → bakes a solid-colour
+  block. URL ↔ colour are mutually exclusive (picking one clears the other). Live on the cube.
+- **Shape** — the 10 `BlockShapes` chips; cube re-renders the shape live (reuses `PreviewCube.renderShape`).
+- **Attributes** — glow `−/+` (0–15), hardness chips (Soft/Wood/Stone/Iron/Hard), sound `◀▶` (17), Solid/Passable.
+- **Organize** — category text field.
+- **FX / Behavior / Lore** — present but **disabled ("coming soon")**: they need NEW `SlotData` fields +
+  migration (a Sacred System per Royal Directive §4) — deliberately deferred to their own backend session,
+  NOT faked. Told the dev this explicitly.
+
+**Reuse, not rewrite (CLAUDE.md §5):** every applied setting goes through an existing rail —
+`SlotManager.setShape/setGlow/setHardness/setSoundType/setNoCollision/setCategory` (the same ones
+`AttributeCommands`/`ShapeCommands` use). No new attribute logic; the studio just gathers and the server applies.
+
+**Round-trip:** `CreateStudioPayload` now `(id, name, url, attrs)` — `attrs` is a compact `key=value;…` string
+(keeps the codec at 4 `PacketCodec.tuple` fields; adding a setting later is content-only). Server:
+`CreationStudioBridge.createFromStudio` parses attrs, builds a `Consumer<SlotData>` that applies shape+attrs,
+and threads it through the shared creation rail. `CreationCommands.doCreate` gained an overload
+`(src,id,name,url, Consumer<SlotData> postApply)` so the apply runs on the new block on the server thread,
+before the **one** pack rebuild, on both the URL and no-URL paths. Solid-colour-with-no-URL bakes a flat 16×16
+PNG (`createSolidColour` → `ImageProcessor.toBlockPng` → `TextureStore.save`) — bake-first so a failure leaves
+nothing behind (same principle as create-with-URL).
+
+**File-size discipline (§9.3):** `CreationCommands` held at **397/400** (trimmed a comment for margin);
+`BlockCreationStudioScreen` 440/500; `CreationStudioBridge` 176; new `StudioState` 70.
+
+**New files:** `client/gui/studio/StudioState.java`. **Changed:** `CreateStudioPayload` (+attrs),
+`BlockCreationStudioScreen` (rewritten with sidebar/sections), `CreationStudioBridge` (parse attrs + colour bake
++ apply callback), `CreationCommands` (doCreate postApply overload + createWithTexture param), `CustomBlocksMod`
+(receiver passes attrs).
+
+**Verified:** `build -x test` GREEN — compileJava + verifyFileSize + verifyMojibake + verifySound (JDK 21). Jar
+deployed to `.minecraft\mods`. **NOT done / NOT confirmed** until the dev runs it in-game (Golden Rule). The
+attrs codec + colour bake + post-apply only prove they compile — **runtime is unverified until in-game test.**
+**Next (test):** testing guide §6 🆕 **Slice 2** (Ⓖ–Ⓜ). After it passes → FX/Behavior/Lore backend (new SlotData
+fields) or the polish/overlays slice, dev's call.
+
+---
+
+## 2026-06-18 (Group 27 · G27.6) — slice 1 "vertical spine" BUILT + deployed (build-green, NOT yet in-game tested)
+
+**Slice 1 of the Block Creation Studio (the dev-chosen "vertical spine" — make a real block end-to-end before
+adding panels).** Bare `/cb create` (no args) now opens a new `BlockCreationStudioScreen`; the player types an
+id + display name + optional texture URL, sees a live 3D preview cube, and **Create & Publish** makes a real
+block. Sidebar/Shape/Attributes/FX/overlays (§G27.6.X) are later slices.
+
+**Reuse, not rewrite (CLAUDE.md §5):**
+- Server creation runs the **same rail** as the CLI. Refactored `CreationCommands.create()` → a shared
+  package-private `doCreate(src,id,name,url)`; the studio path calls it too. No second creation pipeline.
+- Screen reuses the existing `PreviewCube`, `CbHelpOverlay`, `CbDimSlider`, `CbScreenPrefs` frame primitives
+  (modeled on `ShapeEditorScreen` §G27.5). **Did NOT** build the G27.8 shared kit (⚙ Settings / cube-stage
+  shadow / CbActionBar-on-every-screen) — those land with the G27.8 masterpiece pass.
+
+**Round-trip:** new C2S `CreateStudioPayload(id,name,url)` (mirrors `ShapeEditorPayload`) → registered +
+received in `CustomBlocksMod` → `CreationStudioBridge.createFromStudio` normalises the id and calls `doCreate`.
+Server stays authoritative: id-taken / slots-full / bad-URL are caught by `doCreate` and reported in chat.
+
+**File-size discipline (§9.3):** adding the studio glue pushed `CreationCommands` to 428/400 (handler gate), so
+the glue was **split out** into a new `CreationStudioBridge.java` (59 lines); `CreationCommands` back to 387.
+New `BlockCreationStudioScreen` = 302 lines (single file this slice; arranged to split into Studio*Sidebar/Stage
+when later slices grow it).
+
+**New files:** `network/payloads/CreateStudioPayload.java`, `client/gui/BlockCreationStudioScreen.java`,
+`command/handlers/CreationStudioBridge.java`. **Changed:** `CreationCommands` (doCreate refactor + no-arg
+executes), `CustomBlocksMod` (payload register + receiver), `CustomBlocksClient` (CREATE_STUDIO dispatch),
+`gui/GuiMode` already had `CREATE_STUDIO(11)`.
+
+**Verified:** `build -x test` GREEN — compileJava + verifyFileSize + verifyMojibake + verifySound (JDK 21). Jar
+deployed to `.minecraft\mods`. **NOT done / NOT confirmed** until the dev runs it in-game (Golden Rule).
+**Next (this slice's test):** testing guide §6 🆕 Slice 1 block. After it passes → slice 2 (sidebar scaffold:
+Quick/Advanced folds + section nav per §G27.6.X.A).
+
+**Limits this slice (by design, not bugs):** no Undo/Redo/Copy/Draft buttons yet, no live "id available" check
+(server rejects dupes in chat), no Shape/Attributes/FX/Organize, no session memory, no overlays. All planned for
+later slices.
+
+---
+
+## 2026-06-18 (Group 27 · G27.6) — extended design locked + docs updated (nothing built)
+
+**Design session — no code written.** Locked the full extended design for `BlockCreationStudioScreen`
+(G27.6) through an interactive mockup at `docs/Finale Fix/mockups/cb_create_studio.html`. Extended the
+original §G27.6 spec with the features below; updated testing guide §6 to match. Full extended spec:
+`docs/Finale Fix/GROUP_27_SCREENS.md §G27.6.X`.
+
+**New features locked for G27.6 (beyond the original spec):**
+- **Quick / Advanced fold** — Quick shows Identity + Texture only on open; Advanced fold (starts closed)
+  reveals Shape / Attributes+Sound / FX / Behavior / Lore / Organize. Sidebar expands width when inside
+  a section panel (nav at 330px, section-editing at 520px, animated).
+- **Quick cluster** — `[⟲ Clear] [📚 Library] [🧱 Material]` always visible at sidebar top.
+- **Readiness meter** — % bar + ✓/✗ per required field (Identity / Texture / Name); clickable to jump.
+- **Pins (📌)** — per-section pin; dual purpose: protect from Template/Paste overwrite AND lock field
+  from Surprise reroll.
+- **Texture: Source + Tools split** — Source chips (URL / Eyedrop / AI ✨) × Tools chips
+  (Color / Gradient / Pattern / Animate). Per-face scope toggle (All / Per-face → click cube face →
+  highlights gold → source/tool paints that face). CTM toggle. Frame animation tab.
+- **FX section (new, separate from Attributes)** — Emissive / Pulse / Glint shimmer / Color-cycle /
+  Animated tint · stackable · real CSS pill toggle switches in-game equivalent.
+- **Behavior section (new)** — Gravity / Bounce / Slippery toggles + Step-on effect
+  (None / Damage / Heal / Speed / Particles).
+- **Lore / Attribution section** — Author / Lore tooltip / Source URL / Version (all optional).
+- **Center stage: 3 tabs** — View (cube + angles + backdrop swap + GIF + wipe) / Test (break/mine +
+  glow light-spill + day↔night) / Variants (contact-sheet grid → tick → Create as set).
+- **CbActionBar** (reuse G27.8.A) — Undo / Redo / 🏁 Checkpoints / Draft / Create & Publish /
+  Share / Cancel. Movable + dockable + collapsible.
+- **Overlays:** Library (Templates/Blueprints/Import), Material macros (Metal/Glass/Neon/Organic),
+  Surprise (theme + 🎲 Generate, respects pins), Settings (⚙ in title bar — reuse G27.8.B),
+  Share (code / file / cloud / pack / promo), Checkpoints (named in-session snapshots),
+  Command palette (Ctrl+K fuzzy jump to any field or action).
+- **Attributes deep redesign** — visual glow bar (glows with block's color at level > 0), hardness
+  material quick-chips (🌿Soft / 🪵Wood / 🪨Stone / ⚙Iron / 💎Hard), sound icon grid (6 materials).
+- **AI Design** — ⏳ aspirational for this build (no external API); mockup demos exist; can be wired
+  as a stub that toasts "coming soon" without blocking the rest of the build.
+
+**Deferred (not in initial G27.6 build):**
+- CTM (connected textures) — needs resource-pack support not yet built.
+- Frame animation (.mcmeta generation) — needs texture-pack pipeline.
+- AI Design real generation — no external API in mod yet.
+- CloudVault / Promo turntable — infrastructure exists but wiring deferred.
+
+**Also decided: G27.6 build prerequisites are unchanged (Golden Rule):**
+G27.1 / G27.2 / G27.3 / G27.4 / G27.5 must all be confirmed in-game first. The G27.7 batch
+(slices 1–7, build-green 2026-06-17) is STILL UNDEPLOYED + UNCONFIRMED. That must happen first.
+
+**Immediate next step:** build + deploy the G27.7 batch jar, then test guide §A–§G + §1–§5. Only
+after all confirmed → begin G27.6.
+
+**Verified:** nothing (design-only session). **Changed:** `GROUP_27_SCREENS.md` (§G27.6.X added),
+`GROUP_27_TESTING_GUIDE.md` (§6 rewritten for extended design).
+
+---
+
+## 2026-06-17 (Group 27 · G27.7) — slice 6 (§D eyedrop) + slice 7 §E5 (HUD centre-name bug) BUILT (build-green)
+
+**Slice 6 §D — eyedrop polish (BUILT, build-green).** `EyedropScreen`: added a **first-time intro popup**
+("Click any pixel to grab its colour", dismissal persisted in `CbScreenPrefs.eyedropIntroSeen` — never shows
+again), a **permanent hint** line, adopted the shared **`CbHelpOverlay`** (red [X], swallows clicks), and a
+**hide-UI toggle** (H key or the `hide` button) that removes the title bar + crosshair so covered pixels are
+sample-able (§D2). The framebuffer-sample path is unchanged. The §B4 loupe lives in the in-panel dropper
+(`CbColorDropper`); the full-screen sampler keeps its pixel-exact click-sample (a live loupe there would need
+per-frame capture = lag), noted as deferred.
+
+**Slice 7 §E5 — centered display-name "drifts right" bug (FIXED, build-green).** Cause: a centred variable-width
+text brick (the display-name's width changes per block) took a **left-edge corner anchor** in
+`HudAnchors.reanchor`, so a longer name grew rightward. Fix: when a **non-divider** brick is dropped near the
+horizontal centre (within 10% of screen-centre), give it the **CENTER anchor** — `HudRenderer.resolvePos`
+already re-centres CENTER bricks on their stored centre each frame, so they now grow **symmetrically** and stay
+put as the name's width changes. One-method change in `HudAnchors`.
+
+**Slice 7 §E1–E4 — NOT built (deferred).** Restyle / guidance-intro / Advanced fold / drag-snap feel is a large
+subjective redesign, and `HudEditorScreen` is already **494/500 lines** — it must be **split first**, then
+restyled with the dev iterating on the look. Doing it hastily would blow the gate + ship untested UI. Its own
+focused session.
+
+**Changed:** `EyedropScreen`, `CbScreenPrefs` (+`eyedropIntroSeen`), `HudAnchors`. **Verified:** `compileJava`
++ all 3 gates GREEN (JDK 21). **NOT done / NOT deployed yet.** **Next:** build + deploy ONE jar, batch test guide,
+CHANGELOG — then the dev tests everything; E1–E4 as a follow-up.
+
+---
+
+## 2026-06-17 (Group 27 · G27.7) — slice 5 recolor revamp (§C2 + §C3) BUILT (build-green, NOT yet in-game tested)
+
+**Slice 5 §C2/C3 — recolour controls revamp (BUILT, build-green).** Continuing the batch.
+
+**§C2 — real colour-gradient slider tracks.** Replaced the plain grey bars with `client/gui/CbGradSlider.java`
+(extracted, reusable): hue = full rainbow spectrum, saturation = grey→vivid, lightness = black→white,
+temperature = cool→warm, plain = neutral ramp; bigger bordered knobs + a value chip beside each track.
+H/S/L now use it.
+
+**§C3 — four tune tools** in `client/gui/RecolorToneTools.java`: **Temperature**, **Contrast**, a split
+brightness curve (**Lift shadows** / **Lower highlights**), and one-tap **filters** (Gray / Sepia / Invert /
+Poster). All are per-pixel point ops in new `image/CbToneMath.java`, so the same code drives the **live cube
+preview** (one colour at a time) and the **server bake** (whole PNG) — preview matches the committed result.
+
+**Cross-cutting wiring (the careful part):** `RecolorApplyPayload` extended from 4 → 9 fields (added temp,
+contrast, shadowLift, highlightDrop, filter); the field count exceeds `PacketCodec.tuple`, so it now uses a
+**manual `PacketCodec.ofStatic`** read/write codec. `CustomBlocksMod` receiver + `ColorToolService.applyRecolor`
+pass the new params and bake **HSL shift → tone pass** in order. Undo/Reset/dirty-check cover H/S/L **and** tone
+as one snapshot.
+
+**New files:** `image/CbToneMath.java`, `client/gui/CbGradSlider.java`, `client/gui/RecolorToneTools.java`.
+**Changed:** `RecolorSliderScreen` (uses CbGradSlider + embeds the tone tools; now 335 lines), `RecolorApplyPayload`,
+`CustomBlocksMod`, `ColorToolService`.
+
+**Verified:** `compileJava` + all 3 gates GREEN (JDK 21). The manual 9-field codec compiles; **runtime
+serialisation is unverified until the dev tests Apply in-game.** **NOT done / NOT deployed** (batch).
+**Decision:** dropped §C3 "harmony shift" (it overlaps the existing Hue slider). **Next:** slice 6 (eyedrop polish §D).
+
+---
+
+## 2026-06-17 (Group 27 · G27.7) — slice 2 §A4 dockable action bar BUILT (build-green, NOT yet in-game tested)
+
+**§A4 — dockable / hideable / smaller action bar (BUILT, build-green).** Continuing the batch. Reworked the
+old fixed full-width 42px bottom strip into a movable panel that behaves like the §B colour panel.
+
+**New file:** `client/gui/panel/CbActionBar.java` (175 lines) — custom-drawn smaller buttons; drag the grip to
+**dock bottom / left / right** (live snap by cursor edge); a corner **hide toggle** collapses it to a thin
+sliver with a show-arrow tab; the **Create** button is the green primary and gets the save flash via
+`flashPrimary()`. Dock side + hidden state persist **per screen** in `CbScreenPrefs` (§A4).
+
+**Changed:** `CbScreenPrefs` — now whole-object Gson (old `{"dimAlpha":N}` still loads); added a per-screen
+`bars` map (dock + hidden). `ArabicPreviewScreen` — removed the 7 vanilla bottom `ButtonWidget`s + the fixed
+bottom strip draw + the old `saveFlashEnd`; builds one `CbActionBar` (Undo/Redo/Rand/Create*/Copy/Reset/Back)
+and routes mouse click/drag/release/scroll through it.
+
+**Decision:** integrated into Arabic only (first adopter, like §B); the other frame screens keep their current
+bars until their own slices. Sliver/arrow glyphs are ASCII (`^ > < _`).
+
+**Verified:** `compileJava` + all 3 gates GREEN (JDK 21). **NOT done / NOT deployed** (batch). **Next:** slice 5
+(recolor revamp §C2/C3).
+
+---
+
+## 2026-06-17 (Group 27 · G27.7) — slice 4 §B floating colour panel BUILT (build-green, NOT yet in-game tested)
+
+**Batch build (dev: "build all the next slices one by one, I'll test them ALL in one batch").** No deploy
+mid-batch; one jar + a batch test guide at the very end. Carried forward build-green-but-untested from the
+prior session: **slice 2 §A2 dim slider**, **slice 3 no-arg pickers + shapeeditor dedupe**. This session: **slice 4 §B**.
+
+**Slice 4 §B — reusable floating colour panel + smart-colour system (BUILT, build-green).** Built once as a
+shared primitive (reused later by recolor / the §A4 bar / HUD), integrated into `ArabicPreviewScreen` first
+(Option A: block on the left, panel on the right — replaces the old crammed bottom swatch rows).
+
+**New files (all ≤500-line gate):**
+- `image/CbColorTools.java` — §B3 maths: harmony (complementary/triad/analogous, delegates `ColorMath.hslShiftRgb`), tint+shade strip (`labLerp`), WCAG contrast ratio + label.
+- `client/gui/panel/CbPaletteStore.java` — persisted swatches/recents/favourites/named saved palettes + per-screen panel pos+collapsed; atomic JSON `config/customblocks/data/palettes.json`.
+- `client/gui/panel/CbColorPanel.java` — the panel: §B1 drag header + edge-snap + collapse + remember-per-screen · §B2 add(hex/dropper)/remove/reorder/recents/saved palettes · §B3 harmony+tints strip, contrast guard (letter vs bg), fast keys 1–9, favourites row, hover-hex tooltip, right-click edits.
+- `client/gui/panel/CbPanelHarmony.java` — harmony + tint/shade suggestion strip (split out to keep the panel under 500).
+- `client/gui/panel/CbColorDropper.java` — §B4 in-panel eyedrop: freezes one frame (lag-free, no per-frame capture) + loupe magnifier following the cursor showing the exact pixel + hex; click samples into the panel without leaving the screen.
+
+**Changed:** `ArabicPreviewScreen` — owns one `CbColorPanel` (targets = Letter / Background, reusing the
+existing `sendColour` undo+network path); removed the old `drawSwatches`/`drawSwatch`/`swatchAt` bottom rows;
+cube re-centred into the free area left of the panel; routes mouse/drag/release/scroll/key/char + `preRender`
+(dropper capture) through the panel; frees the dropper frame in `removed()`.
+
+**Decisions:** drag-grip drawn as 3 ASCII bars (not the spec's `⠿` braille glyph) to stay mojibake/font-safe
+in-game · panel is a plain component (not a `Screen`) so any host screen can embed it · fast keys = first 9
+swatches · favourites capped at 9 (matches 1–9) · `load` opens an inline saved-palette list (left-click load,
+right-click delete).
+
+**Verified:** `compileJava` + `verifyMojibake` + `verifySound` + `verifyFileSize` GREEN (JDK 21). **NOT done:**
+no in-game test, NOT deployed (batch — last deployed jar was §A6 only). **Next:** slice 2 §A4 (dockable/hideable/
+smaller bottom bar, reusing this panel primitive), then slice 5 (recolor), slice 6 (eyedrop), slice 7 (HUD),
+then ONE deploy + batch test guide.
+
+---
+
+## 2026-06-17 (Group 27 · G27.7) — slice 1 dev-confirmed ✅ + slice 2 started (`[?]` overlay revamp, §A6)
+
+**Slice 1 (cube renderer rebuild, §A1) — ✅ DEV-CONFIRMED IN-GAME.** Dev tested the rebuilt `PreviewCube`
+(face baked to one dynamic texture → 6 textured quads/frame instead of ~18,800 `ctx.fill`) on the cube
+screens and reported: **lag gone**, **block no longer vanishes while spinning**, and the **`[?]` help now
+draws on top of the block** (§A3 came along for free via immediate `drawTexture`). First G27.7 slice done.
+
+**Slice 2 started — §A6 `[?]` overlay revamp (BUILT, build-green, NOT yet in-game tested).** Dev's slice-1
+test flagged the `[?]` popup itself: text overflowed the fixed ~320px box, cramped/unorganised, and **any
+click dismissed it**. Built one shared **`client/gui/CbHelpOverlay.java`**: auto-sized panel (measures the
+widest key + description column so nothing overflows), gold-bordered dark panel + header bar with title and
+a **red [X]**, shortcut rows grouped under **VIEW / EDIT**, footer hint. While open every click is swallowed
+— **only the red [X] (or Esc) closes it**, fixing the stray-click-dismiss. Replaced the copy-pasted
+`renderHelp` + click/key close-on-anything in the 3 cube screens (`ArabicPreviewScreen`,
+`RecolorSliderScreen`, `ShapeEditorScreen`). Eyedrop (§D) + HUD (§E) adopt it in their own slices.
+
+**Also re-flagged by dev (already logged):** HUD display-name brick **drifts right on long names** when
+centered — that's §E5 (slice 7, HUD overhaul). Not touched this pass.
+
+**New file:** `client/gui/CbHelpOverlay.java`. **Changed:** `ArabicPreviewScreen`, `RecolorSliderScreen`,
+`ShapeEditorScreen` (use the shared overlay; deleted their local `renderHelp`).
+
+**Verified:** `compileJava` + `verifyFileSize` + `verifyMojibake` + `verifySound` green (JDK 21). Jar
+rebuilt + deployed to `.minecraft/mods`. **Not done:** in-game test of the new `[?]` overlay (dev).
+**Next:** dev opens any cube screen → clicks `[?]` → confirms it's organised, no overflow, red [X] closes it,
+stray clicks don't. Then I continue slice 2 (§A2 dim slider, §A4 dockable/smaller bottom bar).
+
+---
+
+## 2026-06-17 (Group 27 · G27.7) — first in-game test → corrections design LOCKED (nothing built)
+
+Dev ran the first real in-game test of the built G27 screens (§1–§5) and gave detailed findings. Spent
+this session **discussing every issue one by one** and locking a decision for each — **no code written.**
+Full corrections spec: `docs/Finale Fix/GROUP_27_SCREENS.md §G27.7`.
+
+**Findings + locked decisions:**
+- **All 3D screens lag** (cube = ~18,800 `ctx.fill`/frame in `PreviewCube`, GRID 56). → **Proper rebuild**: bake each face to one textured quad (6/frame). Highest-leverage slice; also fixes the vanish bug.
+- **Background dim uncontrollable + too see-through** (`BACKDROP=0x33` hardcoded). → in-screen **dim slider**, default ~60% (not 0), persisted; eyedrop stays faint.
+- **`[?]` help draws behind the block** (cube has real depth, overlay flat at z=0). → draw help + cancel-confirm overlays on top (high Z).
+- **Bottom bar eats space.** → make it **dockable left/right + hide toggle + smaller buttons** (reuse the new floating panel).
+- **Block vanishes, mainly while spinning.** → expected to be fixed by the cube rebuild (depth-clip during rotation); investigate in-game to confirm.
+- **Arabic swatches disorganized.** → **side panel** (Option A), and that panel becomes the new draggable/customizable floating panel.
+- **Floating panel + smart-colour system** (dev wants ALL): drag+snap+remember, collapse, add/remove/reorder colours, recents + saved palettes; **contrast guard**, **harmony + tints**, **fast keys 1–9 + ⭐favorites**; **in-panel dropper + loupe** eyedrop. (Dropped: pull-from-image.) Build once, reuse everywhere.
+- **`/cb livecolor`**: no-arg → block picker (infra exists); revamp sliders to colour-gradient tracks; add **temperature+contrast, one-tap filters, brightness curve, harmony shift**.
+- **`/cb eyedrop`**: first-time popup **+** permanent hint; hide-panel toggle.
+- **`/cb edithud`**: restyle brighter + guidance/intro + Advanced fold + better drag/snap + fix **centered display-name drifting right** on long names (center-anchor variable-width bricks).
+- **`/cb shapeeditor` "not a registered command" — CONFIRMED BUG.** Registered **twice** on the same root (`ChestGuiCommands.java:52` chest route + `ShapeCommands.java:73` 3D-screen route) and **neither has a no-arg branch**, so bare `/cb shapeeditor` = unknown command. → **Remove the old chest registration**; `/cb shapeeditor` (no id) → chest block-picker → opens the 3D screen; `/cb shapeeditor <id>` → 3D screen directly.
+
+**Proposed slice order:** 1) cube renderer rebuild · 2) shared frame fixes (dim/overlay/bar) · 3) no-arg pickers + shapeeditor dedupe · 4) floating panel + smart colours · 5) recolor tools · 6) eyedrop polish · 7) HUD overhaul. One in-game test per slice.
+
+**Verified:** nothing — this was a design session. **Not done:** everything above (not built).
+**Next:** dev picks the first slice to build (recommended: cube renderer rebuild). Build green → dev tests that slice → next.
+
+---
+
+## 2026-06-17 (Group 27 · G27.1 / G27.2 / G27.3 / G27.5) — 4 screens BUILT, build-green (not yet in-game tested)
+
+Dev was testing an **old jar** and reported the new screens "look the same / not built" and the
+testing guide was wrong. Investigated: those screens genuinely weren't built yet, two guide commands
+were wrong, and the spec's Shape/Studio screens assume a backend that doesn't exist. Built the four
+buildable screens, fixed the guide. **Green = compiles + gates pass — NOT done** until the dev tests.
+
+**Built (each build-green, `gradlew build` clean):**
+- **G27.1 `ArabicPreviewScreen`** — Group 27 frame: 0x33 backdrop, gold title bar + 2 hint lines,
+  `[?]` help overlay, bottom action bar `[Undo][Redo][Rand]···[§aCreate]···[Copy][Reset][Back]`,
+  in-session undo/redo of colours, Ctrl+Z/Y/C/V/R + Enter, cancel-confirm. Cube/swatch/payload untouched. (500 lines.)
+- **G27.2 `RecolorSliderScreen`** — flat 2D box → 3D drag-rotate cube (shared renderer), sliders moved
+  to a right panel, full frame + shortcuts + action bar `[…§aApply…]`, cancel-confirm.
+- **G27.3 `EyedropScreen`** — added gold title bar + 2 hints + `[?]` overlay; sample path byte-for-byte
+  unchanged (still samples at top of render before any UI draws).
+- **G27.5 `ShapeEditorScreen`** — **PARTIAL** (dev-approved): named-shape picker over the 10 `BlockShapes`
+  with a live 3D shape preview + Save via the `/cb setshape` rail. Entry `/cb shapeeditor <id>`.
+
+**New shared/support files:** `client/gui/PreviewCube.java` (extracted the ArabicPreview cube renderer
++ a `drawShape` box renderer, so Recolor/Shape/Studio reuse one cube instead of duplicating it),
+`network/payloads/ShapeEditorPayload.java`. **Changed:** `GuiMode` (+SHAPE_EDITOR, +CREATE_STUDIO),
+`CustomBlocksMod` (ShapeEditorPayload register + receiver → ShapeCommands.applyFromEditor),
+`ShapeCommands` (`/cb shapeeditor <id>` + `applyFromEditor`), `CustomBlocksClient` (SHAPE_EDITOR dispatch).
+
+**Decisions / blockers surfaced to dev:**
+- **G27.5 freeform-AABB editor has no backend.** `SlotData.shape` is a single shape-name String
+  (10 `BlockShapes`); there's no custom-box model, collision reader, or model/pack generation for
+  arbitrary AABBs. Dev chose: ship the **named-shape picker now**, do the **full custom-box editor in
+  its own future session** (see memory `project_g27_shape_editor_partial`). G27.5 = 🟡 partial.
+- **G27.6 `BlockCreationStudioScreen` NOT built** — flagship (6 panels, validation, session memory,
+  new create pipeline). Spec requires G27.1–G27.5 confirmed in-game first; deferred to its own session.
+  No-arg `/cb create` is still unregistered (existing `/cb create <id> …` CLI untouched).
+
+**Testing guide fixed** (`GROUP_27_TESTING_GUIDE.md`): at-a-glance statuses corrected
+(🎯 §1–§4, 🟡 §5, ⏳ §6) + open-with commands; **`/cb recolor` → `/cb livecolor <id>`**; `/cb eyedrop`
+entry; §5 rewritten for the named-shape picker; §6 banner = NOT built (no-arg `/cb create` unregistered);
+"rebuild the jar first" note added; §1 Copy/undo claims corrected to match the build (undo in-session).
+
+**Verified:** `gradlew build` green — compileJava + verifyFileSize + verifyMojibake + verifySound + remapJar all pass.
+**Not done:** in-game test (dev) of §1/§2/§3/§5.
+**Next:** dev rebuilds the jar, runs testing guide §1→§2→§3→§5; report failures by step #. Then plan G27.6 as its own session.
+
+---
+
+## 2026-06-16 (Group 27 · G27.4) — Lego HUD Builder — BUILT, build-green (not yet in-game tested)
+
+Full rebuild of `/cb edithud` per the locked spec. Built in the 10-step order, compiling +
+gates green at every step. **Green = compiles + gates pass — NOT done.** One in-game test
+pass (testing guide §4, 14 tests) is the dev's call; nothing here is ✅ until then.
+
+**New files:** `client/hud/HudFieldType.java` (brick catalogue + family + value resolver + Ctx),
+`client/hud/HudField.java` (brick instance + anchor/align/effect + JSON), `client/HudConfigStore.java`
+(IO + old-format migration, split out so HudConfig stays ≤300), `client/hud/HudSnap.java` (magnetic
+snap math + guides), `client/hud/HudAnchors.java` (anchor↔screen geometry), `client/hud/HudHoverSound.java`
+(look-at sound, 17 sounds, edge-trigger + preview), `client/hud/HudPresetStore.java` (3 built-ins +
+saved .json + code-string), `client/CbKeybinds.java` (3 keybinds + tick), `client/gui/hud/HudBrickRow.java`,
+`HudBrickPalette.java`, `HudColorPicker.java`, `HudBrickInspector.java`, `HudPresetBrowser.java`,
+`HudEditorOverlays.java`.
+
+**Rewritten:** `client/HudConfig.java` (globals + brick list + nicer Name-big/ID-small default),
+`client/HudRenderer.java` (brick list, anchors, per-brick bg, effects, family-visibility),
+`client/gui/HudEditorScreen.java` (Group 27 frame, free-floating drag, snap, panel, undo/redo,
+help/cancel-confirm; 457 lines), `network/HudSync.java` + `client/ClientSlotCache.java` (structured
+per-slot JSON). **Changed:** `CustomBlocksClient` (hover-sound tick + keybind register),
+`EyedropScreen` (colour-picker callback variant), `HudSyncPayload` doc, `lang/en_us.json` (keybinds).
+
+**Sync bug fixed:** `HudSync` wrote `id<space>name` while `ClientSlotCache` split on the first
+space — names with spaces split wrong, one-word names dropped. Now a structured JSON object per
+slot (id, name, cat, glow, hard, sound, shape, pass); codec unchanged (still the 1 MB String).
+
+**Deviations from the locked spec (flagged for the dev):**
+- **`/cb config keybind` chat route + ConfigScreen Keybinds section: NOT built** (the spec marks
+  these "optional convenience"). The 3 keybinds are real `KeyBinding`s, so vanilla **Options →
+  Controls** rebinds them for free — that satisfies test ⑪'s rebind path. A chat/server route to
+  rewrite a client keybind needs a cross-side mechanism judged not worth the fragility; can add
+  later if wanted.
+- **Undo/redo is in-session only** (not disk-persisted per the Group-27 "persists to disk" line).
+  The HUD has no block context to key history on; in-session Ctrl+Z/Y works fully.
+- **Per-brick Align (L/C/R)** is stored + editable but renders left (each brick's pad sizes to its
+  own text, so there's no extra width to align within). Cosmetic; revisit if the dev wants it.
+
+**Not done:** in-game test (dev). Everything above is build-verified only.
+**Next:** dev runs testing guide §4; fix anything that fails.
+
+---
+
+## 2026-06-16 (Group 27 · G27.4) — HudEditorScreen redesign: Lego HUD Builder — design locked, build pending
+
+`/cb edithud` full rebuild (supersedes the old "snap-to-corner" G27.4 plan). Dev called the current editor "bad" and asked for a **free-floating, brick-based Lego HUD builder**, QoL first. Design only — nothing built yet.
+
+**Locked:** HUD = ordered list of **bricks** (one info line each), each free-floating with its own `(offsetX, offsetY, anchor)` + style. **Magnetic snap** (`HudSnap`, Figma-style smart guides to screen edges/centre/thirds + other bricks, cyan lines, Shift = free, arrow-nudge). **Full colour picker** (SV square + hue + hex + swatches + recents). Per-brick: show/hide, reorder, delete, swap, inspector (size/colour/bold/shadow/prefix/align). Bricks: ID, Name, Slot#, Coords, Light, Distance, Facing, Custom text, Header, Divider (free) + Category/Glow/Hardness/Sound/Shape/Solid (sync). **Deferred** (no data): author/credit, source, texture type, resolution. Presets Minimal/Detailed/Builder; sound feedback; Group 27 standard frame.
+
+**Plus (locked same session):** hover-sound system (trigger None/Custom/Any, 17-sound dropdown, volume slider, preview-on-pick); 3 rebindable client keybinds (`H` toggle / `Right Shift` menu / `Right Ctrl` editor, also via `/cb config gui` + `/cb config keybind` chat — no server keybind, all client-local); preset system (3 built-ins + save-as with overwrite-confirm + mini-thumbnail browser + code **and** `.json` import/export in `config/customblocks/exports/Hud_Presets/`); per-brick effects (rainbow/pulse/gradient) + background override + global bg default; colour-picker eyedropper; collapsible see-through panel; master HUD on/off; nicer fresh default (Name big / ID small); smart brick visibility (block-info on-look, world/custom always). New files add `HudPresetStore`, `HudPresetBrowser`, `HudHoverSound`, `CbKeybinds`; `ConfigScreen` + `ConfigCommands` gain keybind rebinding.
+
+**Bug found (fix in rebuild):** `HudSync` joins id+name with a space but `ClientSlotCache` splits on the first space → names with spaces split wrong, one-word names dropped. Rebuild switches to structured per-slot JSON. `HudConfig` rewritten (flat fields → brick list) with auto-migration of old saved files to id+name bricks.
+
+**Spec:** `docs/Finale Fix/GROUP_27_SCREENS.md §G27.4`. **Tests:** `docs/Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md §4`. Build order: data model → renderer → editor UI → snap → colour picker → sync bricks → presets. One in-game test at the end (dev's call).
+
+---
+
+## 2026-06-16 (Group 27) — Unified Screen Design System + Block Creation Studio: design complete, build pending
+
+Full unified design language established for all CB `Screen` subclasses + Block Creation Studio (`/cb create` no-args). Nothing built yet — design and documentation only. Group 28 merged into Group 27.
+
+**Core design decisions:** `0x33` backdrop (world always visible), `§6` gold title bar strip with 1px gold border, two hint lines (screen-specific + universal shortcuts), bottom action bar mirroring title bar, button order `[Undo] [Redo] [Rand] ··· [§aSave] ··· [Copy] [Reset] [Cancel]`, in-screen cancel-confirm overlay, save button flash + chat message, `[?]` shortcut help, undo history persisted per block per screen type.
+
+**6 screens:** G27.1 ArabicPreviewScreen (frame + shortcuts + undo), G27.2 RecolorSliderScreen (3D cube upgrade), G27.3 EyedropScreen (title bar only), G27.4 HudEditorScreen (+ snap-to-corner), G27.5 ShapeEditorScreen (new), G27.6 BlockCreationStudioScreen (new — full creation in one screen, sidebar + 3D cube, session memory, validation, all panels).
+
+**G27.6 Block Creation Studio:** `/cb create` (no args) opens `BlockCreationStudioScreen`. Sidebar panel stack with breadcrumb navigation. Panels: Identity (ID + name validation), Texture (URL/Color/AI/Eyedrop tabs), Shape (presets + inline AABB editor), Attributes (sliders), Organize (category/favorite/draft/notes/blueprint). Center = 3D live preview always visible. Nothing leaves the screen. Session memory persists. Action bar: `[§aDraft] [§aCreate & Publish]`.
+
+Template: `client/gui/CbScreenTemplate.java`. Spec: `docs/Finale Fix/GROUP_27_SCREENS.md`. Tests: `docs/Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md` (§1–§6).
+
+---
+
+## 2026-06-16 (Group 13) — §1 live preview: QoL pass (sharper render + camera controls)
+
+On top of the **confirmed** §1 preview, a single-file client-only polish pass on `ArabicPreviewScreen`,
+per the dev's "tiny improvements + more customization" note:
+
+- **Sharper cube.** `GRID` 28 → 56 and the per-cell downsample changed from a single-pixel sample to an
+  **alpha-weighted area average** — letters read crisp, no dark halo on edges. (True 512-px sharpness
+  isn't reachable with the `ctx.fill` cell approach — cost is `6 * GRID^2` fills/frame; ~64 is the
+  practical ceiling. Not pursuing a textured-quad rewrite.)
+- **Camera controls (all client-side):** scroll = spin speed, shift+scroll = zoom, click (no drag) =
+  pause/resume spin, `R` = reset view, `Enter` = Create. New corner readout shows spin %/zoom %.
+- `SPIN`/`HALF` consts became live fields (`spinSpeed`, `half`) with defaults + clamps; a `dragged`
+  flag distinguishes a click from a rotate so the pause toggle never fires mid-drag.
+
+**Scope:** only `client/gui/ArabicPreviewScreen.java` (now 325 lines, under the 500 gate). No server,
+payload, or other file touched.
+
+**Status:** 🟢 build-green + **✅ confirmed in-game 2026-06-16 — PASSED (partial)**. Dev: looks good,
+sharper, controls work, "does the job" — but wants **more polish/upgrading later** (still not 512-px
+crisp; more controls/customization). Future-polish backlog parked in the testing guide §1 + the
+brainstorm above (higher grid toward ~64, flick inertia, persist last spin/zoom, photo mode,
+double-click reset). Not started — next §1 upgrade pass when the dev wants it.
+
+---
+
+## 2026-06-16 (Group 13) — §1 Color Studio "Render preview" → NEW pack-free live preview screen
+
+**Pivot.** The resource-pack-based preview was scrapped after in-game testing (see below). New approach:
+a **client-side live preview screen** built on the proven Group 10 live-recolour rail — shows the real
+rendered word in the chosen colours as a **3D, rotatable block**, with **no resource-pack reload, no
+prompt, and no block placed in the world**, and **Back returns to the Color Studio** (no lost menu).
+
+**Why this works:** the mod's `/tex/<id>` HTTP endpoint serves a slot's texture straight from
+`TextureStore` — pack-free (no `updatePack`, no `ResourcePackSend`). RecolorSliderScreen already uses
+this exact rail (fetch `/tex` client-side → live preview → `GuiBackPayload` reopens the prior menu).
+
+**Plan (one drop, built carefully stage by stage):**
+- Stage 1 — pack-free round-trip: render preview to a throwaway slot's `TextureStore` (no pack);
+  `OpenGuiPayload(ARABIC_PREVIEW, id|texUrl)` opens a new `ArabicPreviewScreen`; fetch `/tex`; **Back**
+  (`GuiBackPayload` → reopen Color Studio) + **Create**.
+- Stage 2 — render it as a **3D rotatable textured cube** (drag to spin, shaded faces, slick backdrop).
+- Stage 3 — colour controls + fire fx on the preview screen itself.
+- New: `client/gui/ArabicPreviewScreen`, `GuiMode.ARABIC_PREVIEW`, one C2S payload (create / colour
+  change). Reuses: `/tex` endpoint, `OpenGuiPayload`, `GuiBackPayload`, `ArabicWordRenderer`.
+
+-----
+
+**SCRAPPED earlier today — resource-pack force-send + auto-placed world block.** First attempt:
+`ResourcePackServer` one-shot `FORCE_NEXT` + `forcePreviewSend` to push the pack to the one player past
+the GUI hold (modded local-regen), and `ArabicMaker.renderPreview` auto-placed a real preview block
+~2 ahead. **Dev rejected it in-game — three failures:** (1) the block only textured **after a
+resource-pack prompt fired**; (2) it spawned a **whole physical block** in the world; (3) you **couldn't
+get back** to the colour menu you launched it from. Root cause is structural: a real block's texture
+lives in the resource pack, so any real-block preview forces a pack reload + a placed block. Reverted in
+favour of the `/tex` screen above.
+
+**Built — files:** new `client/gui/ArabicPreviewScreen` (3D cube via matrix-transformed `ctx.fill` cells,
+drag-rotate + idle spin, bg/letter swatches, Create/Back), new `network/payloads/ArabicPreviewPayload`
+(C2S colour/create), `GuiMode.ARABIC_PREVIEW(9)`; `ArabicMaker` renderPreview/updatePreviewColours/
+finalizeFromPreview/clearPreview rewritten pack-free; `ArabicBlockRegistry.importWord` +`rebuildPack`
+overload; `CustomBlocksMod` registers the payload + handler; `CustomBlocksClient` opens/refreshes the
+screen; reverted the scrapped `ResourcePackServer` FORCE_NEXT + `ArabicWordSession.previewPos`.
+
+**Status:** 🟢 build-green (compileJava + all 3 gates), jar deployed to `.minecraft/mods`. Docs corrected
+(spec 2c, testing guide §1, this log). **Nothing confirmed in-game.** Note: the 3D-cube rendering is the
+one piece I can't verify without running the client — it compiles and uses only proven primitives
+(`ctx.fill` + MatrixStack, like RecolorSliderScreen), but face orientation/shading may need a tweak after
+the dev sees it. §5 auto-join still untouched — waits for §1 confirm.
+
+---
+
+## 2026-06-15 (Group 13) — AREA 2 "Arabic Studio v2" (command + GUI overhaul) — 🟢 build-green, JAR NOT DEPLOYED
+
+Designed with the dev (gold theme, marked list, all-in-GUI maker, Color Studio). Built whole, then
+`compileJava` + all three gates (filesize/mojibake/sound) pass. **Jar not copied to mods yet** — dev
+decides when to deploy + test in-game. Nothing confirmed in-game.
+
+**2a — `/cb arabic list` → marked browser.** New `gui/chest/ArabicListMenu.java` (Dest.ARABIC_LIST):
+one paginated scroll with section banners (✦ Arabic Letters / Arabic Numbers / English Numbers ✦,
+each with a one-click "give all in group" → `/cb category give`), plus a "English Letters — Coming
+Soon" placeholder banner. Block tiles open the existing CategoryBlockMenu (give/edit/remove) — no
+listing logic duplicated. `list` no longer opens the hub.
+
+**2b — merged `text` into `word`.** `/cb arabic text` now just points to `word` (graceful). `word
+<id> <name>` validates the id then hands off to the GUI maker.
+
+**2c — Color Studio.** New `gui/chest/ColorStudioMenu.java` (Dest.ARABIC_COLOR) + per-player
+`gui/chest/ArabicWordSession.java` + flow class `arabic/ArabicMaker.java`. Curated 12-swatch palette
++ custom #hex anvil for BACKGROUND and LETTER (selected swatch glints), a nearest-colour preview
+tile, and a "Render preview" button that makes ONE reusable throwaway block (cleaned on Create/leave).
+GUI maker order: Name → ID → Text → choice (`gui/chest/WordChoiceMenu.java`, Dest.ARABIC_CHOICE) →
+Single (Color Studio) or Place letter blocks. Default colours #0A0A0A bg + white letter; black
+outline always stays. Create → importWord with chosen colours → give → back to hub.
+
+**2d — defaults + premium.** New config `arabicDefaultBgHex` / `arabicDefaultLetterHex` (load/save),
+edited from a hub "Default Colours" tile (ColorStudioMenu in "defaults" mode → saves config). Hub
+rebuilt gold-themed; its Make-a-Word tile opens the maker directly (no more `typeInChat`).
+
+**New files:** ArabicListMenu, ColorStudioMenu, WordChoiceMenu, ArabicWordSession (gui/chest);
+ArabicMaker (arabic). **Edited:** Nav (+3 Dests), GuiRouter (+3 cases), Icons (amber()),
+CustomBlocksConfig (+2 fields), ArabicHubMenu, ArabicCommands.
+
+**Status:** 🟢 build-green. **Next:** dev says when to deploy the jar; then test Area 2 (Tests 5–9)
++ re-test Area 1 (Tests 1–2) in-game. Areas 3 (other GUI→chat handoffs list) + 4 (bulk bug) queued.
+
+---
+
+## 2026-06-15 (Group 13) — AREA 1 render overhaul (text rendering) — 🟡 code applied, JAR NOT BUILT (dev workflow change)
+
+Developer changed the workflow: **stop auto-building the jar on every fix. Render samples as
+images, dev approves, THEN decides if the jar is built.** Built a headless preview harness for this.
+
+**New tool — `tools/render_preview/RenderPreview.java`** (not shipped): a faithful standalone copy
+of `ArabicWordRenderer.render()` math, parametrized (outline / fill / spacing / white-core), that
+dumps PNG contact sheets so we can tune the exact pixels the game makes **without a jar build**.
+Run: `javac -encoding UTF-8 -d tools/render_preview tools/render_preview/RenderPreview.java` then
+`java -cp tools/render_preview RenderPreview` from the repo root; opens `out/DECIDE.png`.
+
+**Problem found (real pixels, not the dark screenshot):** the old single recipe dilated every glyph.
+That's right for thin arabtype but **wrong for Rockwell** — it fused English letters into a blob and
+filled the a/o/e/6/8 counters; and on Arabic words the thick dilation filled the ح bowl + swallowed it.
+
+**Fix — `ArabicWordRenderer` now picks a recipe by script (all dev-approved via preview):**
+- **LATIN** (english letters/words/numbers): no dilation. Thin black ring (stroke) under a natural
+  white FILL → counters stay open. `ring 6, size .90, tracking .08`.
+- **ARABIC WORDS** (cursive): dilate, but small white core so the ح bowl stays open.
+  `outline 12, white 3, size .86, no tracking` (tracking would break the join).
+- **ARABIC NUMBERS** (digits): dilate, thick + tight. `outline 14, auto white, size .86, tracking -.18`.
+- New helper `hasArabicLetter()` splits cursive words from digit-only; `layout()`/`outlineLongest()`
+  now take a tracking arg. Locked constants live at the top of the class.
+
+**Status:** source updated, build NOT run, jar NOT built (per dev). Nothing in-game yet. Next: dev
+says when to build; then test Group 13 Tests 1+2 in-game. Areas 2–4 still queued.
+
+---
+
+## 2026-06-15 (Group 13) — Arabic Pass 3 (anvil) + Pass 5 (GUI hub) — ⏳ build-green + deployed, awaiting in-game confirm
+
+Building out the rest of Arabic (developer: do Pass 3→4→5, one by one, no bugs). **Pass 3 + Pass 5
+done (build-green); Pass 4 (auto-join) still to do — see note at end.**
+
+**Pass 5 — Arabic Studio GUI hub:** new `gui/chest/ArabicHubMenu.java` + `Nav.Dest.ARABIC` +
+GuiRouter case. `/cb arabic` and `/cb arabic list` now OPEN the hub (the developer's request);
+console falls back to the text count. Hub tiles route into the existing `CategoryBrowserMenu`
+(Dest.CATEGORY_BROWSE) for Arabic Letters / Arabic Numbers / English Numbers — reuses the proven
+give/edit/remove/paginate browser, no new grid logic. Plus anvil-word / coloured-text launchers and
+an import/refresh tile. Thin + low-risk by design.
+
+**Pass 3 done (build-green):**
+- `/cb arabic word <id> <name>` now opens an **anvil** to type/paste Arabic (bypasses Brigadier's
+  ASCII limit — O1), then a 2-choice chest: **Single texture block** (ArabicWordRenderer → one block)
+  or **Place letter blocks** (one bundled letter block per Arabic char, to place in a row).
+- `/cb arabic text <color>` — same anvil flow → one coloured word-texture block (auto id).
+- Reuses `AnvilPrompt` + `ChestMenu`; char→letter via `ArabicLetterMap.byCodePoint` with the 4-name
+  reconciliation to the art set (dhal→thal, tah→ta2, dhah→tha2, nun→noon, per ADR-003).
+- All in `ArabicCommands` (now ~270 lines, under 400). Old `word <text> <id> <name>` command removed.
+
+**Verify:** developer is testing Pass 3 + Pass 5 in-game now. Steps in the new v3 guide
+`docs/Finale Fix/Reports/GROUP_13_TESTING_GUIDE.md` (Pass 3 + 5 = TEST NOW; Pass 1+2 = passed).
+
+**➡️ NEXT SESSION — Pass 4 (auto-join), the last Arabic piece.** Per ADR-003: `SlotBlock.FORM`
+IntProperty 0-3 (16→64 states for ALL blocks), `ServerPackGenerator` letter-only 4-variant branch,
+`TextureStore` per-form variants (`loadForm`/`hasForm`), `SlotData` letter marker, a SlotLighting-sibling
+neighbour updater (re-eval ≤2 neighbours on place/break), engine-drawn connected forms from arabtype
+(ZWJ). HIGH blast radius — touches all-block rendering + pack generation. Build as its own careful unit;
+test Pass 1/2/3/5 first. Golden Rule: nothing DONE until in-game.
+
+---
+
+## 2026-06-15 (Group 26) — ✅ COMPLETE (A+B+C confirmed) + config-GUI mirror slot
+
+Developer confirmed Part C in-game ("all pass"). **Group 26 is fully done: FIX A ✅, FIX B ✅,
+Part C ✅.** Then added a polished mirror toggle to the `/cb config` chest GUI:
+
+- `gui/chest/ConfigMenu.java` slot 34 — "Named Textures" tile (FILLED_MAP when on / MAP when off),
+  shows ON/OFF + live file count + write-only note. **Left-click** toggles on/off, **right-click**
+  rebuilds — both via the existing `/cb config mirrornames` command through `GuiRouter.runAndReopen`
+  (no new mutation logic). Matches the auto-backup dual-click pattern. ⏳ build-green + deployed,
+  awaiting in-game confirm of the slot.
+
+Build green (filesize/mojibake/sound). Jar deployed. **Next:** Group 13 (Arabic) is NOT entirely
+done — Pass 1+2 confirmed, but Pass 3 (anvil word/text), Pass 4 (auto-join), Pass 5 (Arabic GUI hub)
+remain (all flagged design-discuss-first). Awaiting developer direction on what to build next.
+
+---
+
+## 2026-06-15 (Group 26) — Part C: named-texture mirror — ⏳ build-green + deployed, awaiting in-game confirm
+
+Built the optional, write-only `textures_names/` mirror (Group 26 final piece). New files +
+6 choke-point hooks; **no behavior change unless the flag is turned on** (default off).
+
+- **Config:** `CustomBlocksConfig.mirrorNamedTextures` (default false) + load/save lines (Config 261→270, under 300).
+- **Writer:** new `core/TextureNameMirror.java` — sole owner of `config/customblocks/textures_names/`.
+  `syncSlot` / `removeSlot` / `rebuildAll`, all flag-gated + best-effort (logs + swallows; can never break
+  a block). Atomic writes. `(slot N)` suffix on duplicate names (lowest index keeps the bare name),
+  `(face)` suffix per painted face. Manifest `config/customblocks/data/mirror_index.json` (slot→files)
+  → no orphans on rename/delete. Windows-safe sanitize.
+- **Command:** new `command/handlers/MirrorCommands.java` → `/cb config mirrornames [on|off|rebuild]`
+  (status / backfill-on / off / wipe+regen). Registered in `CommandRegistrar`. Kept out of
+  `ConfigCommands` (374/400).
+- **Hooks (6, choke-point not per-command — see ADR-004):** `TextureStore.save/saveFace/deleteFace`
+  → `syncSlot`; `TextureStore.delete` → `removeSlot`; `SlotManager.rename/restoreSnapshot` → `syncSlot`.
+  Catches every edit path (create, retexture, color, video, gradient, undo, Arabic, dupe, trash) because
+  `slot_N.png` is the canonical byte store for all blocks.
+
+Build: `.\gradlew.bat build -x test` green (filesize / mojibake / sound gates pass). Jar deployed.
+Testing guide updated (Part C is now the 🎯 TEST NOW section). **Nothing DONE until confirmed in-game.**
+
+---
+
+## 2026-06-15 (Group 26) — FIX A + FIX B — ✅ CONFIRMED IN-GAME (Part C next)
+
+Developer ran both in-game and confirmed: **"both pass."** FIX A + FIX B are ✅ DONE. Testing guide
+written (`docs/Finale Fix/Reports/GROUP_26_TESTING_GUIDE.md`, v3 template) and the group spec doc
+reformatted to match the other groups. CHANGELOG updated (both under Fixed, confirmed 2026-06-15).
+Part C (named-texture mirror) is the only remaining piece — not built.
+
+Group 26 build order is A → B → C; this session built **FIX A + FIX B** (Part C still not built).
+
+**FIX B — `/cb give <id>` case-insensitive (1 file):** `SlotManager.getById`/`hasId` now try the
+exact `BY_ID.get` first (fast path, byte-identical for all ~40 callers — no regression), and only on
+a miss fall back to a case-insensitive scan via new private `findByIdIgnoreCase` (tie-break = lowest
+slot index). Did NOT re-key BY_ID or touch any `BY_ID.put` site. `UtilityCommands.give` (line 118)
+calls `getById`, so it's fixed with zero edits there; every other id command gets the tolerance too.
+Tab-completion/suggestions unchanged (they read the maps directly, fallback only affects resolution).
+
+**FIX A — display names: underscores -> spaces + Title Case.** Two changes, surgical:
+
+- **Code (1 edit):** `core/NameCase.titleCase` now emits a space for each `_` (was appending the `_`
+  unchanged). Detect the word boundary on the original char *before* remapping, then append `' '`
+  for `_`. Verified callers unchanged: exactly 3, all display-name paths (`ArabicArt.displayName`
+  inherits the fix — NOT edited per spec; `SlotManager.create` line 103; `rename` line 129). No id
+  or filename path calls `titleCase`, so ids/files are untouched.
+- **Migration (boot, idempotent):** new `SlotManager.migrateDisplayNames()` re-derives every loaded
+  block's display name through `titleCase` and persists once if anything changed (routed through
+  SlotDataStore, design rules #3/#4). Cleans the 224 already-saved Arabic blocks (`Alef_Black` ->
+  `Alef Black`) on next boot; a no-op every later boot. Wired in `CustomBlocksMod.onInitialize`
+  right after `loadAll()`, before `importArt(false)`; logs the count when > 0.
+
+Build: `.\gradlew.bat build -x test` green (filesize / mojibake / sound gates pass). Jar deployed
+to `.minecraft\mods`. ✅ Confirmed in-game 2026-06-15. **Next:** Part C (named-texture mirror) —
+new feature, depends on FIX A.
+
+---
+
+## 2026-06-15 (Group 13) — Pass 1+2 tested in-game; 2 fixes + 1 GUI request queued (NOT built)
+
+Developer ran Pass 1 (fonts/centering) + Pass 2 (224 bundled art blocks) in-game. Verdict:
+**"other bugs passed and work"** — fonts route correctly, letters give with no pack rebuild, art
+blocks present, word centering fixed. Three follow-ups recorded (no code written this turn — out of
+tokens). Details in `docs/Finale Fix/GROUP_13_ARABIC.md` → "Post-Pass-2 in-game feedback".
+
+- **FIX A (naming regression I introduced):** display names keep underscores (`Test_Black`). Must be
+  clean spaces + Title Case → **`Test Black`**. Applies to the 224 bundled blocks (already persisted
+  with `_` names → needs re-derive/migration) AND all future creates (e.g. uploading `Test_black.png`
+  → "Test Black"). Fix `core/NameCase.titleCase` (`_` → space) + `arabic/ArabicArt.displayName`
+  (join with space).
+- **FIX B:** `/cb give <id>` must be **case-insensitive** — id `Te` → both `/cb give te` and
+  `/cb give Te` work, same block. Fix `SlotManager.getById` / `UtilityCommands.give`.
+- **REQUEST (= Pass 5):** `/cb arabic list` should **open the big advanced GUI hub**, not chat-list.
+  Design to be discussed before building (reuse `ChestMenu`/`GuiRouter`/`Nav`/`CategoryBrowserMenu`).
+- **BACKLOG (separate, later):** developer wants edits to `/cb search` — scope TBD, not Group 13.
+
+**Next session:** FIX A + FIX B (small, surgical), then design-discuss the Pass 5 hub. Nothing here
+is built yet. Golden Rule: nothing DONE until confirmed in-game.
+
+---
+
+## 2026-06-15 (Group 13) — Arabic Pass 1 (fonts) + Pass 2 (bundled art blocks) — ⏳ build-green, awaiting in-game confirm
+
+**Pass 1 — fonts bundled + script routing (build-green):**
+- Bundled `arabtype.ttf` + `RockwellCondensed.ttf` at `assets/customblocks/fonts/`; new
+  `arabic/FontAssets.extractAll()` extracts on boot (arabtype → `config/customblocks/arabtype.ttf`,
+  Rockwell → `config/customblocks/fonts/RockwellCondensed.ttf`; writes only if absent; missing-in-JAR
+  warns, no crash). Called early in `CustomBlocksMod.onInitialize`.
+- `ArabicWordRenderer`: two fonts now; per-text script detect → Arabic uses arabtype (RTL), Latin uses
+  Rockwell (LTR). Also fixed centering/size: auto-fit to ~78% of the square + centre on real glyph ink
+  via `TextLayout.getBounds` (was using font line-height → text sat high/clipped, the "test" bug).
+
+**Pass 2 — bundled art blocks (build-green):**
+- Bundled all 224 art PNGs (56 glyphs × black/red/green/yellow) at `assets/customblocks/arabic_art/<color>/`.
+- New `arabic/ArabicArt` catalog: names/ids/display/category/resource paths. Naming (locked): letters
+  keep art names; Eastern numerals `A0..A9`; Western numerals `E0..E9` (file stays `num_#`); every name
+  Title-Cased with color suffix → `Alef_Black`, `Ta_Marbuta_Red`, `E5_Green`. id = `arabic_<idBase>_<color>`.
+- New global rule: `core/NameCase.titleCase` applied in `SlotManager.create`/`rename` — every created
+  block's display name capitalizes the first letter of each word (space/underscore delimited). "Everywhere."
+- `SlotManager.createNoSave(id, name, category)` — batch create w/o per-block save (avoids O(n²) on 224).
+- `ArabicBlockRegistry.importArt(rebuild)` — creates the 224 from bundled PNGs, one `saveAll` + one
+  pack rebuild; idempotent. Boot calls it (rebuild=false; SERVER_STARTED builds pack); `/cb arabic import`
+  calls it (rebuild=true).
+- `ArabicCommands`: `import` → 224-from-art; `letter <name> [color]` → **gives** the bundled block
+  (default black), **no pack rebuild** when present (fixes "rebuilds RP every letter"); `list` → counts
+  present/224. `word` unchanged (anvil redesign is Pass 3).
+- Marker: bundled blocks carry category "Arabic Letters" / "Arabic Numbers" / "English Numbers" (the
+  GUI tabs in Pass 5 use this). Real `SlotData` join marker deferred to Pass 4.
+
+**Still to do (discussed, not built):** Pass 3 anvil input for `word`/`text`; Pass 4 auto-join FORM;
+Pass 5 the big `/cb arabic` GUI. Build: `.\gradlew.bat build` green (filesize/mojibake/sound pass).
+**Nothing DONE until confirmed in-game.**
+
+---
+
+## 2026-06-15 (later 2) — Built the client-side `ResourcePackGenerator` (step 1: host/single-player) — ✅ CONFIRMED working in-game
+
+> ✅ **Developer confirmed in-game (host / single-player): custom-block textures load, silently, no
+> dialog.** Group 05 §3 ①–③ marked passing. ④ (vanilla friend on a remote server) is the next step
+> (the HTTP path + `httpHost` fix), not part of this slice.
+
+Acted on the correction below. Step 1 of the fix is built: a modded client (the host) now generates
+the pack **locally** and silently reloads, instead of ignoring the integrated server's HTTP push.
+
+**What was built (5 small parts):**
+- **`ServerPackGenerator`** — extracted the build loop into `emit(PackSink)`, the single source of
+  truth for pack contents. `generate(File)` still zips it (HTTP path, **byte-identical output**); the
+  client now writes the same files loose. No second/divergent generator → no "PACK2" drift.
+- **`client/ResourcePackGenerator`** (new, ~150 lines — small because it reuses `emit`, no 711-line
+  port needed) — writes loose files to `resourcepacks/CustomBlocks/`, deletes stale leftovers (incl.
+  the May-17 files), enables the pack (`file/CustomBlocks` in options + `scanPacks`), then runs ONE
+  guarded silent `reloadResources()`. Skips if the requested pack hash is already applied.
+- **`RegenPackPayload`** (new S2C, carries the pack hash) — registered in `CustomBlocksMod`.
+- **`ResourcePackServer.sendToPlayer`** — now branches at the single send chokepoint: a **modded**
+  client (`ServerPlayNetworking.canSend`) gets the regen signal and the self HTTP push is **skipped**;
+  a **vanilla** client still gets the real HTTP download (unchanged). Inherits all the existing
+  join-queue / GUI-defer / dedupe logic.
+- **`CustomBlocksClient`** — receives `RegenPackPayload` → `ResourcePackGenerator.regenerate(...)`.
+
+**Why this matches the data model:** CustomBlocks-B keeps texture bytes in `TextureStore` (by slot
+index), not inside `SlotData` like the old project. The old 711-line client generator couldn't be
+copied verbatim — so the client reuses B's current `ServerPackGenerator.emit` instead. Works for
+single-player/host (client JVM holds the live slot data). Remote modded friends (no local slot data)
+are a **later** step via `/tex`; vanilla friends keep the HTTP push (the `httpHost` fix is separate).
+
+**Build:** `.\gradlew.bat build -x test --no-daemon` green; `verifyFileSize` / `verifyMojibake` /
+`verifySound` pass; jar deployed to `.minecraft\mods\customblocks-1.0.0.jar`.
+
+**✅ Done (host).** Developer confirmed in-game: textures load silently, no dialog. The log chain
+`Signaled modded client <you> to regen pack locally (hash …)` → `Local pack written (N files)` →
+`Local pack applied (hash …)` fires on create/edit. Group 05 §3 ①–③ passing.
+
+**Next:** step 2 — vanilla friends / remote modded friends on the real server (the HTTP `httpHost`
+fix + `/tex` pull for modded clients with no local slot data). Also a possible perf follow-up: the
+host currently rewrites every pack file per edit — switch to single-slot writes if large worlds hitch.
+
+---
+
+## 2026-06-15 (later) — CORRECTION: textures still don't load on a modded client — real root cause found (missing `ResourcePackGenerator`)
+
+The earlier "silent on JOIN" entry below was **premature** — the developer tested and textures still
+did not appear, edits still didn't show. A deeper dig (logs + files) found the real cause.
+
+**Proven from the developer's `latest.log` + `.minecraft` files:**
+- The **server now delivers correctly** — `Sent resource pack to 3liSY` logged on join (00:14:53) and
+  on edit (00:15:21). The join-race fix works.
+- The **client never applies the push** — no resource reload, no download, no dialog all session. The
+  `server-resource-packs` download cache has nothing newer than **Jan 2**; the integrated-server push
+  is ignored.
+- The HTTP pack is **valid** (`pack_format 34`). The visible textures come from a **stale local pack**
+  at `resourcepacks/CustomBlocks` (May 17, from the OLD mod) that the new mod never updates.
+
+**Root cause:** `client/package-info.java` says *modded clients generate the pack locally instead of
+downloading the HTTP pack* — but that `ResourcePackGenerator` class **was never built in
+CustomBlocks-B**. So modded clients (the host included) have no local path and ignore the HTTP push.
+HTTP push was only ever the path for *vanilla* clients.
+
+**Plan (NOT built):** build the client-side `ResourcePackGenerator` (recycle the old project's proven
+version, split for the 500-line gate; pull textures from the existing `/tex/<id>` route), silent
+client reload, and skip the self-push for modded clients. Keep HTTP push for vanilla friends (fix
+`httpHost` for remote separately).
+
+**Still correct from the earlier entry (built + deployed, just not sufficient alone):** the server
+`AWAITING_FIRST_PACK` join-queue + send logs, and the client mixin that recognises our pack by name.
+
+**Docs corrected to match:** `Reports/GROUP_05_TESTING_GUIDE.md` §3 (now BLOCKED, root cause), §1
+flagged for recheck; `GROUP_05_RESOURCE_PACK.md` status block; `CHANGELOG.md` (false "Fixed" line
+removed); `Finale Fix/PROGRESS_LOG.md`.
+
+**Next:** developer to greenlight building the `ResourcePackGenerator` (step 1: host's own textures).
+
+---
+
+## 2026-06-15 — Resource pack now silent on JOIN (join-vs-build race fixed) — build green, gates pass — NOT yet in-game confirmed
+
+> ⚠️ **Superseded by the 2026-06-15 (later) correction above.** The server-side join fix here is real
+> and kept, but it did NOT make textures appear — the modded client never applies the pack. See above.
+
+Developer's goal restated: our pack should load **silently on join, never a prompt** — same as it
+already does for in-session edits. It was failing *only on join*.
+
+**Root cause (confirmed from `logs/latest.log`, two world loads):** on a fresh world the pack build
+is async (~½s+ after `SERVER_STARTED → updatePack()`), but the player joins almost instantly. Log
+load 2: `joined the game 20:49:48` vs `Rebuilding resource pack 20:49:48` — join hits while
+`currentHash == null`, so the join push delivered nothing. No vanilla pack download appeared all
+session → the after-rebuild push wasn't landing/applying either. Two races: (a) pack not built at
+join, (b) client silent flag (`SilentPackPayload`, sent at join) possibly unset when a pack packet
+arrives.
+
+**Fix (two parts):**
+- **Server** `ResourcePackServer`: new `AWAITING_FIRST_PACK` — a player who joins before the first
+  build is queued and delivered when the build completes (`rebuild → sendToAll`). Cleared in
+  `start()` and `forget()`. Added logs: `Sent resource pack to <player> (id …)` on every real send,
+  `Join before pack ready — <player> queued` when the join beats the build.
+- **Client** `ClientCommonNetworkHandlerMixin`: our pack is recognised by its prompt label
+  `"CustomBlocks textures"` and silent-accepted unconditionally (no flag-timing dependence). Other
+  servers' packs still honour `SilentPackState` only.
+
+**Decision:** our pack is now **always silent** — `silentPack` no longer gates its prompt. Retires
+the "toggle off restores the dialog" test (G05.4 + the §1 toggle row).
+
+**Docs updated:** `Reports/GROUP_05_TESTING_GUIDE.md` §3 rewritten to the always-silent-on-join test;
+`GROUP_05_RESOURCE_PACK.md` 2026-06-15 update + G05.4 retired; `CHANGELOG.md`.
+
+**Next:** developer reloads the world once and reports — textures present + silent? Send the new log
+lines (`Sent resource pack to <you>` / `Join before pack ready — <you> queued`) so we confirm the
+server delivered. If textures still don't show after a `Sent resource pack` line, it's the client's
+"Server Resource Packs" setting (Disabled) — next iteration.
+
+---
+
+## 2026-06-14 (later 16) — Round-2 results: items 2–4 PASS ✅ in-game; resource-pack join bug re-fixed (correct root cause) + moved to Group 05
+
+Developer tested round 2. **Items 2 (anvil inputs), 3 (unified `/cb category`), 4 (Export Bulk Choose +
+standard formats) all confirmed working in-game ✅** — marked in GROUP_11_TESTING_GUIDE (§R2–§R4 passed).
+
+**Resource-pack join prompt — first fix was WRONG; re-fixed.**
+- The "later 15" per-player send dedupe did NOT fix the double prompt, and surfaced a worse bug:
+  *sometimes no prompt at join, then created/edited blocks don't show until a rejoin + accept.*
+- **Real root cause (from the logs):** `ResourcePackServer.currentHash` / `currentPackFile` / the new
+  `LAST_SENT_PACK` are **static** and survive a single-player world reload in the same client JVM.
+  `start()` never reset them, so a fresh JOIN sent the PREVIOUS world's stale pack hash (then the new
+  rebuild sent a different one → two prompts), and a leftover send-record could block the join send
+  entirely (→ no prompt, and later edits never pushed because the player had no live pack session).
+- **Fix:** `start()` now clears `currentHash`, `currentPackFile`, `LAST_SENT_PACK`, `PENDING_SENDS` on
+  every world load. Each load rebuilds + sends exactly once; the per-player dedupe (kept) now collapses
+  the JOIN-send vs. post-rebuild `sendToAll` race within a session. Edits change the hash → new id → send.
+- This is a **Group 05 (Silent Resource Pack)** concern, not Group 11. Test moved to
+  GROUP_05_TESTING_GUIDE §3. Build green, gates pass, jar deployed. **NOT yet in-game confirmed.**
+
+**Next:** developer tests GROUP_05 §3 (one prompt on join · edits apply without rejoin · stable across
+reloads). If still wrong, send the join-window log lines (HTTP server live / Rebuilding / joined) + times.
+
+---
+
+## 2026-06-14 (later 15) — Group 11 round 2: double-pack fix + anvil inputs + /cb category unify + Export "Bulk Choose" (build green; gates pass — NOT in-game)
+
+Developer confirmed G11.9–G11.17 in-game ✅ (all the round-1 overhaul). Then requested 1 bug + 3
+improvements. All built; `.\gradlew.bat build -x test --no-daemon` green; gates pass; jar deployed.
+**NONE of round-2 is in-game tested yet.**
+
+**1. 🐞 Double resource-pack prompt on single-player join — FIXED.**
+Root cause: on a fresh world, BOTH the SERVER_STARTED rebuild (→ `sendToAll`) and the JOIN handler
+(→ `sendToPlayer`) push the same pack to the just-joined player → the client shows two prompts.
+Fix: `ResourcePackServer` now records the last pack id sent to each player (`LAST_SENT_PACK`) and
+skips a repeat of the SAME id — identical sends are idempotent (one prompt). A new pack (different
+hash → different id) still sends. Cleared on disconnect via `ResourcePackServer.forget(uuid)`, wired
+to a new `ServerPlayConnectionEvents.DISCONNECT` handler, so a genuine rejoin re-prompts once.
+
+**2. Anvil GUI instead of chat for category text input.**
+CategoryEditMenu Rename / Merge / Description tiles now open an `AnvilPrompt` (type in an anvil, take
+the result) instead of closing the GUI and forcing a chat command. Submits run through the unified
+command via `GuiRouter.runAndReopen` and the menu reopens. Bulk Retexture stays on a chat prompt **on
+purpose** — image URLs exceed the anvil's ~50-char limit (developer-approved).
+
+**3. Unified `/cb category <action>` command.**
+The scattered `/cb renamecategory`, `mergecategory`, `categorydesc`, `givecategory`, `exportcategory`,
+`sharecategory`, `importcategory` are REMOVED and folded into one base command:
+`rename · merge · delete · color · desc · icon · sort · lock · unlock · give · export · share · import
+· info · list · edit`. New `core/CategoryService` holds the shared sync logic (rename/merge/delete/
+colour/desc/icon/sort/lock/info) so both the command and the GUI report identically and the handler
+stays under the 400-line gate. All GUI callers (CategoryEditMenu, CategoryBrowserMenu,
+ExportDashboardMenu) and HelpTopics updated to the new command. `/cb setcategory` and `/cb categories`
+are unchanged (kept as the blessed add + browse entry points).
+
+**4. Export Dashboard adjustments.**
+- "Per Selection" → **"Bulk Choose"**: opens the block list (`Dest.BLOCK_LIST`) in a new
+  `listPickForExport` mode; tick blocks, confirm, and it returns to the dashboard's format screen for
+  the picked set. New flag on `BulkSession`; new confirm branch in `BlockListMenu`.
+- **Standardized formats**: Per Block, Per Category and Bulk Choose now all show the SAME seven format
+  tiles (.json/.txt/.csv/.md/.html/.yaml/PNG) as "All Blocks", via a shared `formatTiles()` helper that
+  routes every scope through `/cb bulkexport <scope> <format>` (`<id>`, `category:<cat>`, or a comma id
+  list). Category screen keeps an extra "Category ZIP" tile alongside the standard list.
+
+**Known pre-existing gap (NOT introduced here):** the CategoryEditMenu "Bulk Retexture" tile points at
+`/cb bulkretexture` which has no command registration — that feature was never built. Left as-is (chat)
+pending a decision; flagged for the developer.
+
+**Files:** ResourcePackServer, CustomBlocksMod (network/lifecycle); CategoryService (new),
+CategoryCommands (rewritten), CategoryEditMenu, CategoryBrowserMenu, HelpTopics, BulkSession,
+BlockListMenu, ExportDashboardMenu.
+
+**Next:** developer runs the new jar and tests round 2 (double-pack gone, anvil inputs, /cb category,
+Export Bulk Choose + formats). Report any ❌ with the exact command + what appeared + last 20 lines of
+`latest.log`.
+
+---
+
+## 2026-06-14 (later 14) — Group 11 overhaul BUILT: CategoryEditMenu + Export Dashboard + command cleanup (build green; gates pass — NOT in-game)
+
+Implemented the design decisions captured in "later 13". All code from the handoff was written;
+this session built it, fixed the one stale reference, deployed, and updated the docs.
+
+**Build:** `.\gradlew.bat compileJava` green on the first try; `.\gradlew.bat build -x test --no-daemon`
+green — all gates pass (fileSize, mojibake, sound). Jar `build/libs/customblocks-1.0.0.jar` (4.9 MB)
+deployed to `.minecraft/mods/`. **NONE of this is in-game tested yet.**
+
+**New files (3):**
+- `core/CategoryMetadataStore.java` — full category metadata (displayBlock, colorTag, description,
+  sortOrder, customOrder) → `data/category_meta.json`; migrates old `display_blocks.json` on first load.
+- `gui/chest/CategoryEditMenu.java` — 6-row edit GUI (Display Block, Rename, Merge, Export, Share
+  placeholder, Lock/Unlock All, Bulk Retexture, Stats, Color Tag, Description, Sort Order, Delete+confirm).
+- `gui/chest/ExportDashboardMenu.java` — dynamic same-GUI Export Dashboard (scope → format flow).
+
+**Modified (key):**
+- `CategoryDisplayBlockManager` → thin delegate over `CategoryMetadataStore` (same public API).
+- `CategoryListMenu` → tiles now show count/description + "Left-click to browse / Right-click to edit";
+  right-click → CategoryEditMenu; name text tinted by color tag.
+- `CategoryBrowserMenu` → "Set icon" tile replaced with "Edit Category" (opens CategoryEditMenu).
+- `CategoryCommands` → removed `autocategorize` / `setdisplayblock` / `cleardisplayblock`; added
+  `renamecategory` / `mergecategory` / `categorydesc`. `suggestOnCreate()` kept (still uses
+  `AutoCategorizeManager`).
+- `UtilityCommands.exportMenu()` → player gets `ExportDashboardMenu`; console keeps text output.
+- `Nav` / `GuiRouter` → +3 dests (CATEGORY_EDIT, CATEGORY_DELETE_CONFIRM, EXPORT_DASHBOARD).
+- `ColorPickBlockMenu` → handles `caticon:<category>` action.
+- `HelpTopics` → entries updated for the removed/added commands.
+- `AutoCategorizeManager` → stale header comment fixed (no longer claims a `/cb autocategorize` command).
+
+**Stale-reference sweep:** `setdisplayblock` / `cleardisplayblock` → 0 hits in src. `autocategorize`
+→ only inside `AutoCategorizeManager` itself (now corrected). Clean.
+
+**Docs:** `GROUP_11_CATEGORY.md` command table refreshed; added tests G11.9–G11.17 (⏳ build-verified,
+NOT in-game); verdict table extended.
+
+**Next:** developer runs the server with the new jar and works through G11.9–G11.17 in-game. Report
+any ❌ with the exact command + what appeared + last 20 lines of `latest.log`.
+
+---
+
+## 2026-06-14 (later 13) — Group 11 in-game review: G11.1–G11.6 ✅ + design decisions for remaining work (NO code changes)
+
+Developer tested Group 11 in-game. **G11.1–G11.6 all pass ✅.** Marked in `GROUP_11_CATEGORY.md`.
+This session captured design decisions for the remaining Group 11 work — no code written yet.
+
+**Developer-confirmed ✅ (in-game):**
+- G11.1 — Category browser opens as chest GUI
+- G11.2 — Block slot click opens sub-menu (Give / Edit / Remove)
+- G11.3 — `/cb categories` category overview list
+- G11.4 — `/cb givecategory` gives all items
+- G11.5 — `/cb setcategory` adds block to category
+- G11.6 — Export category creates ZIP
+
+**Design decisions captured (to be built):**
+
+1. **`/cb autocategorize` — REMOVED as a command.** Auto-categorize kept only as the automatic
+   hint on `/cb create` (the `suggestOnCreate` flow). The standalone command was confusing — user
+   screenshot showed Brigadier parsing errors from trying `/cb autocategorize 10 test` (the command
+   only accepted one arg). G11.8 marked ⚠️ redesigned.
+
+2. **`/cb setdisplayblock` — REMOVED.** Replaced by a Display Block picker tile inside the new
+   CategoryEditMenu (see below). `/cb cleardisplayblock` also removed.
+
+3. **`/cb categories` overhaul — CategoryEditMenu (new GUI):**
+   - Each category tile gets lore: "Left-click to browse · Right-click to edit."
+   - Right-click opens a new **CategoryEditMenu** with these approved features:
+     - 🎨 Display Block picker (choose which block represents the category icon)
+     - 📝 Rename Category (anvil prompt, updates all blocks in it)
+     - 🔀 Merge Into another category (move all blocks, delete source category)
+     - 🔒 Lock / Unlock All blocks in the category
+     - 🎨 Bulk Retexture (re-apply a URL to all blocks)
+     - 📊 Stats tile (block count, texture size, oldest/newest, locked count)
+     - 🗑️ Delete Category (uncategorizes all blocks, doesn't delete them)
+     - 🏷️ Category Color Tag (tints the **category name text** in the GUI, not the icon)
+     - 📝 Category Description (shown in the browser header)
+     - 📋 Sort Order (custom block display order; default = alphabetical by name)
+     - 🌐 Share tile (greyed out / "coming soon" until vault Worker is deployed)
+   - Color tag + description + sort order stored in `CategoryDisplayBlockManager`'s JSON
+     (alongside the display block — expanding it to a full category metadata store).
+
+4. **`/cb export` GUI — Export Dashboard (added to Group 11 scope):**
+   - `/cb export` (player, no args) opens a unified chest GUI.
+   - **Dynamic same-GUI flow:** first shows scope tiles (Per Block, Per Category, All Blocks,
+     Per Selection). Clicking a scope redraws the GUI in-place with format options (PNG, JSON,
+     CSV, ZIP, etc.). A "← Back" tile returns to scope selection.
+   - Console still gets text output.
+   - Direct shortcuts (`/cb export json`, `/cb export <id> png`, etc.) still work.
+
+5. **Category sharing — DEFERRED.** The `cb-cloud-vault` Cloudflare Worker is not deployed yet.
+   G11.7 marked ⚠️ deferred. The CategoryEditMenu Share tile will be a greyed-out placeholder.
+   When vault is deployed: import GUI will ask the player whether to keep original category,
+   make a new category, or leave blocks uncategorized.
+
+**Next:** build the above changes — CategoryEditMenu + categories overhaul, export GUI, remove
+autocategorize command + setdisplayblock command.
+
+---
+
+## 2026-06-14 (later 12) — Group 11 finished (all 5 slices) + command-name cleanup (build green; gates pass — NOT in-game)
+
+Developer asked to build the remaining Group 11 slices one-by-one without stopping, jar only at the end.
+**Final `.\gradlew.bat build --no-daemon` green; all three gates pass (fileSize, mojibake, sound); jar in
+`build/libs/`.** NONE of this is in-game tested yet.
+
+**Command-name cleanup (developer-directed — keep clear names, drop the cryptic ones):**
+- Removed `/cb blockscat`, `/cb blockscategory`, `/cb blockadd`, and the standalone `/cb blocks`.
+- **`/cb categories` is now THE category command** — it opens the overview chest GUI (was a text list;
+  console still gets text). Click a category → its browser. One entry point.
+- **`/cb blockslist`** added = alias of `/cb listgui` (opens the flat Block List GUI).
+- Adding a block to a category stays the clear, existing **`/cb setcategory`**.
+
+**Slice 2 — Export:** `/cb exportcategory <category>` and the browser **Export** tile →
+`BlockExporter.exportCategoryZip` writes `config/customblocks/cloud_exports/<cat>-YYYYMMDD.zip`
+(each block's schema-v1 JSON + its .png), atomic temp-rename. Chat shows a `[copy path]` button.
+
+**Slice 3 — Auto-categorize:** new `AutoCategorizeManager` (deterministic name-keyword match,
+materials before colours, so "RedBrickWall" → `brick`). `/cb autocategorize <id>` posts
+`[Accept] [Edit] [Skip]`. New config `autoCategorizeEnabled` (default true). On `/cb create` (no-URL
+path) it adds a one-click `[Add] [Edit]` hint — a suggestion, never auto-applied.
+
+**Slice 4 — Category icons (display blocks):** new `CategoryDisplayBlockManager` (atomic JSON store
+`data/display_blocks.json`, category → block id). `/cb setdisplayblock <category> <id>` /
+`/cb cleardisplayblock <category>`; the overview + browser show that block's item as the category icon
+(falls back to a bookshelf if unset/deleted). Browser has a **Set icon** tile.
+**Deviation:** the spec's "give a display-block item and place it in an icon slot" doesn't fit our
+read-only chest GUIs, so this is the clean command/GUI form instead. No `/cb givedisplayblock`.
+
+**Slice 5 — Share / Import (cloud):** `/cb sharecategory <category>` (zips + uploads, off-thread, returns
+a share code) and `/cb importcategory <code>` (downloads + unzips + imports, off-thread). Browser
+**Share** tile wired. `CloudVaultClient.uploadCategory/downloadCategory` implemented with `java.net.http`.
+**⚠ ASSUMED worker API** (developer deferred the contract): `POST <vaultEndpoint>/category?name=<cat>`
+body=ZIP → code; `GET <vaultEndpoint>/category/<code>` → ZIP. **Confirm these routes against the
+deployed cb-cloud-vault Worker and adjust only those two methods.** Needs `vaultEndpoint` set in
+config.json. Import restores block **definitions only** (no texture re-apply yet — same as importFolder);
+the ZIP still carries the .png for later.
+
+**Files (this session, slices 1b–5):** new — `core/{AutoCategorizeManager, CategoryDisplayBlockManager}`.
+Edited — `command/handlers/{CategoryCommands (rewritten), ChestGuiCommands, UtilityCommands,
+CreationCommands}`, `cloud/CloudVaultClient`, `core/BlockExporter`, `CustomBlocksConfig`,
+`gui/chest/{CategoryListMenu, CategoryBrowserMenu, HelpTopics}`.
+
+**TEST IN-GAME (developer) — see GROUP_11_CATEGORY.md (test commands updated to the new names):**
+G11.1/.2 `/cb categories` → click a category → browser → click a block (Give/Edit/Remove).
+G11.4 `/cb givecategory <cat>`. G11.6 browser **Export** (or `/cb exportcategory <cat>`).
+G11.8 `/cb create RedBrickWall` then `/cb autocategorize RedBrickWall` → expect `brick`.
+Icons: `/cb setdisplayblock <cat> <id>`. Share/Import: set `vaultEndpoint` first, then the browser
+**Share** tile / `/cb importcategory <code>` (confirm the worker routes match).
+
+---
+
+## 2026-06-14 (later 11) — Group 11 slice 1: Category browsing GUI (build green; gates pass — NOT in-game)
+
+First of Group 11's four slices (building one-by-one, per developer). **Build green with JDK 21
+(`--no-daemon`); all three gates pass (fileSize, mojibake, sound).** Jar in `build/libs/` only.
+
+**Done — category browsing chest GUI (build green; gates pass — NOT in-game tested):**
+- **`/cb blocks`** → new `CategoryListMenu` (paged chest GUI; one tile per category with block count;
+  click → that category's browser). Dashboard **Categories** tile (MainMenu slot 20) repointed from the
+  old text `/cb categories` to this GUI.
+- **`/cb blockscat <name>`** (alias `blockscategory`) → new `CategoryBrowserMenu`: title
+  "`<cat> (N blocks)`", top row = header + **Give All** / **Export** / **Share** action slots, body =
+  one tile per block. Export/Share are visible **coming-soon placeholders** this slice (buzz on click) —
+  wired to real commands in the export/share slices.
+- **Block tile click** → new `CategoryBlockMenu` sub-menu: **Give** (stays open), **Edit** (→ block
+  editor), **Remove from category** (→ `setcategory none`, drops back to the browser).
+- **`/cb givecategory <category>`** — gives one of every block in the category; reports overflow if the
+  inventory fills, and missing-item count.
+- **`/cb blockadd <id> <category>`** — alias that delegates verbatim to `/cb setcategory` (keeps its
+  locking, undo and messaging).
+
+**Files:** new — `gui/chest/{CategoryListMenu, CategoryBrowserMenu, CategoryBlockMenu}`,
+`command/handlers/CategoryCommands`. Edited — `gui/chest/{Nav, GuiRouter, MainMenu}`,
+`command/CommandRegistrar`.
+
+**Covers tests:** G11.1, G11.2, G11.3, G11.4, G11.5. (G11.6 export, G11.7 share, G11.8 auto-categorize,
+and display-blocks are the later slices.)
+
+**TEST IN-GAME (developer):**
+1. `/cb create g11a A` / `g11b B` / `g11c C`, then `/cb setcategory g11a testcat` (and g11b, g11c).
+2. `/cb blockscat testcat` → chest GUI "testcat (3 blocks)", 3 block tiles, Give All / Export / Share row.
+3. Click g11a → sub-menu Give / Edit / Remove. Try each (Remove should drop it from the browser).
+4. `/cb blocks` → category list; click testcat → its browser.
+5. `/cb givecategory testcat` → "Gave 3 items: …".
+6. `/cb blockadd g11d testcat` (after creating g11d) → same as setcategory.
 
 ---
 

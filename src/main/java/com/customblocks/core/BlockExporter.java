@@ -19,7 +19,9 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -30,12 +32,17 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 public final class BlockExporter {
 
     private static final String DIR = "config/customblocks/exports";
+    private static final String CLOUD_DIR = "config/customblocks/cloud_exports";
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private BlockExporter() {}
 
@@ -76,12 +83,12 @@ public final class BlockExporter {
         }
     }
 
-    /** Export one block's baked texture PNG to exports/&lt;id&gt;.png. Null if it has no texture or the write fails. */
+    /** Export one block's baked texture PNG to cloud_exports/&lt;id&gt;.png. Null if it has no texture or the write fails. */
     public static Path exportPng(SlotData d) {
         byte[] png = TextureStore.load(d.index());
         if (png == null || png.length == 0) return null;
         try {
-            Path dir = Path.of(DIR);
+            Path dir = Path.of(CLOUD_DIR);
             Files.createDirectories(dir);
             Path file = dir.resolve(d.customId() + ".png");
             atomicWriteBytes(file, png);
@@ -113,15 +120,115 @@ public final class BlockExporter {
     }
 
     /**
-     * Export one block to exports/<id>.json (schema v1 — importable by importFolder).
+     * Export one block to cloud_exports/<id>.json (schema v1 — importable by importFolder/importJson).
+     * Lands in cloud_exports/ so the HTTP server can serve it as a [download] link.
      * Returns the written path, or null on failure.
      */
     public static Path exportOne(SlotData d) {
         try {
-            Path dir = Path.of(DIR);
+            Path dir = Path.of(CLOUD_DIR);
             Files.createDirectories(dir);
             Path file = dir.resolve(d.customId() + ".json");
             atomicWrite(file, toBlockJson(d));
+            return file;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Public access to one block's schema-v1 JSON (used by the Blueprint item). */
+    public static String toJson(SlotData d) {
+        return toBlockJson(d);
+    }
+
+    /**
+     * Bundle EVERY given block into one ZIP at cloud_exports/all-YYYYMMDD-HHMMSS.zip
+     * (each block contributes &lt;id&gt;.json and, when present, &lt;id&gt;.png). The "Export All"
+     * counterpart of exportCategoryZip. Returns the written path, or null on failure. Atomic.
+     */
+    public static Path exportAllZip(Collection<SlotData> blocks) {
+        if (blocks == null || blocks.isEmpty()) return null;
+        try {
+            Path dir = Path.of(CLOUD_DIR);
+            Files.createDirectories(dir);
+            Path file = dir.resolve("all-" + LocalDateTime.now().format(STAMP) + ".zip");
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            try (OutputStream os = Files.newOutputStream(tmp);
+                 ZipOutputStream zip = new ZipOutputStream(os)) {
+                for (SlotData d : blocks) {
+                    zip.putNextEntry(new ZipEntry(d.customId() + ".json"));
+                    zip.write(toBlockJson(d).getBytes(StandardCharsets.UTF_8));
+                    zip.closeEntry();
+                    byte[] png = TextureStore.load(d.index());
+                    if (png != null && png.length > 0) {
+                        zip.putNextEntry(new ZipEntry(d.customId() + ".png"));
+                        zip.write(png);
+                        zip.closeEntry();
+                    }
+                }
+            }
+            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            return file;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Recreate one block from a schema-v1 JSON string (as carried by a Blueprint item or a
+     * single &lt;id&gt;.json). Creates the block if its id is free; reports it skipped if the id
+     * already exists; reports failed on a malformed payload or no free slot. Never throws.
+     */
+    public static ImportResult importJson(String json) {
+        List<String> created = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        List<String> failed  = new ArrayList<>();
+        try {
+            JsonObject o = GSON.fromJson(json, JsonObject.class);
+            if (o == null || !o.has("id")) { failed.add("not a block blueprint"); return new ImportResult(created, skipped, failed); }
+            String id = o.get("id").getAsString();
+            if (id.isBlank()) { failed.add("blank id"); return new ImportResult(created, skipped, failed); }
+            if (SlotManager.hasId(id)) { skipped.add(id); return new ImportResult(created, skipped, failed); }
+            String name = o.has("displayName") ? o.get("displayName").getAsString() : id;
+            SlotData d = SlotManager.create(id, name);
+            if (d == null) { failed.add(id + " (no free slot)"); return new ImportResult(created, skipped, failed); }
+            applyFields(d, o);
+            created.add(id);
+        } catch (Exception e) {
+            failed.add("bad blueprint (" + e.getMessage() + ")");
+        }
+        return new ImportResult(created, skipped, failed);
+    }
+
+    /**
+     * Bundle every block in a category into one ZIP at cloud_exports/&lt;category&gt;-YYYYMMDD.zip.
+     * Each block contributes &lt;id&gt;.json (schema v1, importable) and, when present, &lt;id&gt;.png
+     * (the baked texture). Returns the written path, or null on failure. Atomic temp-rename.
+     */
+    public static Path exportCategoryZip(String category, Collection<SlotData> blocks) {
+        if (blocks == null || blocks.isEmpty()) return null;
+        String safe = (category == null || category.isBlank()) ? "uncategorized"
+                : category.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "_");
+        try {
+            Path dir = Path.of(CLOUD_DIR);
+            Files.createDirectories(dir);
+            Path file = dir.resolve(safe + "-" + LocalDateTime.now().format(DAY) + ".zip");
+            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
+            try (OutputStream os = Files.newOutputStream(tmp);
+                 ZipOutputStream zip = new ZipOutputStream(os)) {
+                for (SlotData d : blocks) {
+                    zip.putNextEntry(new ZipEntry(d.customId() + ".json"));
+                    zip.write(toBlockJson(d).getBytes(StandardCharsets.UTF_8));
+                    zip.closeEntry();
+                    byte[] png = TextureStore.load(d.index());
+                    if (png != null && png.length > 0) {
+                        zip.putNextEntry(new ZipEntry(d.customId() + ".png"));
+                        zip.write(png);
+                        zip.closeEntry();
+                    }
+                }
+            }
+            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
             return file;
         } catch (Exception e) {
             return null;
@@ -169,6 +276,42 @@ public final class BlockExporter {
             failed.add("scan error: " + e.getMessage());
         }
         return new ImportResult(created, skipped, failed);
+    }
+
+    /**
+     * Import a category ZIP (as produced by exportCategoryZip / downloaded from the vault):
+     * extract its per-block JSONs into a fresh imports/ folder and create any missing blocks.
+     * Entry names are reduced to their file name (zip-slip safe). Textures bundled in the ZIP are
+     * NOT yet re-applied — like importFolder, this restores block definitions only.
+     * Never throws — always returns a result.
+     */
+    public static ImportResult importCategoryZip(byte[] zipBytes) {
+        List<String> created = new ArrayList<>();
+        List<String> skipped = new ArrayList<>();
+        List<String> failed  = new ArrayList<>();
+        if (zipBytes == null || zipBytes.length == 0) {
+            failed.add("empty download");
+            return new ImportResult(created, skipped, failed);
+        }
+        try {
+            Path dir = Path.of("config/customblocks/imports", "import-" + LocalDateTime.now().format(STAMP));
+            Files.createDirectories(dir);
+            try (ZipInputStream zin = new ZipInputStream(new ByteArrayInputStream(zipBytes))) {
+                ZipEntry e;
+                while ((e = zin.getNextEntry()) != null) {
+                    if (e.isDirectory()) continue;
+                    String name = Path.of(e.getName()).getFileName().toString(); // strip any path (zip-slip safe)
+                    String lower = name.toLowerCase(Locale.ROOT);
+                    if (!lower.endsWith(".json") && !lower.endsWith(".png")) continue;
+                    Files.write(dir.resolve(name), zin.readAllBytes());
+                    zin.closeEntry();
+                }
+            }
+            return importFolder(dir);
+        } catch (Exception ex) {
+            failed.add("unzip error: " + ex.getMessage());
+            return new ImportResult(created, skipped, failed);
+        }
     }
 
     /** Apply optional attribute fields from a per-block JSON onto an already-created slot. */

@@ -7,13 +7,18 @@
  *
  * pack_format 34 = Minecraft 1.21.1. Recycled/condensed from the old project.
  *
+ * The build logic lives in emit(PackSink) — the single source of truth for pack contents.
+ * generate(File) zips it for the HTTP server; the modded client (ResourcePackGenerator)
+ * writes the same files loose, so the local pack can never drift from the HTTP pack.
+ *
  * Depends on: SlotManager, TextureStore, CustomBlocksConfig
- * Called by:  ResourcePackServer (build thread) only.
+ * Called by:  ResourcePackServer (build thread, zip) and client ResourcePackGenerator (loose).
  */
 package com.customblocks.network;
 
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.CustomBlocksMod;
+import com.customblocks.core.AnimData;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
@@ -40,66 +45,28 @@ public final class ServerPackGenerator {
 
     private ServerPackGenerator() {} // static-only
 
+    /**
+     * Receives one pack file at a time. Two backends use the SAME build logic in {@link #emit}:
+     * the server writes a ZIP (this file), the modded client writes loose files
+     * (ResourcePackGenerator) — so the local pack can never drift from the HTTP pack.
+     */
+    @FunctionalInterface
+    public interface PackSink {
+        /** @param path pack-relative path (e.g. "assets/customblocks/textures/block/slot_0.png"). */
+        void put(String path, byte[] data) throws Exception;
+    }
+
     /** Build the pack ZIP to {@code outputFile} (atomic). */
     public static void generate(File outputFile) {
         try {
             if (outputFile.getParentFile() != null) outputFile.getParentFile().mkdirs();
             File tmp = new File(outputFile.getAbsolutePath() + ".tmp");
-            Set<String> written = new HashSet<>();
             try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(tmp))) {
-                // pack.mcmeta
-                JsonObject pack = new JsonObject();
-                pack.addProperty("pack_format", PACK_FORMAT);
-                pack.addProperty("description", "CustomBlocks");
-                JsonObject meta = new JsonObject();
-                meta.add("pack", pack);
-                add(zos, "pack.mcmeta", GSON.toJson(meta).getBytes(StandardCharsets.UTF_8), written);
-
-                // Assigned slots → real (or placeholder) texture + cube_all model.
-                Set<Integer> assigned = new HashSet<>();
-                for (SlotData d : SlotManager.assignedSlots()) {
-                    int i = d.index();
-                    assigned.add(i);
-                    String key = "slot_" + i;
-                    byte[] tex = TextureStore.load(i);
-                    if (tex == null || tex.length == 0) tex = PLACEHOLDER_PNG;
-                    add(zos, tex(key), tex, written);
-                    add(zos, blockstate(key), blockstateJson(MOD_ID + ":block/" + key), written);
-                    // Model selection, in priority order:
-                    //   non-full shape (G08) → a generated shape model (uses the base texture);
-                    //   else M4 per-face overrides → per-face cube; else the plain cube_all.
-                    String shape = SlotManager.shapeFor(i);
-                    if (!com.customblocks.block.BlockShapes.isFull(shape)) {
-                        add(zos, blockModel(key), shapeModelJson(shape, key), written);
-                    } else if (TextureStore.hasAnyFace(i)) {
-                        for (String face : TextureStore.FACES) {
-                            byte[] ft = TextureStore.loadFace(i, face);
-                            if (ft != null && ft.length > 0) add(zos, tex(key + "_" + face), ft, written);
-                        }
-                        add(zos, blockModel(key), cubeFacesJson(i, key), written);
-                    } else {
-                        add(zos, blockModel(key), cubeAllJson(key), written);
-                    }
-                    add(zos, itemModel(key), itemJson(MOD_ID + ":block/" + key), written);
-                }
-
-                // Empty slots → one shared placeholder model (purple/black missing-texture look).
-                int max = CustomBlocksConfig.maxSlots;
-                boolean emptyModel = false;
-                for (int i = 0; i < max; i++) {
-                    if (assigned.contains(i)) continue;
-                    String key = "slot_" + i;
-                    if (!emptyModel) {
-                        add(zos, "assets/" + MOD_ID + "/models/block/empty_slot.json", emptyModelJson(), written);
-                        emptyModel = true;
-                    }
-                    add(zos, blockstate(key), blockstateJson(MOD_ID + ":block/empty_slot"), written);
-                    add(zos, itemModel(key), itemJson(MOD_ID + ":block/empty_slot"), written);
-                }
-
-                // M3 hex — when a colour's hex was changed from the shipped default, override
-                // that colour's Square/Triangle item art with a re-tinted copy of the bundled art.
-                addTintedShapeItems(zos, written);
+                emit((path, data) -> {
+                    zos.putNextEntry(new ZipEntry(path));
+                    zos.write(data);
+                    zos.closeEntry();
+                });
             }
             Files.move(tmp.toPath(), outputFile.toPath(),
                     StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
@@ -108,8 +75,84 @@ public final class ServerPackGenerator {
         }
     }
 
+    /**
+     * Emit every pack file (pack.mcmeta, per-slot textures/models/blockstates, empty-slot
+     * placeholders, re-tinted item art) through {@code sink}. The single source of truth for
+     * pack contents; the server zips it, the client writes it loose. Duplicate paths are skipped
+     * so one bad entry can't abort the build.
+     */
+    public static void emit(PackSink sink) throws Exception {
+        Set<String> written = new HashSet<>();
+        // pack.mcmeta
+        JsonObject pack = new JsonObject();
+        pack.addProperty("pack_format", PACK_FORMAT);
+        pack.addProperty("description", "CustomBlocks");
+        JsonObject meta = new JsonObject();
+        meta.add("pack", pack);
+        put(sink, written, "pack.mcmeta", GSON.toJson(meta).getBytes(StandardCharsets.UTF_8));
+
+        // Assigned slots → real (or placeholder) texture + cube_all model.
+        Set<Integer> assigned = new HashSet<>();
+        for (SlotData d : SlotManager.assignedSlots()) {
+            int i = d.index();
+            assigned.add(i);
+            String key = "slot_" + i;
+            byte[] tex = TextureStore.load(i);
+            if (tex == null || tex.length == 0) tex = PLACEHOLDER_PNG;
+            put(sink, written, tex(key), tex);
+            put(sink, written, blockstate(key), blockstateJson(MOD_ID + ":block/" + key));
+            // Model selection, in priority order:
+            //   animated (G14) → plain cube_all + a sidecar .mcmeta so the strip plays EVERYWHERE
+            //                    (world/hand/inventory/creative tab) — wins over shape/face so a
+            //                    batch resize or per-face paint can never flatten the strip;
+            //   else non-full shape (G08) → a generated shape model (uses the base texture);
+            //   else M4 per-face overrides → per-face cube; else the plain cube_all.
+            AnimData anim = SlotManager.animFor(i);
+            String shape = SlotManager.shapeFor(i);
+            if (anim.isAnimated() && TextureStore.has(i)) {
+                // Group 14 Phase 1b: the PLACED animated block is drawn off-atlas by AnimSlotBER (crisp,
+                // no atlas mipmap muffle), so its world model is INVISIBLE (barrier-style — particle only).
+                // The strip + .mcmeta still ship so the INVENTORY/HAND icon animates via the atlas; its
+                // item model points straight at the strip (decoupled from the now-invisible block model so
+                // the icon still shows). Never emit a frame spec against the 1×1 placeholder.
+                put(sink, written, blockModel(key), invisibleBlockModelJson(key));
+                put(sink, written, tex(key) + ".mcmeta", mcmetaBytes(anim)); // slot_N.png.mcmeta
+                put(sink, written, itemModel(key), cubeAllJson(key)); // decoupled item → atlas-animated icon
+            } else if (!com.customblocks.block.BlockShapes.isFull(shape)) {
+                put(sink, written, blockModel(key), shapeModelJson(shape, key));
+            } else if (TextureStore.hasAnyFace(i)) {
+                for (String face : TextureStore.FACES) {
+                    byte[] ft = TextureStore.loadFace(i, face);
+                    if (ft != null && ft.length > 0) put(sink, written, tex(key + "_" + face), ft);
+                }
+                put(sink, written, blockModel(key), cubeFacesJson(i, key));
+            } else {
+                put(sink, written, blockModel(key), cubeAllJson(key));
+            }
+            put(sink, written, itemModel(key), itemJson(MOD_ID + ":block/" + key));
+        }
+
+        // Empty slots → one shared placeholder model (purple/black missing-texture look).
+        int max = CustomBlocksConfig.maxSlots;
+        boolean emptyModel = false;
+        for (int i = 0; i < max; i++) {
+            if (assigned.contains(i)) continue;
+            String key = "slot_" + i;
+            if (!emptyModel) {
+                put(sink, written, "assets/" + MOD_ID + "/models/block/empty_slot.json", emptyModelJson());
+                emptyModel = true;
+            }
+            put(sink, written, blockstate(key), blockstateJson(MOD_ID + ":block/empty_slot"));
+            put(sink, written, itemModel(key), itemJson(MOD_ID + ":block/empty_slot"));
+        }
+
+        // M3 hex — when a colour's hex was changed from the shipped default, override
+        // that colour's Square/Triangle item art with a re-tinted copy of the bundled art.
+        addTintedShapeItems(sink, written);
+    }
+
     /** Re-tinted Square/Triangle item textures for every colour whose hex left its default. */
-    private static void addTintedShapeItems(ZipOutputStream zos, Set<String> written) {
+    private static void addTintedShapeItems(PackSink sink, Set<String> written) throws Exception {
         String[][] colours = {
                 {"red",    CustomBlocksConfig.triangleRedHex,    CustomBlocksConfig.TRIANGLE_RED_DEFAULT},
                 {"yellow", CustomBlocksConfig.triangleYellowHex, CustomBlocksConfig.TRIANGLE_YELLOW_DEFAULT},
@@ -123,7 +166,7 @@ public final class ServerPackGenerator {
                 String rel = "assets/" + MOD_ID + "/textures/item/" + c[0] + "_" + shape + ".png";
                 try (var in = ServerPackGenerator.class.getResourceAsStream("/" + rel)) {
                     if (in == null) continue; // bundled art missing — keep whatever the client has
-                    add(zos, rel, ColorReplacer.tint(in.readAllBytes(), rgb), written);
+                    put(sink, written, rel, ColorReplacer.tint(in.readAllBytes(), rgb));
                 } catch (Exception e) {
                     CustomBlocksMod.LOGGER.warn("[CustomBlocks] Item re-tint failed for {}", rel, e);
                 }
@@ -146,6 +189,19 @@ public final class ServerPackGenerator {
         JsonObject bs = new JsonObject();
         bs.add("variants", variants);
         return GSON.toJson(bs).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Group 14 Phase 1b: an invisible block model (vanilla barrier pattern — a "particle" texture but no
+     * geometry), so a placed animated block draws NOTHING from the pack and AnimSlotBER paints it off-atlas.
+     * Particle is the block's strip so break/step particles stay themed.
+     */
+    private static byte[] invisibleBlockModelJson(String key) {
+        JsonObject tex = new JsonObject();
+        tex.addProperty("particle", MOD_ID + ":block/" + key);
+        JsonObject m = new JsonObject();
+        m.add("textures", tex);
+        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
     }
 
     private static byte[] cubeAllJson(String key) {
@@ -220,6 +276,30 @@ public final class ServerPackGenerator {
         return el;
     }
 
+    /**
+     * Build the {@code slot_N.png.mcmeta} for an animated slot, deterministically, from the stored
+     * numbers (AnimData). Loop / Bounce / Reverse are expressed purely as the frame-INDEX order of
+     * the {@code frames} array — no pixel duplication. The top-level {@code frametime} is the default;
+     * each {index,time} entry overrides it per displayed frame. This is regenerated on every build,
+     * so per-frame timing can never be "lost on save" (the old project's bug).
+     */
+    private static byte[] mcmetaBytes(AnimData a) {
+        JsonObject animation = new JsonObject();
+        animation.addProperty("interpolate", a.interpolate());
+        animation.addProperty("frametime", a.baseFrametime());
+        JsonArray frames = new JsonArray();
+        for (int[] f : a.playback()) {
+            JsonObject fo = new JsonObject();
+            fo.addProperty("index", f[0]);
+            fo.addProperty("time", f[1]);
+            frames.add(fo);
+        }
+        animation.add("frames", frames);
+        JsonObject root = new JsonObject();
+        root.add("animation", animation);
+        return GSON.toJson(root).getBytes(StandardCharsets.UTF_8);
+    }
+
     private static byte[] itemJson(String parent) {
         JsonObject m = new JsonObject();
         m.addProperty("parent", parent);
@@ -238,11 +318,9 @@ public final class ServerPackGenerator {
         return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
     }
 
-    private static void add(ZipOutputStream zos, String path, byte[] data, Set<String> written) throws Exception {
+    private static void put(PackSink sink, Set<String> written, String path, byte[] data) throws Exception {
         if (!written.add(path)) return; // skip duplicates so one bad entry can't abort the build
-        zos.putNextEntry(new ZipEntry(path));
-        zos.write(data);
-        zos.closeEntry();
+        sink.put(path, data);
     }
 
     /** A 1x1 PNG used as a placeholder texture for untextured slots. */

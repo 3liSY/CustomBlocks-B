@@ -11,6 +11,7 @@ package com.customblocks.command.handlers;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.chest.GuiRouter;
+import com.customblocks.gui.chest.BulkSession;
 import com.customblocks.gui.chest.Nav;
 import com.customblocks.gui.chest.Nav.Dest;
 import com.customblocks.gui.chest.Nav.MenuKey;
@@ -47,11 +48,10 @@ public final class ChestGuiCommands {
                         .suggests(BlockSuggestions.IDS)
                         .executes(ctx -> editor(ctx, StringArgumentType.getString(ctx, "id")))));
 
-        // /cb shapeeditor <id> — Group 08 shape picker GUI
-        root.then(CommandManager.literal("shapeeditor")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> openFor(ctx, Dest.SHAPE_EDITOR, StringArgumentType.getString(ctx, "id")))));
+        // /cb shapeeditor moved to ShapeCommands (G27 §F2) — it now opens the 3D Shape Editor screen
+        // (no-id → chest block-picker → screen; <id> → screen). Removing the old colliding literal here
+        // fixes the "not a registered command" bug. The Group 08 chest ShapeEditorMenu (Dest.SHAPE_EDITOR)
+        // is still reachable from EditorMenu.
 
         // /cb facechangegui <id> — Group 08 per-face texture GUI
         root.then(CommandManager.literal("facechangegui")
@@ -61,6 +61,7 @@ public final class ChestGuiCommands {
 
         // Direct menu entry points.
         root.then(CommandManager.literal("listgui").executes(open(Dest.BLOCK_LIST)));
+        root.then(CommandManager.literal("blockslist").executes(open(Dest.BLOCK_LIST))); // clear alias for listgui
         root.then(CommandManager.literal("undogui").executes(open(Dest.UNDO)));
         root.then(CommandManager.literal("redogui").executes(open(Dest.REDO)));
         root.then(CommandManager.literal("history").executes(open(Dest.HISTORY)));
@@ -81,6 +82,13 @@ public final class ChestGuiCommands {
             if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
                 Chat.error(src, "Open this menu as a player");
                 return 0;
+            }
+            // A plain /cb listgui is normal browsing — clear any abandoned pick-mode flags so the
+            // confirm tile isn't stuck on "use these for bulk/export" from an earlier, closed flow.
+            if (dest == Dest.BLOCK_LIST) {
+                BulkSession s = BulkSession.get(p.getUuid());
+                s.listPickForBulk = false;
+                s.listPickForExport = false;
             }
             GuiRouter.openFresh(p, MenuKey.of(dest));
             return 1;

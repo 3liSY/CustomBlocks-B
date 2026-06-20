@@ -88,7 +88,7 @@ Batches 0–9 were already confirmed working (see TESTING_GUIDE for ✅ marks).
 /cb gui config                    — open config screen
 /cb gui macros                    — open macro manager screen
 /cb gui arabic                    — open Arabic browser screen
-/cb edithud                       — toggle HUD block-info overlay
+/cb edithud                       — open the Lego HUD builder (G27.4: bricks, snap, colours, presets)
 
 /cb diag                          — system snapshot (slots, heap, TPS)
 /cb incidents / /cb incidents clear

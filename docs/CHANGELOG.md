@@ -1,11 +1,187 @@
 # Changelog
 
+## 2026-06-20 (round 2) — Group 14: GIF speed, the WebP muffle, a calmer Animation tab (built — `customblocks-1.0.0.jar`)
+
+- **GIFs play at the right speed now.** The first build sped clips up when it trimmed frames. Fixed — a clip keeps
+  its real, natural speed (and "Normal" on the Speed control = exactly the clip's own speed).
+- **The muffled/speckled look on animated blocks is gone.** It came from your texture size being **512**, which
+  overflowed Minecraft's block atlas. Animated blocks now stay at a safe **256px** (and get **32 frames** instead
+  of 16). *Re-create any animated block to pick up the fix.*
+- **The Animation tab is much simpler.** No more fps/ticks numbers or wall of text. Just **Speed** (Slower /
+  Normal / Faster), **Loop** (Forward / Bounce / Reverse), **Smooth motion** (On/Off), **Trim**, and a moving
+  playback bar.
+- **`/cb anim` on a block that isn't animated** now tells you so (and still opens the studio so you can add a GIF).
+- ⚠️ Build green = compiles + gates pass; **in-game test pending.** Checklist: `docs/Finale Fix/Reports/GROUP_14_TESTING_GUIDE.md` §0.
+
+## 2026-06-20 — Group 14: 3 bug fixes — crisp GIFs, the right `/cb anim` list, a tidy Animation tab (built — `customblocks-1.0.0.jar`)
+
+- **GIFs look crisp now, not blocky.** Long clips used to get crushed to a tiny 32px-per-frame mush. They now
+  keep **full resolution** and simply play **fewer frames** when a clip is very long (a short GIF keeps them all).
+  *(This is the interim fix — even sharper close-up rendering is still coming as the hybrid renderer.)*
+- **`/cb anim` (no id) now opens an "Animated Blocks" list** — only your animated blocks, and clicking one drops
+  you straight onto its **Animation tab**. Before it opened the full block list with the wrong click behaviour.
+- **The Animation tab is redesigned.** Controls are grouped under clear headers — **Speed · Loop · Smoothing ·
+  Trim** — with spacing and a **playback bar** showing the current frame, instead of the old crammed panel.
+- ⚠️ Build green = compiles + gates pass; **in-game test pending.** Checklist: `docs/Finale Fix/Reports/GROUP_14_TESTING_GUIDE.md` §0.
+
+## 2026-06-19 — Group 14 Phase 2: Animation tab + live preview + editing animated blocks (built — `customblocks-1.0.0.jar`)
+
+- **New Animation tab in `/cb create`.** Load a GIF/WebP and a dedicated **Animation** tab lights up — with a
+  **live-playing preview** of your clip on the spinning block.
+- **Tune it visually:** Speed (5/10/15/20/30 fps, or "Original"), Loop / Bounce / Reverse, Smoothing on/off,
+  and Trim (cut the start/end frames). The preview updates as you click.
+- **`/cb anim <id>` now opens the studio as a FULL editor** of that block — the old text command card is gone.
+  **`/cb anim`** (no id) opens the block list to pick one.
+- **Edit literally everything from one screen and hit "Save changes":**
+  - **Rename the block's id** — and any copies you've already placed in the world keep working (they don't
+    vanish or break).
+  - **Swap the picture/GIF** — paste a new image link → Load texture → Save. A still image becomes a static
+    block; a GIF makes it animate (and a GIF→still swap turns animation back off).
+  - **Recolour / reshape / glow / sound / collision / category / name** — all in the same save.
+  - **Retune the animation** — speed/loop/trim; your original frame timing is preserved (it never gets wiped).
+- ⚠️ Build green = compiles + gates pass; **in-game test pending.** Checklist: `docs/Finale Fix/Reports/GROUP_14_TESTING_GUIDE.md` §1.
+
+## 2026-06-19 — Group 13 Round 3: all 6 join-letter fixes (built — `customblocks-1.0.0.jar`)
+
+- **`/cb arabic join <letter>` now gives 1 block**, not 16. (Add a number for more, e.g. `join ba 8`.)
+- **Middle-click (pick block) on a placed join letter** now hands back that exact letter — correct name +
+  art — instead of a blank `arabic_letter` item. The picked block re-joins when you place it.
+- **"Place letter blocks"** (from `/cb arabic word` → type a word) now gives the **joinable** letter blocks
+  that auto-connect, not the old separate static letters. Button text updated to match.
+- **No more stray edge lines** on placed letters — the glyph faces sat a hair outside the block, drawing
+  thin lines along edges and at the seams between connected letters. Now flush inside; clean.
+- **Removed the OmniTool's Arabic Direction mode.** Rows already auto-join the moment you place them in a
+  line, so the mode was redundant — the OmniTool menu no longer shows an Arabic button, and the tool does
+  nothing to letter blocks (break them with any other item).
+- **Readable from behind.** A placed word now reads the **same word correctly from the back** too — walk
+  around it and it's right both sides, not the mirrored garble it showed before. Front/top/bottom/sides
+  unchanged; only the back face changed. *(First build still mirrored the back glyphs; fixed by dropping a
+  double-flip — the back is turned 180°, not mirrored.)*
+- ✅ **All 6 confirmed in-game 2026-06-19** — auto-join feature complete. Checklist: `docs/Finale Fix/Reports/GROUP_13_TESTING_GUIDE.md` §R3.
+
+## 2026-06-19 — Group 14: own-texture preview (the real crisp fix); 512px re-enabled
+
+- **The real crisp fix, as a preview you can place.** Capping at 256px only traded muffle for
+  pixelation (256 = blocky close up, 512 = atlas-muffled). The fix: draw blocks from their **own
+  texture** like Minecraft maps — full resolution, mipmaps off, crisp at any distance, **no client
+  settings**.
+- **Try it:** place the `screen_test` block (CustomBlocks creative tab, or
+  `/give @s customblocks:screen_test`) and right-click to cycle a gallery — sharp text, smooth gradient,
+  resolution chart, an animated card, and **your own blocks at full resolution**. Instant, no reload.
+- **Texture size can be 512px again** (`/cb config texturesize 512`, the picker, the GUI). ⚠️ 512 only
+  looks sharp via the new own-texture renderer; **normal blocks still use the atlas and soften at 512**
+  until that renderer is rolled out — keep 256 for now (the command warns you).
+- Isolated preview — **does not touch your 1028 blocks.**
+- Files: ScreenTestImages (new), ScreenTestBlockEntityRenderer, ScreenTestBlockEntity, CustomBlocksConfig,
+  ConfigCommands, TextureSizeMenu. Docs: GROUP_14 spec + testing guide + progress log.
+
+## 2026-06-19 — Group 14: muffling fix (256px atlas cap), Style toggle removed
+
+- **Blocks no longer look soft/"muffled."** Texture size is capped at **256px** (a power of two).
+  Above that, the block atlas overflowed Minecraft's size limit and mipmaps switched off for **every**
+  block — the cause of the soft look. The size picker now tops out at 256 (16 / 32 / 64 / 128 / 256).
+- **Long animated GIFs auto-fit the atlas.** A clip long enough to overflow is rendered at a slightly
+  smaller per-frame size (you get a one-line note); short clips are unaffected. Animations can never
+  blow the atlas now.
+- **Removed the `/cb anim` "Style" (Photos & Video / Pixel-art & Text) button** — it didn't fix the
+  muffling and was a misdiagnosis. The card's **Smooth On/Off** control is back.
+- **Existing 512px blocks** made before this build stay soft until re-created (animated) or
+  `/cb retexture`d (static) at 256.
+- Rationale: `docs/adr/ADR-007`. Files: CustomBlocksConfig, ConfigCommands, TextureSizeMenu, AnimData,
+  SlotDataStore, AnimCommands, AnimationDecoder.
+
+## 2026-06-19 — Group 13 Arabic auto-join: colour + form + facing + searchable tab
+
+- Joinable letter block now carries a **colour** and an optional **fixed form**; renderer draws
+  isolated = hand-art PNG, connected = matching-colour font, cache keyed by letter+form+colour.
+- **Facing auto-inherit** on placement so rows actually join (the in-game bug).
+- New **"Arabic Letters (Join)"** creative tab: every letter, 4 forms, 4 colours — all NBT variants
+  of the single arabic_letter block, so **zero new registrations, zero slots**. Fixed-form variants
+  are searchable decoration that never reshape and never drive neighbours.
+- Files: ArabicLetterBlock, ArabicLetterBlockEntity, ArabicJoinFlow,
+  ArabicLetterBlockEntityRenderer, CustomBlocksMod. Source-only (build on a JDK machine).
+
+
 All notable changes to CustomBlocks are documented here. This project tracks
 progress by **phase milestones** (see CustomBlocks_Engineering_Bible.md §8).
 
 ## [Unreleased]
 
+### Changed — Group 27.6 Block Creation Studio · slice 3 "fixes + UI upgrade + Category manager" (📦 deployed 2026-06-18, awaiting in-game test)
+
+> Five upgrades to the studio from your slice-2 feedback. **Build-green is not "done" — this needs your in-game test.** Test steps: testing guide §6 (🎯 the 5 new fixes).
+
+- **Enter no longer publishes** — pressing **Enter** only confirms the field you're typing in; the block is made **only** by the **Create & Publish** button.
+- **Background colour instead of "base colour"** — picking a colour (swatch or `#hex`) no longer wipes your image. The colour now fills **behind** the image's transparent areas; a **✖** swatch clears it; a colour with no image still makes a solid block.
+- **"Use hex" no longer overlaps its box** — the hex field and button now sit side by side.
+- **"Organize" tab is now "Category"** — a full mini category manager: every category shows as a chip (★ = default, colour-tagged ones are tinted); click a chip to put this block in it; **Add** a new one; or, on an existing one, **Rename / Colour / Set Default / Delete** (delete asks to confirm). These edit real server categories (so they affect other blocks too).
+- **UI polish** — a green ✔ appears on each left tab once it's filled in; panels sit on subtle cards; hovering Glow / Hardness / Sound / Collision shows a one-line explanation.
+- **Not yet:** category **icon** picking, and one block belonging to several categories — later updates.
+
+### Added — Group 27.6 Block Creation Studio · slice 2 "sidebar + sections" (📦 deployed 2026-06-18, awaiting in-game test)
+
+> The studio grew a real left-hand section sidebar. **Build-green is not "done" — this needs your in-game test.**
+> Test steps: testing guide §6 (🆕 Slice 2 block).
+
+- **`/cb create` is now a studio with sections** — a left sidebar with **Identity · Texture · Shape · Attributes · Organize** (FX / Behavior / Lore are shown but greyed-out "coming soon"). The open section has a gold marker + breadcrumb.
+- **Identity** — Block ID + Display Name + **Auto-ID from name** button.
+- **Texture** — paste a URL and Load, **or** pick a base colour (8 swatches or a `#RRGGBB` hex) to make a solid-colour block. The cube preview updates live.
+- **Shape** — pick from the 10 shapes (full / slab / stairs / pane / cross / …); the preview cube changes shape live.
+- **Attributes** — set glow (0–15), hardness (Soft/Wood/Stone/Iron/Hard), step sound (17 types), and Solid/Passable.
+- **Organize** — set a category.
+- **Create & Publish applies all of it at once** — the new block is made with your chosen texture/colour, shape, glow, hardness, sound, collision and category in one go, through the mod's existing engines.
+- **Not yet:** FX (emissive/pulse/glint), Behavior (gravity/bounce/slippery), and Lore/attribution — those need new block data and come in a later update; the per-pixel colour tools, overlays, and session memory are also later.
+
+### Added — Group 27.6 Block Creation Studio · slice 1 "vertical spine" (📦 deployed 2026-06-18, awaiting in-game test)
+
+> The first working slice of the new one-screen block maker. **Build-green is not "done" — this needs your in-game test.**
+> Full spec: `Finale Fix/GROUP_27_SCREENS.md §G27.6` / `§G27.6.X`; test steps: testing guide §6 (🆕 Slice 1 block).
+
+- **`/cb create` with no arguments now opens the Block Creation Studio** — a gold-framed screen with a live spinning 3D preview cube. Type a **Block ID** + **Display Name**, optionally paste a **Texture URL** and click **Load** to see it on the cube, then **Create & Publish** to make a real block. The old `/cb create <id> [name] [url]` typed command is **unchanged**.
+- The studio creates the block through the exact same engine the typed command uses, so a bad/duplicate id or broken link is caught and explained in chat (no empty blocks left behind).
+- Standard Group 27 frame: world visible behind, `[?]` help, background-dim slider, `Enter` = create, `Esc` = cancel (asks before discarding).
+
+### Added — Group 27.7 screen corrections (📦 deployed 2026-06-18, awaiting in-game test)
+
+> Built slice by slice and deployed as one jar. **Build-green is not "done" — these need your in-game test.**
+> Full spec: `Finale Fix/GROUP_27_SCREENS.md §G27.7`; test steps: `Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md`.
+
+- **Smoother 3D screens** — the rotating preview was rebuilt to draw fast (no more lag) and the block no longer disappears while spinning. *(confirmed in-game 2026-06-17)*
+- **`[?]` help shows on top**, redesigned with a red **[X]** close, organised shortcut groups, and it no longer vanishes on a stray click.
+- **Adjustable background dim** — a slider (top-left of `[?]`) sets how dark the world behind a screen is; sensible dark default; remembered next time. (Eyedrop stays faint.)
+- **Tidier Arabic colours** — Background/Letter swatches moved into a clean side panel you can **drag, snap, collapse, and customize**: add (type a hex or use the dropper), remove, drag-reorder, recent colours, named saved palettes, a **contrast warning**, matching-colour + tint suggestions, **number-key 1–9** shortcuts, a **★ favourites** row, hover-to-see-hex, right-click to edit, and a built-in **dropper + magnifier loupe**.
+- **Movable, smaller button bar** — the bottom buttons are now a compact bar you can dock to the bottom/left/right edge or hide to a thin tab; takes less space; remembered.
+- **`/cb livecolor` with no id** opens a block picker; the colour sliders got a colourful gradient redesign (rainbow hue track, bigger knobs, value chips) plus **temperature, contrast, one-tap filters (grayscale/sepia/invert/posterize), and a brightness curve** (lift shadows / lower highlights).
+- **`/cb eyedrop`** now explains itself (first-time popup + a permanent hint) and has a **hide-UI toggle** (press H) so you can sample pixels the top bar covered.
+- **`/cb shapeeditor` fixed** — it was an unregistered/duplicated command; now works with no id (block picker → 3D shape screen) or with an id (opens directly).
+- **HUD: centered long names stay centered** instead of drifting right (§E5).
+
+### Planned — Group 27.7 remaining (⏳ NOT built)
+
+- **HUD editor look + feel** — a brighter restyle, an intro/guidance + empty-state, advanced controls folded behind one "Advanced" toggle, and clearer brick drag/placement preview. *(its own session — the editor file must be split first)*
+
+### Changed
+- **Arabic live preview screen — sharper render + camera QoL (Group 13 §1, confirmed in-game 2026-06-16 — partial).** The 3D preview cube
+  now downsamples its texture at a higher grid (56, was 28) with an alpha-weighted area average, so
+  the letters read crisp instead of blocky. New live controls: **scroll** = spin speed,
+  **shift+scroll** = zoom, **click** (without dragging) = pause/resume the auto-spin, **R** = reset
+  view, **Enter** = Create. A small corner readout shows spin %/zoom %. Client-only; no server or
+  payload change.
+
 ### Fixed
+- **Block display names show clean — no more underscores (Group 26 FIX A, confirmed in-game 2026-06-15).**
+  Names now render with spaces and Title Case (`Test_black` → **Test Black**); the underscore is no
+  longer kept. Applies to new blocks, uploads, and renames, and a one-time boot migration cleans the
+  224 bundled Arabic blocks (`Alef_Black` → **Alef Black**) already saved with underscore names.
+- **`/cb give <id>` is now case-insensitive (Group 26 FIX B, confirmed in-game 2026-06-15).** If a
+  block's id is `Te`, then `/cb give te`, `/cb give Te`, and `/cb give TE` all give the same block.
+  Exact matches are unchanged (tried first); the tolerance only kicks in when an exact match misses.
+- **Custom-block textures now load on the modded client (host) — confirmed in-game 2026-06-15.**
+  A modded client (the world host) was ignoring the server's resource-pack download, so new/edited
+  block textures never appeared and only stale textures from an old pack showed. The client now
+  builds the pack **locally** from the live block data and silently reloads — textures apply instantly,
+  with no "download the resource pack?" dialog. Friends connecting to a real server (vanilla, or modded
+  without local data) are a separate next step. Tracked in `Finale Fix/GROUP_05_RESOURCE_PACK.md`.
 - **Back button no longer closes command-opened menus** — clicking Back in a GUI you opened
   straight from a command (like `/cb bulkgui`) now takes you to the Main Menu; only ✖ Close
   closes the screen.
@@ -37,6 +213,23 @@ progress by **phase milestones** (see CustomBlocks_Engineering_Bible.md §8).
   - **`/cb gradient` with no args now opens the Gradient Builder GUI** (it used to be an error).
 
 ### Added
+- **Group 26 Part C — browse your textures by name (🟢 built, gates pass; ⏳ not in-game verified).**
+  A new optional `/cb config mirrornames on` keeps a human-readable copy of your texture folder at
+  `config\customblocks\textures_names\`, where each file is named by the block (`Neptune Red.png`)
+  instead of `slot_0.png`. It's **write-only** — the mod writes it but never reads it, so it can never
+  affect a block, the resource pack, or anything already placed. `on` backfills every block, `off` stops,
+  `rebuild` regenerates from scratch, and a manifest keeps renames/deletes from leaving orphan files.
+  Off by default.
+- **Group 12 — Export Dashboard: Blueprint item + downloads (🟢 built, gates pass; ⏳ not in-game verified).**
+  - **Blueprint item** — `/cb exportblock <id>` gives a tradeable item carrying a block's full recipe;
+    hand it to a friend and they run `/cb importblock` (held in hand) to recreate the block. Offline,
+    no server needed.
+  - **Export All → one ZIP** — `/cb export zip` (and an "Export All (ZIP)" dashboard tile) bundle every
+    block (JSON + texture) into `cloud_exports/all-<stamp>.zip` with a clickable `[download]` link.
+  - **Clickable downloads everywhere** — single-block JSON/PNG and category ZIP now save to
+    `cloud_exports/` and give a working `[download]` link (the PNG link was previously broken).
+  - **Deferred (marked partial):** vault share-codes, the marketplace, and litematic/.schem/vanilla
+    resource-pack formats — they need the cloud vault deployed; revisiting at the end.
 - **Group 10 — colour & image tools, rest of group (🟢 built, gates pass; ⏳ not in-game verified).**
   - **Background Studio:** `/cb bgstudio <id>` — a per-block GUI to re-run background removal on demand
     (None / Background only / Background + enclosed / **Smart**). The first three are the same engine

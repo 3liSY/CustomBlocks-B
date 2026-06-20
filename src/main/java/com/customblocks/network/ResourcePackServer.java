@@ -15,7 +15,9 @@ package com.customblocks.network;
 
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.CustomBlocksMod;
+import com.customblocks.network.payloads.RegenPackPayload;
 import com.sun.net.httpserver.HttpServer;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.network.packet.s2c.common.ResourcePackSendS2CPacket;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -71,6 +73,19 @@ public final class ResourcePackServer {
     // here and delivered when their GUI closes (CbChestHandler/AnvilPrompt call onGuiClosed).
     private static final java.util.Set<UUID> PENDING_SENDS = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
+    // The pack id last successfully sent to each player. A fresh server start fires TWO send
+    // paths at the joining player (SERVER_STARTED rebuild → sendToAll, and the JOIN handler →
+    // sendToPlayer); both carry the same pack hash, which the client shows as TWO prompts. We
+    // record the id we sent and skip a repeat of the SAME id, so identical sends are idempotent
+    // (one prompt). Cleared on disconnect (see forget()) so a genuine rejoin re-prompts once.
+    private static final java.util.Map<UUID, UUID> LAST_SENT_PACK = new java.util.concurrent.ConcurrentHashMap<>();
+
+    // Players who joined BEFORE the world's first pack build finished. On a fresh single-player
+    // world the rebuild is async (~500ms+) but the JOIN fires almost immediately, so the join's
+    // pack push finds currentHash == null and can deliver nothing. We remember those players here
+    // and push to them the moment the first build completes — the join never loses the race again.
+    private static final java.util.Set<UUID> AWAITING_FIRST_PACK = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
     private ResourcePackServer() {} // static-only
 
     public static void setServer(MinecraftServer s) { serverInstance = s; }
@@ -79,6 +94,16 @@ public final class ResourcePackServer {
 
     public static void start() {
         if (server != null) server.stop(0);
+        // These fields are static and survive a single-player world reload within the same client
+        // JVM. If we don't clear them, a fresh JOIN sends the PREVIOUS world's stale pack hash (then
+        // the new rebuild sends a different one → two prompts), and a leftover send-record can block
+        // the real join send entirely (→ no prompt, and later edits never push). Start each world
+        // load from a clean slate: the world's own rebuild + first send is the single source of truth.
+        currentHash = null;
+        currentPackFile = null;
+        LAST_SENT_PACK.clear();
+        PENDING_SENDS.clear();
+        AWAITING_FIRST_PACK.clear();
         int base = CustomBlocksConfig.httpPort;
         int[] ports = { base, 8124, 8081, 24454, 3000 };
         for (int p : ports) {
@@ -109,8 +134,8 @@ public final class ResourcePackServer {
         // Serves per-block export JSONs: GET /export/<id>  (written by /cb export <id> download)
         server.createContext("/export/", exchange -> {
             String raw = exchange.getRequestURI().getPath().substring("/export/".length());
-            String id  = raw.replaceAll("[^a-zA-Z0-9_\\-]", ""); // sanitise — no path traversal
-            File f = new File("config/customblocks/exports", id + ".json");
+            String id  = raw.replaceAll("\\.json$", "").replaceAll("[^a-zA-Z0-9_\\-]", ""); // sanitise — no path traversal
+            File f = new File("config/customblocks/cloud_exports", id + ".json");
             if (id.isEmpty() || !f.exists()) {
                 byte[] msg = ("not found: " + id).getBytes(StandardCharsets.UTF_8);
                 exchange.sendResponseHeaders(404, msg.length);
@@ -157,6 +182,23 @@ public final class ResourcePackServer {
             exchange.sendResponseHeaders(200, tex.length);
             try (OutputStream os = exchange.getResponseBody()) { os.write(tex); }
         });
+        // Serves a bundle ZIP for direct browser download: GET /zip/<name>.zip
+        // (Export All and Export Category write into cloud_exports/; the chat [download] link points here.)
+        server.createContext("/zip/", exchange -> {
+            String raw = exchange.getRequestURI().getPath().substring("/zip/".length());
+            String name = raw.replaceAll("[^a-zA-Z0-9_.\\-]", ""); // no path traversal — slashes stripped
+            File f = new File("config/customblocks/cloud_exports", name);
+            if (name.isEmpty() || !name.endsWith(".zip") || !f.exists()) {
+                byte[] msg = ("not found: " + name).getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(404, msg.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(msg); }
+                return;
+            }
+            exchange.getResponseHeaders().set("Content-Type", "application/zip");
+            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"" + name + "\"");
+            exchange.sendResponseHeaders(200, f.length());
+            try (OutputStream os = exchange.getResponseBody()) { Files.copy(f.toPath(), os); }
+        });
         server.setExecutor(null);
         server.start();
         CustomBlocksMod.LOGGER.info("[CustomBlocks] Resource-pack HTTP server live on port {}", activePort);
@@ -189,6 +231,12 @@ public final class ResourcePackServer {
     public static String getTexUrl(String id) {
         int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
         return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/tex/" + id + ".png";
+    }
+
+    /** Public URL for a bundle ZIP in cloud_exports/ (the chat [download] link target). */
+    public static String getZipUrl(String fileName) {
+        int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
+        return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/zip/" + fileName;
     }
 
     // ── Group 02: resource-pack regeneration controls ───────────────────────
@@ -261,7 +309,16 @@ public final class ResourcePackServer {
     public static void sendToPlayer(ServerPlayerEntity player) {
         if (suppressed) return;
         String hash = currentHash;
-        if (hash == null || hash.isEmpty() || activePort < 0) return;
+        if (hash == null || hash.isEmpty()) {
+            // Pack not built yet — fresh world, the rebuild is still running. Remember this
+            // player so the build's completion (rebuild → sendToAll) delivers to them; the join
+            // must not silently drop the pack just because it arrived a few hundred ms early.
+            AWAITING_FIRST_PACK.add(player.getUuid());
+            CustomBlocksMod.LOGGER.info("[CustomBlocks] Join before pack ready — {} queued for first build.",
+                    player.getName().getString());
+            return;
+        }
+        if (activePort < 0) return;
         PENDING_SENDS.remove(player.getUuid());
         if (hasBlockingGui(player)) {
             // Don't interrupt an open CustomBlocks menu — deliver when it closes.
@@ -269,14 +326,45 @@ public final class ResourcePackServer {
             return;
         }
         UUID id = UUID.nameUUIDFromBytes(hash.getBytes(StandardCharsets.UTF_8));
+        // Already sent this exact pack to this player — skip so a second send path can't
+        // produce a duplicate prompt. A new pack (different hash → different id) still sends.
+        if (id.equals(LAST_SENT_PACK.get(player.getUuid()))) return;
+
+        // A MODDED client (the host, modded friends) can decode our channels — it ignores the HTTP
+        // push and instead generates the pack locally on this signal (Group 05 fix). Skip the self
+        // HTTP push for them; vanilla friends still get the real download below.
+        if (ServerPlayNetworking.canSend(player, RegenPackPayload.ID)) {
+            try {
+                ServerPlayNetworking.send(player, new RegenPackPayload(hash));
+                LAST_SENT_PACK.put(player.getUuid(), id);
+                AWAITING_FIRST_PACK.remove(player.getUuid());
+                CustomBlocksMod.LOGGER.info("[CustomBlocks] Signaled modded client {} to regen pack locally (hash {}).",
+                        player.getName().getString(), hash);
+            } catch (Exception e) {
+                CustomBlocksMod.LOGGER.warn("[CustomBlocks] Failed to signal modded client {}", player.getName().getString());
+            }
+            return;
+        }
+
         try {
             ResourcePackSendS2CPacket packet = new ResourcePackSendS2CPacket(
                     id, getPackUrl(), hash, false,
                     Optional.of(Text.literal("CustomBlocks textures")));
             player.networkHandler.sendPacket(packet);
+            LAST_SENT_PACK.put(player.getUuid(), id);
+            AWAITING_FIRST_PACK.remove(player.getUuid());
+            CustomBlocksMod.LOGGER.info("[CustomBlocks] Sent resource pack to {} (id {}).",
+                    player.getName().getString(), id);
         } catch (Exception e) {
             CustomBlocksMod.LOGGER.warn("[CustomBlocks] Failed to send pack to {}", player.getName().getString());
         }
+    }
+
+    /** Forget a player's send history (call on disconnect) so a later rejoin re-prompts once. */
+    public static void forget(UUID uuid) {
+        LAST_SENT_PACK.remove(uuid);
+        PENDING_SENDS.remove(uuid);
+        AWAITING_FIRST_PACK.remove(uuid);
     }
 
     /** True while the player is inside a CustomBlocks chest menu or anvil prompt. */

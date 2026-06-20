@@ -50,13 +50,16 @@ public class OmniToolItem extends Item {
 
     @Override
     public ActionResult useOnBlock(ItemUsageContext ctx) {
-        if (!(ctx.getWorld().getBlockState(ctx.getBlockPos()).getBlock() instanceof SlotBlock slot)) {
-            return ActionResult.PASS; // not our block — act like an empty hand
+        var block = ctx.getWorld().getBlockState(ctx.getBlockPos()).getBlock();
+        boolean ours = block instanceof SlotBlock;
+        if (!ours) {
+            return ActionResult.PASS; // not our block — act like an empty hand (joinable letters included)
         }
         // Client returns SUCCESS so the arm swings with no delay; the server does the work.
         if (!(ctx.getPlayer() instanceof ServerPlayerEntity player)) {
             return ActionResult.SUCCESS;
         }
+        SlotBlock slot = (SlotBlock) block;
         SlotData d = SlotManager.getBySlot(slot.getSlotKey());
         if (d == null) {
             return ActionResult.SUCCESS; // unassigned slot block; nothing to edit

@@ -20,6 +20,7 @@ import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
 import com.customblocks.core.UndoManager;
 import com.customblocks.image.BackgroundRemover;
+import com.customblocks.ai.AiTextureGenerator;
 import com.customblocks.image.ImageDownloader;
 import com.customblocks.image.ImageProcessor;
 import com.customblocks.network.HudSync;
@@ -34,6 +35,7 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.UUID;
+import java.util.function.Consumer;
 
 public final class CreationCommands {
 
@@ -46,7 +48,9 @@ public final class CreationCommands {
         //   /cb create <id> <name> <url>     → block + texture in one command
         // Name is a quoted string so a multi-word name + URL can coexist
         //   (single-word names need no quotes, e.g. /cb create heart Heart https://...).
+        // Group 27 §G27.6 — bare /cb create (no args) opens the Block Creation Studio (CreationStudioBridge).
         root.then(CommandManager.literal("create")
+                .executes(ctx -> CreationStudioBridge.openStudio(ctx.getSource()))
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .executes(ctx -> create(ctx, id(ctx), null, null))
                         .then(CommandManager.argument("name", StringArgumentType.string())
@@ -104,8 +108,17 @@ public final class CreationCommands {
     }
 
     private static int create(CommandContext<ServerCommandSource> ctx, String id, String name, String url) {
-        ServerCommandSource src = ctx.getSource();
+        return doCreate(ctx.getSource(), id, name, url);
+    }
 
+    /** The single block-creation rail, shared by the /cb create CLI and the studio (CreationStudioBridge, §G27.6). */
+    static int doCreate(ServerCommandSource src, String id, String name, String url) {
+        return doCreate(src, id, name, url, null, null);
+    }
+
+    /** Same rail + optional {@code postApply} (run before the pack rebuild) and {@code bgArgb} studio background (null = none). */
+    static int doCreate(ServerCommandSource src, String id, String name, String url,
+                        Consumer<SlotData> postApply, Integer bgArgb) {
         // With a URL: download + decode FIRST, and only create the block if that succeeds — a broken
         // or non-image link must NOT leave behind an empty, untextured block (developer-reported bug).
         if (url != null && !url.isBlank()) {
@@ -118,7 +131,7 @@ public final class CreationCommands {
                 Chat.error(src, "Couldn't create \"" + id + "\" — that id is already taken. Try a different id.");
                 return 0;
             }
-            createWithTexture(src, id, name, url);
+            createWithTexture(src, id, name, url, postApply, bgArgb);
             return 1;
         }
 
@@ -130,9 +143,11 @@ public final class CreationCommands {
             return 0;
         }
         UndoManager.recordCreate(actor(src), d);
+        if (postApply != null) { postApply.accept(d); ResourcePackServer.updatePack(); } // studio shape/attrs
         Chat.success(src, name == null
                 ? "Block \"" + id + "\" created successfully."
                 : "Block \"" + id + "\" (\"" + name + "\") created successfully.");
+        CategoryCommands.suggestOnCreate(src, d); // Group 11: one-click category hint (opt-out via config)
         syncHud(src);
         return 1;
     }
@@ -143,18 +158,26 @@ public final class CreationCommands {
      * "a bad link still makes an empty block"). Mirrors applyTexture's pipeline, but the slot is
      * allocated last so a failure leaves the world untouched.
      */
-    private static void createWithTexture(ServerCommandSource src, String id, String name, String url) {
+    private static void createWithTexture(ServerCommandSource src, String id, String name, String url,
+                                          Consumer<SlotData> postApply, Integer bgArgb) {
         MinecraftServer server = src.getServer();
         Chat.info(src, "Fetching the image for \"" + id + "\" before creating…");
 
         Thread worker = new Thread(() -> {
             try {
-                byte[] raw = ImageDownloader.download(url);
+                // AI/Pollinations links generate on the fly (slow first hit) → use the longer timeout + retry.
+                byte[] raw = AiTextureGenerator.isAiUrl(url)
+                        ? ImageDownloader.download(url, AiTextureGenerator.FETCH_TIMEOUT_SECONDS)
+                        : ImageDownloader.download(url);
+                // Group 14 — if the download is an actually-animated GIF/WebP, build an animated block
+                // (vertical strip + .mcmeta) and stop here. Returns false → fall through to static.
+                if (AnimCommands.maybeCreateAnimated(src, id, name, raw, server)) return;
                 byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
                         CustomBlocksConfig.backgroundTolerance);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
-                png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                // Studio "background" colour fills behind the image's transparent pixels (else snap-to-black).
+                png = bgArgb != null ? ImageProcessor.fillBackground(png, bgArgb)
+                        : BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode, CustomBlocksConfig.backgroundTolerance);
                 final byte[] finalPng = png;
                 server.execute(() -> {
                     // Re-check on the server thread — the id could have been taken while downloading.
@@ -167,6 +190,7 @@ public final class CreationCommands {
                     TextureStore.save(d.index(), finalPng);
                     TextureStore.saveSource(d.index(), raw);
                     UndoManager.recordCreate(actor(src), d);
+                    if (postApply != null) postApply.accept(d); // studio shape/attrs before the rebuild
                     ResourcePackServer.updatePack();
                     Chat.success(src, "Block \"" + id + "\"" + (name == null ? "" : " (\"" + name + "\")")
                             + " created" + (CustomBlocksConfig.silentPack
@@ -244,26 +268,6 @@ public final class CreationCommands {
         return 1;
     }
 
-    /* ============================================================================================
-     * ║  NOTE — PLANNED FEATURE: "retexture existing blocks to the new size" (sub-sub-GUI)         ║
-     * ║                                                                                            ║
-     * ║  After the player picks a size in TextureSizeMenu, a 3-button confirm (Yes / Info / No)    ║
-     * ║  should offer to re-render already-created blocks at the newly chosen textureSize.         ║
-     * ║                                                                                            ║
-     * ║  This is now BUILDABLE: applyTexture() stores each URL block's ORIGINAL image via          ║
-     * ║  TextureStore.saveSource(). A "retexture all" job would, per assigned slot:                ║
-     * ║     byte[] raw = TextureStore.loadSource(index);                                           ║
-     * ║     if (raw == null)  → no source (Arabic glyph / video / made before this update):        ║
-     * ║                         skip, or upscale the baked slot_N.png (no real detail gained).     ║
-     * ║     else  → re-run BackgroundRemover.apply + ImageProcessor.toBlockPng(raw, newSize)       ║
-     * ║            + snapBackgroundBlack, then TextureStore.save(index, png).                       ║
-     * ║     Finally ONE ResourcePackServer.updatePack() AFTER the whole batch (not per block).     ║
-     * ║                                                                                            ║
-     * ║  CAUTIONS (CLAUDE.md §7): run off the server thread; debounce/one pack rebuild at the end; ║
-     * ║  show the live count = SlotManager.usedSlots() in the Info button; sources are only        ║
-     * ║  present for blocks created AFTER this update (older blocks → upscale-only).               ║
-     * ║  Status: PARTIAL — source store DONE this session; the GUI + batch job are NOT built yet.  ║
-     * ============================================================================================ */
     private static int retexture(CommandContext<ServerCommandSource> ctx, String id, String url) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
@@ -291,7 +295,10 @@ public final class CreationCommands {
 
         Thread worker = new Thread(() -> {
             try {
-                byte[] raw = ImageDownloader.download(url);
+                // AI/Pollinations links generate on the fly (slow first hit) → use the longer timeout + retry.
+                byte[] raw = AiTextureGenerator.isAiUrl(url)
+                        ? ImageDownloader.download(url, AiTextureGenerator.FETCH_TIMEOUT_SECONDS)
+                        : ImageDownloader.download(url);
                 // M1: strip the background to opaque black first (no-op when mode is "none"),
                 // BEFORE the resize/pad so corner sampling reads the real background.
                 byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
@@ -339,9 +346,12 @@ public final class CreationCommands {
         Chat.info(src, "Retexturing " + indices.size() + " block(s) to §e" + newSize + "px§r…");
 
         Thread worker = new Thread(() -> {
-            int rerendered = 0, upscaled = 0, skipped = 0;
+            int rerendered = 0, upscaled = 0, skipped = 0, animated = 0;
             for (int index : indices) {
                 try {
+                    // Group 14 — never run an animated strip through toBlockPng; it would crop the
+                    // tall vertical strip into one square and destroy the animation. Leave it alone.
+                    if (SlotManager.animFor(index).isAnimated()) { animated++; continue; }
                     byte[] raw = TextureStore.loadSource(index);
                     if (raw != null && raw.length > 0) {
                         byte[] cleaned = BackgroundRemover.apply(raw, mode, tol);
@@ -362,15 +372,16 @@ public final class CreationCommands {
                     skipped++;
                 }
             }
-            final int fr = rerendered, fu = upscaled, fs = skipped;
+            final int fr = rerendered, fu = upscaled, fs = skipped, fa = animated;
             server.execute(() -> {
                 ResourcePackServer.updatePack(); // ONE rebuild after the whole batch (§7)
                 if (fs > 0) {
                     IncidentRecorder.record("Retexture-all to " + newSize + "px skipped " + fs
                             + " slot(s) (no source/texture or decode error)");
                 }
+                String animNote = fa > 0 ? " §b" + fa + "§r animated left untouched." : "";
                 Chat.success(src, "Retexture complete — §a" + fr + "§r re-rendered, §e" + fu
-                        + "§r upscaled, §7" + fs + "§r skipped. " + (CustomBlocksConfig.silentPack
+                        + "§r upscaled, §7" + fs + "§r skipped." + animNote + " " + (CustomBlocksConfig.silentPack
                         ? "Blocks update in a moment." : "Accept the resource-pack prompt to see them."));
             });
         }, "CustomBlocks-RetextureAll");

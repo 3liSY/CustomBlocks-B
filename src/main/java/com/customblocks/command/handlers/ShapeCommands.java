@@ -24,9 +24,14 @@ import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
+import com.customblocks.gui.GuiMode;
+import com.customblocks.gui.chest.GuiRouter;
+import com.customblocks.gui.chest.Nav;
 import com.customblocks.network.ResourcePackServer;
+import com.customblocks.network.payloads.OpenGuiPayload;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.CommandSource;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
@@ -65,6 +70,48 @@ public final class ShapeCommands {
                         .suggests((ctx, b) -> CommandSource.suggestMatching(BlockShapes.names(), b))
                         .executes(ctx -> shapePreview(ctx.getSource(),
                                 StringArgumentType.getString(ctx, "shape")))));
+
+        // Group 27 §G27.5 / §F2 — the ONLY /cb shapeeditor (old Group 08 chest registration removed):
+        //   no id  → chest block-picker (pick a block) → opens the 3D Shape Editor screen
+        //   <id>   → opens the 3D Shape Editor screen directly
+        root.then(CommandManager.literal("shapeeditor")
+                .executes(ctx -> openShapePicker(ctx.getSource()))
+                .then(CommandManager.argument("id", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .executes(ctx -> openShapeEditor(ctx.getSource(),
+                                StringArgumentType.getString(ctx, "id")))));
+    }
+
+    /** /cb shapeeditor (no id) — open the chest block-picker; clicking a block opens the 3D Shape Editor. */
+    private static int openShapePicker(ServerCommandSource src) {
+        if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
+            Chat.error(src, "Run /cb shapeeditor as a player — it opens an in-game screen.");
+            return 0;
+        }
+        GuiRouter.openFresh(player, Nav.MenuKey.of(Nav.Dest.COLOR_PICK, "shapeeditor"));
+        return 1;
+    }
+
+    /** /cb shapeeditor <id> — send the player to the client Shape Editor screen. */
+    private static int openShapeEditor(ServerCommandSource src, String id) {
+        if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
+            Chat.error(src, "Run /cb shapeeditor as a player — it opens an in-game screen.");
+            return 0;
+        }
+        SlotData d = SlotManager.getById(id);
+        if (d == null) {
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
+            return 0;
+        }
+        // data = "<id>|<texture url>|<current shape>" (texUrl may be empty — the screen falls back to a flat colour).
+        String data = id + "|" + ResourcePackServer.getTexUrl(id) + "|" + d.shape();
+        ServerPlayNetworking.send(player, new OpenGuiPayload(GuiMode.SHAPE_EDITOR.id, data));
+        return 1;
+    }
+
+    /** Group 27 §G27.5 — apply a shape chosen in the Shape Editor screen (same rail as /cb setshape). */
+    public static void applyFromEditor(ServerPlayerEntity player, String id, String shape) {
+        applyShape(player.getCommandSource(), id, shape);
     }
 
     /** Change one block's shape (clearshape passes "full"). Validates, applies, undo + pack rebuild. */

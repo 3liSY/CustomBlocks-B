@@ -38,9 +38,17 @@ public final class CustomBlocksConfig {
     /** Port for the embedded resource-pack HTTP server. */
     public static volatile int httpPort = 8123;
 
-    /** Block texture size in pixels (power of two: 16/32/64/128/256/512). 128 default — 64 was visibly
-     *  pixelated after the 512→size downscale. Settable in-game via /cb config texturesize. */
-    public static volatile int textureSize = 128;
+    /** Block texture size (px), a power of two 16..{@link #MAX_TEXTURE_SIZE}. Set via /cb config texturesize. */
+    public static volatile int textureSize = 256;
+
+    /** Hard ceiling for {@link #textureSize}. Atlas-rendered blocks muffle above 256px (ADR-007); the
+     *  own-texture renderer (ADR-008) carries full resolution with no atlas, so 512px is allowed for it. */
+    public static final int MAX_TEXTURE_SIZE = 512;
+
+    /** Snap a requested size to a power of two, 16..{@link #MAX_TEXTURE_SIZE} (512→512, 300→256, 200→128). */
+    public static int sanitizeTextureSize(int px) {
+        return Integer.highestOneBit(Math.max(16, Math.min(MAX_TEXTURE_SIZE, px)));
+    }
 
     /** Host the resource-pack URL is served from (127.0.0.1 for local; set to server IP for LAN). */
     public static volatile String httpHost = "127.0.0.1";
@@ -60,11 +68,8 @@ public final class CustomBlocksConfig {
 
     // ── Group 05 — silent resource pack ──────────────────────────────────────
 
-    /**
-     * Auto-accept the resource-pack prompt on clients so textures apply with no dialog.
-     * true = silent (default) · false = show the vanilla "download pack?" dialog.
-     * Server-forced (required) packs always prompt — a Minecraft limitation.
-     */
+    /** Auto-accept the resource-pack prompt so textures apply with no dialog (default true; false shows
+     *  the vanilla "download pack?" dialog). Server-forced packs always prompt — a Minecraft limitation. */
     public static volatile boolean silentPack = true;
 
     // ── Group 04 — chat & command communication ──────────────────────────────
@@ -76,19 +81,19 @@ public final class CustomBlocksConfig {
      */
     public static volatile String didYouMean = "smart";
 
-    // ── Phase 13 — AI ────────────────────────────────────────────────────────
-
+    // ── Phase 13 — AI (legacy key fields; removal deferred to G15.7) ──────────
     /** API key for AI texture/command features (leave empty to disable). */
     public static volatile String aiApiKey = "";
-
     /** Whether AI texture generation is enabled (requires aiApiKey). */
     public static volatile boolean aiTextureEnabled = false;
 
-    // ── Phase 14 — Cloud + Discord ───────────────────────────────────────────
+    // ── Group 15 — AI textures (keyless Pollinations.ai) ─────────────────────
+    /** Appended to every AI prompt so results read as block textures. Default "pixel_art". */
+    public static volatile String aiTextureStyle = "pixel_art";
 
+    // ── Phase 14 — Cloud + Discord ───────────────────────────────────────────
     /** Cloudflare Block Vault endpoint URL (leave empty to disable). */
     public static volatile String vaultEndpoint = "";
-
     /** Discord webhook URL for block-event notifications (leave empty to disable). */
     public static volatile String discordWebhookUrl = "";
 
@@ -145,6 +150,30 @@ public final class CustomBlocksConfig {
     /** Days a deleted block stays in the trash before auto-pruning. 0 = keep forever. Pinned never prune. */
     public static volatile int trashRetentionDays = 30;
 
+    // ── Group 11 — categories ─────────────────────────────────────────────────
+
+    /** When true, /cb create suggests a category from the block name (a clickable hint, not auto-applied). */
+    public static volatile boolean autoCategorizeEnabled = true;
+
+    // ── Group 26 / Part C — named-texture mirror ──────────────────────────────
+
+    /** When true, keep a human-readable, write-only copy of each texture under textures_names/ named by
+     *  display name (never read back; slot_N.png stays canonical). Off by default. See TextureNameMirror. */
+    public static volatile boolean mirrorNamedTextures = false;
+
+    // ── Group 13 / Area 2 — Arabic Studio colour defaults ─────────────────────
+
+    /** Default BACKGROUND colour the Arabic word Color Studio starts on (#RRGGBB). */
+    public static volatile String arabicDefaultBgHex = "#0A0A0A";
+
+    /** Default LETTER colour the Arabic word Color Studio starts on (#RRGGBB); outline stays black. */
+    public static volatile String arabicDefaultLetterHex = "#FFFFFF";
+
+    // ── Group 13 / O6 — live Arabic join form labels (mirror into ArabicLabels, synced to clients) ──
+    public static volatile String arabicFormIni = "Ini";
+    public static volatile String arabicFormMid = "Mid";
+    public static volatile String arabicFormFin = "Fin";
+
     private CustomBlocksConfig() {} // static-only
 
     /** Load config from disk, writing defaults if the file is missing. */
@@ -162,7 +191,7 @@ public final class CustomBlocksConfig {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
             maxSlots        = clamp(getInt(root, "maxSlots", maxSlots), 1, 8192);
             httpPort        = clamp(getInt(root, "httpPort", httpPort), 1, 65535);
-            textureSize     = clamp(getInt(root, "textureSize", textureSize), 16, 512);
+            textureSize     = sanitizeTextureSize(getInt(root, "textureSize", textureSize)); // pow2, ≤256 (atlas mipmap safety)
             httpHost        = getString(root, "httpHost", httpHost);
             maxUndoDepth    = clamp(getInt(root, "maxUndoDepth", maxUndoDepth), 1, 1000);
             String m        = getString(root, "undoMode", undoMode);
@@ -172,6 +201,7 @@ public final class CustomBlocksConfig {
             didYouMean      = normalizeDidYouMean(getString(root, "didYouMean", didYouMean));
             aiApiKey        = getString(root, "aiApiKey", aiApiKey);
             aiTextureEnabled = getBool(root, "aiTextureEnabled", aiTextureEnabled);
+            aiTextureStyle  = getString(root, "aiTextureStyle", aiTextureStyle);
             vaultEndpoint   = getString(root, "vaultEndpoint", vaultEndpoint);
             discordWebhookUrl = getString(root, "discordWebhookUrl", discordWebhookUrl);
             backgroundMode  = BackgroundRemover.normalize(getString(root, "backgroundMode", backgroundMode));
@@ -184,6 +214,13 @@ public final class CustomBlocksConfig {
             autoBackupInterval  = clamp(getInt(root, "autoBackupInterval", autoBackupInterval), 0, 10080); // 0..1 week
             autoBackupKeepCount = clamp(getInt(root, "autoBackupKeepCount", autoBackupKeepCount), 0, 1000);
             trashRetentionDays  = clamp(getInt(root, "trashRetentionDays", trashRetentionDays), 0, 3650);
+            autoCategorizeEnabled = getBool(root, "autoCategorizeEnabled", autoCategorizeEnabled);
+            mirrorNamedTextures = getBool(root, "mirrorNamedTextures", mirrorNamedTextures);
+            arabicDefaultBgHex     = normalizeHexColor(getString(root, "arabicDefaultBgHex",     arabicDefaultBgHex),     arabicDefaultBgHex);
+            arabicDefaultLetterHex = normalizeHexColor(getString(root, "arabicDefaultLetterHex", arabicDefaultLetterHex), arabicDefaultLetterHex);
+            arabicFormIni = getString(root, "arabicFormIni", arabicFormIni);
+            arabicFormMid = getString(root, "arabicFormMid", arabicFormMid);
+            arabicFormFin = getString(root, "arabicFormFin", arabicFormFin);
             LOGGER.info("[CustomBlocks] Config loaded: maxSlots={}, httpPort={}, textureSize={}, hudEnabled={}",
                     maxSlots, httpPort, textureSize, hudEnabled);
         } catch (Exception e) {
@@ -209,6 +246,7 @@ public final class CustomBlocksConfig {
             root.addProperty("didYouMean",         didYouMean);
             root.addProperty("aiApiKey",           aiApiKey);
             root.addProperty("aiTextureEnabled",   aiTextureEnabled);
+            root.addProperty("aiTextureStyle",     aiTextureStyle);
             root.addProperty("vaultEndpoint",      vaultEndpoint);
             root.addProperty("discordWebhookUrl",  discordWebhookUrl);
             root.addProperty("backgroundMode",     backgroundMode);
@@ -221,6 +259,13 @@ public final class CustomBlocksConfig {
             root.addProperty("autoBackupInterval",  autoBackupInterval);
             root.addProperty("autoBackupKeepCount", autoBackupKeepCount);
             root.addProperty("trashRetentionDays",  trashRetentionDays);
+            root.addProperty("autoCategorizeEnabled", autoCategorizeEnabled);
+            root.addProperty("mirrorNamedTextures", mirrorNamedTextures);
+            root.addProperty("arabicDefaultBgHex",     arabicDefaultBgHex);
+            root.addProperty("arabicDefaultLetterHex", arabicDefaultLetterHex);
+            root.addProperty("arabicFormIni", arabicFormIni);
+            root.addProperty("arabicFormMid", arabicFormMid);
+            root.addProperty("arabicFormFin", arabicFormFin);
             Path tmp = dir.resolve(CONFIG_FILE + ".tmp");
             Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
             Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);

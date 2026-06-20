@@ -1,0 +1,774 @@
+diff --git a/src/main/java/com/customblocks/command/CustomBlockCommand.java b/src/main/java/com/customblocks/command/CustomBlockCommand.java
+index 62a85db..80a9349 100644
+--- a/src/main/java/com/customblocks/command/CustomBlockCommand.java
++++ b/src/main/java/com/customblocks/command/CustomBlockCommand.java
+@@ -579,14 +579,54 @@ public class CustomBlockCommand {
+                 // ── reid ────────────────────────────────────────────────────
+                 .then(CommandManager.literal("reid")
+                     .requires(PermissionHelper::canEdit)
+-                    .executes(ctx -> usage(ctx.getSource(), "reid"))
++                    // no args → pick-a-block GUI, then type a new ID (undo supported)
++                    .executes(ctx -> {
++                        ServerPlayerEntity p = ctx.getSource().getPlayer();
++                        if (p == null) { ChatHelper.error(ctx.getSource(), ChatHelper.formattedKey("cmd.console_player_only")); return 1; }
++                        GuiManager.openSingleBlockPicker(p, "reid", 0);
++                        return 1;
++                    })
+                     .then(CommandManager.argument("id", StringArgumentType.word())
+                         .suggests(BLOCK_SUGGESTIONS)
++                        // one arg → open the rename anvil for that block
++                        .executes(ctx -> {
++                            ServerPlayerEntity p = ctx.getSource().getPlayer();
++                            if (p == null) { ChatHelper.error(ctx.getSource(), ChatHelper.formattedKey("cmd.console_player_only")); return 1; }
++                            GuiManager.openReidPrompt(p, sanitize(StringArgumentType.getString(ctx, "id")));
++                            return 1;
++                        })
+                         .then(CommandManager.argument("newid", StringArgumentType.word())
+                             .executes(ctx -> cmdReId(ctx.getSource(),
+                                 StringArgumentType.getString(ctx, "id"),
+                                 StringArgumentType.getString(ctx, "newid"))))))
+ 
++                // ── recolor ─────────────────────────────────────────────────
++                .then(CommandManager.literal("recolor")
++                    .requires(PermissionHelper::canEdit)
++                    // no args → pick-a-block GUI, then pick a color (undo supported)
++                    .executes(ctx -> {
++                        ServerPlayerEntity p = ctx.getSource().getPlayer();
++                        if (p == null) { ChatHelper.error(ctx.getSource(), ChatHelper.formattedKey("cmd.console_player_only")); return 1; }
++                        GuiManager.openSingleBlockPicker(p, "recolor", 0);
++                        return 1;
++                    })
++                    .then(CommandManager.argument("id", StringArgumentType.word())
++                        .suggests(BLOCK_SUGGESTIONS)
++                        // one arg → open the color library for that block
++                        .executes(ctx -> {
++                            ServerPlayerEntity p = ctx.getSource().getPlayer();
++                            if (p == null) { ChatHelper.error(ctx.getSource(), ChatHelper.formattedKey("cmd.console_player_only")); return 1; }
++                            String id = sanitize(StringArgumentType.getString(ctx, "id"));
++                            if (!SlotManager.hasId(id)) { ctx.getSource().sendMessage(notFound(id)); return 1; }
++                            GuiManager.openColorPicker(p, id);
++                            return 1;
++                        })
++                        // id + color → apply directly (color name or hex)
++                        .then(CommandManager.argument("color", StringArgumentType.greedyString())
++                            .executes(ctx -> cmdRecolor(ctx.getSource(),
++                                StringArgumentType.getString(ctx, "id"),
++                                StringArgumentType.getString(ctx, "color"))))))
++
+                 // ── swapid ──────────────────────────────────────────────────
+                 .then(CommandManager.literal("swapid")
+                     .requires(PermissionHelper::canEdit)
+@@ -943,7 +983,7 @@ public class CustomBlockCommand {
+                 .then(CommandManager.literal("list")
+                     .executes(ctx -> cmdList(ctx.getSource()))
+                     .then(CommandManager.literal("export")
+-                        .executes(ctx -> usage(ctx.getSource(), "list export <txt|csv|json>"))
++                        .executes(ctx -> usage(ctx.getSource(), "list export <txt|csv|json|md|yaml|html>"))
+                         .then(CommandManager.argument("format", StringArgumentType.word())
+                             .executes(ctx -> cmdListExport(ctx.getSource(),
+                                 StringArgumentType.getString(ctx, "format").toLowerCase(java.util.Locale.ROOT))))))
+@@ -952,7 +992,9 @@ public class CustomBlockCommand {
+                 .then(CommandManager.literal("listgui")
+                     .executes(ctx -> {
+                         ServerPlayerEntity p = ctx.getSource().getPlayer();
+-                        if (p != null) GuiManager.openEditorPicker(p, 0);
++                        // Selection-first multi-select picker: search/filter blocks, tick many,
++                        // then "Use selection" routes them into any bulk command.
++                        if (p != null) GuiManager.openBulkOpPicker(p, "pick", 0);
+                         else ChatHelper.error(ctx.getSource(), ChatHelper.formattedKey("cmd.console_player_only"));
+                         return 1;
+                     }))
+@@ -2820,6 +2862,36 @@ public class CustomBlockCommand {
+         return 1;
+     }
+ 
++    /** /cb recolor &lt;id&gt; &lt;color|hex&gt; — recolor one block in place, with undo. */
++    private static int cmdRecolor(ServerCommandSource src, String rawId, String colorRaw) {
++        ServerPlayerEntity player = src.getPlayer();
++        if (player == null) { ChatHelper.error(src, ChatHelper.formattedKey("cmd.console_player_only")); return 0; }
++        String id = sanitize(rawId);
++        if (!SlotManager.hasId(id)) { src.sendMessage(notFound(id)); return 0; }
++        String c = colorRaw.trim();
++        Integer rgb = null;
++        String label = c;
++        // 1) named color from the library (e.g. "Red", "Sky Blue")
++        for (ColorLibrary.LibColor lc : ColorLibrary.ALL) {
++            if (lc.name().equalsIgnoreCase(c)) { rgb = lc.rgb(); label = lc.name(); break; }
++        }
++        // 2) hex (#RRGGBB or RRGGBB)
++        if (rgb == null) {
++            String norm = PlayerPaletteManager.normalize(c);
++            if (norm != null) {
++                try { rgb = Integer.parseInt(norm.replace("#", ""), 16); label = norm.toUpperCase(java.util.Locale.ROOT); }
++                catch (NumberFormatException ignored) {}
++            }
++        }
++        if (rgb == null) {
++            ChatHelper.error(src, "§cUnknown color '§f" + c + "§c'. Use a name (e.g. §fRed§c) or hex (e.g. §fFF5500§c). Browse with §f/cb colors§c.");
++            return 0;
++        }
++        int r = (rgb >> 16) & 0xFF, g = (rgb >> 8) & 0xFF, b = rgb & 0xFF;
++        GuiManager.applySingleRecolor(player, id, r, g, b, label);
++        return 1;
++    }
++
+     private static int cmdSwapId(ServerCommandSource src, String rawId1, String rawId2) {
+         String id1 = sanitize(rawId1);
+         String id2 = sanitize(rawId2);
+@@ -4136,9 +4208,24 @@ public class CustomBlockCommand {
+                 .withColor(net.minecraft.util.Formatting.AQUA)
+                 .withClickEvent(new net.minecraft.text.ClickEvent(net.minecraft.text.ClickEvent.Action.RUN_COMMAND, "/cb list export json"))
+                 .withHoverEvent(new net.minecraft.text.HoverEvent(net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal("Write block-list.json")))));
++            exportLine.append(Text.literal(" "));
++            exportLine.append(Text.literal("[MD]").styled(s -> s
++                .withColor(net.minecraft.util.Formatting.LIGHT_PURPLE)
++                .withClickEvent(new net.minecraft.text.ClickEvent(net.minecraft.text.ClickEvent.Action.RUN_COMMAND, "/cb list export md"))
++                .withHoverEvent(new net.minecraft.text.HoverEvent(net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal("Write block-list.md (Markdown table)")))));
++            exportLine.append(Text.literal(" "));
++            exportLine.append(Text.literal("[YAML]").styled(s -> s
++                .withColor(net.minecraft.util.Formatting.GOLD)
++                .withClickEvent(new net.minecraft.text.ClickEvent(net.minecraft.text.ClickEvent.Action.RUN_COMMAND, "/cb list export yaml"))
++                .withHoverEvent(new net.minecraft.text.HoverEvent(net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal("Write block-list.yml")))));
++            exportLine.append(Text.literal(" "));
++            exportLine.append(Text.literal("[HTML]").styled(s -> s
++                .withColor(net.minecraft.util.Formatting.RED)
++                .withClickEvent(new net.minecraft.text.ClickEvent(net.minecraft.text.ClickEvent.Action.RUN_COMMAND, "/cb list export html"))
++                .withHoverEvent(new net.minecraft.text.HoverEvent(net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal("Write block-list.html (viewable table)")))));
+             p.sendMessage(exportLine, false);
+         } else {
+-            src.sendMessage(Text.literal("§7Use /cb list export txt|csv|json to export the block list."));
++            src.sendMessage(Text.literal("§7Use /cb list export txt|csv|json|md|yaml|html to export the block list."));
+         }
+         return 1;
+     }
+@@ -4193,7 +4280,60 @@ public class CustomBlockCommand {
+                     java.nio.file.Files.writeString(out, sb.toString(), java.nio.charset.StandardCharsets.UTF_8);
+                     ChatHelper.success(src, "§aExported §f" + sorted.size() + " §ablocks to §fconfig/customblocks/block-list.json");
+                 }
+-                default -> { ChatHelper.error(src, "Unknown format: " + format + ". Use txt, csv, or json."); return 0; }
++                case "md", "markdown" -> {
++                    java.nio.file.Path out = exportDir.resolve("block-list.md");
++                    StringBuilder sb = new StringBuilder();
++                    sb.append("# CustomBlocks — Block List\n\n");
++                    sb.append("Total: ").append(sorted.size()).append(" blocks\n\n");
++                    sb.append("| ID | Name | Light | Hardness | Sound | Collision |\n");
++                    sb.append("|----|------|-------|----------|-------|-----------|\n");
++                    for (SlotData d : sorted)
++                        sb.append("| `").append(mdEscape(d.customId)).append("` | ")
++                          .append(mdEscape(d.displayName)).append(" | ")
++                          .append(d.lightLevel).append(" | ")
++                          .append(d.hardness).append(" | ")
++                          .append(mdEscape(d.soundType)).append(" | ")
++                          .append(d.noCollision ? "no" : "yes").append(" |\n");
++                    java.nio.file.Files.writeString(out, sb.toString(), java.nio.charset.StandardCharsets.UTF_8);
++                    ChatHelper.success(src, "§aExported §f" + sorted.size() + " §ablocks to §fconfig/customblocks/block-list.md");
++                }
++                case "yaml", "yml" -> {
++                    java.nio.file.Path out = exportDir.resolve("block-list.yml");
++                    StringBuilder sb = new StringBuilder("blocks:\n");
++                    for (SlotData d : sorted)
++                        sb.append("  - id: ").append(yamlScalar(d.customId)).append("\n")
++                          .append("    name: ").append(yamlScalar(d.displayName)).append("\n")
++                          .append("    light: ").append(d.lightLevel).append("\n")
++                          .append("    hardness: ").append(d.hardness).append("\n")
++                          .append("    sound: ").append(yamlScalar(d.soundType)).append("\n")
++                          .append("    collision: ").append(!d.noCollision).append("\n");
++                    java.nio.file.Files.writeString(out, sb.toString(), java.nio.charset.StandardCharsets.UTF_8);
++                    ChatHelper.success(src, "§aExported §f" + sorted.size() + " §ablocks to §fconfig/customblocks/block-list.yml");
++                }
++                case "html" -> {
++                    java.nio.file.Path out = exportDir.resolve("block-list.html");
++                    StringBuilder sb = new StringBuilder();
++                    sb.append("<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"UTF-8\">\n")
++                      .append("<title>CustomBlocks — Block List</title>\n")
++                      .append("<style>body{font-family:system-ui,Arial,sans-serif;margin:2rem;background:#1b1b1f;color:#e8e8ea}")
++                      .append("h1{font-weight:500}table{border-collapse:collapse;width:100%}")
++                      .append("th,td{border:1px solid #3a3a40;padding:6px 10px;text-align:left}")
++                      .append("th{background:#26262b}tr:nth-child(even){background:#222227}code{color:#7fd1ff}</style>\n")
++                      .append("</head>\n<body>\n");
++                    sb.append("<h1>CustomBlocks — ").append(sorted.size()).append(" blocks</h1>\n");
++                    sb.append("<table>\n<thead><tr><th>ID</th><th>Name</th><th>Light</th><th>Hardness</th><th>Sound</th><th>Collision</th></tr></thead>\n<tbody>\n");
++                    for (SlotData d : sorted)
++                        sb.append("<tr><td><code>").append(htmlEscape(d.customId)).append("</code></td><td>")
++                          .append(htmlEscape(d.displayName)).append("</td><td>")
++                          .append(d.lightLevel).append("</td><td>")
++                          .append(d.hardness).append("</td><td>")
++                          .append(htmlEscape(d.soundType)).append("</td><td>")
++                          .append(d.noCollision ? "no" : "yes").append("</td></tr>\n");
++                    sb.append("</tbody>\n</table>\n</body>\n</html>\n");
++                    java.nio.file.Files.writeString(out, sb.toString(), java.nio.charset.StandardCharsets.UTF_8);
++                    ChatHelper.success(src, "§aExported §f" + sorted.size() + " §ablocks to §fconfig/customblocks/block-list.html");
++                }
++                default -> { ChatHelper.error(src, "Unknown format: " + format + ". Use txt, csv, json, md, yaml, or html."); return 0; }
+             }
+         } catch (Exception e) {
+             ChatHelper.error(src, "Export failed: " + e.getMessage()); return 0;
+@@ -4212,6 +4352,25 @@ public class CustomBlockCommand {
+         return s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n");
+     }
+ 
++    /** Escape a Markdown table cell: neutralize pipes and newlines. */
++    private static String mdEscape(String s) {
++        if (s == null) return "";
++        return s.replace("|", "\\|").replace("\n", " ").replace("\r", " ");
++    }
++
++    /** Always-quoted YAML scalar — safe for any value. */
++    private static String yamlScalar(String s) {
++        if (s == null) return "\"\"";
++        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", " ").replace("\r", " ") + "\"";
++    }
++
++    /** Escape text for HTML output. */
++    private static String htmlEscape(String s) {
++        if (s == null) return "";
++        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
++                .replace("\"", "&quot;").replace("'", "&#39;");
++    }
++
+     private static final int HELP_PAGE_SIZE = 10;
+ 
+     private static int cmdHelp(ServerCommandSource src, int page) {
+@@ -5418,7 +5577,8 @@ public class CustomBlockCommand {
+             case "bulksound"     -> "bulksound <scope> <sound>  — set sound type for multiple blocks";
+             case "delete"       -> "delete <id>";
+             case "rename"       -> "rename <id> <newname>";
+-            case "reid"         -> "reid <id> <newid>  — change block ID";
++            case "reid"         -> "reid [id] [newid]  — change a block's ID (no args opens a picker; undo supported)";
++            case "recolor"      -> "recolor [id] [color|hex]  — recolor one block in place (no args opens a picker; undo supported)";
+             case "retexture"    -> "retexture <id> [size] <url>";
+             case "give"         -> "give <id> [amount] [player]";
+             case "dupe"         -> "dupe|duplicate <sourceId>  — clone with auto new id";
+diff --git a/src/main/java/com/customblocks/command/DidYouMean.java b/src/main/java/com/customblocks/command/DidYouMean.java
+index 457ed13..fa0dca1 100644
+--- a/src/main/java/com/customblocks/command/DidYouMean.java
++++ b/src/main/java/com/customblocks/command/DidYouMean.java
+@@ -28,7 +28,7 @@ public final class DidYouMean {
+         "blocks", "blockscategory", "blockscat",
+         "dupe", "duplicate", "hexagon", "brush", "chisel",
+         "showbrokenblocks", "givecategory", "givedisplayblock",
+-        "reid", "bulkcolor", "resume", "magicitems",
++        "reid", "recolor", "bulkcolor", "resume", "magicitems",
+         "listgui", "helpgui", "help",
+     };
+ 
+diff --git a/src/main/java/com/customblocks/command/HelpRegistry.java b/src/main/java/com/customblocks/command/HelpRegistry.java
+index 85ac9f2..3193d3d 100644
+--- a/src/main/java/com/customblocks/command/HelpRegistry.java
++++ b/src/main/java/com/customblocks/command/HelpRegistry.java
+@@ -21,7 +21,8 @@ public final class HelpRegistry {
+         add("Blocks", "/cb retexture <id> [size] <url>", "Swap main texture", "customblocks.edit");
+         add("Blocks", "/cb resize <id> <16-256>", "Rescale stored texture", "customblocks.edit");
+         add("Blocks", "/cb rename <id> <name>", "Rename display name", "customblocks.edit");
+-        add("Blocks", "/cb reid <id> <newid>", "Change a block's unique ID", "customblocks.edit");
++        add("Blocks", "/cb reid [id] [newid]", "Change a block's unique ID — no args opens a picker; undo supported", "customblocks.edit");
++        add("Blocks", "/cb recolor [id] [color|hex]", "Recolor one block in place — no args opens a picker; undo supported", "customblocks.edit");
+         add("Blocks", "/cb swapid <id1> <id2>", "Swap the internal IDs of two blocks", "customblocks.edit");
+         add("Blocks", "/cb swapname <id1> <id2>", "Swap the display names of two blocks", "customblocks.edit");
+         add("Blocks", "/cb dupe|duplicate <sourceId>", "Clone block; auto id (e.g. id_dupe); copies categories", "customblocks.edit");
+@@ -78,7 +79,8 @@ public final class HelpRegistry {
+         add("Utilities", "/cb welcome", "Open the welcome and voice-setup screen", "customblocks.use");
+         add("Utilities", "/cb voice [mode]", "Show voice picker or set mode directly", "customblocks.use");
+         add("Utilities", "/cb menu | gui", "Open the main CustomBlocks dashboard", "customblocks.use");
+-        add("Utilities", "/cb list | listgui | gui | search <q>", "Block lists & dashboards", "customblocks.use");
++        add("Utilities", "/cb list | gui | search <q>", "Block lists & dashboards", "customblocks.use");
++        add("Utilities", "/cb listgui", "Multi-select picker: search/filter blocks, then run any bulk action", "customblocks.use");
+         add("Utilities", "/cb diagnostics", "Export a support ZIP with incident files and latest log tail", "customblocks.admin");
+         add("Utilities", "/cb reload", "Reload disk + sync players", "customblocks.admin");
+         add("Utilities", "/cb resourcepack | rp", "Resource-pack HUD", "customblocks.use");
+diff --git a/src/main/java/com/customblocks/gui/GuiManager.java b/src/main/java/com/customblocks/gui/GuiManager.java
+index 347dc27..7df3379 100644
+--- a/src/main/java/com/customblocks/gui/GuiManager.java
++++ b/src/main/java/com/customblocks/gui/GuiManager.java
+@@ -151,7 +151,8 @@ public class GuiManager {
+         AI_CHAT_QUERY,
+         CONFIRM_SCRIPT_DELETE,
+         TOOL_RENAME,
+-        TOOL_RENAME_CONFIRM
++        TOOL_RENAME_CONFIRM,
++        BULK_OP_SEARCH
+     }
+ 
+     public record PendingInput(InputAction action, String blockId, String face,
+@@ -197,6 +198,10 @@ public class GuiManager {
+     private static final Map<UUID, Set<String>> BULK_SELECTIONS = new ConcurrentHashMap<>();
+     /** Phase 2 — category filter active in the bulk op picker (null = show all). */
+     private static final Map<UUID, String> BULK_OP_CAT_FILTER = new ConcurrentHashMap<>();
++    /** Bulk picker — text search query (null/blank = no search). Filters by id + display name. */
++    private static final Map<UUID, String> BULK_OP_SEARCH = new ConcurrentHashMap<>();
++    /** Bulk picker — flag filter: "" all, "fav", "locked", "letters", "animated". */
++    private static final Map<UUID, String> BULK_OP_FLAG_FILTER = new ConcurrentHashMap<>();
+ 
+     private static final float[] HARD_CYCLE      = { -1f, 0f, 0.5f, 1.5f, 3f, 5f, 10f, 50f };
+     private static final int     BLOCKS_PER_PAGE = 18;
+@@ -360,6 +365,8 @@ public class GuiManager {
+         BULK_DELETE_CONFIRM_ARMED.remove(uuid);
+         BULK_SELECTIONS.remove(uuid);
+         BULK_OP_CAT_FILTER.remove(uuid);
++        BULK_OP_SEARCH.remove(uuid);
++        BULK_OP_FLAG_FILTER.remove(uuid);
+         FACE_CHANGE_SELECTIONS.remove(uuid);
+         FACE_CHANGE_RETURN_PAGES.remove(uuid);
+         ESC_DEBOUNCE.remove(uuid);
+@@ -1278,6 +1285,7 @@ public class GuiManager {
+                 case MARKET_GUI -> openMarketGui(player, state.page(), false);
+                 case BULK_HUB -> openBulkHub(player);
+                 case BULK_OP_PICKER -> openBulkOpPicker(player, state.editingId(), state.page());
++                case SINGLE_PICK -> openSingleBlockPicker(player, state.editingId(), state.page());
+                 case COLOR_PICKER -> openColorPicker(player, state.editingId());
+                 case VOICE_PICKER -> openVoicePickerGui(player); // 5.25
+                 case BULK_ASSIGN_PICKER -> openBulkAssignPicker(player, state.page());
+@@ -1403,6 +1411,7 @@ public class GuiManager {
+                 case MARKET_GUI -> handleMarketGuiClick(player, state, slot);
+                 case BULK_HUB -> handleBulkHubClick(player, state, slot);
+                 case BULK_OP_PICKER -> handleBulkOpPickerClick(player, state, slot);
++                case SINGLE_PICK -> handleSingleBlockPickerClick(player, state, slot);
+                 case COLOR_PICKER -> handleColorPickerClick(player, state, slot);
+                 case VOICE_PICKER -> handleVoicePickerClick(player, slot); // 5.25
+                 case COLORS_HUB -> handleColorsHubClick(player, state, slot);
+@@ -1435,6 +1444,7 @@ public class GuiManager {
+             send(player, "Cancelled.");
+             PENDING_CATEGORIES.remove(player.getUuid());
+             switch (pending.action()) {
++                case BULK_OP_SEARCH -> openBulkOpPicker(player, blockId != null ? blockId : "pick", rp);
+                 case CONFIG_VALUE -> openConfigGui(player, false);
+                 case ADMIN_CUSTOM_TITLE -> {
+                     openMain(player, rp);
+@@ -1459,6 +1469,17 @@ public class GuiManager {
+         }
+ 
+         switch (pending.action()) {
++            case BULK_OP_SEARCH -> {
++                String pickOp = blockId != null ? blockId : "pick";
++                String q = text.trim();
++                if (q.isEmpty() || q.equalsIgnoreCase("clear") || q.equalsIgnoreCase("all") || q.equals("-")) {
++                    BULK_OP_SEARCH.remove(player.getUuid());
++                } else {
++                    BULK_OP_SEARCH.put(player.getUuid(), q);
++                }
++                openBulkOpPicker(player, pickOp, 0);
++                return true;
++            }
+             case CREATE_ID -> {
+                 if ("__delete__".equals(blockId)) {
+                     String delId = text.toLowerCase().trim();
+@@ -4599,21 +4620,39 @@ public class GuiManager {
+         }
+ 
+         // Recolor the block's texture in-place (background color replacement)
++        int fR = color.rgb() >> 16 & 0xFF, fG = color.rgb() >> 8 & 0xFF, fB = color.rgb() & 0xFF;
++        applySingleRecolor(player, blockId, fR, fG, fB, color.name());
++    }
++
++    /**
++     * Recolor a single block's texture in place to the given RGB, with undo + live sync.
++     * Shared by the color-picker GUI and the {@code /cb recolor} command.
++     */
++    public static void applySingleRecolor(ServerPlayerEntity player, String blockId, int fR, int fG, int fB, String label) {
++        SlotData d = SlotManager.getById(blockId);
++        if (d == null) { playError(player); send(player, "§c[CB] Block '" + blockId + "' not found."); return; }
++        byte[] tex = d.texture;
++        if (tex == null || tex.length == 0) {
++            send(player, "§c[CB] That block has no texture to recolor.");
++            playError(player);
++            return;
++        }
+         MinecraftServer server = player.getServer();
+         UUID uuid = player.getUuid();
+-        int fR = color.rgb() >> 16 & 0xFF, fG = color.rgb() >> 8 & 0xFF, fB = color.rgb() & 0xFF;
+         Thread t = new Thread(() -> {
+             try {
+                 byte[] newTex = com.customblocks.item.ColorTriangleItem.recolourTextureForPlayer(
+                     tex, fR, fG, fB, CustomBlocksConfig.useTrappedHoleFill(), uuid);
+                 if (server != null) server.execute(() -> {
+-                    UndoManager.pushUndoMutation(blockId, d, "recolor:" + color.name(), uuid);
++                    SlotData cur = SlotManager.getById(blockId);
++                    if (cur == null) { send(player, "§c[CB] Block vanished before recolor."); return; }
++                    UndoManager.pushUndoMutation(blockId, cur, "recolor:" + label, uuid);
+                     SlotManager.updateTexture(blockId, newTex);
+                     SlotManager.saveAll();
+                     NetworkManager.broadcastUpdate(server,
+-                        new SlotUpdatePayload("retexture", d.index, blockId, null, newTex, d.lightLevel, d.hardness, d.soundType));
++                        new SlotUpdatePayload("retexture", cur.index, blockId, null, newTex, cur.lightLevel, cur.hardness, cur.soundType));
+                     playSuccess(player);
+-                    send(player, "§a[CB] Applied §f" + color.name() + "§a to §f" + d.displayName + "§a.");
++                    send(player, "§a[CB] Applied §f" + label + "§a to §f" + cur.displayName + "§a. §7(/cb undo to revert)");
+                     openEditor(player, blockId, 0);
+                 });
+             } catch (Exception e) {
+@@ -4622,11 +4661,107 @@ public class GuiManager {
+                     playError(player);
+                 });
+             }
+-        }, "CB-ColorPicker-Recolor");
++        }, "CB-SingleRecolor");
+         t.setDaemon(true);
+         t.start();
+         player.closeHandledScreen();
+-        send(player, "§7[CB] Applying §f" + color.name() + "§7...");
++        send(player, "§7[CB] Applying §f" + label + "§7...");
++    }
++
++    // ── Single-block action picker (/cb recolor, /cb reid no-arg) ─────────────
++
++    /** Open the single-block picker. action = "recolor" | "reid". */
++    public static void openSingleBlockPicker(ServerPlayerEntity player, String action, int page) {
++        int total = sortedBlocks().size();
++        int max   = total == 0 ? 0 : Math.max(0, (total - 1) / BLOCKS_PER_PAGE);
++        page = Math.max(0, Math.min(page, max));
++        pushBackStack(player.getUuid());
++        boolean reid = "reid".equals(action);
++        openScreenFromGuiState(player, GuiState.singlePick(action, page),
++            buildSingleBlockPicker(player.getUuid(), action, page),
++            Text.literal(reid ? "§eRe-ID — Pick a Block" : "§9Recolor — Pick a Block"));
++    }
++
++    private static SimpleInventory buildSingleBlockPicker(UUID uuid, String action, int page) {
++        SimpleInventory inv = new SimpleInventory(54);
++        for (int i = 0; i < 54; i++) inv.setStack(i, glass());
++        boolean reid = "reid".equals(action);
++        List<SlotData> blocks = sortedBlocks();
++        int total = blocks.size();
++        int maxPage = total == 0 ? 0 : Math.max(0, (total - 1) / BLOCKS_PER_PAGE);
++
++        inv.setStack(0, uiGlint(Items.ECHO_SHARD, "§c◀ Back", "§8Return to the previous menu"));
++        inv.setStack(4, ui(reid ? Items.NAME_TAG : Items.PAINTING,
++            reid ? "§e§lRe-ID a Block" : "§9§lRecolor a Block",
++            reid ? "§7Click a block to give it a new ID." : "§7Click a block to choose a new color.",
++            "§8" + total + " block(s) • Page §f" + (page + 1) + "§8/§f" + (maxPage + 1),
++            "§8Every change supports §f/cb undo"));
++
++        int start = page * BLOCKS_PER_PAGE;
++        for (int i = 0; i < BLOCKS_PER_PAGE; i++) {
++            int invSlot = 18 + i, dataIdx = start + i;
++            if (dataIdx < blocks.size()) {
++                SlotData d = blocks.get(dataIdx);
++                ItemStack s = CustomBlocksMod.safeSlotItem(d.index) != null
++                    ? new ItemStack(CustomBlocksMod.safeSlotItem(d.index)) : new ItemStack(Items.GRAY_DYE);
++                s.set(DataComponentTypes.CUSTOM_NAME, Text.literal("§f§l" + d.displayName).styled(st -> st.withItalic(false)));
++                List<Text> ll = new ArrayList<>();
++                ll.add(lore("§7ID: §b" + d.customId));
++                ll.add(lore(reid ? "§aClick §7→ type a new ID" : "§aClick §7→ pick a color"));
++                s.set(DataComponentTypes.LORE, new LoreComponent(ll));
++                inv.setStack(invSlot, s);
++            }
++        }
++
++        inv.setStack(45, page > 0 ? uiGlint(Items.ARROW, "§7◀ Previous Page", "§8Page " + page)
++            : ui(Items.GRAY_STAINED_GLASS_PANE, "§8First Page", ""));
++        inv.setStack(49, ui(Items.PAPER, "§ePage §f" + (page + 1) + " §7/ §f" + (maxPage + 1), "§7Total: §f" + total + " blocks"));
++        inv.setStack(53, page < maxPage ? uiGlint(Items.ARROW, "§7Next Page ▶", "§8Page " + (page + 2))
++            : ui(Items.GRAY_STAINED_GLASS_PANE, "§8Last Page", ""));
++        return inv;
++    }
++
++    private static void handleSingleBlockPickerClick(ServerPlayerEntity player, GuiState state, int slot) {
++        UUID uuid = player.getUuid();
++        String action = state.editingId();
++        int page = state.page();
++        List<SlotData> blocks = sortedBlocks();
++        int total = blocks.size();
++        int maxPage = total == 0 ? 0 : Math.max(0, (total - 1) / BLOCKS_PER_PAGE);
++
++        if (slot == 0) { handleEscBack(player); return; }
++        if (slot == 45 && page > 0) {
++            STATES.put(uuid, GuiState.singlePick(action, page - 1));
++            refreshScreen(player, buildSingleBlockPicker(uuid, action, page - 1));
++            return;
++        }
++        if (slot == 53 && page < maxPage) {
++            STATES.put(uuid, GuiState.singlePick(action, page + 1));
++            refreshScreen(player, buildSingleBlockPicker(uuid, action, page + 1));
++            return;
++        }
++        if (slot >= 18 && slot <= 35) {
++            int idx = page * BLOCKS_PER_PAGE + (slot - 18);
++            if (idx < blocks.size()) {
++                String id = blocks.get(idx).customId;
++                if ("reid".equals(action)) {
++                    openShortInputPrompt(player,
++                        new PendingInput(InputAction.REID_TEXT, id, null, null, null, page),
++                        "§eNew ID for " + id, new ItemStack(Items.NAME_TAG), id);
++                } else {
++                    pushBackStack(uuid);
++                    openColorPicker(player, id);
++                }
++            }
++        }
++    }
++
++    /** Open the Re-ID anvil prompt for a single block (used by /cb reid &lt;id&gt;). */
++    public static void openReidPrompt(ServerPlayerEntity player, String id) {
++        if (!SlotManager.hasId(id)) { playError(player); send(player, "§c[CB] Block '" + id + "' not found."); return; }
++        openShortInputPrompt(player,
++            new PendingInput(InputAction.REID_TEXT, id, null, null, null, 0),
++            "§eNew ID for " + id, new ItemStack(Items.NAME_TAG), id);
+     }
+ 
+     // ── Phase 3.5: Recolor Confirm GUI (Color Triangle shift+right-click) ────
+@@ -9895,6 +10030,7 @@ public class GuiManager {
+ 
+     private static String bulkOpTitle(String opId) {
+         return switch (opId) {
++            case "pick"      -> "§d§lPick Blocks — Select Multiple";
+             case "delete"    -> "§c§lBulk Delete — Select Blocks";
+             case "recolor"   -> "§6Bulk Recolor — Select Blocks";
+             case "rename"    -> "§eBulk Rename — Select Blocks";
+@@ -9915,28 +10051,58 @@ public class GuiManager {
+         SimpleInventory inv = new SimpleInventory(54);
+         for (int i = 0; i < 54; i++) inv.setStack(i, glass());
+ 
+-        Set<String>     sel     = bulkSel(uuid);
+-        String          catFilt = BULK_OP_CAT_FILTER.get(uuid);
+-        java.util.List<SlotData> pool   = catFilt != null
+-                ? com.customblocks.core.CategoryManager.getBlocksInCategory(catFilt)
+-                : sortedBlocks();
++        boolean         pickMode = "pick".equals(opId);
++        Set<String>     sel      = bulkSel(uuid);
++        String          catFilt  = BULK_OP_CAT_FILTER.get(uuid);
++        String          search   = BULK_OP_SEARCH.get(uuid);
++        java.util.List<SlotData> pool = filteredBulkPool(uuid);
+         int total   = pool.size();
+         int maxPage = total == 0 ? 0 : Math.max(0, (total - 1) / BULK_PICKER_PAGE_SIZE);
+         page = Math.max(0, Math.min(page, maxPage));
++        boolean filtersActive = (search != null && !search.isBlank())
++                || catFilt != null || BULK_OP_FLAG_FILTER.get(uuid) != null;
++
++        // Top bar — navigation + filters
++        inv.setStack(0, uiGlint(Items.ECHO_SHARD,
++                pickMode ? "§c◀ Back" : "§c◀ Back to Hub",
++                pickMode ? "§8Close the picker" : "§8Return to bulk operations hub"));
++
++        // slot 1 — text search
++        inv.setStack(1, uiGlint(Items.SPYGLASS,
++                (search != null && !search.isBlank()) ? "§eSearch: §f" + search : "§bSearch blocks",
++                "§7Type part of a name or ID.",
++                "§8Click to type a search.",
++                (search != null && !search.isBlank()) ? "§8Showing §f" + total + " §8match(es)" : ""));
++
++        // slot 2 — flag filter cycle
++        inv.setStack(2, ui(Items.HOPPER, "§eFilter: " + bulkFlagLabel(uuid),
++                "§8Click to cycle:",
++                "§8All → Favorites → Locked → Letters → Animated"));
++
++        // slot 3 — clear all filters
++        inv.setStack(3, filtersActive
++                ? uiGlint(Items.WATER_BUCKET, "§c✖ Clear filters", "§7Reset search, category and flag")
++                : ui(Items.GLASS_BOTTLE, "§8No filters active", "§7Search, category and flag all off"));
++
++        // slot 4 — category filter cycle
++        String catLabel = catFilt != null ? "§bCategory: §f" + catFilt : "§7Category: §fAll";
++        inv.setStack(4, ui(Items.ENDER_PEARL, catLabel, "§8Click to cycle category filter"));
++
++        // slot 5 — (pick mode only) jump to single-block editor
++        if (pickMode) {
++            inv.setStack(5, uiGlint(Items.WRITABLE_BOOK, "§b✎ Edit one block ▶",
++                    "§7Open the single-block editor instead."));
++        }
+ 
+-        // Top bar
+-        inv.setStack(0, uiGlint(Items.ECHO_SHARD, "§c◀ Back to Hub", "§8Return to bulk operations hub"));
+         inv.setStack(6, uiGlint(Items.LIME_DYE, "§aSelect All",
+                 "§7Selects all " + pool.size() + " matching blocks"));
+         inv.setStack(7, ui(Items.ORANGE_DYE, "§6Deselect All", "§7Clears current selection"));
+         inv.setStack(8, uiGlint(bulkOpConfirmItem(opId),
+-                "§a§l▶ Execute: " + bulkOpLabel(opId),
++                pickMode ? "§a§l▶ Use selection" : "§a§l▶ Execute: " + bulkOpLabel(opId),
+                 "§7Selected: §e" + sel.size() + " §7blocks",
+-                sel.isEmpty() ? "§cSelect at least one block first" : "§aClick to proceed"));
+-
+-        // Category filter button (row 1 slot 4)
+-        String catLabel = catFilt != null ? "§bCategory: §f" + catFilt : "§7Category: §fAll";
+-        inv.setStack(4, ui(Items.ENDER_PEARL, catLabel, "§8Click to cycle category filter"));
++                sel.isEmpty()
++                        ? "§cSelect at least one block first"
++                        : (pickMode ? "§aClick to choose a bulk action" : "§aClick to proceed")));
+ 
+         // Block grid (slots 9–44, 4 rows × 9)
+         int start = page * BULK_PICKER_PAGE_SIZE;
+@@ -9984,6 +10150,7 @@ public class GuiManager {
+ 
+     private static Item bulkOpConfirmItem(String opId) {
+         return switch (opId) {
++            case "pick"      -> Items.CHEST;
+             case "delete"    -> Items.BARRIER;
+             case "recolor"   -> Items.MAGMA_CREAM;
+             case "rename"    -> Items.NAME_TAG;
+@@ -10002,6 +10169,7 @@ public class GuiManager {
+ 
+     private static String bulkOpLabel(String opId) {
+         return switch (opId) {
++            case "pick"      -> "Use Selection";
+             case "delete"    -> "Delete";
+             case "recolor"   -> "Recolor";
+             case "rename"    -> "Rename";
+@@ -10023,23 +10191,34 @@ public class GuiManager {
+         String opId  = state.editingId();
+         int    page  = state.page();
+ 
+-        String catFilt = BULK_OP_CAT_FILTER.get(uuid);
+-        java.util.List<SlotData> pool = catFilt != null
+-                ? com.customblocks.core.CategoryManager.getBlocksInCategory(catFilt)
+-                : sortedBlocks();
++        boolean pickMode = "pick".equals(opId);
++        java.util.List<SlotData> pool = filteredBulkPool(uuid);
+         int total   = pool.size();
+         int maxPage = total == 0 ? 0 : Math.max(0, (total - 1) / BULK_PICKER_PAGE_SIZE);
+ 
+-        if (slot == 0) { openBulkHub(player); return; }
+-
+-        if (slot == 6) { // Select all
+-            bulkSelectAll(uuid, pool);
+-            refreshScreen(player, buildBulkOpPicker(uuid, opId, page));
++        if (slot == 0) { // Back
++            if (pickMode) handleEscBack(player); else openBulkHub(player);
+             return;
+         }
+-        if (slot == 7) { // Deselect all
+-            bulkClear(uuid);
+-            refreshScreen(player, buildBulkOpPicker(uuid, opId, page));
++        if (slot == 1) { // Text search
++            openShortInputPrompt(player,
++                    new PendingInput(InputAction.BULK_OP_SEARCH, opId, null, null, null, page),
++                    "§bSearch blocks", new ItemStack(Items.SPYGLASS),
++                    BULK_OP_SEARCH.getOrDefault(uuid, ""));
++            return;
++        }
++        if (slot == 2) { // Flag filter cycle
++            cycleBulkFlagFilter(uuid);
++            STATES.put(uuid, GuiState.bulkOpPicker(opId, 0));
++            refreshScreen(player, buildBulkOpPicker(uuid, opId, 0));
++            return;
++        }
++        if (slot == 3) { // Clear all filters
++            BULK_OP_SEARCH.remove(uuid);
++            BULK_OP_FLAG_FILTER.remove(uuid);
++            BULK_OP_CAT_FILTER.remove(uuid);
++            STATES.put(uuid, GuiState.bulkOpPicker(opId, 0));
++            refreshScreen(player, buildBulkOpPicker(uuid, opId, 0));
+             return;
+         }
+         if (slot == 4) { // Category filter cycle
+@@ -10048,7 +10227,21 @@ public class GuiManager {
+             refreshScreen(player, buildBulkOpPicker(uuid, opId, 0));
+             return;
+         }
+-        if (slot == 8) { // Execute
++        if (slot == 5 && pickMode) { // Edit one block instead
++            openEditorPicker(player, 0);
++            return;
++        }
++        if (slot == 6) { // Select all (current filtered pool)
++            bulkSelectAll(uuid, pool);
++            refreshScreen(player, buildBulkOpPicker(uuid, opId, page));
++            return;
++        }
++        if (slot == 7) { // Deselect all
++            bulkClear(uuid);
++            refreshScreen(player, buildBulkOpPicker(uuid, opId, page));
++            return;
++        }
++        if (slot == 8) { // Execute / Use selection
+             executeBulkOpFromGui(player, opId);
+             return;
+         }
+@@ -10072,6 +10265,60 @@ public class GuiManager {
+         }
+     }
+ 
++    /**
++     * Bulk picker filter — resolve the visible block pool from the active
++     * category + text search + flag filters. Used by every bulk operation
++     * (and the selection-first /cb listgui picker). Always returns a fresh list.
++     */
++    private static java.util.List<SlotData> filteredBulkPool(UUID uuid) {
++        String catFilt = BULK_OP_CAT_FILTER.get(uuid);
++        java.util.List<SlotData> pool = catFilt != null
++                ? new java.util.ArrayList<>(com.customblocks.core.CategoryManager.getBlocksInCategory(catFilt))
++                : new java.util.ArrayList<>(sortedBlocks());
++        String q = BULK_OP_SEARCH.get(uuid);
++        if (q != null && !q.isBlank()) {
++            String ql = q.toLowerCase(java.util.Locale.ROOT);
++            pool.removeIf(d -> !(d.customId.toLowerCase(java.util.Locale.ROOT).contains(ql)
++                    || (d.displayName != null && d.displayName.toLowerCase(java.util.Locale.ROOT).contains(ql))));
++        }
++        String flag = BULK_OP_FLAG_FILTER.get(uuid);
++        if (flag != null && !flag.isEmpty()) {
++            switch (flag) {
++                case "fav"      -> pool.removeIf(d -> !com.customblocks.core.FavoritesManager.isFavorite(uuid, d.customId));
++                case "locked"   -> pool.removeIf(d -> !com.customblocks.core.LockManager.isLocked(d.customId));
++                case "letters"  -> pool.removeIf(d -> !d.isLetter);
++                case "animated" -> pool.removeIf(d -> d.animMeta == null);
++                default -> {}
++            }
++        }
++        return pool;
++    }
++
++    /** Bulk picker — cycle the flag filter: all → favorites → locked → letters → animated → all. */
++    private static void cycleBulkFlagFilter(UUID uuid) {
++        String cur = BULK_OP_FLAG_FILTER.getOrDefault(uuid, "");
++        String next = switch (cur) {
++            case ""         -> "fav";
++            case "fav"      -> "locked";
++            case "locked"   -> "letters";
++            case "letters"  -> "animated";
++            default          -> "";
++        };
++        if (next.isEmpty()) BULK_OP_FLAG_FILTER.remove(uuid);
++        else BULK_OP_FLAG_FILTER.put(uuid, next);
++    }
++
++    /** Bulk picker — human label for the active flag filter. */
++    private static String bulkFlagLabel(UUID uuid) {
++        return switch (BULK_OP_FLAG_FILTER.getOrDefault(uuid, "")) {
++            case "fav"      -> "§dFavorites only";
++            case "locked"   -> "§6Locked only";
++            case "letters"  -> "§bLetters only";
++            case "animated" -> "§5Animated only";
++            default          -> "§7All blocks";
++        };
++    }
++
+     private static void cycleBulkCatFilter(UUID uuid) {
+         java.util.List<com.customblocks.core.Category> cats =
+                 new java.util.ArrayList<>(com.customblocks.core.CategoryManager.getAllCategories());
+@@ -10102,6 +10349,7 @@ public class GuiManager {
+         }
+         MinecraftServer server = player.getServer();
+         switch (opId) {
++            case "pick" -> openBulkHub(player); // selection-first: choose an action with the picked blocks
+             case "delete" -> {
+                 int threshold = com.customblocks.CustomBlocksConfig.bulkConfirmThreshold;
+                 if (sel.size() > threshold) {
+diff --git a/src/main/java/com/customblocks/gui/GuiMode.java b/src/main/java/com/customblocks/gui/GuiMode.java
+index ed6fa98..2ec1664 100644
+--- a/src/main/java/com/customblocks/gui/GuiMode.java
++++ b/src/main/java/com/customblocks/gui/GuiMode.java
+@@ -109,7 +109,9 @@ public enum GuiMode {
+     /** COL9 — confirm bulk recolor of existing blocks after a hex color change. */
+     HEX_RECOLOR_CONFIRM,
+     /** NF2 — confirm single-block deletion via the Deleter Tool. */
+-    DELETER_CONFIRM
++    DELETER_CONFIRM,
++    /** Single-block action picker. editingId = action ("recolor" | "reid"); click a block to act on it. */
++    SINGLE_PICK
+ }
+ 
+ 
+diff --git a/src/main/java/com/customblocks/gui/GuiState.java b/src/main/java/com/customblocks/gui/GuiState.java
+index f7173a7..401334d 100644
+--- a/src/main/java/com/customblocks/gui/GuiState.java
++++ b/src/main/java/com/customblocks/gui/GuiState.java
+@@ -405,6 +405,11 @@ public record GuiState(
+         return new GuiState(GuiMode.DELETER_CONFIRM, blockId, 0, false, 0, false);
+     }
+ 
++    /** Single-block action picker. editingId = action ("recolor" | "reid"), page = current page. */
++    public static GuiState singlePick(String action, int page) {
++        return new GuiState(GuiMode.SINGLE_PICK, action, page, false, 0, false);
++    }
++
+     /**
+      * Creates a new back-stack initialized with the main menu as the bottom.
+      */

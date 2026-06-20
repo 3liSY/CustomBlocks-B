@@ -176,6 +176,7 @@ public final class GuiRouter {
             case HELP -> HelpMenu.build(player, key.arg(), key.page());
             case OMNI -> OmniMenu.build(player);
             case BULK_HUB -> BulkHubMenu.build(player);
+            case BULK_CONFIRM -> BulkConfirmMenu.build(player);
             case BULK_SELECT -> BulkSelectMenu.build(player);
             case BULK_ACTION -> BulkActionMenu.build(player);
             case SHAPE_EDITOR -> ShapeEditorMenu.build(player, key.arg());
@@ -194,6 +195,18 @@ public final class GuiRouter {
             case PALETTE_LIST -> PaletteMenu.build(player, key.page());
             case GRADIENT_PICKER -> GradientPickerMenu.build(player);
             case COLOR_PICK -> ColorPickBlockMenu.build(player, key.arg(), key.page());
+            case CATEGORY_LIST -> CategoryListMenu.build(player, key.page());
+            case CATEGORY_BROWSE -> CategoryBrowserMenu.build(player, key.arg(), key.page());
+            case CATEGORY_BLOCK -> CategoryBlockMenu.build(player, key.arg());
+            case CATEGORY_EDIT -> CategoryEditMenu.build(player, key.arg());
+            case CATEGORY_DELETE_CONFIRM -> CategoryEditMenu.buildDeleteConfirm(player, key.arg());
+            case EXPORT_DASHBOARD -> ExportDashboardMenu.build(player, key.arg(), key.page());
+            case ARABIC -> ArabicHubMenu.build(player);
+            case ARABIC_LIST -> ArabicListMenu.build(player);
+            case ARABIC_GROUP -> ArabicGroupMenu.build(player, key.arg());
+            case ARABIC_CHOICE -> WordChoiceMenu.build(player);
+            case ARABIC_COLOR -> ColorStudioMenu.build(player, key.arg());
+            case ANIM_LIST -> AnimListMenu.build(player, key.page());
         };
     }
 }

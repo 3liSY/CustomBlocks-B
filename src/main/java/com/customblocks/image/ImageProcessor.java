@@ -29,7 +29,8 @@ public final class ImageProcessor {
     public static byte[] toBlockPng(byte[] input, int size) throws Exception {
         BufferedImage src = ImageIO.read(new ByteArrayInputStream(input));
         if (src == null) {
-            throw new Exception("Could not read that image (unsupported format? WebP is not supported yet).");
+            throw new Exception("Could not read that image — the data isn't a recognized image "
+                    + "(supported: PNG, JPG, GIF, WebP). The link may point to a web page, not a direct image.");
         }
         BufferedImage out = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = out.createGraphics();
@@ -47,6 +48,26 @@ public final class ImageProcessor {
         g.drawImage(src, dx, dy, dw, dh, null);
         g.dispose();
 
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        ImageIO.write(out, "PNG", baos);
+        return baos.toByteArray();
+    }
+
+    /**
+     * Composite a PNG over an opaque {@code bgArgb} background of the same size: every transparent or
+     * semi-transparent pixel takes (some of) the background colour. Used by the Block Creation Studio's
+     * "background colour" so a logo with transparent areas sits on a solid backdrop instead of replacing
+     * the image. {@code bgArgb} should be fully opaque (0xFFrrggbb).
+     */
+    public static byte[] fillBackground(byte[] png, int bgArgb) throws Exception {
+        BufferedImage src = ImageIO.read(new ByteArrayInputStream(png));
+        if (src == null) throw new Exception("Could not read the texture to apply a background colour.");
+        BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        g.setColor(new java.awt.Color(0xFF000000 | (bgArgb & 0xFFFFFF), true));
+        g.fillRect(0, 0, out.getWidth(), out.getHeight());
+        g.drawImage(src, 0, 0, null);
+        g.dispose();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(out, "PNG", baos);
         return baos.toByteArray();

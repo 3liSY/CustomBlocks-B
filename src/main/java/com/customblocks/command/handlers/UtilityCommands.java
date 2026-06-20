@@ -71,6 +71,7 @@ public final class UtilityCommands {
                 .then(CommandManager.literal("html").executes(ctx -> export(ctx, "html")))
                 .then(CommandManager.literal("yaml").executes(ctx -> export(ctx, "yaml")))
                 .then(CommandManager.literal("png").executes(UtilityCommands::exportPngAll))
+                .then(CommandManager.literal("zip").executes(UtilityCommands::exportAllZip))
                 .then(CommandManager.literal("vault").executes(UtilityCommands::exportVaultAll))
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
@@ -169,6 +170,11 @@ public final class UtilityCommands {
 
     private static int categories(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
+        // In-game: open the category browser chest GUI (Group 11). Console: text list below.
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CATEGORY_LIST));
+            return 1;
+        }
         Set<String> cats = SlotManager.categories();
         if (cats.isEmpty()) {
             Chat.info(src, "No categories yet. Set one with /cb setcategory <id> <name>");
@@ -197,7 +203,7 @@ public final class UtilityCommands {
         return sb.toString();
     }
 
-    /** /cb export (no args) — shows bulk export options */
+    /** /cb export (no args) — players get the dashboard GUI, console gets text */
     private static int exportMenu(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
@@ -205,6 +211,12 @@ public final class UtilityCommands {
             Chat.info(src, "Nothing to export yet — make a block with /cb create <id>");
             return 1;
         }
+        // Players get the chest GUI dashboard
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.EXPORT_DASHBOARD));
+            return 1;
+        }
+        // Console gets text output (same as before)
         MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + all.size() + "§f block(s): ")
                 .append(runButton("[.json]", "/cb export json", "Bulk export all blocks to JSON"))
                 .append(Text.literal(" "))
@@ -256,14 +268,32 @@ public final class UtilityCommands {
         return 1;
     }
 
-    /** /cb export &lt;id&gt; png — write that block's texture to exports/&lt;id&gt;.png */
+    /** /cb export &lt;id&gt; png — write that block's texture to cloud_exports/&lt;id&gt;.png + a download link */
     private static int exportOnePng(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Path file = BlockExporter.exportPng(d);
         if (file == null) { Chat.error(src, "No texture to export for \"" + id + "\"."); return 0; }
-        Chat.success(src, "Saved §e" + id + "§r texture → §7exports/" + id + ".png");
+        String url = ResourcePackServer.getPngUrl(id);
+        MutableText msg = Text.literal(Chat.PREFIX + "§fSaved §e" + id + "§f texture → §7cloud_exports/" + id + ".png  ")
+                .append(openUrlButton("[download]", url, url));
+        src.sendFeedback(() -> msg, false);
+        return 1;
+    }
+
+    /** /cb export zip — bundle every block (json + png) into one cloud_exports/all-&lt;stamp&gt;.zip + a download link */
+    private static int exportAllZip(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        Collection<SlotData> all = SlotManager.assignedSlots();
+        if (all.isEmpty()) { Chat.info(src, "Nothing to export yet — make a block with /cb create <id>"); return 1; }
+        Path zip = BlockExporter.exportAllZip(all);
+        if (zip == null) { Chat.error(src, "Export failed — couldn't write the ZIP."); return 0; }
+        String name = zip.getFileName().toString();
+        String url = ResourcePackServer.getZipUrl(name);
+        MutableText msg = Text.literal(Chat.PREFIX + "§fExported §e" + all.size() + "§f block(s) → §7cloud_exports/" + name + "  ")
+                .append(openUrlButton("[download]", url, url));
+        src.sendFeedback(() -> msg, false);
         return 1;
     }
 

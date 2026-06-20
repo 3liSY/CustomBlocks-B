@@ -34,10 +34,19 @@ import java.util.UUID;
 @Mixin(ClientCommonNetworkHandler.class)
 public class ClientCommonNetworkHandlerMixin {
 
+    /** The exact prompt label our server stamps on its pack (ResourcePackServer.sendToPlayer). */
+    private static final String CUSTOMBLOCKS_PACK_LABEL = "CustomBlocks textures";
+
     @Inject(method = "createConfirmServerResourcePackScreen", at = @At("HEAD"), cancellable = true)
     private void customblocks$silentAccept(UUID id, URL url, String hash, boolean required,
                                            Text prompt, CallbackInfoReturnable<Screen> cir) {
-        if (required || !SilentPackState.isSilent()) return; // forced or not-silent → vanilla prompt
+        // OUR pack is recognised by its prompt label, so we silent-accept it the instant it
+        // arrives — no dependence on SilentPackPayload having already set the flag. That flag is
+        // pushed at join and can lose the race to a pack packet on a fresh world load (→ a stray
+        // prompt or a dropped pack). Other servers' packs still honour the per-server flag, so the
+        // auto-accept never bleeds onto them.
+        boolean ours = prompt != null && CUSTOMBLOCKS_PACK_LABEL.equals(prompt.getString());
+        if (required || (!ours && !SilentPackState.isSilent())) return; // forced or other-server not-silent → vanilla prompt
         MinecraftClient client = MinecraftClient.getInstance();
         if (client == null) return;
         // Same call vanilla makes on the silent ("Enabled" policy) branch — no prompt screen.

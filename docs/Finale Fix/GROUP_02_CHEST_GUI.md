@@ -16,8 +16,8 @@
 |---|---|---|---|
 | Main menu GUI | Chest GUI with stained glass slots | Screen-based main menu (Block List / Categories / Templates / etc.) | Chest GUI restored, modernized visual theme |
 | `/cb menu` / `/cb dashboard` | Opened chest GUI | Did not exist | Restored as aliases for `/cb` |
-| `/cb editor <id>` | Opened block editor chest GUI directly | Missing (only `/cb gui block <id>` existed) | Restored as direct shortcut |
-| Block editor | Chest GUI | Screen-based BlockEditorScreen | Chest GUI |
+| `/cb editor <id>` | Opened block editor chest GUI directly | Missing (only `/cb gui block <id>` existed) | ~~Restored as chest shortcut~~ → **SUPERSEDED 2026-06-20: opens the screen-based Block Studio Edit tab (§G27.12)** |
+| Block editor | Chest GUI | Screen-based BlockEditorScreen | ~~Chest GUI~~ → **Block Studio screen, Edit mode (§G27.12)** — dev "replace" decision 2026-06-20 |
 | Undo browser | `/cb undogui` opened chest GUI | Not present | Restored |
 | History | `/cb history` showed mutation log | Missing | Restored |
 | rp pause/resume | `/cb rp pause` / `/cb rp resume` | Missing | Restored |
@@ -61,8 +61,14 @@ All GUIs use chest-based containers (1–6 rows). No screen-based interfaces rem
 
 ### 3. Block editor access
 
-`/cb editor <id>` opens the block editor chest GUI directly. This is the primary shortcut.
-`/cb gui block <id>` remains valid (backward compatibility).
+> **SUPERSEDED — 2026-06-20 (developer "replace" decision).** The block editor is no longer
+> chest-based. `/cb editor <id>` now opens the **screen-based Block Studio in Edit mode**
+> (full spec: `GROUP_27_SCREENS.md §G27.12`). This subsection is kept for history; the chest
+> editor it describes is retired. Only `/cb editor` is rewired this pass — the `/cb gui block <id>`
+> and ESC-menu redirects are deferred to a later pass.
+
+`/cb editor <id>` opens the **Block Studio Edit tab** for the block (see §G27.12). This is the primary shortcut.
+`/cb gui block <id>` remains valid (still routes the old path until redirected later).
 Tab-complete for `<id>` works on both forms.
 
 ### 4. GUI navigation back-stack
@@ -139,10 +145,13 @@ All GUI-related server-side data persists to `config/customblocks/data/` (see Al
 /cb editor g02a
 ```
 
-**Expected:** Block editor chest GUI opens for `g02a`. Shows slots for: retexture, glow, hardness, sound, collision, category, note, give, rename, delete.
+> **UPDATED 2026-06-20 (replace decision):** the editor is now screen-based — the Block Studio
+> Edit tab (§G27.12). Expected/Pass/Fail flipped; the old chest editor is the FAIL now.
 
-**Pass:** Chest GUI opens directly with correct block slots.
-**Fail:** Error, or screen-based editor opens.
+**Expected:** The **Block Studio** screen opens in **Edit** mode, pre-loaded with `g02a` — Identity / Texture / Shape / Attributes / Organize panels + 3D live preview, primary button `[Save Changes]`, block soft-locked while open.
+
+**Pass:** Screen-based Block Studio opens in Edit mode for `g02a`.
+**Fail:** Error, or the old chest editor opens.
 
 ---
 
@@ -264,7 +273,7 @@ Type `/cb editor ` (with trailing space) and press Tab.
 |---|---|---|
 | G02.1 | Main menu opens as chest GUI | ⬜ |
 | G02.2 | All menu aliases work | ⬜ |
-| G02.3 | `/cb editor <id>` opens chest GUI | ⬜ |
+| G02.3 | `/cb editor <id>` opens **Block Studio screen, Edit mode** (§G27.12) | ⬜ |
 | G02.4 | `/cb gui block <id>` works | ⬜ |
 | G02.5 | Tab-complete for editor | ⬜ |
 | G02.6 | Back-stack navigates correctly | ⬜ |

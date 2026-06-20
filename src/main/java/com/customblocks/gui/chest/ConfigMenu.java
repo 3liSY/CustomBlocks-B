@@ -9,6 +9,7 @@ package com.customblocks.gui.chest;
 
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.core.SlotManager;
+import com.customblocks.core.TextureNameMirror;
 import com.customblocks.image.BackgroundRemover;
 import com.customblocks.gui.chest.Nav.Dest;
 import com.customblocks.gui.chest.Nav.MenuKey;
@@ -106,6 +107,22 @@ public final class ConfigMenu {
                 (p, b, a) -> {
                     if (b == 1) GuiRouter.runAndReopen(p, "config autobackup keep", MenuKey.of(Dest.CONFIG));
                     else GuiRouter.runAndReopen(p, "config autobackup interval", MenuKey.of(Dest.CONFIG));
+                });
+
+        // ── Named-texture mirror (editable: left = toggle, right = rebuild) ──
+        boolean mirrorOn = CustomBlocksConfig.mirrorNamedTextures;
+        m.set(34, Icons.glint(mirrorOn ? Items.FILLED_MAP : Items.MAP,
+                        "§a§lNamed Textures §f= " + (mirrorOn ? "§aON" : "§cOFF"),
+                        "§7A readable copy of your texture folder,",
+                        "§7named by block §8(e.g. §fNeptune Red.png§8).",
+                        "§7Files now: §f" + TextureNameMirror.fileCount(),
+                        "§8Write-only — never touches a real block.",
+                        "§aLeft-click §7→ turn " + (mirrorOn ? "§coff" : "§aon"),
+                        "§aRight-click §7→ rebuild from scratch"),
+                (p, b, a) -> {
+                    if (b == 1) GuiRouter.runAndReopen(p, "config mirrornames rebuild", MenuKey.of(Dest.CONFIG));
+                    else GuiRouter.runAndReopen(p, "config mirrornames "
+                            + (CustomBlocksConfig.mirrorNamedTextures ? "off" : "on"), MenuKey.of(Dest.CONFIG));
                 });
 
         // ── Feature flags (read-only) ─────────────────────────────────────

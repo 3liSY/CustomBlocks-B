@@ -1,230 +1,171 @@
 # Group 15 — AI Texture Generation
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Internet access available on the server.
+> ## ⏸️ STATUS: PARTIAL — PARKED (2026-06-20)
 >
-> **Objective:** Wire the AI texture generator using keyless providers (Pollinations.ai primary, Stable Horde anonymous fallback). Replace the old stub `AiCommandParser` and `AiTextureGenerator`. No API key required.
+> **Priority:** This is a **cool bonus feature, NOT a backbone of the mod.** Lower priority than the
+> core block/studio/legacy-restore work. Come back to it later.
 >
-> **Source issues:** 17.22 (AI features are stubs), P3 (keyless AI generator), Decision §D (Pollinations.ai + Stable Horde)
+> **What works:** AI tab UI is built end-to-end; the 20s fetch timeout that caused "couldn't generate"
+> is fixed (AI fetch now 60s + retry + WARN log — shipped this session, awaiting in-game confirm).
 >
-> **Rules:** Work through each test in order. Stop and report failure before continuing. These tests require a working internet connection.
+> **Why parked:** the **keyless Pollinations.ai provider is not good enough** — slow (free shared queue,
+> 2–40s, unpredictable) and low quality / wrong framing (object collages, cartoon look). Prompt-recipe +
+> model tuning helped (see the browser mockup `docs/mockups/ai_tab_mockup.html`) but the provider ceiling
+> remains.
+>
+> **Provider pivot (decided, needs more discussion before building):** move OFF keyless Pollinations TO
+> **Cloudflare Workers AI — Flux Schnell** (`@cf/black-forest-labs/flux-1-schnell`). Fast (~1–2s),
+> reliable edge infra, free tier (10k neurons/day, no card). Cost: a **free API key** (account ID + token
+> in config) — this **breaks the "keyless" goal** in Decision §D below, accepted as the trade for speed/quality.
+> Runner-up if needed: Google Gemini "Nano Banana" (`gemini-2.5-flash-image`, ~500/day free). **Owner will
+> use Cloudflare but wants to discuss more before implementation.**
+>
+> **Still TODO when resumed:** (1) finalize Cloudflare decision; (2) add a POST+Bearer+base64 fetch path
+> (current `ImageDownloader` is GET-only); (3) port the mockup UX into the Java AI tab — recipe picker
+> (surface vs single-object, fixes the "many cats" repeat), draft/Final-HQ split, generation log;
+> (4) the post-create **refine bar** ("add a red background"); (5) drop legacy key fields. Speed plan:
+> unify preview+create to one size so Create is a cache hit (no second render).
+
+> **Prerequisite:** Group 27 §G27.6 (Block Creation Studio) working. Internet access on the server.
+>
+> **Objective:** Generate block textures from a text description, **inside the Block Creation Studio**
+> as a new **AI** tab. Keyless — uses Pollinations.ai (HTTP GET, no account, no API key). The texture
+> previews **live** on the studio's 3D cube; the block is only created when the player hits
+> **Create & Publish** (so an unwanted result is simply not kept).
+>
+> **Source issues:** 17.22 (AI features are stubs), P3 (keyless AI generator), Decision §D (Pollinations.ai).
+>
+> **Design owner decisions (2026-06-20):** AI is a studio tab, not a chat command flow. Live (debounced)
+> generation. AI tab sits **before Category**. `/cb ai <prompt>` opens the studio on that tab and generates
+> immediately. No auto-fill of id/name — an **on-screen** notice (not chat) tells the player what's missing.
 
 ---
 
-## What this group restores / adds
-
-| Area | Old CustomBlocks | New CustomBlocks-B | This Group |
-|---|---|---|---|
-| AI texture generation | Existed with API key requirement | `AiTextureGenerator` returns null (stub) | Rebuilt with Pollinations.ai (keyless HTTP GET) |
-| AI command | `/cb ai <prompt>` existed | Not wired | Restored |
-| Fallback provider | None | None | Stable Horde anonymous key (`0000000000`) |
-| API key requirement | Required (blocked usage) | N/A | **No key required** — Pollinations.ai is keyless |
-| HuggingFace SDXL | Used previously | N/A | Dropped — requires token + heavy rate limits |
-| Config fields | `aiApiKey`, `aiWorkerUrl`, `aiServerToken` | Legacy stubs | Removed/replaced: only `aiMaxVariations` (default 3) and `aiTextureStyle` (default "pixel_art") remain |
-| Max variations | N/A | N/A | 3 per request (configurable `aiMaxVariations`) |
-| Texture style | N/A | N/A | `aiTextureStyle` — default "pixel_art", configurable |
-
----
-
-## What this group covers
-
-| Feature | Commands |
-|---|---|
-| AI generate texture | `/cb ai <prompt>` |
-| AI variations | `/cb ai <prompt> --variations 3` |
-| AI style override | `/cb ai <prompt> --style realistic` |
-| Config | `aiMaxVariations`, `aiTextureStyle` |
-| Provider fallback | Automatic (Pollinations → Stable Horde) |
-
----
-
-## Implementation Requirements
-
-### 1. Provider: Pollinations.ai (Primary)
-
-**Endpoint:** `https://image.pollinations.ai/prompt/{encoded-prompt}?width={size}&height={size}&nologo=true`
-
-- Keyless — no authentication required.
-- Request the texture size directly from the URL parameters (width × height = configured `textureSize`, default 256).
-- HTTP GET, response is a PNG.
-- No rate limit key needed.
-
-### 2. Provider: Stable Horde (Fallback)
-
-**Endpoint:** `https://stablehorde.net/api/v2/generate/async` (POST)
-
-- Anonymous key: `0000000000` (hardcoded, no config needed).
-- Used automatically if Pollinations.ai request fails (HTTP error, timeout, or returns non-image).
-- Async: poll for completion every 2 seconds (on a daemon thread), then download result.
-
-### 3. `/cb ai <prompt>`
-
-1. Player runs `/cb ai glowing blue stone tile, pixel art`.
-2. Server sends request to Pollinations.ai.
-3. If Pollinations returns a valid PNG within 15 seconds → create a new block using that texture.
-4. If timeout or error → fall back to Stable Horde.
-5. Progress feedback in chat: `Generating texture… (this may take a few seconds)`
-6. On success: `Texture generated! Block "ai_glowing_blue_stone" created.` with clickable `[preview]` and `[keep]`/`[discard]` buttons.
-
-### 4. Variations
-
-`/cb ai <prompt> --variations 3` generates up to 3 different variations. Each shown as a chest GUI slot with the generated texture. Player picks the one they want.
-
-`aiMaxVariations` config field caps this (default 3).
-
-### 5. Style
-
-`aiTextureStyle` config field (default "pixel_art") is appended to every prompt automatically.
-Players can override per-request with `--style realistic`, `--style cartoon`, etc.
-
-### 6. Config Fields — Removed
-
-The following old config fields are removed (no longer needed since no key is required):
-- `aiApiKey`
-- `aiWorkerUrl`
-- `aiServerToken`
-- `aiTextureEnabled` (AI is now always enabled — no toggle needed since it requires no key)
-
-New fields:
-- `aiMaxVariations` (int, default 3)
-- `aiTextureStyle` (string, default "pixel_art")
-
-### 7. Error Handling
-
-| Error | Response |
-|---|---|
-| Both providers unavailable | `"AI texture generation is currently unavailable. Both providers failed."` |
-| Prompt returns non-image | `"The AI returned an unexpected result. Try rephrasing your prompt."` |
-| Response > 2MB | Downscale to `textureSize` before storing |
-| NSFW content | Pollinations.ai has built-in filtering; if a block is detected as NSFW, discard and message player |
-
----
-
-## Setup
-
-Ensure internet access. No API keys to configure.
-
----
-
-## Test G15.1 — `/cb ai` generates a texture
-
-```
-/cb ai glowing red crystal block pixel art
-```
-
-**Expected:** Chat shows `Generating texture…`. Within 15–30 seconds: `Texture generated! Block "ai_glowing_red_crystal_block" created.` with preview and keep/discard buttons.
-
-**Pass:** Block created with an AI-generated texture matching the prompt style.
-**Fail:** Command missing, stuck at "Generating…", or error message.
-
----
-
-## Test G15.2 — AI block is a real block
-
-After G15.1, click `[keep]`.
-
-```
-/cb give ai_glowing_red_crystal_block
-```
-
-**Expected:** Block item given. Place it in the world — texture is the AI-generated image.
-
-**Pass:** Block works like any other custom block.
-**Fail:** Block missing from registry, or no texture.
-
----
-
-## Test G15.3 — AI discard removes block
-
-Run `/cb ai simple blue tile` again. When the block is generated, click `[discard]`.
-
-**Expected:** The generated block is NOT added to the registry. No block created.
-
-**Pass:** Discard removes the generated block.
-**Fail:** Block remains in registry after discarding.
-
----
-
-## Test G15.4 — Variations
-
-```
-/cb ai stone mossy brick --variations 3
-```
-
-**Expected:** Chat shows generating message. After completion, a chest GUI opens with 3 variation slots (3 different generated textures). Clicking one creates a block from that variation.
-
-**Pass:** 3 variations shown. Clicking one creates a block.
-**Fail:** Only one texture, or no variations chest GUI.
-
----
-
-## Test G15.5 — Style override
-
-```
-/cb ai forest tree --style realistic
-```
-
-**Expected:** Generated texture looks more realistic/photographic, not pixel-art style.
-
-**Pass:** Style override visibly affects the output.
-**Fail:** Same pixel art output regardless of style flag.
-
----
-
-## Test G15.6 — Fallback to Stable Horde
-
-*(This test is difficult to force in normal conditions — skip if unable to simulate Pollinations failure.)*
-
-Temporarily set `aiProviderOverride = stable_horde` in config to force the fallback.
-
-```
-/cb ai test fallback
-```
-
-**Expected:** Stable Horde anonymous provider is used. Block is generated (may take longer — up to 2 minutes). Chat shows progress updates.
-
-Restore `aiProviderOverride` after test.
-
-**Pass:** Block generated via Stable Horde fallback.
-**Fail:** Command fails entirely when Pollinations is unavailable.
-
----
-
-## Test G15.7 — No API key in config
-
-Check `config/customblocks/data/config.json`.
-
-**Expected:** No `aiApiKey`, `aiWorkerUrl`, or `aiServerToken` fields exist. Only `aiMaxVariations` and `aiTextureStyle` are present.
-
-**Pass:** Config clean, no legacy key fields.
-**Fail:** Old key fields still present.
-
----
-
-## Group 15 Verdict
-
-| Test | Description | Result |
+## How this differs from the original stub plan
+
+The first draft of this group was a chat command (`/cb ai <prompt>` → keep/discard buttons → variations
+chest GUI → Stable Horde fallback). That is **superseded**. The block creator already has a live-preview
+studio (Group 27) and a URL→block rail (Group 04/10) that re-fetches any image URL. AI generation rides
+on both: the AI tab turns a prompt into a Pollinations **URL**, the cube previews it, and the existing
+**Create & Publish** packet creates the block from that same URL. This removes nearly all the new
+server code the stub plan needed.
+
+| Area | Old CustomBlocks | This Group (v1) |
 |---|---|---|
-| G15.1 | AI generates texture from prompt | ⬜ |
-| G15.2 | AI block is a real usable block | ⬜ |
-| G15.3 | Discard removes generated block | ⬜ |
-| G15.4 | Variations shows 3 options | ⬜ |
-| G15.5 | Style override changes output | ⬜ |
-| G15.6 | Stable Horde fallback works | ⬜ |
-| G15.7 | No API key fields in config | ⬜ |
-
-**Group 15 passes when AI texture generation works without any API key, and the fallback chain is functional.**
-
-If anything shows ❌ — paste:
-1. The exact prompt used
-2. Error message or behavior
-3. Last 20 lines of `latest.log`
-4. Network connectivity status (can the server reach the internet?)
+| Where AI lives | `/cb ai` chat command | **AI tab** in the Block Creation Studio (`/cb create`) |
+| Provider | API-key service (DALL·E / SDXL) | **Pollinations.ai** — keyless HTTP GET, returns a PNG |
+| API key | Required | **None** |
+| Preview | None | **Live** on the studio cube as you type (debounced) |
+| Keep / discard | Chat buttons | **Create & Publish** = keep · **Cancel** = discard (nothing made until Create) |
+| Block creation | New code path | **Reuses** `CreateStudioPayload` → `createFromStudio` → `doCreate` (server re-fetches the URL) |
+| Config | `aiApiKey`, `aiWorkerUrl`, `aiServerToken`, `aiTextureEnabled` | Adds `aiTextureStyle` (default `pixel_art`). Legacy key fields stay for now (removed in a later slice). |
 
 ---
 
-## Cleanup
+## Provider — Pollinations.ai
+
+**Endpoint:** `https://image.pollinations.ai/prompt/{encoded-prompt}?width={px}&height={px}&nologo=true&seed={seed}`
+
+- Keyless. HTTP GET. Response is a PNG.
+- `width`/`height` = the requested texture size.
+- `seed` makes the result **deterministic**: the same prompt + seed returns the same image, so the studio
+  preview matches the block that Create later re-fetches.
+- Fetched through the existing `ImageDownloader` (browser User-Agent, redirects, timeouts) — no new HTTP code.
+
+---
+
+## The AI tab
+
+A new left-sidebar section in `BlockCreationStudioScreen`, placed **before Category**.
+
+1. **Prompt box** — a text field: *"describe the block… e.g. glowing red crystal"*.
+2. **Live generation** — ~0.8s after the player stops typing, the tab builds the Pollinations URL and loads
+   it onto the cube via the existing `StudioTextureLoader.load(url)`. Details under *Live behaviour* below.
+3. **Regenerate (↻)** — bumps the seed to roll a different look for the same prompt.
+4. **Generating badge** — a quiet "generating…" indicator reuses the cube's existing status-badge slot.
+5. **On-screen notices** (not chat) — empty prompt → a hint in the tab; pressing **Create & Publish** with no
+   id/name → an in-screen banner (replaces the old chat warning).
+
+### Prompt enhancement
+
+Every prompt is sent as:
 
 ```
-/cb delete ai_glowing_red_crystal_block
+<player text>, seamless tileable block texture, <aiTextureStyle>
 ```
-(Delete any other AI-generated test blocks by ID.)
+
+`aiTextureStyle` (new config, default `pixel_art`) is appended so results read as real block textures. The
+player never has to type the boilerplate.
+
+### Live behaviour — "smooth, not spammy"
+
+- **Debounce:** fire only ~0.8s after typing stops, and only for prompts ≥ 3 characters.
+- **Deterministic seed:** seed derives from the prompt text, so pausing on the same words doesn't re-roll a
+  different image each debounce. Regenerate changes the seed deliberately.
+- **Stale-guard:** each generation carries a request id; a slow earlier response can't overwrite a newer one.
+- **No flicker:** the cube keeps the current texture until the new one fully decodes, then swaps.
+- **Preview size:** previews fetch small (256px) for speed. **Create re-fetches at the real `textureSize`**,
+  so the published block is full quality. Same seed → same image, just larger.
+
+### `/cb ai [prompt]`
+
+- `/cb ai` → opens the studio on the **AI** tab, empty.
+- `/cb ai glowing red crystal` → opens on the AI tab with the prompt pre-filled and the **first generation
+  already running**.
+- Implemented as a small handler that opens the studio (like `CreationStudioBridge.openStudio`) and carries
+  the target tab + prompt to the client.
+
+### Keep / discard
+
+No separate buttons — the studio already has them:
+
+- **Create & Publish** = keep. Sends `CreateStudioPayload(id, name, pollinationsUrl, attrs)`; the server
+  re-fetches the seeded URL and creates the block on the shared rail.
+- **Cancel / Esc** = discard. Nothing was created (the texture only ever existed as a client preview + a URL).
+
+---
+
+## Config
+
+| Field | Type | Default | Note |
+|---|---|---|---|
+| `aiTextureStyle` | string | `pixel_art` | Appended to every prompt. |
+
+Legacy `aiApiKey`, `aiWorkerUrl`, `aiServerToken`, `aiTextureEnabled` are **left in place for v1** and removed
+in a later slice (they touch the config GUI — see *Deferred*).
+
+---
+
+## Error handling
+
+| Situation | Response |
+|---|---|
+| Empty / too-short prompt | On-screen hint in the AI tab; no request fired. |
+| Provider returns a non-image / fails | Cube keeps the last good texture; badge shows "couldn't generate — try rephrasing". |
+| No internet | Same as above; the existing `ImageDownloader` error surfaces as a failed badge. |
+| Create with no id/name | On-screen banner ("give it an id and a name first"); nothing sent. |
+
+---
+
+## Deferred to later slices (NOT in v1)
+
+| Item | What it'll add | Why deferred |
+|---|---|---|
+| Stable Horde fallback | Anonymous-key POST + async polling when Pollinations fails | New HTTP + polling code; v1 proves the core first. |
+| Variations | Generate N looks, pick one in a grid | Needs a multi-preview surface; bigger UI. |
+| `--style` per-request | Override `aiTextureStyle` inline | Config default covers v1. |
+| Remove legacy AI config fields | Delete `aiApiKey` / `aiWorkerUrl` / `aiServerToken` / `aiTextureEnabled` | Touches `ConfigMenu`; do as its own safe pass (G15.7). |
+
+---
+
+## Touch list (for the build)
+
+- `command/handlers/AiCommands.java` (new) — `/cb ai [prompt]`, registered in `CommandRegistrar`.
+- Open-GUI path — carry "open studio on AI tab + prompt" to the client (extend `OpenGuiPayload` use / `GuiMode`).
+- `client/gui/BlockCreationStudioScreen.java` — new `Section.AI` (before Category), prompt field + Regenerate,
+  live-debounce + stale-guard, on-screen notices. Mind the §9.3 500-line gate (split helper out if needed).
+- `ai/AiTextureGenerator.java` — repurposed from the null stub into the Pollinations **URL builder**
+  (prompt + style + size + seed). No key check.
+- `CustomBlocksConfig.java` — add `aiTextureStyle`.
+
+Tests + scorecards live in `Reports/GROUP_15_TESTING_GUIDE.md` (this spec stays status-free).

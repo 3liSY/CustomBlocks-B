@@ -13,15 +13,20 @@
  */
 package com.customblocks.command;
 
+import com.customblocks.command.handlers.AiCommands;
+import com.customblocks.command.handlers.AnimCommands;
 import com.customblocks.command.handlers.ArabicCommands;
+import com.customblocks.command.handlers.ArabicFormCommands;
 import com.customblocks.command.handlers.AttributeCommands;
 import com.customblocks.command.handlers.BackupCommands;
+import com.customblocks.command.handlers.BlueprintCommands;
 import com.customblocks.command.handlers.BulkCategoryCommands;
 import com.customblocks.command.handlers.BulkCommands;
 import com.customblocks.command.handlers.BulkDuplicateCommands;
 import com.customblocks.command.handlers.BulkExportCommands;
 import com.customblocks.command.handlers.BulkFlagCommands;
 import com.customblocks.command.handlers.BulkReidCommands;
+import com.customblocks.command.handlers.CategoryCommands;
 import com.customblocks.command.handlers.ChestGuiCommands;
 import com.customblocks.command.handlers.CloudCommands;
 import com.customblocks.command.handlers.ColorImageCommands;
@@ -37,6 +42,7 @@ import com.customblocks.command.handlers.PaletteCommands;
 import com.customblocks.command.handlers.ImageToolCommands;
 import com.customblocks.command.handlers.MacroCommands;
 import com.customblocks.command.handlers.ManagementCommands;
+import com.customblocks.command.handlers.MirrorCommands;
 import com.customblocks.command.handlers.ReIdCommands;
 import com.customblocks.command.handlers.SafetyCommands;
 import com.customblocks.command.handlers.ShapeCommands;
@@ -59,6 +65,8 @@ public final class CommandRegistrar {
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
             LiteralArgumentBuilder<ServerCommandSource> root = CommandManager.literal("customblock");
             CreationCommands.register(root);
+            AiCommands.register(root); // Group 15 — /cb ai [prompt] opens the studio's AI tab
+            AnimCommands.register(root); // Group 14 — /cb anim <id> ticks|fps|loop|smoothing|trim
             ReIdCommands.register(root);
             ShapeCommands.register(root);
             FaceCommands.register(root);
@@ -74,13 +82,17 @@ public final class CommandRegistrar {
             BulkReidCommands.register(root);
             HistoryCommands.register(root);
             ConfigCommands.register(root);
+            MirrorCommands.register(root); // Group 26 Part C — /cb config mirrornames (own handler, §5 split)
+            ArabicFormCommands.register(root); // Group 13 / O6 — /cb config arabicforms (own handler, §5 split)
             ColorImageCommands.register(root);
             ImageToolCommands.register(root);
             PaletteCommands.register(root);
             HexCommands.register(root);
             ManagementCommands.register(root);
+            CategoryCommands.register(root);
             TemplateCommands.register(root);
             UtilityCommands.register(root);
+            BlueprintCommands.register(root);
             MacroCommands.register(root);
             ArabicCommands.register(root);
             DiagnosticsCommands.register(root);

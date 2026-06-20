@@ -15,5 +15,9 @@
   "item.customblocks.black_square": "Black Square",
   "item.customblocks.black_triangle": "Black Triangle",
   "item.customblocks.custom_square": "Custom Square",
-  "item.customblocks.custom_triangle": "Custom Triangle"
+  "item.customblocks.custom_triangle": "Custom Triangle",
+  "key.categories.customblocks": "CustomBlocks",
+  "key.customblocks.toggle_hud": "Toggle HUD",
+  "key.customblocks.open_menu": "Open CustomBlocks Menu",
+  "key.customblocks.open_editor": "Open HUD Editor"
 }

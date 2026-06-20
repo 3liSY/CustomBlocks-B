@@ -54,6 +54,7 @@ public final class TextureStore {
             Path tmp = dir.resolve("slot_" + index + ".png.tmp");
             Files.write(tmp, png);
             Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            TextureNameMirror.syncSlot(index); // Group 26 Part C — refresh the named-texture mirror (flag-gated)
         } catch (Exception e) {
             CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to save texture for slot {}", index, e);
         }
@@ -118,6 +119,7 @@ public final class TextureStore {
             Files.write(tmp, png);
             Files.move(tmp, faceFile(index, face),
                     StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            TextureNameMirror.syncSlot(index); // Group 26 Part C — re-mirror with the new face (flag-gated)
         } catch (Exception e) {
             CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to save {} face for slot {}", face, index, e);
         }
@@ -148,7 +150,9 @@ public final class TextureStore {
     /** Remove one face override (back to the base texture). True if something was deleted. */
     public static boolean deleteFace(int index, String face) {
         try {
-            return Files.deleteIfExists(faceFile(index, face));
+            boolean deleted = Files.deleteIfExists(faceFile(index, face));
+            if (deleted) TextureNameMirror.syncSlot(index); // Part C — drop the mirrored face PNG (flag-gated)
+            return deleted;
         } catch (Exception ignored) {
             return false;
         }
@@ -167,5 +171,6 @@ public final class TextureStore {
             // best-effort cleanup
         }
         for (String f : FACES) deleteFace(index, f);
+        TextureNameMirror.removeSlot(index); // Group 26 Part C — drop this slot's named PNG(s) (flag-gated)
     }
 }

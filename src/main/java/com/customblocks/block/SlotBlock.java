@@ -16,8 +16,10 @@ package com.customblocks.block;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import net.minecraft.block.Block;
+import net.minecraft.block.BlockEntityProvider;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.ShapeContext;
+import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.item.BlockItem;
 import net.minecraft.item.Item;
@@ -33,7 +35,7 @@ import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
 
-public class SlotBlock extends Block {
+public class SlotBlock extends Block implements BlockEntityProvider {
 
     /**
      * Light emission as a real block-state property (0..15). Minecraft bakes a state's
@@ -66,6 +68,19 @@ public class SlotBlock extends Block {
 
     public int getSlotIndex() { return slotIndex; }
     public String getSlotKey() { return slotKey; }
+
+    /**
+     * Group 14 / Phase 1b: every slot block carries a (data-less) BlockEntity so the client
+     * BlockEntityRenderer can draw placed ANIMATED blocks off-atlas (crisp, no mipmap muffle).
+     * Static blocks keep their normal atlas model — the renderer simply skips them. The BE holds
+     * no state of its own (its slot index is read from this block), so it adds no chunk-save cost
+     * beyond the entity's existence and never ticks. Render type stays MODEL (unchanged) until the
+     * animated-block model is switched to transparent in a later slice.
+     */
+    @Override
+    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+        return new AnimSlotBlockEntity(pos, state);
+    }
 
     /**
      * Live break hardness: read from the slot's SlotData each attempt (hardness isn't baked

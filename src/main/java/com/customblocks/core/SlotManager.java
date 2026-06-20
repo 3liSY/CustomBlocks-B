@@ -76,16 +76,35 @@ public final class SlotManager {
     // ── Assignment / CRUD (Phase 2/3) ────────────────────────────────────────
     /** Claim the next free slot for a new block. Returns null if id taken or pool full. */
     public static synchronized SlotData create(String customId, String displayName) {
+        return create(customId, displayName, true);
+    }
+
+    /**
+     * Batch create: claim a free slot WITHOUT persisting (caller calls {@link #saveAll()} once
+     * after the whole batch), optionally placing it straight into a category. Used by bulk
+     * imports (e.g. the 224 bundled Arabic blocks) so we don't rewrite slots.json per block.
+     */
+    public static synchronized SlotData createNoSave(String customId, String displayName, String category) {
+        SlotData d = create(customId, displayName, false);
+        if (d == null) return null;
+        SlotData withCat = d.withCategory(category);
+        BY_ID.put(customId, withCat);
+        BY_SLOT.put(withCat.slotKey(), withCat);
+        return withCat;
+    }
+
+    private static SlotData create(String customId, String displayName, boolean persist) {
         if (customId == null || customId.isBlank()) return null;
         if (BY_ID.containsKey(customId)) return null;
         int idx = nextFreeSlotIndex();
         if (idx < 0) return null;
         TextureStore.delete(idx); // clear any stale texture from a previously freed slot
         String name = (displayName == null || displayName.isBlank()) ? customId : displayName;
+        name = NameCase.titleCase(name); // global rule: capitalize the first letter of every word
         SlotData d = new SlotData(idx, customId, name);
         BY_SLOT.put(d.slotKey(), d);
         BY_ID.put(customId, d);
-        saveAll();
+        if (persist) saveAll();
         return d;
     }
 
@@ -107,10 +126,11 @@ public final class SlotManager {
     public static synchronized SlotData rename(String customId, String newDisplayName) {
         SlotData d = BY_ID.get(customId);
         if (d == null) return null;
-        SlotData updated = d.withDisplayName(newDisplayName);
+        SlotData updated = d.withDisplayName(NameCase.titleCase(newDisplayName));
         BY_ID.put(customId, updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
+        TextureNameMirror.syncSlot(updated.index()); // Part C — name changed, no byte write: re-mirror (flag-gated)
         return updated;
     }
 
@@ -212,6 +232,18 @@ public final class SlotManager {
         return updated;
     }
 
+    /** Set a block's animation state (AnimData.NONE = make it static again). Returns new data or null.
+     *  The caller rebuilds the pack — the .mcmeta + model change, like setShape. */
+    public static synchronized SlotData setAnim(String customId, AnimData anim) {
+        SlotData d = BY_ID.get(customId);
+        if (d == null) return null;
+        SlotData updated = d.withAnim(anim);
+        BY_ID.put(customId, updated);
+        BY_SLOT.put(updated.slotKey(), updated);
+        saveAll();
+        return updated;
+    }
+
     /** Copy a block into a new free slot under {@code newId}. Returns the new data, or null. */
     /**
      * Duplicate a block into a new id: clones the display name, every attribute (glow / hardness /
@@ -230,6 +262,7 @@ public final class SlotManager {
         setSoundType(newId, src.soundType());
         setNoCollision(newId, src.noCollision());
         setCategory(newId, src.category());
+        if (src.isAnimated()) setAnim(newId, src.anim()); // clone animation so the copy animates too (Group 14)
         // Clone the baked texture and the original source image (for retexture-all re-renders).
         byte[] tex = TextureStore.load(src.index());
         if (tex != null) TextureStore.save(created.index(), tex);
@@ -248,6 +281,7 @@ public final class SlotManager {
         BY_ID.put(d.customId(), d);
         BY_SLOT.put(d.slotKey(), d);
         saveAll();
+        TextureNameMirror.syncSlot(d.index()); // Part C — undo/redo may restore a different name (flag-gated)
     }
 
     /** Remove a block (slot data + texture) without recording undo (undo/redo internal). */
@@ -260,9 +294,44 @@ public final class SlotManager {
         }
     }
 
+    /**
+     * Group 13 / Build B: permanently retire a batch of ids in one pass -- free each slot, delete
+     * its texture, and record the freed index in {@link RetiredSlots} (so placed copies get
+     * air-cleaned and the index is not reused while an old placement may linger). Saves once.
+     * Returns the freed slot indices. Ids that do not exist are skipped (idempotent).
+     */
+    public static synchronized List<Integer> retireSlots(Collection<String> customIds) {
+        List<Integer> freed = new ArrayList<>();
+        for (String id : customIds) {
+            SlotData d = BY_ID.remove(id);
+            if (d == null) continue;
+            BY_SLOT.remove(d.slotKey());
+            TextureStore.delete(d.index());
+            freed.add(d.index());
+        }
+        if (!freed.isEmpty()) {
+            RetiredSlots.addAll(freed);
+            saveAll();
+        }
+        return freed;
+    }
+
     private static int nextFreeSlotIndex() {
+        int retiredFallback = -1;
         for (int i = 0; i < maxSlots; i++) {
-            if (!BY_SLOT.containsKey("slot_" + i)) return i;
+            if (BY_SLOT.containsKey("slot_" + i)) continue;
+            // Build B: don't reuse a retired (former static-letter) index while fresh slots remain --
+            // a placed old copy might still be uncleaned in an unloaded chunk. Only reuse one as a
+            // last resort, and drop it from the retired set so its air-clean never deletes the new block.
+            if (RetiredSlots.contains(i)) {
+                if (retiredFallback < 0) retiredFallback = i;
+                continue;
+            }
+            return i;
+        }
+        if (retiredFallback >= 0) {
+            RetiredSlots.remove(retiredFallback);
+            return retiredFallback;
         }
         return -1;
     }
@@ -284,6 +353,29 @@ public final class SlotManager {
         }
     }
 
+    /**
+     * Group 26 FIX A — one-time, idempotent re-derive of every block's display name through
+     * {@link NameCase#titleCase}. Blocks persisted before the underscore->space fix kept names like
+     * "Alef_Black"; re-running the canonical rule cleans them to "Alef Black". Only persists when
+     * something actually changed, so this is a no-op on every later boot (clean names re-derive to
+     * themselves). Mutates slot state + saves through SlotDataStore (design rules #3, #4).
+     * Returns how many names were cleaned. Call once right after {@link #loadAll()}.
+     */
+    public static synchronized int migrateDisplayNames() {
+        int changed = 0;
+        for (SlotData d : new ArrayList<>(BY_ID.values())) {
+            String clean = NameCase.titleCase(d.displayName());
+            if (!clean.equals(d.displayName())) {
+                SlotData updated = d.withDisplayName(clean); // same index + id, so slotKey is unchanged
+                BY_ID.put(updated.customId(), updated);
+                BY_SLOT.put(updated.slotKey(), updated);
+                changed++;
+            }
+        }
+        if (changed > 0) saveAll();
+        return changed;
+    }
+
     /** Re-read all slot data from disk (for /cb reload). */
     public static synchronized void reload() {
         BY_SLOT.clear();
@@ -300,6 +392,10 @@ public final class SlotManager {
         if (blocks == null || index < 0 || index >= blocks.length) return null;
         return blocks[index];
     }
+
+    /** All registered slot blocks (Group 14 Phase 1b — used to build the shared anim_slot BlockEntityType).
+     *  Returns the live backing array; callers must not mutate it. Null before registerAll(). */
+    public static SlotBlock[] allBlocks() { return blocks; }
 
     public static SlotBlock.SlotItem itemAt(int index) {
         if (items == null || index < 0 || index >= items.length) return null;
@@ -318,9 +414,44 @@ public final class SlotManager {
         return d == null ? SlotData.DEFAULT_SHAPE : d.shape();
     }
 
+    /** Live animation state for a slot index (AnimData.NONE if unassigned/static). Read by the pack builder. */
+    public static AnimData animFor(int index) {
+        SlotData d = BY_SLOT.get("slot_" + index);
+        return d == null ? AnimData.NONE : d.anim();
+    }
+
     public static SlotData getBySlot(String slotKey) { return BY_SLOT.get(slotKey); }
-    public static SlotData getById(String customId) { return BY_ID.get(customId); }
-    public static boolean hasId(String customId) { return BY_ID.containsKey(customId); }
+
+    /**
+     * Resolve a block by custom id. Exact match first (fast path — byte-identical to the old behavior
+     * for every existing caller, so no regression); only when that misses does it fall back to a
+     * case-insensitive scan (Group 26 FIX B) so `/cb give te` and `/cb give Te` both resolve the same
+     * block. Tie-break on duplicate case-insensitive matches = lowest slot index (deterministic).
+     * Returns null if nothing matches.
+     */
+    public static SlotData getById(String customId) {
+        if (customId == null) return null;
+        SlotData exact = BY_ID.get(customId);
+        return exact != null ? exact : findByIdIgnoreCase(customId);
+    }
+
+    /** True if {@link #getById} would resolve this id — exact first, then case-insensitive fallback. */
+    public static boolean hasId(String customId) {
+        if (customId == null) return false;
+        return BY_ID.containsKey(customId) || findByIdIgnoreCase(customId) != null;
+    }
+
+    /** Case-insensitive id lookup over BY_ID; on multiple matches returns the lowest slot index. */
+    private static SlotData findByIdIgnoreCase(String customId) {
+        SlotData best = null;
+        for (SlotData d : BY_ID.values()) {
+            if (d.customId().equalsIgnoreCase(customId) && (best == null || d.index() < best.index())) {
+                best = d;
+            }
+        }
+        return best;
+    }
+
     public static Collection<SlotData> assignedSlots() { return BY_ID.values(); }
 
     // ── Search / categories (Phase 8/9 — pure reads over the live maps) ───────

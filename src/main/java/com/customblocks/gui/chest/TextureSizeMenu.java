@@ -1,7 +1,7 @@
 /**
  * TextureSizeMenu.java — chest sub-menu for picking the block texture resolution.
  *
- * Responsibility: list every supported size (16/32/64/128/256/512) as a clickable item whose
+ * Responsibility: list every supported size (16/32/64/128/256) as a clickable item whose
  * hover lore shows the average per-texture size AND the worst-case whole-pack size (per-texture
  * × the live slot capacity), so the pack-size cost is visible before choosing. The current size
  * glows. Clicking delegates to the tested `/cb config texturesize <px>` command (no mutation
@@ -40,7 +40,7 @@ public final class TextureSizeMenu {
             case 64  -> 6_144L;     // ~6 KB
             case 128 -> 20_480L;    // ~20 KB
             case 256 -> 81_920L;    // ~80 KB
-            case 512 -> 322_560L;   // ~0.3 MB
+            case 512 -> 327_680L;   // ~320 KB
             default  -> 6_144L;
         };
     }
@@ -50,9 +50,9 @@ public final class TextureSizeMenu {
             case 16  -> "very blocky";
             case 32  -> "blocky";
             case 64  -> "soft (old default)";
-            case 128 -> "sharp (current default)";
-            case 256 -> "very sharp";
-            case 512 -> "sharpest — heavy pack";
+            case 128 -> "sharp";
+            case 256 -> "sharpest (atlas-safe, default)";
+            case 512 -> "max — needs the new renderer (ADR-008)";
             default  -> "";
         };
     }

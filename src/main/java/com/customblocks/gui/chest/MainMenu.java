@@ -31,8 +31,8 @@ public final class MainMenu {
         // Row 1 — content & data features.
         m.set(19, Icons.of(Items.CHEST, "§a§lBlock List", "§7Browse and edit every block"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.BLOCK_LIST)));
-        m.set(20, Icons.of(Items.BOOKSHELF, "§eCategories", "§7Show /cb categories"),
-                (p, b, a) -> GuiRouter.runCommand(p, "categories"));
+        m.set(20, Icons.of(Items.BOOKSHELF, "§eCategories", "§7Browse blocks by category"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.CATEGORY_LIST)));
         m.set(21, Icons.of(Items.PAPER, "§eTemplates", "§7Show /cb template list"),
                 (p, b, a) -> GuiRouter.runCommand(p, "template list"));
         m.set(22, Icons.of(Items.REPEATER, "§eMacros", "§7Show /cb macro list"),
@@ -53,7 +53,8 @@ public final class MainMenu {
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.HISTORY)));
         m.set(31, Icons.of(Items.COMMAND_BLOCK, "§5§lBulk Operations", "§7Edit, delete, rename, move,",
                         "§7lock or favorite many blocks at once"),
-                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.BULK_HUB)));
+                (p, b, a) -> { BulkSession.get(p.getUuid()).prePicked = false; // fresh entry, not from a pick
+                        GuiRouter.navigate(p, MenuKey.of(Dest.BULK_HUB)); });
         m.set(32, Icons.of(Items.BRUSH, "§b§lColoring", "§7Backgrounds, palettes, gradients,",
                         "§7variants — every colour tool in one place"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.COLORS)));

@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CustomBlocks — AI tab + refine-bar mockup</title>
+<style>
+  :root{
+    --bg:#0a0f0a; --panel:#0e160e; --line:#2ee6c8; --line2:#1c8f7d;
+    --text:#d7ffe9; --dim:#6f8f80; --ok:#4ade80; --bad:#ff5a5a; --warn:#ffd24a;
+    --accent:#2ee6c8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:"Consolas","Courier New",monospace; font-size:14px; line-height:1.5;
+    padding:18px;
+  }
+  h1{font-size:18px;color:var(--accent);margin:0 0 2px}
+  .sub{color:var(--dim);font-size:12px;margin:0 0 16px}
+  .wrap{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+  .col{flex:1 1 380px;min-width:340px}
+  .card{
+    border:1px solid var(--line2); background:var(--panel);
+    border-radius:6px; padding:14px; margin-bottom:14px;
+  }
+  .card h2{font-size:13px;color:var(--accent);margin:0 0 10px;letter-spacing:.5px;text-transform:uppercase}
+  label{display:block;color:var(--dim);font-size:11px;margin:8px 0 3px;text-transform:uppercase;letter-spacing:.5px}
+  input[type=text],select{
+    width:100%; background:#06100c; color:var(--text);
+    border:1px solid var(--line2); border-radius:4px; padding:8px 10px;
+    font-family:inherit; font-size:14px;
+  }
+  input[type=text]:focus,select:focus{outline:none;border-color:var(--line)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end}
+  .row > div{flex:1}
+  button{
+    background:#0c2a22; color:var(--accent); border:1px solid var(--line);
+    border-radius:4px; padding:9px 14px; font-family:inherit; font-size:13px;
+    cursor:pointer; white-space:nowrap;
+  }
+  button:hover{background:#10463a}
+  button.alt{color:var(--text);border-color:var(--line2)}
+  button.pub{background:#0c2a14;border-color:var(--ok);color:var(--ok);width:100%;padding:12px;font-size:15px;margin-top:8px}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .status{margin:10px 0 2px;min-height:20px;font-size:13px}
+  .s-gen{color:var(--accent)} .s-ok{color:var(--ok)} .s-bad{color:var(--bad)} .s-idle{color:var(--dim)}
+  .preview{
+    display:flex;gap:14px;align-items:flex-start;margin-top:6px
+  }
+  .cube{
+    width:256px;height:256px;border:1px solid var(--line2);border-radius:4px;
+    background:#06100c center/cover no-repeat;
+    image-rendering:pixelated; flex:none;
+    display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:12px;text-align:center
+  }
+  .tiled{
+    width:132px;height:132px;border:1px solid var(--line2);border-radius:4px;
+    image-rendering:pixelated; background:#06100c; flex:none;
+  }
+  .tcap{color:var(--dim);font-size:10px;text-align:center;margin-top:3px}
+  .urlbox{
+    margin-top:10px;font-size:10.5px;color:var(--dim);word-break:break-all;
+    background:#06100c;border:1px solid #143028;border-radius:4px;padding:7px 9px
+  }
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .chip{
+    background:#0c2a22;border:1px solid var(--line2);border-radius:14px;
+    padding:3px 10px;font-size:12px;display:flex;align-items:center;gap:6px
+  }
+  .chip b{color:var(--accent);font-weight:normal}
+  .chip .x{color:var(--bad);cursor:pointer}
+  .eff{margin-top:10px;background:#06100c;border:1px solid #143028;border-radius:4px;padding:8px 10px;font-size:12px}
+  .eff b{color:var(--accent)}
+  table{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:6px}
+  th,td{text-align:left;padding:4px 6px;border-bottom:1px solid #143028}
+  th{color:var(--dim);font-weight:normal;text-transform:uppercase;font-size:10px}
+  td.t-ok{color:var(--ok)} td.t-bad{color:var(--bad)}
+  .note{color:var(--dim);font-size:11px;margin-top:8px;line-height:1.6}
+  .timer{font-variant-numeric:tabular-nums}
+  .hr{height:1px;background:#143028;margin:12px 0}
+  .pill{display:inline-block;background:#143028;border-radius:3px;padding:1px 6px;color:var(--accent);font-size:11px}
+</style>
+</head>
+<body>
+  <h1>CustomBlocks — AI tab + post-create refine-bar <span class="pill">mockup</span></h1>
+  <p class="sub">Hits Pollinations.ai the exact same way the mod does (same URL, same enhancement, same seed math).
+  So timing &amp; prompt behaviour you see here = what you'd get in-game. Design the refine flow here, then I port it to Java.</p>
+
+  <div class="wrap">
+    <!-- LEFT: controls -->
+    <div class="col">
+      <div class="card">
+        <h2>1 · Describe the block (AI · keyless)</h2>
+        <label>Prompt — just the thing, no "texture" words (the recipe adds those)</label>
+        <input id="prompt" type="text" placeholder="e.g. mossy cobblestone" value="mossy cobblestone">
+        <label>Recipe — surface vs single object (THIS controls the "many cats" repeat)</label>
+        <select id="recipe">
+          <optgroup label="SURFACES / MATERIALS — cobblestone, sand, wood, lava">
+            <option value="material" selected>Surface material — flat, top-down, seamless tileable</option>
+            <option value="minecraft">Minecraft 16px — pixelated vanilla look</option>
+            <option value="realistic">Realistic PBR — photo surface, seamless</option>
+            <option value="stylized">Stylized — clean game texture, soft</option>
+          </optgroup>
+          <optgroup label="SINGLE OBJECTS / ICONS — cat, gem, potato, phone">
+            <option value="object">Single object / icon — ONE subject, no repeat ← use for cat</option>
+          </optgroup>
+          <option value="raw">Raw (old mod template) — for comparison</option>
+        </select>
+        <div class="row" style="margin-top:10px">
+          <div>
+            <label>Model</label>
+            <select id="model">
+              <option value="flux" selected>flux (quality)</option>
+              <option value="turbo">turbo (fast/old)</option>
+              <option value="flux-realism">flux-realism</option>
+              <option value="flux-3d">flux-3d</option>
+              <option value="flux-anime">flux-anime</option>
+            </select>
+          </div>
+          <div style="flex:0 0 120px">
+            <label>Fetch size</label>
+            <select id="size">
+              <option value="256" selected>256 (preview)</option>
+              <option value="512">512 (create)</option>
+              <option value="128">128 (fast)</option>
+              <option value="768">768 (best)</option>
+            </select>
+          </div>
+        </div>
+        <label style="text-transform:none;color:var(--text);display:flex;align-items:center;gap:8px;cursor:pointer;margin:10px 0 0">
+          <input id="draft" type="checkbox" checked style="width:auto"> ⚡ <b style="color:var(--warn);font-weight:normal">Draft mode</b>
+          — fast turbo while editing; hit <b>Final HQ</b> for the real flux look
+        </label>
+        <label style="text-transform:none;color:var(--text);display:flex;align-items:center;gap:8px;cursor:pointer;margin:6px 0 0">
+          <input id="enhance" type="checkbox" style="width:auto"> LLM enhance (rewrites prompt, slower)
+        </label>
+        <div class="row" style="margin-top:12px">
+          <div><button id="gen" style="width:100%">✦ Generate</button></div>
+          <div style="flex:0 0 auto"><button id="hq">★ Final HQ</button></div>
+          <div style="flex:0 0 auto"><button id="roll" class="alt">↻ New look</button></div>
+        </div>
+        <div id="status" class="status s-idle">idle — type a prompt and hit Generate.</div>
+        <div id="sent" class="eff" style="margin-top:8px"><b>Sends:</b> <span id="sentText">—</span></div>
+        <div class="note" style="color:var(--warn);border:1px solid #4a3a14;border-radius:4px;padding:7px 9px;margin-top:8px">
+          ⚠ <b>Speed truth:</b> the wait is Pollinations' <b>free shared queue</b>, not the model or our code.
+          Same call can be 2s or 40s depending on their load. turbo vs flux barely matters when they're busy.
+          The only real speed levers: <b>cache hits</b> (repeat = instant) and a paid <b>API key</b> (priority) —
+          which breaks "keyless". Honest options below.
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>2 · Refine this block <span style="color:var(--dim);font-size:11px;text-transform:none">(the new edit bar)</span></h2>
+        <div class="note" style="margin-top:0">After a block exists, add instructions. Each one is appended as a
+        clause and the image regenerates. This is the post-create editing you asked for.</div>
+        <div class="row" style="margin-top:10px">
+          <div><input id="refine" type="text" placeholder='e.g. add a red background'></div>
+          <div style="flex:0 0 auto"><button id="apply">Apply</button></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button id="undo" class="alt">⟲ Undo last</button>
+          <button id="reset" class="alt">Reset to base</button>
+        </div>
+        <div id="chips" class="chips"></div>
+        <div id="eff" class="eff"><b>Effective prompt:</b> <span id="effText">—</span></div>
+      </div>
+
+      <button id="publish" class="pub">Create &amp; Publish (mock · re-fetch @512)</button>
+      <div id="pubmsg" class="note"></div>
+    </div>
+
+    <!-- RIGHT: preview + log -->
+    <div class="col">
+      <div class="card">
+        <h2>Preview</h2>
+        <div class="preview">
+          <div id="cube" class="cube">no texture yet</div>
+          <div>
+            <canvas id="tiled" class="tiled" width="132" height="132"></canvas>
+            <div class="tcap">3×3 tiled<br>(seamless check)</div>
+          </div>
+        </div>
+        <div id="urlbox" class="urlbox">URL will show here.</div>
+      </div>
+
+      <div class="card">
+        <h2>Timing log <span style="color:var(--dim);font-size:11px;text-transform:none">— how slow is it really</span></h2>
+        <table id="log">
+          <thead><tr><th>#</th><th>prompt</th><th>model</th><th>px</th><th>seconds</th><th>result</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="note">Watch the <b>model</b> column. <b>turbo</b> (Draft) ≈ a few sec — use it while editing words.
+        <b>flux</b> (Final HQ / Create) is the slow quality render. The speed plan: iterate on turbo, render flux
+        <b>once</b>. Because Create reuses the same size+seed+model as Final HQ, the URL is identical → cache hit →
+        instant (no second 512 render like the old mod). Same prompt twice = ⚡ cached.</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const BASE = "https://image.pollinations.ai/prompt/";
+let salt = 0;            // bumped by "New look"
+let refinements = [];    // post-create edit clauses
+let seq = 0;             // stale-guard for overlapping requests
+let logN = 0;
+
+const $ = id => document.getElementById(id);
+
+// The recipe is what actually fixes quality: it frames the thing as a flat, tileable, frame-filling
+// SURFACE instead of a single object on white. {p} = the user's thing (+ any refine clauses).
+const RECIPES = {
+  // SURFACES — say "repeating/tileable/fills frame". Right for cobblestone/sand/wood. WRONG for a cat (→ collage).
+  material:  p => `seamless tileable texture of ${p}, top-down orthographic flat lay, fills the entire frame edge to edge, repeating surface material, video game block texture, even flat lighting, no shadows, no background, no border, sharp high detail`,
+  minecraft: p => `${p}, minecraft block texture, 16x16 pixel art, top-down flat, seamless tileable, fills the whole frame, no background, no perspective`,
+  realistic: p => `${p} surface, seamless tileable photo texture, top-down flat lay, even diffuse lighting, fills entire frame, photorealistic, 4k, no background, no objects, no shadows`,
+  stylized:  p => `seamless tileable ${p} texture, clean stylized game art, top-down flat, soft shading, fills frame edge to edge, no background, no border`,
+  // OBJECT — ONE subject, no repeat. This is the fix for "it keeps spamming the thing" (cat/gem/potato/phone).
+  object:    p => `a single ${p}, ONE subject only, centered, front view, fills most of the frame, flat solid colour background, clean game item sprite, no repetition, no collage, no tiling, no grid, no pattern, sharp high detail`,
+  raw:       p => `${p}, seamless tileable block texture, pixel_art`,
+};
+
+// Mirrors the mod's prompt-build + the refine clauses appended.
+function effectivePrompt(){
+  const base = $("prompt").value.trim();
+  return [base, ...refinements].filter(Boolean).join(", ");
+}
+function enhanced(p){
+  return (RECIPES[$("recipe").value] || RECIPES.material)(p);
+}
+// Deterministic seed from prompt + salt (same idea as the mod's hashCode-based seed).
+function seedFor(p){
+  let h = 0; for(let i=0;i<p.length;i++){ h = (h*31 + p.charCodeAt(i))|0; }
+  return (Math.abs(h) + salt*1000003) & 0x7fffffff;
+}
+// Draft ON → fast turbo while editing. forceQuality (Final HQ / Create) → the chosen quality model.
+function modelFor(forceQuality){ return (forceQuality || !$("draft").checked) ? $("model").value : "turbo"; }
+function buildUrl(p, size, seed, model){
+  const enc = encodeURIComponent(enhanced(p));
+  let url = BASE + enc + "?width="+size+"&height="+size+"&nologo=true&seed="+seed
+          + "&model=" + encodeURIComponent(model);
+  if($("enhance").checked) url += "&enhance=true";
+  return url;
+}
+function refreshSent(){
+  const m = $("draft").checked ? "turbo (draft)" : $("model").value;
+  $("sentText").textContent = enhanced(effectivePrompt() || "…") + "   ·   [" + m + " @ " + $("size").value + "px]";
+}
+let lastUrl = "";   // to flag a Create/HQ that re-hits the exact same image (cache → instant)
+
+function setStatus(cls, txt){ const s=$("status"); s.className="status "+cls; s.textContent=txt; }
+
+function renderChips(){
+  const c = $("chips"); c.innerHTML = "";
+  refinements.forEach((r,i)=>{
+    const d=document.createElement("div"); d.className="chip";
+    d.innerHTML = `<b>+</b>${r} <span class="x" data-i="${i}">✕</span>`;
+    c.appendChild(d);
+  });
+  c.querySelectorAll(".x").forEach(x=>x.onclick=()=>{ refinements.splice(+x.dataset.i,1); afterPromptChange(); });
+  $("effText").textContent = effectivePrompt() || "—";
+  refreshSent();
+}
+
+function logRow(p,model,px,secs,ok){
+  const tb=$("log").querySelector("tbody");
+  const tr=document.createElement("tr");
+  tr.innerHTML = `<td>${++logN}</td><td>${p}</td><td>${model}</td><td>${px}</td>`+
+    `<td class="timer">${secs}</td><td class="${ok?'t-ok':'t-bad'}">${ok?'ok':'FAIL'}</td>`;
+  tb.prepend(tr);
+}
+
+let timerHandle=null;
+function startTimer(model){
+  const t0=performance.now();
+  timerHandle=setInterval(()=>{
+    const e=((performance.now()-t0)/1000).toFixed(1);
+    setStatus("s-gen", `✦ generating… ${e}s · ${model}`);
+  },100);
+  return t0;
+}
+function stopTimer(t0){ clearInterval(timerHandle); return ((performance.now()-t0)/1000).toFixed(1); }
+
+function generate(forceQuality){
+  const p = effectivePrompt();
+  if(p.length < 3){ setStatus("s-bad","type 3+ letters"); return; }
+  const size = +$("size").value;
+  const model = modelFor(forceQuality);
+  const seed = seedFor(p);
+  const url = buildUrl(p, size, seed, model);
+  const cached = (url === lastUrl);   // exact same image as last time → Pollinations/browser cache hit
+  lastUrl = url;
+  $("urlbox").textContent = url;
+
+  const my = ++seq;
+  const t0 = startTimer(model);
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+
+  img.onload = ()=>{
+    if(my!==seq) return;               // superseded by a newer request
+    const secs = stopTimer(t0);
+    $("cube").style.backgroundImage = `url("${url}")`;
+    $("cube").textContent = "";
+    drawTiled(img);
+    const tag = (cached || secs < 1) ? " ⚡ cached (instant)" : "";
+    setStatus("s-ok", `✔ texture ready · ${secs}s · ${model}${tag}`);
+    logRow(p, model, size, secs, true);
+  };
+  img.onerror = ()=>{
+    if(my!==seq) return;
+    const secs = stopTimer(t0);
+    setStatus("s-bad", `couldn't generate (${secs}s · ${model}) — Pollinations errored/blocked. Try again / rephrase.`);
+    logRow(p, model, size, secs, false);
+  };
+  img.src = url;
+}
+
+function drawTiled(img){
+  const cv=$("tiled"); const ctx=cv.getContext("2d");
+  ctx.imageSmoothingEnabled=false;
+  const s=44; // 132/3
+  for(let y=0;y<3;y++) for(let x=0;x<3;x++) ctx.drawImage(img, x*s, y*s, s, s);
+}
+
+function afterPromptChange(){ renderChips(); generate(); }
+
+// --- wire up ---
+$("gen").onclick   = ()=>{ generate(false); };          // draft (or quality if draft off)
+$("hq").onclick    = ()=>{ generate(true); };           // force the quality model — the real look
+$("roll").onclick  = ()=>{ salt++; generate(false); };
+$("prompt").addEventListener("keydown", e=>{ if(e.key==="Enter") generate(false); });
+$("prompt").addEventListener("input", refreshSent);
+["recipe","model","enhance","draft","size"].forEach(id=>$(id).addEventListener("change", refreshSent));
+
+$("apply").onclick = ()=>{
+  const v=$("refine").value.trim();
+  if(!v) return;
+  refinements.push(v); $("refine").value="";
+  afterPromptChange();   // re-previews in draft (fast) — hit Final HQ when the wording's right
+};
+$("refine").addEventListener("keydown", e=>{ if(e.key==="Enter") $("apply").click(); });
+$("undo").onclick  = ()=>{ refinements.pop(); afterPromptChange(); };
+$("reset").onclick = ()=>{ refinements=[]; afterPromptChange(); };
+
+$("publish").onclick = ()=>{
+  // Create uses the SAME size + quality model + seed as a Final HQ render → identical URL → cache hit = instant.
+  // (This is the whole speed plan: no separate 512 re-render like the old mod did.)
+  $("pubmsg").innerHTML = `Create block <b>"${$("prompt").value.trim()||"untitled"}"</b> @ <b>${$("size").value}px · ${$("model").value}</b> — ` +
+    `same image as <b>Final HQ</b>, so if you rendered that already this is instant (cached). No second 512 render.`;
+  generate(true);
+};
+
+renderChips();
+</script>
+</body>
+</html>
