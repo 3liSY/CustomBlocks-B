@@ -32,8 +32,10 @@ import com.customblocks.command.handlers.CloudCommands;
 import com.customblocks.command.handlers.ColorImageCommands;
 import com.customblocks.command.handlers.ConfigCommands;
 import com.customblocks.command.handlers.CreationCommands;
+import com.customblocks.command.handlers.DeleteCommands;
 import com.customblocks.command.handlers.DiagnosticsCommands;
 import com.customblocks.command.handlers.FaceCommands;
+import com.customblocks.command.handlers.GiveCommands;
 import com.customblocks.command.handlers.GuiCommands;
 import com.customblocks.command.handlers.HelpCommands;
 import com.customblocks.command.handlers.HexCommands;
@@ -43,9 +45,12 @@ import com.customblocks.command.handlers.ImageToolCommands;
 import com.customblocks.command.handlers.MacroCommands;
 import com.customblocks.command.handlers.ManagementCommands;
 import com.customblocks.command.handlers.MirrorCommands;
+import com.customblocks.command.handlers.ParticleCommands;
 import com.customblocks.command.handlers.ReIdCommands;
 import com.customblocks.command.handlers.SafetyCommands;
+import com.customblocks.command.handlers.FeedbackCommands;
 import com.customblocks.command.handlers.ShapeCommands;
+import com.customblocks.command.handlers.SoundCommands;
 import com.customblocks.command.handlers.TemplateCommands;
 import com.customblocks.command.handlers.ToolCommands;
 import com.customblocks.command.handlers.TrashCommands;
@@ -65,6 +70,7 @@ public final class CommandRegistrar {
         CommandRegistrationCallback.EVENT.register((dispatcher, access, environment) -> {
             LiteralArgumentBuilder<ServerCommandSource> root = CommandManager.literal("customblock");
             CreationCommands.register(root);
+            DeleteCommands.register(root); // Group 17 slice 3 — /cb delete <id> + /cb delete #
             AiCommands.register(root); // Group 15 — /cb ai [prompt] opens the studio's AI tab
             AnimCommands.register(root); // Group 14 — /cb anim <id> ticks|fps|loop|smoothing|trim
             ReIdCommands.register(root);
@@ -92,10 +98,14 @@ public final class CommandRegistrar {
             CategoryCommands.register(root);
             TemplateCommands.register(root);
             UtilityCommands.register(root);
+            GiveCommands.register(root); // Group 17 slice 2 — /cb give <id> [amount] [player]
             BlueprintCommands.register(root);
             MacroCommands.register(root);
             ArabicCommands.register(root);
             DiagnosticsCommands.register(root);
+            ParticleCommands.register(root); // Group 16 slice 4 — /cb particles <cat> on|off + board
+            SoundCommands.register(root);    // Group 16 slice 5 — /cb sounds <cat> on|off
+            FeedbackCommands.register(root); // Group 16 slice 5 — /cb feedback <cat> on|off (both)
             CloudCommands.register(root);
             GuiCommands.register(root);
             ChestGuiCommands.register(root);

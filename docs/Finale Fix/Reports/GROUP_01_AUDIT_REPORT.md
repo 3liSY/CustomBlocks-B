@@ -311,13 +311,18 @@ Every MISSING / PARTIAL / BROKEN item above maps to an existing restoration grou
 
 ---
 
-## F. Open questions requiring a developer decision
+## F. Developer decisions (RESOLVED 2026-06-21)
 
-1. **Magic Items** (`magicitems` / `editmagicitems`) — restore, or scrap like Voice? Not currently assigned a clear feature group.
-2. **`script` / `scriptgui` / `run`** — are these intentionally superseded by the Macro system (G24), or should the scripting layer be restored separately?
-3. **`dress`** — purpose unclear from old source; confirm intended behavior before assigning.
-4. **Config renames** — confirm `defaultTextureSize`→`textureSize`, `resourcePackPort`→`httpPort`/`httpHost`, and the new `aiTextureEnabled` flag are intentional.
-5. **New-only commands** (`admingui`, `draft/publish/drafts`, `incidents`) — confirm these are intended additions, not accidental scope creep.
+1. **Magic Items** (`magicitems` / `editmagicitems`) — ✅ RESTORE both. `editmagicitems` requires a **full revamp** (not a straight port). → **G25**.
+2. **`script` / `scriptgui` / `run`** — ✅ SCRAP. Macro system (G24) is the replacement; do not restore the scripting layer.
+3. **`dress`** — ✅ DROP. Do not restore.
+4. **Config renames** — ✅ CONFIRMED correct and already in code: `textureSize` (was `defaultTextureSize`), `httpPort`+`httpHost` (was `resourcePackPort`), `aiTextureEnabled`. Old names correctly absent.
+5. **New-only commands:**
+   - `admingui` — ✅ REMOVE.
+   - `draft` / `drafts` / `publish` (staging system) — ✅ REMOVE entirely. **Cancels Group 18 (Notes/Staging) staging scope** — staging feature is unwanted.
+   - `incidents` — ✅ KEEP.
+   - `video` / `extract` — ✅ REMOVE (`VideoCommands.java`). Affects Group 14 (Animation/Video) scope.
+   - `vault` (+ nested `upload` / `download`), `locked`, `favs`, `categories`, `setcategory`, `discord`, `diag` — ✅ KEEP.
 
 ---
 
@@ -328,7 +333,7 @@ Every MISSING / PARTIAL / BROKEN item above maps to an existing restoration grou
 | G01.1 | Audit table — all 150+ commands accounted for | ✅ (153 rows, no blanks) |
 | G01.2 | GUI workflow gaps identified | ✅ |
 | G01.3 | Config field coverage complete | ✅ (1 intentional drop: `voiceMode`) |
-| G01.4 | Developer sign-off granted | ⬜ awaiting your review |
+| G01.4 | Developer sign-off granted | ✅ approved 2026-06-21 |
 
 **Group 01 passes only when you explicitly approve this audit. No other group may begin implementation until G01.4 is ✅.**
 

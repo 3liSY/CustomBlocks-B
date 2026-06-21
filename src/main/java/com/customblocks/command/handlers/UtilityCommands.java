@@ -9,7 +9,6 @@
  */
 package com.customblocks.command.handlers;
 
-import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.DraftManager;
@@ -23,8 +22,6 @@ import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
-import com.mojang.brigadier.exceptions.CommandSyntaxException;
-import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -46,10 +43,7 @@ public final class UtilityCommands {
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
         root.then(CommandManager.literal("list").executes(UtilityCommands::list));
 
-        root.then(CommandManager.literal("give")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> give(ctx, StringArgumentType.getString(ctx, "id")))));
+        // give lives in GiveCommands (Group 17 slice 2) — split out to keep this file under the cap.
 
         root.then(CommandManager.literal("reload")
                 .executes(UtilityCommands::reload));
@@ -110,25 +104,6 @@ public final class UtilityCommands {
                 .append(Text.literal(" "))
                 .append(runButton("[.txt]", "/cb export txt", "Export all blocks to a .txt file"));
         src.sendFeedback(() -> exportLine, false);
-        return 1;
-    }
-
-    private static int give(CommandContext<ServerCommandSource> ctx, String id) throws CommandSyntaxException {
-        ServerCommandSource src = ctx.getSource();
-        SlotData d = SlotManager.getById(id);
-        if (d == null) {
-            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
-            return 0;
-        }
-        SlotBlock.SlotItem item = SlotManager.itemAt(d.index());
-        if (item == null) {
-            Chat.error(src, "The item for \"" + id + "\" couldn't be found — try /cb reload, "
-                    + "and report this if it keeps happening.");
-            return 0;
-        }
-        ServerPlayerEntity player = src.getPlayerOrThrow();
-        player.getInventory().insertStack(new ItemStack(item));
-        Chat.success(src, "Gave you 1 × " + d.displayName() + ".");
         return 1;
     }
 
@@ -370,8 +345,8 @@ public final class UtilityCommands {
         if (s > 0) Chat.info(src, "Skipped " + s + " that already exist: " + String.join(", ", result.skipped()));
         if (f > 0) {
             // Major-error routing (Group 04): import failures also land in the incidents log.
-            IncidentRecorder.record("Import failed for " + f + " file(s) in " + folder + " (by "
-                    + src.getName() + "): " + String.join(", ", result.failed()));
+            IncidentRecorder.record("Import failed for " + f + " file(s) in " + folder + ": "
+                    + String.join(", ", result.failed()), null, src.getName(), null);
             Chat.error(src, f + " file(s) couldn't be imported: " + String.join(", ", result.failed())
                     + ". Check they are valid CustomBlocks export JSONs.");
         }

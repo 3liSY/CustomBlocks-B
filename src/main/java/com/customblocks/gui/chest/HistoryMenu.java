@@ -42,26 +42,33 @@ public final class HistoryMenu {
         for (int i = 0; i < per; i++) {
             int gi = start + i;
             if (gi >= all.size()) break;
-            MutationLog.Entry e = all.get(gi);
-            String bid = e.blockId();
-            boolean exists = bid != null && !bid.isEmpty() && SlotManager.getById(bid) != null;
-            m.set(i, Icons.of(Items.PAPER,
-                            "§f" + friendlyAction(e.action()) + " §7- §f" + bid,
-                            "§7Block: §f" + bid,
-                            "§7By: §f" + name(player.getServer(), e.actor()),
-                            "§7When: §f" + FMT.format(new Date(e.time())),
-                            exists ? "§eClick to open this block's editor" : "§8(block no longer exists)"),
-                    (pl, b, a) -> {
-                        if (SlotManager.getById(bid) != null) {
-                            GuiRouter.navigate(pl, MenuKey.of(Dest.EDITOR, bid));
-                        } else {
-                            pl.sendMessage(Text.literal(Chat.PREFIX + "§7Block §f" + bid + " §7no longer exists."), true);
-                        }
-                    });
+            placeEntry(m, i, player, all.get(gi));
         }
 
         Layout.pagedFooter(m, p, maxPage, Dest.HISTORY, "", all.size());
         return m;
+    }
+
+    /**
+     * Render one mutation entry into slot {@code slot} (icon + click→editor). Shared so the
+     * IT Chest dashboard's mutation row (Group 16, slice 1) renders identically to this menu.
+     */
+    public static void placeEntry(ChestMenu m, int slot, ServerPlayerEntity player, MutationLog.Entry e) {
+        String bid = e.blockId();
+        boolean exists = bid != null && !bid.isEmpty() && SlotManager.getById(bid) != null;
+        m.set(slot, Icons.of(Items.PAPER,
+                        "§f" + friendlyAction(e.action()) + " §7- §f" + bid,
+                        "§7Block: §f" + bid,
+                        "§7By: §f" + name(player.getServer(), e.actor()),
+                        "§7When: §f" + FMT.format(new Date(e.time())),
+                        exists ? "§eClick to open this block's editor" : "§8(block no longer exists)"),
+                (pl, b, a) -> {
+                    if (SlotManager.getById(bid) != null) {
+                        GuiRouter.navigate(pl, MenuKey.of(Dest.EDITOR, bid));
+                    } else {
+                        pl.sendMessage(Text.literal(Chat.PREFIX + "§7Block §f" + bid + " §7no longer exists."), true);
+                    }
+                });
     }
 
     private static String friendlyAction(String label) {

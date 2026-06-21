@@ -24,7 +24,7 @@
 | Golden Hexagon | Admin tool (physical item) | Framework only | Merged into Omni-Tool as "Admin Mode" — not a separate item |
 | Rainbow Rectangle | Area tool (physical item) | Framework only | Merged into Omni-Tool as "Area Mode" |
 | Diamond Triangle (Wand) | Eyedrop/wand tool | Framework only | Merged into Omni-Tool as "Eyedrop Mode" |
-| Tab icon | `/cb settabicon <url>` | Missing | Restored (see Group 25) |
+| Tab icon | `/cb settabicon <url>` | Missing | **Owned by G25** (decision C 2026-06-21) — not a G06 tool |
 
 ---
 
@@ -188,23 +188,34 @@ Hold the `g06a` item (glow = 12) in your main hand. Stand in a dark area (night 
 
 ## Test G06.7 — Glow on placement
 
+> **REWORDED 2026-06-21:** two separate things were conflated. (a) The placed block emitting
+> **ground light** is normal block lighting and **works**. (b) A smooth **hand→placed transition**
+> only matters once held-block glow (G06.6) works — and G06.6 is currently broken, so the transition
+> half is N/A until G06.6 is fixed.
+
 Hold the `g06a` item. Place it on a wall in a dark area.
 
-**Expected:** As the block is placed, light smoothly transitions from hand position to placed position.
+**Expected:** The placed block lights its surroundings (ground light). Once G06.6 works, the light
+should also transition smoothly from hand to placed position.
 
-**Pass:** Light follows placement correctly.
-**Fail:** No light during/after placement.
+**Pass:** Placed-block ground light works. (Hand→place transition gated on G06.6.)
+**Fail:** Placed block emits no light at all.
 
 ---
 
 ## Test G06.8 — Creative tools tab contents
 
+> **CORRECTED 2026-06-21 (developer):** "exactly 4 items" was wrong. The tab houses MORE than 4
+> tool items and that is **intended/correct**. The real check is: it's the tools tab, contains the
+> tool items, and does NOT contain custom blocks.
+
 Open creative inventory. Navigate to "CustomBlocks Tools" tab.
 
-**Expected:** Tab contains exactly: Omni-Tool, Deleter, Green Square Marker, Yellow Triangle Marker. No custom blocks in this tab.
+**Expected:** Tab contains the tool items (Omni-Tool, Deleter, Square, Triangle, and the other tool
+items — more than 4 is fine). No custom blocks in this tab.
 
-**Pass:** Only 4 tool items. No blocks.
-**Fail:** Old items (Lumina Brush, Chisel as separate items), blocks present, or tab missing.
+**Pass:** Tools tab present with tool items; no custom blocks mixed in.
+**Fail:** Custom blocks present in the tools tab, or tab missing.
 
 ---
 
@@ -235,15 +246,15 @@ Open creative inventory. Navigate to "CustomBlocks Tools" tab.
 
 | Test | Description | Result |
 |---|---|---|
-| G06.1 | Omni-Tool given via `/cb brush` | ⬜ |
-| G06.2 | Right-click cycles glow | ⬜ |
-| G06.3 | Config chest GUI opens via Shift+RClick | ⬜ |
-| G06.4 | Mode switch in GUI works | ⬜ |
-| G06.5 | Deleter removes block instantly, undoable | ⬜ |
-| G06.6 | Held block emits dynamic glow | ⬜ |
-| G06.7 | Glow transitions on placement | ⬜ |
-| G06.8 | Creative tools tab has only 4 items | ⬜ |
-| G06.9 | All tool-give shortcuts work | ⬜ |
+| G06.1 | Omni-Tool given via `/cb brush` | ✅ in-game (2026-06-21) — whole Omni-Tool mechanism to be reworked later |
+| G06.2 | Right-click cycles glow | ✅ in-game (2026-06-21) — Omni rework pending |
+| G06.3 | Config chest GUI opens via Shift+RClick | ✅ in-game (2026-06-21) — Omni rework pending |
+| G06.4 | Mode switch in GUI works | ✅ in-game (2026-06-21) — Omni rework pending |
+| G06.5 | Deleter removes block instantly, undoable | ✅ in-game (2026-06-21) — works, but poor action-bar/chat feedback + RP reload fires too slowly (see Follow-ups) |
+| G06.6 | Held block emits dynamic glow | ❌ in-game (2026-06-21) — NO glow from hand; feature not working |
+| G06.7 | ~~Glow transitions on placement~~ → placed block emits ground light | ✅ in-game (2026-06-21) — placed-block ground light works; the hand→place *transition* depends on G06.6 (broken). Spec reworded |
+| G06.8 | Creative tools tab contents | ✅ in-game (2026-06-21) — spec corrected: tab houses MORE than 4 items, which is intended/correct |
+| G06.9 | All tool-give shortcuts work | ✅ in-game (2026-06-21) — work; shortcuts to be reworked later |
 
 **Group 06 passes when the developer confirms all tools work, glow emits from hand, and the creative tab is clean.**
 
@@ -253,6 +264,34 @@ If anything shows ❌ — paste:
 3. Last 20 lines of `latest.log`
 
 ---
+
+## Colour Squares — 2026-06-20 additions
+
+The colour **Squares** (the M3 colour-swap tools, `item/ShapeToolItem.java`) gained two changes this date.
+Tests → `GROUP_06_TESTING_GUIDE.md` §J.
+
+1. **Squares recolour placed auto-join Arabic letters.** Previously a Square only matched `SlotBlock` and
+   did nothing on a letter. Now a Square on an `ArabicLetterBlock` recolours it to the Square's colour —
+   **colour only**: it sets the letter's per-block colour and syncs, never touching the blockstate or the
+   join flow, so FACING / form / neighbour joins are untouched. Green/Yellow/Red/Black map 1:1 to the
+   bundled letter colours; instant, no pack reload. Full design → `GROUP_13_ARABIC.md` → **O11**.
+2. **Cleaner swap wording.** The swap feedback now reads `Swapped to <DisplayName>` (clean name, not the
+   raw id) and the same-colour case reads `Already <DisplayName>`. Plus all hotbar popups dropped the
+   `[CB]` tag (owner request) — that part lives in Group 04 (`Chat.tool`).
+
+---
+
+## Follow-ups (from in-game test 2026-06-21)
+
+8 of 9 tests pass; G06.6 fails. Open work:
+
+- **G06.6 — held-block hand glow BROKEN (build fix).** Holding a glowing block emits no light from
+  hand. Networked client-side mixin (§3) not working. Real bug — needs investigation + fix.
+- **Omni-Tool full mechanism rework (G06.1–.4, .9).** Tool works, but developer wants the entire
+  Omni-Tool mechanism + the tool-give shortcuts redesigned. Scope/design TBD — later.
+- **G06.5 — Deleter polish.** Works + undoable, but: (a) weak/absent action-bar + chat feedback,
+  (b) resource-pack reload after delete fires too slowly. Improve feedback + speed up the RP refresh.
+- **G06.7 spec reworded; G06.8 spec corrected** (tab may house >4 items — intended).
 
 ## Cleanup
 

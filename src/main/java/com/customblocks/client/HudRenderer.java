@@ -14,6 +14,7 @@
 package com.customblocks.client;
 
 import com.customblocks.block.SlotBlock;
+import com.customblocks.client.hud.HudBgShapes;
 import com.customblocks.client.hud.HudField;
 import com.customblocks.client.hud.HudFieldType;
 import net.fabricmc.api.EnvType;
@@ -136,8 +137,9 @@ public final class HudRenderer {
         m.pop();
     }
 
-    /** Background pad behind a brick: per-brick override, or the global default. */
+    /** Background pad behind a brick: shape (§G27.14) + per-brick colour override, or the global default. */
     private static void drawBackground(DrawContext ctx, HudField f, int boxW, int boxH) {
+        if (f.bgShape == HudField.BgShape.PLAIN) return;   // text + shadow only
         int color; float opacity;
         if (f.bgOverride) {
             if (f.bgOff) return;
@@ -147,7 +149,13 @@ public final class HudRenderer {
         }
         if (opacity <= 0f) return;
         int alpha = Math.round(HudConfig.clamp01(opacity) * 255f);
-        ctx.fill(0, 0, boxW, boxH, (alpha << 24) | (color & 0xFFFFFF));
+        int argb  = (alpha << 24) | (color & 0xFFFFFF);
+        int accent = f.accentOverride ? f.accentColor : HudConfig.accentColor;
+        switch (f.bgShape) {
+            case PILL     -> HudBgShapes.pill(ctx, boxW, boxH, argb, accent);
+            case GLOW_BOX -> HudBgShapes.glowBox(ctx, boxW, boxH, argb, accent);
+            default       -> ctx.fill(0, 0, boxW, boxH, argb);   // BOX = today's flat rect
+        }
     }
 
     /** Draw the brick's text at local (PAD,PAD) honouring colour, bold, shadow + effect. */

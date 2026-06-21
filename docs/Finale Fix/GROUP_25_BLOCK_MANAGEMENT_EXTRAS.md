@@ -45,8 +45,25 @@
 | Set custom drop | `/cb setdrop <id> <item-id> [amount]` |
 | Clear custom drop | `/cb cleardrop <id>` |
 | Block Finder | `/cb find <id>` |
-| Set tab icon | `/cb settabicon <url>` |
+| Set tab icon | `/cb settabicon <url>` (owner = G25, decision C 2026-06-21; removed from G06) |
 | Export PNG (editor) | Button in Block Editor chest GUI |
+
+---
+
+## Consolidated ownership (sweep 2026-06-21)
+
+These features were **specced in other group docs but belong here** per SWEEP_INDEX §A/§B. Ownership moved to
+G25; the listed docs keep only a cross-ref. (Specs not duplicated — see the source doc for original detail.)
+
+| Feature | Commands | Moved from | Notes |
+|---|---|---|---|
+| Magic items | `/cb magicitems`, `/cb editmagicitems` | G02 | RESTORE; `editmagicitems` gets a **full revamp** (not a port) — §A |
+| Block edit history | `/cb history` | G02 | G02 built the chest-GUI surface; the mutation-log **feature** is owned here (decision A) |
+| Favorites | `/cb favorite <id>` (primary), `/cb fav` (alias), `/cb unfavorite <id>` | G17 | Feature owned here; G17 keeps a regression check only (decision — §B "favorite alias") |
+| Recent blocks | `/cb recent` | G17 | Recently-used list (text + chest GUI link); owned here (decision — §B "recent") |
+
+> ⚠️ These four need their full test specs written into G25 when they're built (currently only stubs/notes
+> elsewhere). Do **not** assume they're tested — they inherit ⬜ until in-game confirmed.
 
 ---
 

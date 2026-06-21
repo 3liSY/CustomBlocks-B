@@ -132,7 +132,7 @@ public final class SafetyCommands {
                 });
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Broken-block rebake failed for \"" + id + "\"", e);
+                IncidentRecorder.record("Broken-block rebake failed for \"" + id + "\"", id, src.getName(), e);
                 server.execute(() -> Chat.error(src, "Couldn't rebuild that texture. " + msg));
             }
         }, "CustomBlocks-RebakeFix");

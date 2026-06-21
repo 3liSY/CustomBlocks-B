@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Verdict** | 🔴 Not tested · 🟡 Partial · 🟢 All pass |
+| **Verdict** | 🟡 Partial — **PARKED by owner 2026-06-21, revisit later**. Parts built, not yet in-game tested |
 | **Progress** | 🟥🟥🟥🟥🟥 · 0 / 5 passed |
-| **Last tested** | — |
+| **Last tested** | parked 2026-06-21 (not tested) |
 | **Jar** | 1.0.0 |
 | **Tester** | — |
 
@@ -33,6 +33,7 @@
 | ⏳ | **Studio Paint** | `/cb paint` | not built |
 | ⏳ | **Studio Recolor + Shape fold-in** | `/cb recolor`, `/cb shapeeditor` | not built (§G27.11) |
 | ⏳ | **Screen toasts (no chat)** | every CB screen | not built (§G27.13) |
+| 🎯 | **HUD templates + shapes** | `/cb edithud` | **built — test this jar (§ below)** |
 
 > ✅ The earlier studio build (opens · Identity · Texture URL · Shape · Attributes · category text · Create carries everything · `[?]`/dim/cancel · greyed FX/Behavior/Lore) you **already confirmed in-game**. **Don't re-test those.** This guide now lists only the **5 new fixes/upgrades** in this jar.
 
@@ -167,6 +168,40 @@
 | ⏳ | ③ | all CB screens covered |
 | ⏳ | ④ | typed server commands still reply in chat |
 | — | **0 / 4** | |
+
+---
+
+## 🎯 TEST NOW — HUD templates + shape backgrounds (§G27.14)
+
+> Extends the Lego HUD (§G27.4). **Additive** — your current bricks + the editor menu must be untouched.
+> **Built this jar.** Open with `/cb edithud`. (Dev choice: **pill everything on load** — see ③.)
+
+- **① Pill is the default look** 🎯 — `/cb edithud`, add a fresh brick (or `[Reset]`)
+  - ✅ the brick's background is a **rounded pill** with a thin blue accent stripe down the left.
+  - ✅ bricks still **drag + snap**; the menu looks the same as before, plus a shape control in the ⚙ inspector.
+- **② Shape picker per brick** 🎯 — select a brick → ⚙ inspector → **Shape** button
+  - ✅ cycles **Pill / Glow box / Box / Plain**; glow box shows a border + top glow; plain = text only.
+  - ✅ **Accent ■** button sets that brick's stripe/border colour.
+  - ✅ relog → the chosen shape **persists**.
+- **③ Existing HUD loads (pill applied)** 🎯 — load a HUD you saved before this jar
+  - ✅ it loads with **no crash**; per your choice, old bricks now show the **pill** look too (positions/styles unchanged).
+- **④ Template brick** 🎯 — `[+ Add brick]` → **Template** (gold entry) → add one; set text `{name} [{id}]`
+  - ✅ aim at a custom block → it shows e.g. **Ruby Ore [ruby_ore]**, updating live.
+  - ✅ it's its **own draggable brick** (Name + ID are NOT forced into one box).
+  - ✅ off a custom block, a line using block tokens **hides** (world-only tokens like `{coords}` still show).
+- **⑤ Token chips** 🎯 — in a Template brick's ⚙ inspector
+  - ✅ clicking `{light}` / `{coords}` / `{hardness}` etc. **inserts** that token into the text box; it resolves in-game.
+
+### 📋 Scorecard (§G27.14)
+
+| ✓ | # | Proves |
+|:--:|:--:|---|
+| 🟥 | ① | pill is the default brick background |
+| 🟥 | ② | per-brick shape picker (pill/glow/box/plain) + accent, persists |
+| 🟥 | ③ | old saved HUDs load (pill applied per dev choice), no crash |
+| 🟥 | ④ | template brick resolves {tokens} live, own brick, hides off-block |
+| 🟥 | ⑤ | token-insert chips work |
+| — | **0 / 5** | |
 
 ---
 

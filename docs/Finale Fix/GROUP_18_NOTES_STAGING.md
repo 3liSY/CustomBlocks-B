@@ -1,10 +1,14 @@
-# Group 18 — Block Metadata: Notes & Staging Area
+# Group 18 — Block Metadata: Notes
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 9 (Import/Export + Notes + Drafts) build-verified.
+> ⛔ **STAGING SYSTEM SCRAPPED (sweep 2026-06-21).** Per SWEEP_INDEX §A the entire draft/publish/staging
+> system (`draft`/`drafts`/`publish`/`stage`/`release`/`staging`/`resume`) is **removed**. G18 is **notes only**
+> now. The staging spec (§3–§6) and tests G18.8–G18.14 are struck below for history; do not build them.
 >
-> **Objective:** Rework the note system into a full Book GUI with three tabs. Rename the draft/publish system to the "Staging Area", fix pack-rebuild exclusion behavior, and add clear UX messaging. Both systems are per-block metadata — test them together.
+> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 9 (Notes) build-verified.
 >
-> **Source issues:** 17.12 (note UX), P5 (Note rework into Book GUI), 17.14 (draft/publish confusing), P6 (rename to Staging Area, clearer UX)
+> **Objective:** Rework the note system into a full Book GUI with three tabs (Lore, To-Do, Hover Tooltip).
+>
+> **Source issues:** 17.12 (note UX), P5 (Note rework into Book GUI)
 >
 > **Rules:** Work through each test in order. Stop and report failure before continuing.
 
@@ -17,12 +21,7 @@
 | Note storage | `/cb note <id> [text\|clear]` — plain text only | Multi-tab Book GUI: Lore, To-Do, Hover Tooltip |
 | Note GUI | None | Chest GUI — `/cb note <id>` |
 | Note sharing | None | "Share" button in Note GUI |
-| Draft terminology | "draft" / "publish" — confusing | "Staging Area" / "stage" / "release" — old names remain as aliases |
-| Staging commands | `/cb draft <id>`, `/cb publish <id>`, `/cb drafts` | `/cb stage <id>`, `/cb release <id>`, `/cb staging` |
-| Pack behavior | Staged blocks still triggered pack rebuilds | Staged blocks excluded from pack until released |
-| Staging GUI | None | Staging Area chest GUI with explanation banner |
-| Status tag | `[draft]` in `/cb list` | `[staging]` (yellow) |
-| Resume | `/cb resume <id>` | Preserved — reopens editor for staged block |
+| ~~Draft/staging system~~ | ~~draft/publish/stage/release/staging/resume~~ | ⛔ **SCRAPPED — removed entirely (SWEEP_INDEX §A)** |
 
 ---
 
@@ -35,11 +34,8 @@
 | Note to-do | To-Do tab — checkable items |
 | Note tooltip | Hover Tooltip tab — item hover text |
 | Legacy note commands | `/cb note <id> <text>` / `/cb note <id> clear` (still work) |
-| Stage block | `/cb stage <id>` (alias: `/cb draft <id>`) |
-| Release block | `/cb release <id>` (alias: `/cb publish <id>`) |
-| View staging | `/cb staging` (alias: `/cb drafts`) |
-| Resume | `/cb resume <id>` |
 | Note storage | `config/customblocks/data/notes.json` |
+| ~~Staging commands~~ | ⛔ **SCRAPPED** — `stage`/`release`/`staging`/`draft`/`publish`/`drafts`/`resume` removed |
 
 ---
 
@@ -63,37 +59,11 @@ Each tab uses anvil GUI inputs for editing. "Save" slot commits changes. "Share"
 
 `/cb note <id> clear` — still works. Clears all three tabs.
 
-### 3. Staging Area — Terminology
+### 3–6. ~~Staging Area~~ — ⛔ SCRAPPED
 
-All old `draft`/`publish`/`drafts` commands remain as aliases. New primary names:
-
-| Old | New (primary) | Alias preserved |
-|---|---|---|
-| `/cb draft <id>` | `/cb stage <id>` | `/cb draft <id>` ✓ |
-| `/cb publish <id>` | `/cb release <id>` | `/cb publish <id>` ✓ |
-| `/cb drafts` | `/cb staging` | `/cb drafts` ✓ |
-
-### 4. Pack Behavior Fix
-
-A staged block's texture is **excluded** from pack rebuilds. No rebuild fires when a staged block's texture changes. When `/cb release <id>` is called: block enters the pack and one rebuild fires.
-
-This prevents pack thrash during heavy editing sessions.
-
-### 5. Staging Area Chest GUI
-
-`/cb staging` opens a chest GUI with:
-- **Banner slot** (top center): Gold banner. Hover text: "Staged blocks are excluded from resource pack rebuilds. Use this area when making many changes at once to prevent lag."
-- **Block slots**: one per staged block. Click → sub-menu: Edit, Release, Delete.
-- **"Release All" slot** — releases all staged blocks, one pack rebuild.
-- **"Resume" slot** — if a staged block has an in-progress session.
-
-### 6. Messaging
-
-| Action | Message |
-|---|---|
-| Stage | `"g18a" moved to Staging Area. Changes won't affect the resource pack until you release it.` |
-| Release | `"g18a" released. Resource pack updating now.` |
-| Release all | `Released N block(s). Resource pack updating once.` |
+The entire staging system (terminology, pack-behavior exclusion, staging chest GUI, messaging) is
+**removed** per SWEEP_INDEX §A. Macros + the existing pack debounce cover the "avoid pack thrash" need.
+No `stage`/`release`/`staging`/`draft`/`publish`/`drafts`/`resume` commands. Original spec deleted.
 
 ---
 
@@ -198,99 +168,10 @@ Restart server. `/cb note g18a`.
 
 ---
 
-## Test G18.8 — Stage command
+## Tests G18.8–G18.14 — ⛔ SCRAPPED (staging removed)
 
-```
-/cb stage g18b
-```
-
-**Expected:** `"g18b" moved to Staging Area. Changes won't affect the resource pack until you release it.`
-
-**Pass:** Staged, message is clear and conversational.
-**Fail:** Error or old "marked as draft" message.
-
----
-
-## Test G18.9 — Old `draft` alias works
-
-```
-/cb draft g18c
-```
-
-**Expected:** Same staging behavior. No error.
-
-**Pass:** Alias works.
-**Fail:** Command not found.
-
----
-
-## Test G18.10 — Staging GUI opens with explanation
-
-```
-/cb staging
-```
-
-**Expected:** Chest GUI with gold banner slot, one slot for g18b, one for g18c, "Release All" slot.
-
-Hover the banner slot → shows the "prevents pack lag" explanation.
-
-**Pass:** GUI opens, explanation on hover.
-**Fail:** Text output only, or no explanation.
-
----
-
-## Test G18.11 — Staged block excluded from pack rebuild
-
-While g18b is staged:
-
-```
-/cb retexture g18b https://i.imgur.com/example.png
-```
-
-Check `latest.log` — should NOT see `[CustomBlocks] Rebuilding resource pack…`.
-
-**Pass:** No pack rebuild during staging.
-**Fail:** Pack rebuilds despite block being staged.
-
----
-
-## Test G18.12 — Release All triggers one rebuild
-
-In the staging GUI, click "Release All".
-
-**Expected:** `Released 2 block(s). Resource pack updating once.`
-
-`latest.log` — exactly ONE rebuild line.
-
-**Pass:** One rebuild, both blocks released.
-**Fail:** Two rebuilds, or no rebuild.
-
----
-
-## Test G18.13 — `[staging]` tag in list
-
-```
-/cb stage g18b
-/cb list
-```
-
-**Expected:** g18b shows `[staging]` tag (yellow).
-
-**Pass:** `[staging]` tag visible.
-**Fail:** `[draft]` (old name) or no tag.
-
----
-
-## Test G18.14 — Old `publish` alias works
-
-```
-/cb publish g18b
-```
-
-**Expected:** `"g18b" released.`
-
-**Pass:** Alias works.
-**Fail:** Command not found.
+All staging tests (`stage`/`draft`/`staging`/`release`/`publish`, pack-exclusion, `[staging]` tag) are
+**removed** per SWEEP_INDEX §A. Skip. G18 scope = notes (G18.1–G18.7) only.
 
 ---
 
@@ -305,15 +186,9 @@ In the staging GUI, click "Release All".
 | G18.5 | All note data persists after restart | ⬜ |
 | G18.6 | Legacy note command still works | ⬜ |
 | G18.7 | Clear removes all note data | ⬜ |
-| G18.8 | `/cb stage` with clear message | ⬜ |
-| G18.9 | Old `draft` alias preserved | ⬜ |
-| G18.10 | Staging GUI with explanation banner | ⬜ |
-| G18.11 | Staged block excluded from pack rebuild | ⬜ |
-| G18.12 | Release All triggers exactly one rebuild | ⬜ |
-| G18.13 | `[staging]` tag in `/cb list` | ⬜ |
-| G18.14 | Old `publish` alias preserved | ⬜ |
+| ~~G18.8–G18.14~~ | ~~staging tests~~ | ⛔ SCRAPPED — staging system removed (§A) |
 
-**Group 18 passes when notes and staging both work correctly in-game.**
+**Group 18 passes when the notes Book GUI works in-game (G18.1–G18.7).**
 
 If anything shows ❌ — paste:
 1. The exact command or GUI action
@@ -325,8 +200,6 @@ If anything shows ❌ — paste:
 ## Cleanup
 
 ```
-/cb release g18b
-/cb release g18c
 /cb delete g18a
 /cb delete g18b
 /cb delete g18c

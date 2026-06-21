@@ -162,7 +162,7 @@ public final class ColorVariantService {
                 });
             } catch (Exception e) {
                 IncidentRecorder.record("Colour-variant recolour failed for \"" + vid + "\" (from \""
-                        + sourceId + "\", by " + player.getName().getString() + ")", e);
+                        + sourceId + "\")", vid, player.getName().getString(), e);
                 server.execute(() -> Chat.tool(player, "§cRecolouring \"" + vid + "\" failed — the block "
                         + "exists but kept no texture. Retexture it, or /cb delete " + vid + "."));
             }
@@ -192,7 +192,7 @@ public final class ColorVariantService {
             return;
         }
         if (target.index() == current.index()) {
-            Chat.tool(player, "§7This block is already §f" + target.customId() + "§7.");
+            Chat.tool(player, "§7Already §f" + target.displayName() + "§7.");
             return;
         }
         SlotBlock block = SlotManager.blockAt(target.index());
@@ -203,7 +203,7 @@ public final class ColorVariantService {
         // Mirror SlotBlock.getPlacementState: the target's configured glow rides in the state.
         world.setBlockState(pos, block.getDefaultState()
                 .with(SlotBlock.LIGHT, SlotManager.glowFor(target.index())));
-        Chat.tool(player, "§7Swapped to §f" + target.customId() + "§7.");
+        Chat.tool(player, "§bSwapped to §f" + target.displayName());
     }
 
     /** How many existing blocks are {@code colourKey} variants (id ends in "_<colour>"). */
@@ -249,7 +249,8 @@ public final class ColorVariantService {
                     done++;
                 } catch (Exception e) {
                     skipped++;
-                    IncidentRecorder.record("Hex recolour failed for \"" + d.customId() + "\"", e);
+                    IncidentRecorder.record("Hex recolour failed for \"" + d.customId() + "\"",
+                            d.customId(), player.getName().getString(), e);
                 }
             }
             final int fDone = done, fSkipped = skipped;

@@ -11,8 +11,8 @@
 
 | | |
 |---|---|
-| **Verdict** | 🟢 All pass |
-| **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟩🟩 · 9 / 9 passed |
+| **Verdict** | 🟢 All pass · 🎯 **§3 hotbar un-branding** (2026-06-20) build-green, awaiting in-game |
+| **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟩🟩 · 9 / 9 passed · §3 🎯 awaiting |
 | **Last tested** | 2026-06-10 |
 | **Jar** | 1.0.0 |
 | **Tester** | — |
@@ -23,10 +23,11 @@
 
 | | What | § |
 |:--:|---|:--:|
+| 🎯 **TEST NOW (2026-06-20)** | **Hotbar popups un-branded** — `Chat.tool` dropped the `[CB]` tag (cleaner hotbar); chat lines keep `[CB]`. Confirm in **Group 06 §J**. | §3 |
 | ✅ Passed 2026-06-10 | Upgraded wording · DidYouMean · `/cb help` GUI · `/cb welcome` · incident routing | §1 |
 | 🟡 Polish later | chat-formatting pass · `/cb rename` "already named" message · short bodies on low-traffic commands | §2 |
 
-> 👍 **Nothing to test right now** — Group 04 is confirmed. Listed below for re-checks only.
+> 🎯 **One thing to test (§3)** — otherwise Group 04 is confirmed; the rest is re-checks only.
 
 ---
 
@@ -55,6 +56,20 @@
 - 🗣️ **Tone is a first pass** — all 163 message sites carry the brand; some low-traffic commands (templates, macros, arabic, cloud) still read short.
 - 🔤 **DidYouMean matches the first word only** (the game handles a bad second word) — same as the old project.
 - 🖥️ **Chat pre-fill needs the mod client-side**; a console `/cb help` prints a text list.
+
+---
+
+## 🎯 §3 · Hotbar popups un-branded  (2026-06-20, build-green)
+
+> 💡 **What changed:** `Chat.tool` (the action-bar/hotbar popups) no longer prepends the `[CB]` tag —
+> cleaner hotbar (owner request). **Chat lines still carry `[CB]`** (success / error / info unchanged).
+> Spec → `GROUP_04_CHAT.md` → "Hotbar popups un-branded". The visible cases (Square swap wording etc.) are
+> exercised in **Group 06 §J** — run that section; this just records the Group 04 ownership.
+>
+> 🔧 **Status:** 🟢 built + jar green — NOT in-game confirmed.
+
+- ⬜ Any tool action that pops the **hotbar** (Omni-Tool, Deleter, Square swap) → message has **no `[CB]`**.
+- ⬜ Any `/cb` **chat** response (e.g. `/cb give …`, `/cb create …`) → still starts with **`[CB]`**.
 
 ---
 

@@ -34,12 +34,20 @@ import net.minecraft.util.ActionResult;
 import java.util.List;
 import java.util.Locale;
 
-public class CustomColorToolItem extends Item {
+public class CustomColorToolItem extends Item implements ColorSwapTool {
 
     /** NBT int key carrying the tool's 0xRRGGBB colour (also read by the client icon tint). */
     public static final String NBT_RGB = "cb_rgb";
 
     private final String shape; // "Square" or "Triangle"
+
+    /** Square → "hex_rrggbb" from the stack's colour; Triangle / colourless → null (no prediction). */
+    @Override
+    public String swapColourKey(ItemStack stack) {
+        if (!"Square".equals(shape)) return null;
+        int rgb = rgbOf(stack);
+        return rgb < 0 ? null : ColorVariantService.keyForRgb(rgb);
+    }
 
     public CustomColorToolItem(Settings settings, String shape) {
         super(settings);

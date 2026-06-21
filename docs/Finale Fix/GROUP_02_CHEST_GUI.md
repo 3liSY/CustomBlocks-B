@@ -35,10 +35,10 @@
 | Block editor | `/cb editor <id>`, `/cb gui block <id>` |
 | GUI list | `/cb listgui` |
 | Undo/redo browser | `/cb undogui`, `/cb redogui` |
-| History log | `/cb history` |
-| Magic items | `/cb magicitems`, `/cb editmagicitems` |
-| RP control | `/cb rp pause`, `/cb rp resume`, `/cb sync` |
-| Suppression | `/cb unsuppress` |
+| History log | `/cb history` — chest GUI surface only; **feature owned by G25** (sweep 2026-06-21) |
+| ~~Magic items~~ | **MOVED → G25** (`magicitems` / `editmagicitems` owned + revamped there, SWEEP_INDEX §B) |
+| RP control | `/cb rp pause`, `/cb rp resume`, `/cb sync` (G02 owns `sync`; G20 owns vault sync) |
+| Suppression | `/cb unsuppress` (G02 owns — pack notifications) |
 | Navigation | Back-stack across all chest GUIs |
 
 ---
@@ -84,10 +84,13 @@ The back-stack is serialized to `GuiState` and survives accidental GUI close/reo
 
 `/cb history` — opens a chest GUI showing the server mutation log (who edited which block, when). Paginated. Filter by player (shift-click slot).
 
-### 7. Magic items
+> **Ownership (sweep 2026-06-21):** G02 built the chest-GUI *surface*; the history **feature** (mutation log
+> of block edits) is owned by **G25** (block-management extras). See `GROUP_25_BLOCK_MANAGEMENT_EXTRAS.md`.
 
-`/cb magicitems` — chest GUI listing all magic items (special admin tools).
-`/cb editmagicitems` — edit mode for magic item configuration.
+### 7. ~~Magic items~~ — MOVED → G25
+
+`/cb magicitems` / `/cb editmagicitems` are owned by **G25** (restore + full `editmagicitems` revamp,
+SWEEP_INDEX §A/§B). Spec lives in `GROUP_25_BLOCK_MANAGEMENT_EXTRAS.md`. Removed from G02.
 
 ### 8. Resource pack control
 
@@ -271,17 +274,17 @@ Type `/cb editor ` (with trailing space) and press Tab.
 
 | Test | Description | Result |
 |---|---|---|
-| G02.1 | Main menu opens as chest GUI | ⬜ |
-| G02.2 | All menu aliases work | ⬜ |
-| G02.3 | `/cb editor <id>` opens **Block Studio screen, Edit mode** (§G27.12) | ⬜ |
-| G02.4 | `/cb gui block <id>` works | ⬜ |
-| G02.5 | Tab-complete for editor | ⬜ |
-| G02.6 | Back-stack navigates correctly | ⬜ |
-| G02.7 | Undo browser GUI works | ⬜ |
-| G02.8 | History log GUI opens | ⬜ |
-| G02.9 | RP pause and resume | ⬜ |
-| G02.10 | Sync force-pushes pack | ⬜ |
-| G02.11 | listgui shows all GUIs | ⬜ |
+| G02.1 | Main menu opens as chest GUI | ✅ in-game (2026-06-21) |
+| G02.2 | All menu aliases work | ✅ in-game (2026-06-21) |
+| G02.3 | `/cb editor <id>` opens **Block Studio screen, Edit mode** (§G27.12) | ❌ in-game (2026-06-21) — still opens OLD chest editor; needs rework into a real screen (see Follow-ups) |
+| G02.4 | ~~`/cb gui block <id>` works~~ | ❌ SCRAPPED (2026-06-21) — no `<id>` arg after `gui`; command intentionally does not exist |
+| G02.5 | Tab-complete for editor | ✅ in-game (2026-06-21) |
+| G02.6 | Back-stack navigates correctly | ✅ in-game (2026-06-21) |
+| G02.7 | Undo browser GUI works | ✅ in-game (2026-06-21) — minor revamp wanted (see Follow-ups) |
+| G02.8 | History log GUI opens | 🟡 in-game (2026-06-21) — opens, but undo & redo must be shown as clear, separate options (see Follow-ups) |
+| G02.9 | RP pause and resume | ✅ in-game (2026-06-21) |
+| G02.10 | Sync force-pushes pack | ✅ in-game (2026-06-21) |
+| G02.11 | listgui shows all GUIs | ✅ in-game (2026-06-21) |
 
 **Group 02 passes only when the developer confirms all chest GUIs open, navigate, and function correctly in-game.**
 
@@ -291,6 +294,20 @@ If anything shows ❌ — paste:
 3. Last 20 lines of `latest.log`
 
 ---
+
+## Follow-ups (from in-game test 2026-06-21)
+
+Open work surfaced during testing — Group 02 is NOT fully passed until these land.
+
+- **G02.3 — editor must become a real screen.** `/cb editor <id>` still opens the OLD chest editor.
+  Needs to be reworked into the screen-based Block Studio Edit tab (§G27.12). Requires a design
+  talk-through before building.
+- **G02.4 — scrapped.** `/cb gui block <id>` is not a real command and should not exist (no `<id>`
+  arg after `gui`). Test removed from scope.
+- **G02.7 — undo browser minor revamp.** Functions correctly; developer wants a small UX revamp
+  (scope TBD).
+- **G02.8 — history undo/redo split.** History GUI opens, but undo and redo must be presented as
+  clear, separate options (currently not distinct).
 
 ## Cleanup
 

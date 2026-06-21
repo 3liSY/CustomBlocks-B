@@ -25,6 +25,7 @@
 | FIX A | Clean display names (underscores → spaces + Title Case) | ✅ Confirmed in-game 2026-06-15 |
 | FIX B | `/cb give <id>` case-insensitive | ✅ Confirmed in-game 2026-06-15 |
 | Part C | Named-texture mirror (`textures_names/`) | ✅ Confirmed in-game 2026-06-15 |
+| FIX D | Multiplayer display name (block + item read the synced cache, not server-only data) | ⏳ NOT built — root cause confirmed 2026-06-20 |
 
 ---
 
@@ -35,6 +36,7 @@
 | FIX A | Names render with underscores, e.g. `Test_Black` | `Test Black` — underscores → spaces, each word Title-Cased |
 | FIX B | `/cb give Te` and `/cb give te` don't both resolve | Both resolve to the same block (id lookup case-insensitive) |
 | Part C | Textures only browsable as opaque `slot_N.png` | Optional `textures_names/<block name>.png` mirror, toggled in config |
+| FIX D | On a dedicated server every custom block/item shows the literal **"Custom Block"** (no real name), even after rejoin | The block + item show their real display name on the server, same as singleplayer |
 
 ## What this group covers
 
@@ -86,6 +88,53 @@ of `BY_ID` (new private `findByIdIgnoreCase`). This fixes `/cb give` **and** eve
 - **Tie-break:** if more than one id matches case-insensitively, return the **lowest slot index**
   (deterministic). Ids are unique in practice; this just guarantees stable behavior.
 - **Guards:** tab-completion / suggestions stay exact-cased — the fallback only affects resolution.
+
+### FIX D — multiplayer display name ⏳ *(NOT built — root cause confirmed 2026-06-20)*
+
+**Problem (owner, on a dedicated server):** a freshly created block — and its item in hand/inventory — shows
+the literal text **"Custom Block"** instead of its real name. It does **not** fix itself after a rejoin.
+Singleplayer is always correct.
+
+**Root cause (confirmed from code):** the name is read from the **server-only** `SlotManager`, on the
+**client**:
+
+- `SlotBlock.getName()` → `SlotManager.getBySlot(slotKey)` → `d.displayName()`, else `"Custom Block " + index`.
+  ([`block/SlotBlock.java`](../../src/main/java/com/customblocks/block/SlotBlock.java) ~line 165)
+- `SlotBlock.SlotItem.getName(stack)` → same `SlotManager` read, else `"Custom Block"`. (~line 181)
+
+`getName` runs **client-side** for HUD / hand / inventory display. On a **dedicated** server the client's own
+`SlotManager` does **not** contain the server's blocks (its local `slots.json` is stale/empty for them — the
+exact split ADR-010 describes for textures), so `getBySlot` returns `null` → the `"Custom Block"` fallback.
+Singleplayer/integrated host shares one JVM, so `SlotManager` has the data and the name is right — which is
+why this is **multiplayer-only**.
+
+The real name **is** already on the client, in the synced **`ClientSlotCache`**
+([`client/ClientSlotCache.java`](../../src/main/java/com/customblocks/client/ClientSlotCache.java)), filled by
+`HudSync` → `HudSyncPayload` on join and after every create/rename/delete. `getName` simply never reads it —
+so a rejoin (which refreshes `ClientSlotCache`) doesn't help.
+
+**The fix — read the synced cache on the client, keep the server read on the server:**
+
+- On the **client** physical side, resolve the name from `ClientSlotCache.getEntry(slotIndex).name()`
+  (fall back to the existing literal only when the cache has no entry yet). On the **server**, keep the
+  current `SlotManager` read unchanged.
+- **Do NOT** make the common `SlotBlock` / `SlotItem` import a client-only class directly — `ClientSlotCache`
+  is `@Environment(CLIENT)`. Use the same seam ADR-009 used for the swap predictor: an env-guarded lookup
+  (e.g. `FabricLoader.getEnvironmentType()` / a small client-only name resolver), so the common class never
+  hard-references client code. (Mirror of ADR-009's "common item must not reference `ClientSlotCache`" rule.)
+- **Blast radius:** only the two `getName` methods in `SlotBlock.java`. No change to ids, the pack, placed
+  blocks, or the server's authoritative naming. Arabic letters use their own `ArabicLetterItem.getName`
+  (ADR-006) and are not affected.
+
+**Why it stays fixed:** `ClientSlotCache` is *the* channel the server already uses to tell the client about
+every block; it is refreshed on join and on every mutation. Reading the name from it means the client always
+shows whatever the server last sent — no second source to drift, and it self-heals on the next sync.
+
+> **Relationship to the other multiplayer bugs:** FIX D is one instance of a shared root family — *the
+> multiplayer client reading server-only state, or waiting on a round-trip, where singleplayer hid it by
+> sharing one JVM.* The Arabic place-flash + slow recolour (`GROUP_13_ARABIC.md` O10/O11) are the same family,
+> fixed with the sibling technique (client-side prediction, ADR-009). Documented together so the pattern is
+> visible, but each is fixed in its own group.
 
 ---
 

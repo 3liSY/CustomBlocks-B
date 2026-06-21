@@ -171,7 +171,7 @@ public final class GuiRouter {
             case HEX_RECOLOR_CONFIRM -> HexRecolorConfirmMenu.build(player, key.arg());
             case HEX_COLORS -> HexColorsMenu.build(player);
             case CUSTOM_COLOR -> CustomColorMenu.build(player);
-            case DIAG -> DiagMenu.build(player);
+            case DIAG -> ItChestMenu.build(player);
             case SEARCH -> SearchMenu.build(player, key.arg(), key.page());
             case HELP -> HelpMenu.build(player, key.arg(), key.page());
             case OMNI -> OmniMenu.build(player);
@@ -207,6 +207,10 @@ public final class GuiRouter {
             case ARABIC_CHOICE -> WordChoiceMenu.build(player);
             case ARABIC_COLOR -> ColorStudioMenu.build(player, key.arg());
             case ANIM_LIST -> AnimListMenu.build(player, key.page());
+            case AUDIT -> AuditMenu.build(player, key.arg(), key.page());
+            case REPORT -> ReportMenu.build(player);
+            case PARTICLES -> FeedbackMenu.build(player, key.arg());
+            case DEBUG_LOG -> DebugLogMenu.build(player, key.arg(), key.page());
         };
     }
 }

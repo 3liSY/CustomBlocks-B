@@ -106,6 +106,15 @@ public final class ClientSlotCache {
     /** Full entry for a slot, or null if unknown. */
     public static Entry getEntry(int slotIndex) { return INDEX.get(slotIndex); }
 
+    /** Slot index whose synced id matches {@code id} exactly, or null. Linear scan (≤1028, per click). */
+    public static Integer indexForId(String id) {
+        if (id == null) return null;
+        for (Map.Entry<Integer, Entry> e : INDEX.entrySet()) {
+            if (id.equals(e.getValue().id())) return e.getKey();
+        }
+        return null;
+    }
+
     /** Back-compat: {customId, displayName} for the slot, or null. */
     public static String[] get(int slotIndex) {
         Entry e = INDEX.get(slotIndex);

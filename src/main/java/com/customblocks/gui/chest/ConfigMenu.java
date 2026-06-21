@@ -39,6 +39,16 @@ public final class ConfigMenu {
                 "§7Higher = sharper, but a bigger pack.",
                 "§aClick §7→ choose a size"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.TEXTURE_SIZE)));
+
+        // ── Block background (editable: toggles via /cb config transparent) ──
+        boolean transparentBg = CustomBlocksConfig.transparentBackground;
+        m.set(18, Icons.glint(transparentBg ? Items.GLASS : Items.BLACK_WOOL,
+                "§a§lBlock Background §f= " + (transparentBg ? "§btransparent" : "§ablack"),
+                "§7Backdrop behind a placed block where its",
+                "§7image has no pixels (off-atlas blocks).",
+                "§7black §8= solid §7· transparent §8= see-through",
+                "§aClick §7→ toggle"),
+                (p, b, a) -> GuiRouter.runAndReopen(p, "config transparent toggle", MenuKey.of(Dest.CONFIG)));
         m.set(21, Icons.of(Items.BEACON, "§e§lTexture Server §f= §a"
                         + CustomBlocksConfig.httpHost + ":" + CustomBlocksConfig.httpPort,
                 "§7Address the resource pack is served from",

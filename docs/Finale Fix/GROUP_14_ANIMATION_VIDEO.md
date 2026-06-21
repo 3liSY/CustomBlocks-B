@@ -1,5 +1,16 @@
 # Group 14 — Animation, Video & Display Blocks
 
+> 🔴 **RENDER DIRECTION CHANGED 2026-06-21 — see `ADR-012` + `Reports/GROUP_14_ATLAS_REVERT_HANDOFF.md`.**
+> The off-atlas renderer (Phase 1b/1c, ADR-008 hybrid + ADR-011 full-off-atlas) is being **deleted**. After
+> ~10 failed attempts to make it crisp, root cause was found: mipmaps-OFF aliases (= the "speckle/muffle").
+> Fix = **revert to the vanilla atlas + `.mcmeta`, the old mod's proven way, GIFs at 256px.** Everything
+> below about hybrid / own-texture / off-atlas rendering is **superseded** by ADR-012. Read the handoff first.
+
+> 🧹 **SWEEP 2026-06-21 — command cleanup (§A):** the **standalone `/cb video` / `/cb extract` commands
+> (`VideoCommands.java`) are to be REMOVED**. Animation/GIF/WebP and video-**as-a-texture-source** (the
+> universal import inside `/cb create` / the studio, item 7 below) **stay** — only the separate top-level
+> video commands go. Pending code change; G14 is otherwise PARKED (parts have issues, revisit later).
+
 > **Status today (2026-06-19):** Part A — animated blocks via `/cb create <id> <name> <gif/webp-url>`,
 > the studio "Load texture" preview, and the clickable `/cb anim` card — is **built and dev-confirmed
 > in-game** ("they work"). Phase 2 (full studio editor) is built, pending in-game.
@@ -18,6 +29,17 @@
 > budget so the atlas keeps high per-frame resolution and **samples frames down to fit** (no more 32px
 > crush). See **ADR-008** (and ADR-007, which still bounds the atlas layer). The old "Sharp/Smooth Style
 > toggle" was a misdiagnosis and is removed.
+>
+> **Render quality — UPDATED 2026-06-20 (owner): FULL OFF-ATLAS, "no atlas forever" — supersedes the Hybrid
+> note above and ADR-008's "reject full Path B / hybrid LOD" (see ADR-011).** Every custom block (static +
+> animated, **placed AND hand/inventory icon**) renders off-atlas; nothing of ours touches the atlas. The
+> "owner decision pending (placed vs hand/inventory)" in §4 Phase 1c is **resolved → no-atlas-anywhere.**
+> Locked knobs: **512px**, **mipmaps OFF** (kills the muffle for good), **smooth/linear sampling** (clean
+> photos; pixel-art still crisp at 512). **Black background by default + a `transparent` toggle in
+> `/cb config` and the config GUI.** **Option A** (accept a tiny distance "sparkle") ships first; **Option B**
+> (full-res mip down-scales from the 512px image — NOT the old atlas muffle) is a deferred polish, no
+> deadline. The 4-step build order + the code-confirmed invisible-block diagnosis live in
+> `Reports/GROUP_14_TESTING_GUIDE.md` §6 and `PROGRESS_LOG.md` (2026-06-20).
 >
 > **This is the v2 revamp.** It **supersedes** the original chest-GUI plan (old "P1 — AnimBlockScreen
 > chest GUI" / "Q6 — Video Studio chest GUI" / jcodec). Those were replaced by the screen-based studio
@@ -154,6 +176,7 @@ mcmeta animation (Path A) does **not** get cheaper or more expensive with block 
 | **1. Atlas muffling cap** (interim) | Cap texture size + bound the animated strip height so the atlas keeps mipmaps. Stops overflow, but 256px is blocky close up — an interim guard, not the real fix. | A | `CustomBlocksConfig.MAX_TEXTURE_SIZE`/`sanitizeTextureSize`; `AnimationDecoder.MAX_STRIP_PX`/`atlasSafeSize`. See ADR-007. (The earlier Sharp/Smooth toggle was a misdiagnosis — reverted.) |
 | **1a. Decoder budget INVERT** (interim quality) | Stop the 32px crush: keep per-frame resolution high and **sample frames down** to fit `MAX_STRIP_PX`, instead of shrinking per-frame size. Immediate atlas-layer quality bump (and a better inventory icon) before the renderer lands. | A | Invert `AnimationDecoder.atlasSafeSize` logic. Small, contained. See ADR-008 §interim. |
 | **1b. Own-texture renderer — REDESIGNED FROM SCRATCH (2026-06-20)** | **Atlas is NOT used for placed animated blocks.** Placed model = transparent (no atlas texture). A fresh 3-file system handles all placed-block rendering: `AnimSlotBlockEntity` (holds slotIndex), `AnimFrameCache` (client singleton — one `NativeImageBackedTexture` per animated slot, `setFilter(linear, mipmapOFF)`, 512px, updated per frame via `texture.upload()`), `AnimSlotBER` (BlockEntityRenderer — 6 faces via `RenderLayer.getEntityCutoutNoCull`, ms-based frame timing for 60fps smoothness, full `AnimData` loop/bounce/reverse support). Inventory/hand still use the atlas (fine at small sizes). **Pre-build: delete the `screen_test` cluster** (5 files — unproven prototype). Proven approach: same path as Minecraft maps + Slideshow mod (production-confirmed crisp). | B | Old `screen_test` / "hybrid" / LOD-fallback designs are **retired** — they were never confirmed in-game and the complexity was never needed. Start clean. |
+| **1c. Static own-texture renderer (off-atlas) — owner-requested 2026-06-20** | **The static-block half of 1b. This is the fix for "created blocks look blurry/low-quality even at 512px."** Today `AnimSlotBER` early-returns for static slots (`AnimSlotBER.java` ~line 47: *"static slot — its normal atlas model already rendered it"*), so a STATIC custom block still renders through Minecraft's shared block atlas → mipmap muffle. **Owner confirmed (2026-06-20) the block is blurry at BOTH 256px and 512px, in singleplayer AND on the server** → proves it is the atlas, not the multiplayer pack-sync. The placed animated blocks are already crisp via 1b; static blocks were left out ("a separate, smaller follow-up"). **Build:** a static texture cache (one `NativeImageBackedTexture` per static slot, loaded **once** from `slot_N.png`, **no** per-frame upload — the only difference from `AnimFrameCache`), `setFilter(nearest/linear, mipmap OFF)`, up to 512px; `AnimSlotBER` draws static slots from it (6 faces, honouring shape/face-overrides/glow); static placed model → transparent (same pattern as 1b). After this, NO custom block (static, animated, Arabic) uses the atlas for its placed visual. | B | Reuses 1b's `AnimSlotBlockEntity` (already on every slot block via Slice A) + the same `RenderLayer.getEntityCutoutNoCull` draw. See ADR-008 (Path B) — this completes it for static blocks. **⚠️ Owner decision pending (placed vs hand/inventory):** a `BlockEntityRenderer` only draws the *placed* world block, so hand/inventory/creative icons would still come from the atlas (soft). To remove the atlas *everywhere* also add a custom item renderer (`BuiltinModelItemRenderer`, the path shields/banners/chests use). **(1)** placed-only = proven + smaller; **(2)** placed + item renderer = atlas gone everywhere, more scope. Owner leans toward no-atlas-anywhere; confirm before building. |
 | **2. Animation tab redesign + animated-only list + routing** | The headline. **Full redesign** of the Animation tab (owner: "unorganized trash") — grouped, clean, **animated-blocks-only**; live-playing preview; speed/loop/smoothing/trim; **studio edit-load path**. `/cb anim` (no id) → a list of **animated blocks ONLY**, click → studio **Animation tab** for that block (today it opens the full list + wrong click — open fix). | A | `ANIMATION` section in `BlockCreationStudioScreen` (exists; redesign it); animated-only chest list whose click calls `CreationStudioBridge.openStudioEdit(id)`. The edit-load path is reused by **every** later phase. |
 | **3. Timeline frame editor** | Filmstrip thumbnails, per-frame duration, drag trim handles, reorder/delete/duplicate, play/pause/step, frame→static. | A | Frame mutations rewrite the stored strip; numbers stay in `AnimData`. |
 | **4. Playback polish** | De-sync random offset, seamless-loop crossfade, speed ramp/easing, play-once / hold-last-frame. | A/B | Ramp + crossfade are Path-A (mcmeta/strip). **De-sync + play-once need Path-B** (a per-block client offset) → world-only; flagged honestly. |

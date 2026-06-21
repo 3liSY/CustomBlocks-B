@@ -10,6 +10,70 @@
 
 ---
 
+## 🟡 Status — 2026-06-20 — REMOTE/dedicated servers: newly-created blocks render magenta (root cause found, fix designed, NOT built)
+
+> Supersedes the 2026-06-15 "FIXED on modded clients (host)" scope. That fix covers only the
+> **integrated host** (client JVM == server JVM). On a **remote dedicated server** (e.g. yoyoo.mcsh.io)
+> a modded client cannot see blocks **created after it loaded its own local data** — they show the
+> magenta/black missing-texture checkerboard. Blocks already in the client's local `slots.json` render
+> fine, so **only newly-created blocks are magenta** (owner-confirmed symptom).
+
+### Root cause (proven from the owner's client `latest.log`, 2026-06-20)
+
+The modded client builds its pack from its **own local `slots.json`**, not the server's data.
+
+- `CustomBlocksMod.onInitialize()` → `SlotManager.loadAll()` (common entrypoint, runs on the client too)
+  loads the client's local `slots.json` unconditionally. Log: `16:22:49 Loaded 1014 saved custom block(s)`
+  — **before** connecting anywhere.
+- `16:24:48 Connecting to yoyoo.mcsh.io` → server sends `RegenPackPayload` → client runs
+  `ResourcePackGenerator.regenerate()` → `16:24:56 Local pack written (4081 files)` → `16:25:05 applied`.
+- That local build reads `SlotManager.assignedSlots()` + `TextureStore` from the **client JVM** — its stale
+  local copy. Server-created blocks (frmf1) are absent → those slots emit the `empty_slot` model → magenta.
+- The `JsonParseException: No key pack_format` at log line 465 is unrelated noise (a malformed third-party
+  pack, "Texture-Packs.com"); CustomBlocks still loaded + applied. Not the cause.
+- The download worked — `/cb create` only creates the block AFTER decode; the block exists + is named.
+
+### Why the OLD mod didn't have this
+
+The old mod streamed every texture's bytes to each client over the mod's network channel (drip-feed +
+chunking), so the client built its pack from the **server's** textures — no port, worked on any server.
+CustomBlocks-B replaced that with "modded client rebuilds from its OWN local data", which is only correct
+when client and server share a JVM (singleplayer/host). On a remote server it uses stale local data.
+
+### Chosen fix — file-level pack sync over the mod channel (NOT a copy of the old code)
+
+Owner decision 2026-06-20: build it **from scratch, simpler**. The old `NetworkManager`/per-slot drip-feed
+is **not** to be copied (it crammed texture+meta+faces+variants+anim into one payload and mutated client
+slot state — that's where its bugs lived).
+
+**Design C — sync the pack as a folder of files.** The unit is a dumb `(path, bytes)`; all pack-building
+logic stays server-side in the existing `ServerPackGenerator.emit()` (single source of truth, zero drift).
+
+1. **Server** computes a manifest `{path → sha1}` from `emit()`.
+2. **Modded client joins a DEDICATED server** → server sends the manifest → client diffs it against its
+   on-disk loose pack (`resourcepacks/CustomBlocks`) → requests only missing/changed files → server streams
+   those (chunked when > ~512 KB) → "done" sentinel → one silent reload. Unchanged rejoin ≈ free.
+3. **Block created/changed** → server pushes just the changed `slot_N.*` files + "done".
+4. **Client writes files only** — never mutates its `SlotManager`/`TextureStore`, so the host's local
+   `slots.json` can never be clobbered.
+5. **Initial join is throttled** — cap ≤ ~256 KB/player/tick so a large first sync (≈37 MB for 1000+ blocks)
+   never lags the connection on shared hosting.
+
+**Scope:** keep the existing local-regen (`RegenPackPayload`) for the **integrated host**
+(`!serverInstance.isDedicated()`) — verified, free, untouched. File-sync runs **only** when
+`serverInstance.isDedicated()`. Vanilla clients on a dedicated server keep the HTTP path (separate concern).
+
+General by design — fixes every remote/dedicated server, not just yoyoo; needs no open HTTP port.
+
+**Planned new classes (each ≤ 500-line gate):** `network/packsync/PackManifest` (hash emit() + folder),
+`network/packsync/PackSyncService` (server per-player queue + tick throttle + send/diff), client
+`client/packsync/ClientPackReceiver` (buffer chunks → write files → silent reload), and small payloads
+(`PackManifestPayload` S2C, `PackFilePayload` S2C, `PackRequestPayload` C2S, `PackDonePayload` S2C).
+
+**Tests:** G05.7 + G05.8 below. **Status: designed, awaiting build + in-game confirm.**
+
+---
+
 ## ✅ Status — 2026-06-15 (later 2) — FIXED on modded clients (host), confirmed in-game
 
 > The modded client now generates the pack **locally** and silently reloads instead of relying on the
@@ -222,6 +286,37 @@ Check `latest.log` — should see one `[CustomBlocks] Rebuilding resource pack�
 
 ---
 
+## Test G05.7 — REMOTE/dedicated server: newly-created block shows on a modded client ⭐ (the frmf1 bug)
+
+Requires a **real dedicated server** (or `runServer`), not single-player. Join it with the mod installed.
+
+1. While connected to the dedicated server, run:
+   ```
+   /cb create g05remote RemoteTest https://i.imgur.com/example.png
+   ```
+2. Place the block and look at it.
+
+**Expected:** the block shows its real texture — NOT the magenta/black checkerboard.
+Check `latest.log` (client) for the file-sync applying, and no `customblocks:block/placeholder` for this slot.
+
+**Pass:** new block renders its texture on the remote server.
+**Fail:** new block is magenta (the pre-fix bug).
+
+---
+
+## Test G05.8 — Rejoin a dedicated server is near-instant (manifest diff, no re-download)
+
+1. After G05.7, fully disconnect and rejoin the same dedicated server (no blocks changed meanwhile).
+2. Watch `latest.log`.
+
+**Expected:** the client recognises it already has every pack file (manifest matches) and transfers
+~nothing — no full re-sync. All existing blocks still render.
+
+**Pass:** rejoin is fast, no large file transfer, textures intact.
+**Fail:** full ~37MB re-sync on every rejoin, or textures missing after rejoin.
+
+---
+
 ## Group 05 Verdict
 
 | Test | Description | Result |
@@ -232,6 +327,8 @@ Check `latest.log` — should see one `[CustomBlocks] Rebuilding resource pack�
 | G05.4 | ~~`silentPack = false` restores dialog~~ — retired 2026-06-15 | ➖ |
 | G05.5 | Debounce collapses rapid retextures | ⬜ |
 | G05.6 | Pack survives server restart silently | ⬜ |
+| G05.7 | Remote/dedicated: new block renders on modded client (not magenta) | ⬜ |
+| G05.8 | Rejoin a dedicated server is near-instant (manifest diff) | ⬜ |
 
 **Group 05 passes when no dialog is ever shown during normal operation, and the config toggle correctly restores the dialog when needed.**
 

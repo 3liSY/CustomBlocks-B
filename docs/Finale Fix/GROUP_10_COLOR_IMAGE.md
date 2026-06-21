@@ -14,7 +14,7 @@
 
 | Area | Old CustomBlocks | New CustomBlocks-B | This Group |
 |---|---|---|---|
-| dress | Apply color overlay to existing texture | Missing | Restored |
+| ~~dress~~ | Apply color overlay to existing texture | Missing | **DROPPED** (removed in code — redundant with Colour Variants + live recolour) |
 | gradient | Generate blocks between two colors | Missing | Restored |
 | bgstudio | Background removal GUI (3 modes: corners, flood-fill, none) | Missing | Restored + improved |
 | tolerance | Set background removal tolerance | Missing | Restored |
@@ -34,7 +34,7 @@
 
 | Feature | Commands |
 |---|---|
-| Dress (color overlay) | `/cb dress <id> <hex-color> <intensity>` |
+| ~~Dress (color overlay)~~ | **DROPPED** — `/cb dress` removed in code |
 | Gradient generator | `/cb gradient <id1> <id2> <steps>` |
 | Background removal | `/cb bgstudio <id>` |
 | BG tolerance | `/cb tolerance <id> <value>` |
@@ -51,12 +51,11 @@
 
 ## Implementation Requirements
 
-### 1. Dress (Color Overlay)
+### 1. ~~Dress (Color Overlay)~~ — DROPPED
 
-`/cb dress <id> <hex-color> <intensity>` — blends a solid color on top of the existing texture.
-- `<intensity>` = 0.0–1.0 (0 = no change, 1 = full color replacement).
-- Operates on the server-side PNG. Undoable (stores pre-dress PNG).
-- Example: `/cb dress myblock #FF0000 0.3` — slight red tint.
+`/cb dress` was **removed in code** (`ColorImageCommands.java`: "redundant with Colour Variants").
+Color overlay use-cases are covered by **Color Variants** (§10) and **live recolour** (G27). Tests
+G10.1 / G10.2 retired.
 
 ### 2. Gradient Generator
 
@@ -89,7 +88,13 @@ Persisted per-player. Palettes accessible in all color GUI contexts.
 
 ### 5. Export PNG
 
-`/cb exportpng <id>` — saves the block's current texture to `config/customblocks/cloud_exports/<id>.png`. Also accessible via a clickable chat link that serves the file over localhost HTTP.
+`/cb exportpng <id>` — saves the block's current texture to `config/customblocks/cloud_exports/<id>.png`. Also posts a clickable chat link served over the mod's HTTP server.
+
+> 🔴 **CROSS-CUTTING (SWEEP_INDEX §A):** the `[download]` link here uses `ResourcePackServer.getPngUrl()` —
+> the **same host-leaking + unreachable mechanism flagged in G12** (`http://<host>:<port>/...`). The local
+> file write works; the link does not, and it exposes the server address. **Remove IP/host from this link**
+> and rethink delivery alongside the G12 fix. The verdict ✅ below predates this decision (2026-06-14) and
+> covers only the file write, not the link.
 
 ### 6. Resize
 
@@ -258,7 +263,7 @@ Open `/cb editor g10a` → click "Color Variants" slot.
 | G10.2 | Dress is undoable | ❌ removed |
 | G10.3 | Gradient creates interpolated blocks | ✅ in-game (2026-06-14) |
 | G10.4 | Background removal (corners mode) works | ✅ in-game (2026-06-14) |
-| G10.5 | Export PNG saves file with chat link | ✅ in-game (2026-06-14) |
+| G10.5 | Export PNG saves file with chat link | 🟡 file write ✅ (2026-06-14); **`[download]` link host-leaks + unreachable — same cross-cutting fix as G12 (§A)** |
 | G10.6 | Resize resamples texture | ✅ in-game (2026-06-14) |
 | G10.7 | Palette save, list, and load work | ✅ in-game (2026-06-14) |
 | G10.8 | Color Variants panel creates new blocks | ✅ in-game (2026-06-14) |
@@ -272,6 +277,14 @@ If anything shows ❌ — paste:
 3. Last 20 lines of `latest.log`
 
 ---
+
+## Follow-ups (sweep 2026-06-21)
+
+- **`dress` DROPPED** — removed in code; G10.1/G10.2 retired. Body + tables updated.
+- **🔴 G10.5 download link** — shares the cross-cutting host-leak/unreachable bug with G12.2–.5.
+  Remove IP/host from the chat `[download]` link and rethink delivery (SWEEP_INDEX §A). Re-test after fix.
+- **Ownership** — G10 owns `colors`, `customcolor`, `gradient`, `palette`, `bgstudio`, `exportpng`, `resize`,
+  Color Variants, live recolour, eyedrop. The `ai` bg-removal mode ties into G15 (AI, parked) — leave gated.
 
 ## Cleanup
 

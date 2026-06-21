@@ -11,6 +11,8 @@
  */
 package com.customblocks.command;
 
+import com.customblocks.core.ParticleFx;
+import com.customblocks.core.SoundFx;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.ClickEvent;
@@ -21,27 +23,29 @@ import net.minecraft.text.Text;
 public final class Chat {
 
     /**
-     * The single [CB] tag — black brackets, aqua letters — used everywhere: chat lines AND
-     * the action-bar/hotbar tool popups. (The black brackets are dim on the dark hotbar bar;
-     * this is the developer's chosen trade for one identical format in all contexts.)
+     * The single [CB] tag — black brackets, aqua letters — used on CHAT lines (success / error /
+     * info / line). The action-bar/hotbar tool popups are deliberately UNBRANDED for a cleaner
+     * hotbar (dev call 2026-06-20); see {@link #tool}.
      */
     public static final String PREFIX = "§0§l[§b§lCB§0§l]§r ";
 
     private Chat() {} // static-only
 
-    /** Brief action-bar feedback for tool use (no chat spam). */
+    /** Brief action-bar feedback for tool use (no chat spam). Unbranded — no [CB] tag on the hotbar. */
     public static void tool(ServerPlayerEntity player, String body) {
-        player.sendMessage(Text.literal(PREFIX + "§f" + body), true);
+        player.sendMessage(Text.literal("§f" + body), true);
     }
 
-    /** Green-checked success line: [CB] <body> ✔ */
+    /** Green-checked success line: [CB] <body> ✔ — fires the generic "success" Feedback FX. */
     public static void success(ServerCommandSource src, String body) {
         src.sendFeedback(() -> Text.literal(PREFIX + "§f" + body + " §a✔"), false);
+        if (src.getEntity() instanceof ServerPlayerEntity p) { ParticleFx.play(p, "success"); SoundFx.play(p, "success"); }
     }
 
     /** Red-crossed error line: [CB] <body> ✖ */
     public static void error(ServerCommandSource src, String body) {
         src.sendError(Text.literal(PREFIX + "§c" + body + " §c✖"));
+        if (src.getEntity() instanceof ServerPlayerEntity p) { ParticleFx.play(p, "error"); SoundFx.play(p, "error"); }
     }
 
     /** Neutral/info line (no glyph). */
@@ -60,6 +64,13 @@ public final class Chat {
     public static MutableText runButton(String label, String command, String hover) {
         return Text.literal(label).styled(s -> s
                 .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
+    }
+
+    /** A clickable [label] that COPIES {@code text} to the player's clipboard, with a hover tooltip. */
+    public static MutableText copyButton(String label, String text, String hover) {
+        return Text.literal(label).styled(s -> s
+                .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, text))
                 .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
     }
 

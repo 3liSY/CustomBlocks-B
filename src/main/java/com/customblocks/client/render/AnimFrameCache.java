@@ -114,9 +114,13 @@ public final class AnimFrameCache {
         int frames = (w > 0) ? h / w : 0;
         if (frames <= 1) { img.close(); return null; } // single frame → static block, atlas handles it
 
+        // Step 2: flatten transparent pixels (whole strip) onto black — same as the static path.
+        // Skipped in transparent mode (/cb config transparent) so those pixels stay see-through.
+        if (!OffAtlasBgState.isTransparent()) OffAtlasImage.compositeOverBlack(img);
+
         Identifier texId = Identifier.of(MOD_ID, "anim_slot_dyn_" + n);
         NativeImageBackedTexture tex = new NativeImageBackedTexture(img);
-        tex.setFilter(false, false); // nearest, NO mipmap — the crisp, un-muffled path
+        tex.setFilter(true, false); // linear/smooth, NO mipmap — the locked decision (full-res, no atlas pre-shrink)
         mc.getTextureManager().registerTexture(texId, tex);
 
         int[][] pb = readPlayback(rm, n, frames);

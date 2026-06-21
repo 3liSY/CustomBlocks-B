@@ -283,18 +283,12 @@ Place a letter block diagonally adjacent (e.g., one block northeast) from an exi
 
 ---
 
-## Test G13.9 — Rockwell Condensed for English text
+## Test G13.9 — Rockwell Condensed for English text ❌ SCRAPPED (2026-06-21)
 
-```
-/cb arabic text #FFFFFF HelloWorld
-```
+> **SCRAPPED:** `/cb arabic text` was **removed entirely** (Area 2b, confirmed 2026-06-16). This test no
+> longer applies. English text-block rendering, if revisited, moves under the word maker — not `arabic text`.
 
-In the anvil GUI, type "Hello". Confirm. Choose "Single texture block".
-
-**Expected:** Block created with "Hello" rendered in Rockwell Condensed (slab-serif, blocky, Minecraft-appropriate aesthetic).
-
-**Pass:** Rockwell Condensed font visible on block texture.
-**Fail:** Generic SansSerif or system font used.
+~~`/cb arabic text #FFFFFF HelloWorld` → Rockwell Condensed on block texture.~~
 
 ---
 
@@ -617,3 +611,129 @@ block for free: `back(k) = front(N-1-k)`.
   horizontal rows only (vertical went away with the OmniTool).
 - **Trade-off (accepted):** place/break re-checks the **whole word**, not just ±2 neighbours (relaxes the
   bounded updater); capped run length keeps it instant and reset-safe.
+
+---
+
+## O10 — Placement lag + transparent flash on a server (investigated 2026-06-20, NOT built)
+
+Dev report (on a real server): placing auto-join letters **lags**, and the block shows a **transparent
+flash** for a moment before the glyph appears; "a bit buggy." Deep investigation found **two independent
+root causes**, both client-side render (unrelated to the server texture/resource-pack path).
+
+### Cause 1 — transparent flash (block invisible until the letter reaches the client)
+The block is `BlockRenderType.INVISIBLE` (`ArabicLetterBlock.getRenderType`) — it draws nothing itself; the
+glyph is 100 % the BlockEntityRenderer, which returns early while the **client** BlockEntity still has
+`letter == 0` (`ArabicLetterBlockEntityRenderer.render` line ~88). The client only learns the letter from a
+BlockEntity sync packet, and two things delay/drop it:
+- **Network round-trip.** Singleplayer is instant; on a server the letter only arrives one round-trip after
+  placement → that gap is the visible transparent window.
+- **Missing-sync bug.** `onPlaced` sets the letter with `markDirty()` only (marks for *save*, not client
+  sync), then `ArabicJoinFlow` syncs **only blocks whose form changed** (`recomputeRun`, `if (changed)
+  be.sync()`). A **lone / first** letter computes all-default values → `changed == false` → **`be.sync()`
+  never fires** → the client stays at `letter == 0` (transparent) until a neighbour is placed (re-flow
+  changes its form) or the chunk reloads. This is a real correctness gap, not just latency.
+
+### Cause 2 — lag spike (heavy texture build on the render thread)
+`textureFor()` builds each `(letter, form, colour)` tile **lazily and synchronously on the render thread**,
+the first frame that combo is seen. With `textureSize = 256` and `SS = 4` the AWT work runs at **1024×1024**:
+font outline + `Area` boolean ops (add/intersect) + double stroke fill+draw + bicubic downscale + a
+**PNG encode → decode round-trip** (`ImageIO.write` then `NativeImage.read`) + GPU upload — all inside one
+frame = a stall. Building a word re-flows the run, changing several letters' forms → several new cache keys
+→ several builds back-to-back = compounding hitches. First letter ever also pays `ensureMetrics()` (28
+letters × 4 forms of `TextLayout` outlines) on the render thread.
+**Regression note:** the OLD project pre-warmed textures on daemon threads (`cb-color-prewarm`); the -B
+rewrite went fully lazy-synchronous and dropped that.
+
+### Perfect fix (design — to discuss before building)
+1. **`onPlaced` → unconditional `be.sync()`** after stamping letter/colour/form. Fixes the missing-sync gap
+   and shrinks the flash to one tick. *(core, smallest, safe)*
+2. **Async texture build.** On a cache miss, build the `NativeImage` on a background thread and register it
+   on the render thread via `MinecraftClient.execute()`; return null that frame (block blank ~1 frame, no
+   stall). Drop the PNG encode/decode — write pixels straight into the `NativeImage`. *(core — kills the freeze)*
+3. **Prewarm** the tiles of the letter items the player is carrying (hotbar + offhand), all 4 forms, on a
+   daemon thread each client tick, porting the old mod's approach. ✅ **BUILT 2026-06-20 (build-green,
+   awaiting in-game)** — `ArabicLetterBlockEntityRenderer.prewarm` + `client/render/ArabicPrewarm` tick.
+4. **Optional zero-flash:** client stamps the BE letter from the held stack during predicted placement, so
+   the glyph shows with no round-trip at all. *(advanced)*
+
+Items 1 + 2 remove the reported symptoms; 3 + 4 are polish. **Not built — Golden Rule: nothing is DONE
+until confirmed in-game.**
+
+### In-game result on the server (owner, 2026-06-20) → item 4 is now REQUIRED, not optional
+
+Parts 1–3 are in the jar (unconditional `be.sync()`, async off-thread build, hotbar/offhand prewarm).
+**Owner re-tested on the dedicated server: the letter still flashes transparent for a split second on
+placement, then appears.** That residual flash is the **network round-trip itself** — Parts 1–3 cannot
+remove it, because on a server the client only learns the letter *after* the place packet round-trips back,
+and the INVISIBLE block draws nothing in that gap. Singleplayer has no round-trip, so it never showed there.
+
+**The fix is item 4 — client-side placement prediction** (the same technique normal blocks already use for
+colour swaps, ADR-009 / `ClientSwapPredictor`):
+
+- On the **client**, hook block placement (Fabric `UseBlockCallback`, or a place-side mixin/predictor) for
+  `ArabicLetterBlock`. When the player places a letter, **immediately stamp the client's
+  `ArabicLetterBlockEntity` letter + colour + lockedForm from the held stack's NBT** (the same NBT
+  `onPlaced` reads on the server), so the glyph draws on frame one — before any server packet.
+- The server still runs `onPlaced` + `ArabicJoinFlow` authoritatively; its sync packet reconciles with what
+  the client already drew (same letter/colour from the same stack data → no visible change).
+- Pair with **prewarm** (item 3, already shipped) so the predicted glyph's tile is already cached → no build
+  hitch behind the predicted placement either.
+- **Keep the architecture (owner decision 2026-06-20): auto-join stays live-texture/BlockEntity (ADR-005);
+  we add prediction, we do NOT convert letters to slots.**
+
+This is the **same client-prediction technique** O11's recolour fix needs (below) and the same family as
+GROUP_26 FIX D (multiplayer client reading/awaiting server state). **Not built.**
+
+---
+
+## O11 — Recolour a placed auto-join letter with the Squares (2026-06-20, build-green)
+
+The coloured **Squares** (Group 06) recolour a placed **auto-join** letter to their colour — exactly the
+way they swap colours on the 1028 SlotBlocks, so the same tool covers both. Before, a Square ignored a
+letter entirely (it only matched `SlotBlock`).
+
+- **Colour ONLY.** The letter's colour is per-block data on its `ArabicLetterBlockEntity` (the `color`
+  field), so the Square mutates **only** that field and `sync()`s it. It never calls `setBlockState` and
+  never re-runs `ArabicJoinFlow` — so **FACING, contextual form and neighbour joins stay exactly as
+  placed.** Walking around a letter (any angle) and recolouring it cannot re-orient it or re-join it; this
+  was the developer's explicit worry.
+- **Instant, no pack rebuild.** The four Square colours (green / yellow / red / black) are the four bundled
+  letter colours 1:1, and the renderer already builds one tile per `(letter, form, colour)`; the new colour
+  syncs to the client and the tile rebuilds live — same no-reload path as auto-join itself (ADR-005).
+- **Triangles** still do nothing on a letter (there is no slot variant to create — Triangles are a SlotBlock
+  concept). Clicking with the same colour the letter already is → an "Already <name>" action-bar line.
+- **Naming** of the action-bar feedback comes from `ArabicNaming.displayName(letter, colour, form)` →
+  e.g. "Ba Green" (isolated) / "Ba Green Mid".
+
+Touches: `item/ShapeToolItem.java` (the letter branch + `recolorArabicLetter`). The hotbar wording itself
+is Group 04 / 06 (see those docs). Tests → TESTING GUIDE §16.
+
+### In-game result on the server (owner, 2026-06-20) → recolour is NOT instant on a server
+
+§16 claims "instant," and it **is** on the integrated/singleplayer host. **Owner re-tested on the dedicated
+server: recolouring a letter is still slow — noticeably laggier than recolouring a normal custom block,
+which is instant.** Two compounding causes, both server-only:
+
+1. **No client-side prediction.** `ShapeToolItem.recolorArabicLetter` is **server-only** (gated on
+   `ServerPlayerEntity`): it mutates the BlockEntity `color` then `sync()`s. The visible change therefore
+   costs a full round-trip (click → C2S use → server mutate → BE update packet → client redraw). Normal
+   blocks feel instant precisely because ADR-009 added prediction for *them* — and that ADR explicitly left
+   Arabic recolour "out of scope … later." This is that "later."
+2. **Texture rebuild on the new colour.** The renderer keys tiles by `(letter, form, colour)`
+   (`ArabicLetterBlockEntityRenderer.textureFor`). A new colour is a **cache miss** → the tile builds
+   off-thread → the glyph is blank for a few frames before the new colour shows. **Prewarm currently warms
+   the 4 forms of only the placed colour, not the other colours** → every recolour pays a cold build.
+
+**The fix (same family as O10 item 4 + ADR-009):**
+
+- **Client-predict the recolour.** Extend the `ColorSwapTool` / `ClientSwapPredictor` seam (ADR-009) so that
+  right-clicking an `ArabicLetterBlock` with a Square **applies the new colour to the client
+  `ArabicLetterBlockEntity` immediately** (then `PASS` so the server still does the authoritative recolour).
+  Instant on the server, reconciles with no flicker.
+- **Prewarm all four colours**, not just the placed one — warm `(letter, every form, every Square colour)`
+  for letters the player carries / is looking at, so the predicted recolour's tile is already built (no
+  blank-frame gap).
+- **Keep the architecture** (owner decision 2026-06-20): stays live-texture/BlockEntity (ADR-005) + add
+  prediction; do **not** convert letters to slots.
+
+**Not built — Golden Rule: nothing is DONE until confirmed in-game.**

@@ -204,6 +204,22 @@ public final class UndoManager {
         REDO.remove(player);
     }
 
+    /**
+     * Clear this actor's undo AND redo history under the current undo mode (`/cb undo clear`).
+     * Unlike clearPlayer it honours keyFor (so it works in server-wide mode too). Returns the
+     * number of undo steps that were removed — for the "Cleared N undo steps" report.
+     */
+    public static synchronized int clearHistory(UUID player) {
+        UUID key = keyFor(player);
+        if (key == null) return 0;
+        Deque<Op> u = UNDO.get(key);
+        int removed = u == null ? 0 : u.size();
+        if (u != null) u.clear();
+        Deque<Op> r = REDO.get(key);
+        if (r != null) r.clear();
+        return removed;
+    }
+
     /** Drop all history for everyone (call on /cb reload). */
     public static synchronized void clearAll() {
         UNDO.clear();

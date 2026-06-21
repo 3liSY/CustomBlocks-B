@@ -88,7 +88,30 @@ public class CustomBlocksMod implements ModInitializer {
         PayloadTypeRegistry.playS2C().register(HudStatePayload.ID,  HudStatePayload.CODEC);
         PayloadTypeRegistry.playS2C().register(ChatPrefillPayload.ID, ChatPrefillPayload.CODEC); // Group 04
         PayloadTypeRegistry.playS2C().register(SilentPackPayload.ID, SilentPackPayload.CODEC);   // Group 05
-        PayloadTypeRegistry.playS2C().register(RegenPackPayload.ID,  RegenPackPayload.CODEC);    // Group 05 — modded local regen
+        PayloadTypeRegistry.playS2C().register(                                                  // Group 14 Phase 1c Step 2b
+                com.customblocks.network.payloads.TransparentBgPayload.ID,
+                com.customblocks.network.payloads.TransparentBgPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(RegenPackPayload.ID,  RegenPackPayload.CODEC);    // Group 05 — modded local regen (integrated host)
+        // Group 05 — remote/dedicated file-level pack sync (modded client on a real server).
+        PayloadTypeRegistry.playS2C().register(
+                com.customblocks.network.payloads.PackManifestPayload.ID,
+                com.customblocks.network.payloads.PackManifestPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(
+                com.customblocks.network.payloads.PackFilePayload.ID,
+                com.customblocks.network.payloads.PackFilePayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(
+                com.customblocks.network.payloads.PackDonePayload.ID,
+                com.customblocks.network.payloads.PackDonePayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(
+                com.customblocks.network.payloads.PackRequestPayload.ID,
+                com.customblocks.network.payloads.PackRequestPayload.CODEC);
+        // Modded client (dedicated server) asks for the pack files it lacks → queue them for streaming.
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackRequestPayload.ID, (payload, context) -> {
+                    var player = context.player();
+                    player.server.execute(() ->
+                            com.customblocks.network.packsync.PackSyncService.onRequest(player, payload.gz()));
+                });
         PayloadTypeRegistry.playS2C().register(ArabicLabelsPayload.ID, ArabicLabelsPayload.CODEC); // Group 13 / O6
         PayloadTypeRegistry.playS2C().register(                                                    // Group 14 Phase 2 — studio edit-load
                 com.customblocks.network.payloads.StudioEditPayload.ID,
@@ -220,17 +243,28 @@ public class CustomBlocksMod implements ModInitializer {
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) -> {
             net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(
                     handler.player, new SilentPackPayload(CustomBlocksConfig.silentPack));
+            // Group 14 Phase 1c Step 2b: tell the client whether off-atlas blocks use a black or transparent bg.
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.player,
+                    new com.customblocks.network.payloads.TransparentBgPayload(CustomBlocksConfig.transparentBackground));
             // Group 13 / O6: push the live Arabic form labels so join-block names match this server.
             net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.player,
                     new ArabicLabelsPayload(CustomBlocksConfig.arabicFormIni,
                             CustomBlocksConfig.arabicFormMid, CustomBlocksConfig.arabicFormFin));
             ResourcePackServer.sendToPlayer(handler.player);
+            // Dedicated server + modded client: stream the pack files (no-op on integrated host /
+            // for vanilla clients — beginSync self-gates on isDedicated + canSend). Group 05 remote fix.
+            com.customblocks.network.packsync.PackSyncService.beginSync(handler.player);
             HudSync.sendTo(handler.player);
             OnboardingManager.onPlayerJoin(handler.player);
         });
         // Drop the player's pack-send history so a later rejoin gets exactly one prompt again.
-        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) ->
-                ResourcePackServer.forget(handler.player.getUuid()));
+        ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
+            ResourcePackServer.forget(handler.player.getUuid());
+            com.customblocks.network.packsync.PackSyncService.forget(handler.player.getUuid());
+        });
+        // Group 05 remote fix: drive the throttled pack-file stream once per server tick.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
+                com.customblocks.network.packsync.PackSyncService::tick);
 
         LOGGER.info("[CustomBlocks] Registered {} slot blocks (slot_0 to slot_{}).",
                 maxSlots, maxSlots - 1);

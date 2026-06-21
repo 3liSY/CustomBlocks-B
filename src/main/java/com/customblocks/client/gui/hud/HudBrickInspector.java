@@ -29,11 +29,18 @@ public class HudBrickInspector extends Screen {
     private static final int GOLD = 0xFFFFAA00;
     private static final int PW = 224;
 
+    // §G27.14 — tokens a Template brick can insert (resolve live from the look-at context).
+    private static final String[] TOKENS = {
+            "name", "id", "slot", "coords", "light", "distance", "facing",
+            "category", "glow", "hardness", "sound", "shape", "solid" };
+    private static final int CHIPS_PER_ROW = 4;
+
     private final HudField field;
     private final Screen parent;
 
     private int px, py, ph;
-    private ButtonWidget typeBtn, sizeBtn, boldBtn, shadowBtn, alignBtn, effectBtn, bgOverBtn, bgOffBtn, bgOpacBtn;
+    private ButtonWidget typeBtn, sizeBtn, boldBtn, shadowBtn, alignBtn, effectBtn,
+            bgOverBtn, bgOffBtn, bgOpacBtn, shapeBtn;
     private TextFieldWidget prefixField, textField;
 
     public HudBrickInspector(HudField field, Screen parent) {
@@ -45,7 +52,9 @@ public class HudBrickInspector extends Screen {
     @Override
     protected void init() {
         boolean textType = field.type.isText();
-        int rows = textType ? 11 : 10;
+        boolean tmpl = field.type == HudFieldType.TEMPLATE;
+        int tokenRows = tmpl ? (TOKENS.length + CHIPS_PER_ROW - 1) / CHIPS_PER_ROW : 0;
+        int rows = (textType ? 11 : 10) + 1 /*shape row*/ + tokenRows;
         ph = 28 + rows * 22;
         px = (width - PW) / 2;
         py = (height - ph) / 2;
@@ -61,7 +70,7 @@ public class HudBrickInspector extends Screen {
         reg(ButtonWidget.builder(Text.literal("+"), b -> { field.size = HudField.clampSize(round1(field.size + 0.1f)); sizeBtn.setMessage(sizeLabel()); }).dimensions(x + w - 20, y, 20, 18).build());
         y += 22;
 
-        reg(ButtonWidget.builder(Text.literal("Text colour ■"), b -> openPicker(false)).dimensions(x, y, w, 18).build());
+        reg(ButtonWidget.builder(Text.literal("Text colour ■"), b -> openPicker(0)).dimensions(x, y, w, 18).build());
         y += 22;
 
         int half = (w - 4) / 2;
@@ -89,14 +98,32 @@ public class HudBrickInspector extends Screen {
             y += 22;
         }
 
+        // §G27.14 — token-insert chips (Template bricks only): click to append a live {token}.
+        if (tmpl) {
+            int cw = (w - (CHIPS_PER_ROW - 1) * 3) / CHIPS_PER_ROW;
+            for (int i = 0; i < TOKENS.length; i++) {
+                final String tok = TOKENS[i];
+                int cx = x + (i % CHIPS_PER_ROW) * (cw + 3);
+                int cy = y + (i / CHIPS_PER_ROW) * 22;
+                reg(ButtonWidget.builder(Text.literal("§7{" + tok + "}"), b -> insertToken(tok))
+                        .dimensions(cx, cy, cw, 18).build());
+            }
+            y += tokenRows * 22;
+        }
+
         bgOverBtn = reg(ButtonWidget.builder(bgOverLabel(), b -> { field.bgOverride = !field.bgOverride; bgOverBtn.setMessage(bgOverLabel()); }).dimensions(x, y, half, 18).build());
         bgOffBtn  = reg(ButtonWidget.builder(bgOffLabel(),  b -> { field.bgOff = !field.bgOff; bgOffBtn.setMessage(bgOffLabel()); }).dimensions(x + half + 4, y, half, 18).build());
         y += 22;
 
-        reg(ButtonWidget.builder(Text.literal("BG colour ■"), b -> openPicker(true)).dimensions(x, y, half, 18).build());
+        reg(ButtonWidget.builder(Text.literal("BG colour ■"), b -> openPicker(1)).dimensions(x, y, half, 18).build());
         reg(ButtonWidget.builder(Text.literal("−"), b -> { field.bgOpacity = HudField.clamp01(round1(field.bgOpacity - 0.1f)); bgOpacBtn.setMessage(bgOpacLabel()); }).dimensions(x + half + 4, y, 20, 18).build());
         bgOpacBtn = reg(ButtonWidget.builder(bgOpacLabel(), b -> {}).dimensions(x + half + 26, y, half - 46, 18).build());
         reg(ButtonWidget.builder(Text.literal("+"), b -> { field.bgOpacity = HudField.clamp01(round1(field.bgOpacity + 0.1f)); bgOpacBtn.setMessage(bgOpacLabel()); }).dimensions(x + w - 20, y, 20, 18).build());
+        y += 22;
+
+        // §G27.14 — per-brick background shape + accent colour.
+        shapeBtn = reg(ButtonWidget.builder(shapeLabel(), b -> cycleShape()).dimensions(x, y, half, 18).build());
+        reg(ButtonWidget.builder(Text.literal("Accent ■"), b -> openPicker(2)).dimensions(x + half + 4, y, half, 18).build());
         y += 22;
 
         reg(ButtonWidget.builder(Text.literal("§aDone"), b -> back()).dimensions(x, y, w, 18).build());
@@ -116,6 +143,11 @@ public class HudBrickInspector extends Screen {
     private Text bgOverLabel() { return Text.literal("BG over: " + onOff(field.bgOverride)); }
     private Text bgOffLabel()  { return Text.literal("BG off: " + onOff(field.bgOff)); }
     private Text bgOpacLabel() { return Text.literal(Math.round(field.bgOpacity * 100) + "%"); }
+    private Text shapeLabel()  { return Text.literal("Shape: §f" + prettyShape(field.bgShape)); }
+
+    private static String prettyShape(HudField.BgShape s) {
+        return switch (s) { case PILL -> "Pill"; case GLOW_BOX -> "Glow box"; case BOX -> "Box"; case PLAIN -> "Plain"; };
+    }
 
     private static String onOff(boolean b) { return b ? "§aOn" : "§7Off"; }
     private static String cap(String s) { return s.charAt(0) + s.substring(1).toLowerCase(); }
@@ -140,11 +172,30 @@ public class HudBrickInspector extends Screen {
         effectBtn.setMessage(effectLabel());
     }
 
-    private void openPicker(boolean background) {
-        int initial = background ? field.bgColor : field.color;
+    private void cycleShape() {
+        HudField.BgShape[] v = HudField.BgShape.values();
+        field.bgShape = v[(field.bgShape.ordinal() + 1) % v.length];
+        shapeBtn.setMessage(shapeLabel());
+    }
+
+    /** Append a {token} to the Template brick's text box (chips). */
+    private void insertToken(String token) {
+        if (textField == null) return;
+        textField.setText(textField.getText() + "{" + token + "}");
+        setInitialFocus(textField);
+    }
+
+    /** which: 0 = text colour, 1 = background colour, 2 = accent colour. */
+    private void openPicker(int which) {
+        int initial = which == 1 ? field.bgColor : which == 2 ? field.accentColor : field.color;
         if (client != null)
-            client.setScreen(new HudColorPicker(initial,
-                    rgb -> { if (background) field.bgColor = rgb; else field.color = rgb; }, this));
+            client.setScreen(new HudColorPicker(initial, rgb -> {
+                switch (which) {
+                    case 1 -> field.bgColor = rgb;
+                    case 2 -> { field.accentColor = rgb; field.accentOverride = true; }
+                    default -> field.color = rgb;
+                }
+            }, this));
     }
 
     private void rebuild() { clearChildren(); init(); }

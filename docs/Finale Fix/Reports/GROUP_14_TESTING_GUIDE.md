@@ -1,5 +1,11 @@
 # 🧪 Group 14 — Animation, Video & Display Blocks — Testing
 
+> 🔴 **DIRECTION CHANGED 2026-06-21 — the off-atlas renderer is being DELETED.** After ~10 failed attempts,
+> the placed-GIF "muffle/speckle" was root-caused to **mipmaps-OFF aliasing**. New fix = **revert to the
+> vanilla atlas + `.mcmeta` (the old mod's proven way), GIFs at 256px** — which was *already owner-confirmed
+> working* in §2. Authoritative plan: **`ADR-012`** + **`Reports/GROUP_14_ATLAS_REVERT_HANDOFF.md`**. The §6
+> off-atlas section below is **superseded** (kept for history). No code written yet — handed off to a new chat.
+
 > 🟢 Build green = compiles + gates pass. ✋ Only in-game confirms it works.
 > 📦 Jar: `.minecraft\mods\customblocks-1.0.0.jar` — already rebuilt + installed; restart Minecraft to load it.
 
@@ -11,10 +17,10 @@
 
 | | |
 |---|---|
-| **Verdict** | 🟡 Partial |
+| **Verdict** | 🟡 Partial — **PARKED by owner 2026-06-21, has issues, revisit later** (Phase 2 not re-tested; renderer mid-revert) |
 | **Progress** | 🟩🟩🟩🟩🟩🟩🟥🟥🟥🟥 · Part A confirmed · Phase 2 built, pending in-game · muffle + earth 🟡 deferred to Phase 1b |
-| **Last tested** | 2026-06-19 (§2 confirmed) |
-| **Jar** | 1.0.0 — rebuilt + installed 2026-06-20 (Fix 4 Texture-tab landing). Muffle + earth deferred to Phase 1b. |
+| **Last tested** | 2026-06-20 (§6 Phase 1c off-atlas — 🔴 FAILED: invisible old blocks + see-through bg, blur not fixed) · 2026-06-19 (§2 confirmed) |
+| **Jar** | 1.0.0 — rebuilt + installed 2026-06-20. §6 off-atlas regressed; **direction DECIDED 2026-06-20 = full off-atlas (see §6 + ADR-011). No code yet.** |
 | **Tester** | — |
 
 ---
@@ -28,6 +34,7 @@
 | ✅ Confirmed 2026-06-19 | GIF/WebP animated blocks · studio "Load texture" · animates everywhere | §2 |
 | 🟡 Polish later | loading a NEW GIF resets its animation settings (adjust + Save again); animated block's background can't be re-filled without a new image; a re-skin isn't undoable; smoothing shows as frame-swap in the preview | §3 |
 | ⏳ Not built | Phase **1b** hybrid renderer (the FULL crisp fix — §0 is the interim) · Phases 3–10 (timeline, playback polish, auto-perf, grading, video import, walls, live-data, redstone) | §4 |
+| 🔴 **TESTED — FAILED 2026-06-20 (regressions, see §6)** | **Phase 1c — STATIC blocks crisp (off-atlas).** Did NOT remove the blur for the owner, AND broke working blocks: many already-placed blocks render **fully invisible**, image backgrounds went **see-through instead of black**, GIF text still muffled. Direction under review — see §6. | §6 |
 
 > ⚠️ **Phase 1b redesigned from scratch (2026-06-20).** All previous "hybrid" / `screen_test` / LOD-fallback
 > attempts are retired — they patched the atlas pipeline which cannot be made crisp. New approach: own-texture
@@ -335,6 +342,81 @@ Item model JSON is separate and unchanged (hand/inventory still show the atlas t
 | 🟥 | ⑦ | Works on all animated blocks, not just the one test block |
 | 🟥 | ⑧ | Survives a server restart (no broken block after reload) |
 | 🟥 | ⑨ | Multiple different animated blocks in the same world — all play correctly |
+
+---
+
+## §6 · Phase 1c — STATIC blocks crisp (off-atlas)  🔴 SUPERSEDED 2026-06-21 (off-atlas abandoned → atlas revert, ADR-012)
+
+> 🔴 **SUPERSEDED 2026-06-21.** The whole off-atlas direction (this §6, ADR-008, ADR-011) is being deleted.
+> Root cause of the never-fixed muffle: **mipmaps-OFF aliasing**. Fix = revert to atlas + `.mcmeta`, GIFs
+> 256px. See `ADR-012` + `Reports/GROUP_14_ATLAS_REVERT_HANDOFF.md`. Text below kept for history only.
+
+> 🔴 **Result (owner test 2026-06-20):** this approach FAILED and is **under review**. It did not visibly
+> remove the blur, and it introduced regressions:
+> 1. **Many already-placed blocks render FULLY INVISIBLE** (singleplayer + server). Picking them up shows the
+>    item normally. **Root cause (code-confirmed):** an off-atlas static block is drawn ONLY by a
+>    BlockEntityRenderer (`AnimSlotBER`), which draws only blocks that have a client BlockEntity. Blocks placed
+>    by an **older jar have no saved BlockEntity**, so with the new INVISIBLE pack model nothing draws them.
+> 2. **Image backgrounds go SEE-THROUGH instead of black** — the off-atlas draw uses an alpha-tested cutout
+>    layer (`getEntityCutoutNoCull`); the old atlas cube was solid (alpha → black). Owner wants **black by
+>    default**, with a **`/cb config` + GUI toggle** for `transparent`.
+> 3. **GIF text still muffled** (nyan) and **static still reads blurry** to the owner — needs discussion.
+>
+> ✅ **DIRECTION DECIDED 2026-06-20 (owner): go FULL OFF-ATLAS — "no atlas, forever." NOT the safe revert.**
+> Owner accepts the world staying broken a bit longer over touching the atlas again. (Web-searched: the
+> off-atlas own-texture renderer IS the standard technique — no replacement product exists; the
+> half-finished build, not the idea, is what broke.) **Supersedes ADR-008's "reject full Path B / hybrid" →
+> see ADR-011.**
+>
+> **Success bar (for now):** (1) every placed block VISIBLE again, (2) the GIF muffle GONE for good.
+> **Quality locked:** mostly smooth high-quality photos; **512px**, **mipmaps OFF**, **smooth/linear**;
+> **black bg by default + a `transparent` toggle in `/cb config` + the GUI**; keep the Arabic system as-is.
+> **Option A chosen** (sharp, accept a tiny distance "sparkle") → test → then decide on **Option B**
+> (full-res mip down-scales for smooth distance — NOT the old muffle), a later polish, no deadline.
+>
+> **Agreed 4-step plan (each tested in-game before the next; nothing ✅ until owner confirms):**
+> 1. ✅ **DONE 2026-06-20 (owner-confirmed SP + MP).** Every placed block visible again, off-atlas — old +
+>    new blocks all draw via the off-atlas renderer (fixed the missing-BlockEntity gap with a client-side
+>    BE backfill on chunk load, `SlotBeBackfill`). Un-broke the world without going back to the atlas.
+> 2. **Black backgrounds + transparent toggle** — opaque draw (black default); `transparent` in `/cb config`
+>    + GUI.
+> 3. **Kill the GIF muffle for good** — route the animated block's hand/inventory ICON off-atlas too (the
+>    last thing still on the atlas).
+> 4. **Sharpness/quality pass** — lock 512px + linear + mipmaps-off (Option A); Option B only if the distance
+>    sparkle bothers the owner in-game.
+>
+> Shaped / per-face blocks staying on the atlas = small optional follow-up, later.
+> **Status: docs only — no code written yet.** Original spec below, kept for reference.
+
+### Original spec (superseded by the review above)
+
+> 💡 **What it fixes:** a `/cb create` block looked **blurry / low-quality even at 512px**. Root cause
+> (confirmed): static blocks rendered through Minecraft's shared **block atlas**, which muffles any texture
+> above 256px (ADR-007) — and even 256 reads soft. **Owner confirmed blurry at BOTH 256 and 512, in
+> singleplayer AND on the server**, so it is the atlas, not the multiplayer pack delivery. Phase 1b made
+> *animated* blocks crisp by drawing them off-atlas; 1c does the same for *static* blocks. Full spec →
+> `GROUP_14_ANIMATION_VIDEO.md` Phase **1c**.
+>
+> 🔧 **Status:** 🎯 **built (option 2 — placed + hand/inventory), build-green. Test in-game.** No custom
+> block touches the atlas for its visual anymore — placed block drawn by `AnimSlotBER` from its own texture
+> (mipmaps off), hand/inventory icon by `SlotItemRenderer`, both off the same `StaticFrameCache`.
+>
+> 📦 **Scope (read this):** covers the **standard block** — static, **full cube**, **single texture** (what
+> `/cb create` makes — the actual blur complaint). **Shaped blocks** (slab/stairs/cross/…) and **per-face
+> painted blocks** still use the atlas for now (a clean follow-up); they render correctly, just not yet
+> off-atlas. Animated blocks are unchanged (Phase 1b).
+
+**Tests (test on the dedicated server AND singleplayer):**
+- ⬜ **Close-up crisp:** `/cb create sharp Sharp <512px image url>`, place it, look up close → **sharp**, no muffle/blur (the old symptom is gone).
+- ⬜ **256 also crisp:** `/cb config texturesize 256`, re-create → still sharp (proves the atlas is out of the path, not just a size bump).
+- ⬜ **Server = singleplayer:** the same block looks identically crisp on the dedicated server and in singleplayer.
+- ⬜ **Hand + inventory + creative:** the item in hand, the hotbar/inventory icon, and the creative/`/cb list` icon are all the crisp cube (no atlas anywhere).
+- ⬜ **Glow intact:** a glowing block (`/cb setglow`) still lights up correctly.
+- ⬜ **Still solid:** you can walk on it, select it, break it; break particles look right.
+- ⬜ **Shaped/per-face unchanged:** a slab/stairs/cross block and a per-face painted block still render correctly (these stay on the atlas — they must NOT go invisible).
+- ⬜ **Perf (first open):** opening creative / `/cb list` loads the icons (a brief one-time load is normal; after that it's instant).
+
+> ⚠️ **Tell me:** any **full-cube** block that renders **invisible** (renderer couldn't read its texture) → send `latest.log`. A shaped/per-face block going invisible would also be a bug to report.
 
 ---
 

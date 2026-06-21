@@ -35,7 +35,36 @@ import net.minecraft.util.shape.VoxelShape;
 import net.minecraft.util.shape.VoxelShapes;
 import net.minecraft.world.BlockView;
 
+import java.util.function.IntFunction;
+
 public class SlotBlock extends Block implements BlockEntityProvider {
+
+    /**
+     * Group 26 / FIX D — client name seam. On a DEDICATED server the client's SlotManager has no
+     * slot data, so getName()/SlotItem.getName() would fall back to "Custom Block". The real name
+     * is in the client-only {@code ClientSlotCache} (synced by HudSync on join + after mutations).
+     * Common code must not import a client-only class (ADR-009), so the client entrypoint installs
+     * this resolver: slotIndex -> display name, or null if unknown. It stays null on a server JVM,
+     * and is never consulted in singleplayer (SlotManager is shared in-process there).
+     */
+    public static volatile IntFunction<String> CLIENT_NAME_RESOLVER = null;
+
+    /**
+     * Resolve a slot's display name. The authoritative source is the live SlotManager (server JVM
+     * and singleplayer). When it has no data — the client of a dedicated server — fall back to the
+     * synced ClientSlotCache via {@link #CLIENT_NAME_RESOLVER}, then to {@code fallback}. When
+     * SlotManager has data this returns exactly what it did before FIX D (no behaviour change).
+     */
+    public static String resolveName(int slotIndex, String slotKey, String fallback) {
+        SlotData d = SlotManager.getBySlot(slotKey);
+        if (d != null && d.displayName() != null) return d.displayName();
+        IntFunction<String> resolver = CLIENT_NAME_RESOLVER;
+        if (resolver != null) {
+            String cached = resolver.apply(slotIndex);
+            if (cached != null && !cached.isEmpty()) return cached;
+        }
+        return fallback;
+    }
 
     /**
      * Light emission as a real block-state property (0..15). Minecraft bakes a state's
@@ -163,25 +192,23 @@ public class SlotBlock extends Block implements BlockEntityProvider {
 
     @Override
     public MutableText getName() {
-        SlotData d = SlotManager.getBySlot(slotKey);
-        String name = (d != null) ? d.displayName() : null;
-        return Text.literal(name != null ? name : "Custom Block " + slotIndex);
+        return Text.literal(resolveName(slotIndex, slotKey, "Custom Block " + slotIndex));
     }
 
-    /** The matching BlockItem for a slot, named from the same SlotData. */
+    /** The matching BlockItem for a slot, named from the same SlotData (or synced cache on a server). */
     public static class SlotItem extends BlockItem {
         private final String slotKey;
+        private final int slotIndex;
 
         public SlotItem(SlotBlock block, Item.Settings settings) {
             super(block, settings);
             this.slotKey = block.getSlotKey();
+            this.slotIndex = block.getSlotIndex();
         }
 
         @Override
         public Text getName(ItemStack stack) {
-            SlotData d = SlotManager.getBySlot(slotKey);
-            String name = (d != null) ? d.displayName() : null;
-            return Text.literal(name != null ? name : "Custom Block");
+            return Text.literal(SlotBlock.resolveName(slotIndex, slotKey, "Custom Block"));
         }
     }
 }

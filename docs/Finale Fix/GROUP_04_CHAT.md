@@ -10,6 +10,17 @@
 
 ---
 
+## Hotbar popups un-branded (2026-06-20, build-green)
+
+`Chat.tool(...)` writes the **action-bar / hotbar** tool popups. As of 2026-06-20 it **no longer prepends
+the `[CB]` tag** — the developer wanted a cleaner hotbar (`Chat.java`, the `tool` method only). The `[CB]`
+brand stays on **chat** lines: `success` / `error` / `info` / `line` are unchanged, and the `PREFIX`
+constant is still used by them. So: chat = branded, hotbar = clean. Cross-cutting; the most visible
+beneficiary is the Square colour-swap line (Group 06 §J / Group 13 §16), reworded to
+`Swapped to <DisplayName>`. Tests → `GROUP_06_TESTING_GUIDE.md` §J.
+
+---
+
 ## Chat-polish backlog (open items)
 
 Small wording issues noticed during testing. Not bugs (the commands work) — message clarity only.
@@ -32,7 +43,7 @@ Small wording issues noticed during testing. Not bugs (the commands work) — me
 
 | Area | Old CustomBlocks | New CustomBlocks-B | This Group |
 |---|---|---|---|
-| Message prefix | `CB  Downloading texture…`, `CB  Gave 1 ✓` | Similar terse CB-prefix style | Removed. Messages are plain conversational English |
+| Message prefix | `CB  Downloading texture…`, `CB  Gave 1 ✓` | Similar terse CB-prefix style | **KEPT on chat as `[CB]`** (developer wants it); removed only from hotbar/action-bar popups. Wording made conversational |
 | Success messages | Friendly, complete sentences | Short abbreviations | Full, friendly success sentences |
 | Error messages | Plain English explanations | Terse one-liners | Clear explanation + what to do next |
 | Major errors | Chat only | Chat only | Chat (for the triggering player) + Incidents log (for admins) |
@@ -120,11 +131,15 @@ Example:
 /cb create g04b StyleTest
 ```
 
-**Expected:** A friendly, complete-sentence confirmation. No `CB ` prefix. Something like:
-`Block "g04b" ("StyleTest") created.`
+> **CORRECTED 2026-06-21 (developer):** the branded `[CB]` chat prefix is **wanted** and is already
+> present — it is NOT a failure. Chat lines stay branded; only the hotbar/action-bar popups are
+> un-branded (see top note). The test is about TONE (friendly full sentence), not prefix removal.
 
-**Pass:** Message is conversational, no terse prefix.
-**Fail:** `CB  Created g04b` or similar old-style prefix format.
+**Expected:** A friendly, complete-sentence confirmation carrying the `[CB]` chat prefix. Something like:
+`[CB] Block "g04b" ("StyleTest") created.`
+
+**Pass:** Message is a conversational full sentence (with the `[CB]` chat prefix).
+**Fail:** Terse abbreviation like `Created g04b` / `Gave 1 ✓` — clipped, robotic wording.
 
 ---
 
@@ -256,16 +271,16 @@ In the `/cb help` chest GUI, click any command slot (e.g., "create").
 
 | Test | Description | Result |
 |---|---|---|
-| G04.1 | Create message is conversational | ⬜ |
-| G04.2 | Lock error has complete sentence + suggestion | ⬜ |
-| G04.3 | Bad URL error is human-readable | ⬜ |
-| G04.4 | Major error logged to Incidents | ⬜ |
-| G04.5 | DidYouMean fires on close typo | ⬜ |
-| G04.6 | DidYouMean silent on garbage input | ⬜ |
-| G04.7 | DidYouMean respects config off | ⬜ |
-| G04.8 | `/cb help` opens chest GUI | ⬜ |
-| G04.9 | Help slot click pre-fills chat | ⬜ |
-| G04.10 | `/cb welcome` shows clickable links | ⬜ |
+| G04.1 | Create message is conversational (branded `[CB]` chat prefix is CORRECT) | ✅ in-game (2026-06-21) |
+| G04.2 | Lock error has complete sentence + suggestion | ✅ in-game (2026-06-21) |
+| G04.3 | Bad URL error is human-readable | ✅ in-game (2026-06-21) |
+| G04.4 | Major error logged to Incidents | ✅ in-game (2026-06-21) |
+| G04.5 | DidYouMean fires on close typo | ✅ in-game (2026-06-21) |
+| G04.6 | DidYouMean silent on garbage input | ✅ in-game (2026-06-21) |
+| G04.7 | DidYouMean respects config off | ✅ in-game (2026-06-21) |
+| G04.8 | `/cb help` opens chest GUI | ✅ in-game (2026-06-21) — wants full rework to a better design (see Follow-ups) |
+| G04.9 | Help slot click pre-fills chat | ✅ in-game (2026-06-21) — tied to G04.8 rework |
+| G04.10 | `/cb welcome` shows clickable links | ✅ in-game (2026-06-21) — revamp to a screen/GUI later (see Follow-ups) |
 
 **Group 04 passes when the developer confirms all messages are conversational and all help/correction features work in-game.**
 
@@ -275,6 +290,22 @@ If anything shows ❌ — paste:
 3. What was expected instead
 
 ---
+
+## Follow-ups (from in-game test 2026-06-21)
+
+All 10 tests pass. Open polish/rework wanted (group functions, but not "final"):
+
+- **G04.8 / G04.9 — `/cb help` full rework.** Chest help GUI works but developer wants it completely
+  redesigned to a better layout. G04.9 (slot click pre-fills chat) is locked in with this rework.
+- **G04.10 — `/cb welcome` → screen/GUI.** Works as clickable chat links; developer wants it revamped
+  into a screen or GUI. Design discussed later.
+- **G04.1 spec corrected** — branded `[CB]` chat prefix is wanted (was wrongly written as "remove
+  prefix"). Fixed above.
+- **`/cb rename x x` no-op** — fake-success, still open (chat-polish backlog above).
+
+> **Ownership note (G04.4 vs G16):** G04 owns *routing* a major error INTO the incidents log
+> (the chat group's job). G16 owns *viewing* incidents (the IT Chest dashboard + `/cb incidents`).
+> G04.4 stays here as a "did it get logged?" check; the viewer test lives in G16.
 
 ## Cleanup
 

@@ -30,6 +30,7 @@ import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.render.block.entity.BlockEntityRenderer;
 import net.minecraft.client.render.block.entity.BlockEntityRendererFactory;
 import net.minecraft.client.util.math.MatrixStack;
+import net.minecraft.util.Identifier;
 import net.minecraft.util.math.RotationAxis;
 import org.joml.Matrix4f;
 
@@ -43,16 +44,35 @@ public class AnimSlotBER implements BlockEntityRenderer<AnimSlotBlockEntity> {
                        VertexConsumerProvider vcp, int light, int overlay) {
         int slot = be.slotIndex();
         if (slot < 0) return;
+
         AnimFrameCache.Slot s = AnimFrameCache.get(slot);
-        if (s == null) return; // static slot — its normal atlas model already rendered it
+        if (s != null) {
+            // Animated off-atlas: show the current frame band by sampling V over the strip.
+            long worldTime = be.getWorld() != null ? be.getWorld().getTime() : 0L;
+            int frame = s.currentStripIndex(worldTime, tickDelta);
+            float vTop = (float) frame / s.frameCount;
+            float vBot = (float) (frame + 1) / s.frameCount;
+            VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(s.textureId));
+            drawCube(matrices, vc, light, overlay, vTop, vBot);
+            return;
+        }
 
-        long worldTime = be.getWorld() != null ? be.getWorld().getTime() : 0L;
-        int frame = s.currentStripIndex(worldTime, tickDelta);
-        float vTop = (float) frame / s.frameCount;
-        float vBot = (float) (frame + 1) / s.frameCount;
+        // Group 14 Phase 1c — STATIC off-atlas block: one crisp full-frame texture (no atlas mipmap muffle).
+        // Returns null for an ordinary ATLAS static slot (non-full shape / per-face / pre-1c pack), whose
+        // cube_all/shape model already drew it — so we paint nothing and never double-draw.
+        Identifier staticTex = StaticFrameCache.get(slot);
+        if (staticTex == null) return;
+        VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(staticTex));
+        drawCube(matrices, vc, light, overlay, 0f, 1f); // full texture on all six faces
+    }
 
-        VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(s.textureId));
-        // All six faces of the unit cube show the current frame (same texture, one buffer).
+    /**
+     * Draw all six faces of the unit cube from {@code vc}'s texture, sampling V over [vTop,vBot] — an
+     * animated frame band, or 0..1 for a static full texture. Shared by the placed BER (this class) and the
+     * hand/inventory icon ({@link SlotItemRenderer}) so both draw the identical off-atlas cube.
+     */
+    public static void drawCube(MatrixStack matrices, VertexConsumer vc, int light, int overlay,
+                                float vTop, float vBot) {
         face(matrices, vc, light, overlay, RotationAxis.POSITIVE_Y, 0f,   vTop, vBot); // front  (+Z)
         face(matrices, vc, light, overlay, RotationAxis.POSITIVE_Y, 90f,  vTop, vBot); // left   (-X)
         face(matrices, vc, light, overlay, RotationAxis.POSITIVE_Y, -90f, vTop, vBot); // right  (+X)

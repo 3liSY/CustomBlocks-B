@@ -10,6 +10,33 @@
 
 ---
 
+## Locked Decisions & Slice Plan (interview 2026-06-21)
+
+Owner interview locked the scope, semantics, and build order before any code.
+
+**Status (2026-06-21):** Slices 1–3 built, build-green. Slice 1 confirmed in-game; Slices 2–3
+awaiting in-game test (owner chose to build the leftovers and test all in one session). Tests
+in `Reports/GROUP_17_TESTING_GUIDE.md`.
+
+**Pace:** one slice at a time, with an in-game confirm between each (golden rule). Build order:
+
+| Slice | Covers | Files (primary) | State |
+|---|---|---|---|
+| **1** | Multi-undo `undo <N>` · `undo all` · `undo clear` (confirm) · multi-redo `redo <N>` · `redo all` | `HistoryCommands`, `UndoManager` | ✅ in-game confirmed |
+| **2** | Give `<amount>` (self) · `<player>` (OP-only) | new `GiveCommands` (split out of `UtilityCommands`) | 🟡 built, awaiting test |
+| **3** | Delete `#` (looked-at custom block) | new `DeleteCommands` (split out of `CreationCommands`; server raycast) | 🟡 built, awaiting test |
+| verify | Search GUI (G17.9) — **already opens `Nav.Dest.SEARCH` chest** — confirm in-game only | — | 🟡 verify in-game |
+
+**Decisions:**
+- **Undo/redo (slice 1).** `undo <N>` reverts up to N steps; N over the available count reverts what's there and reports the real number (no error). `undo all` / `redo all` added as shortcuts. Multi-undo chat = **detailed with values**, e.g. `Undid 3 actions:` + a per-step list `glow g17a 12→8`, then `(K left)`. `undo clear` **asks to confirm** (reuse the existing `BulkConfirm` hold), then clears undo **and** redo and reports the count. A BATCH counts as one step. Respects the existing `undoMode` (per-player / global) automatically.
+- **Give (slice 2).** Amount range 1–6400 (100 stacks). Overflow → **insert what fits, report `… (Y didn't fit — inventory full)`** (does NOT drop the rest). The `<player>` form is **OP / permission-level-2 only**; self-give stays open to all. Recipient is **notified** (`You received N × Name from <giver>.`) and the giver gets a confirmation. Offline/unknown player → error. Tab-complete: amount samples + online player names.
+- **Delete `#` (slice 3).** Deletes the **whole block definition** (= `/cb delete <id>`), resolved by a ~6-block raycast to the looked-at block; **no confirm** — relies on `/cb undo`. **Custom slot blocks only**; Arabic letters / vanilla / air → `The block you're looking at isn't a custom block.`
+- **Deferred — NOT in this group's build:**
+  - `favorite` (primary, non-toggle) · `unfavorite` (dedicated) · `recent` → **owned by Group 25**; G17 keeps tests G17.6–G17.8 + G17.12 as regression checks only. Current `/cb fav` toggle stays as-is.
+  - Export alignment row → folded into the **Issue 17.15 export-rework** session (dedicated discussion). Not touched here.
+
+---
+
 ## Regression Table
 
 | Command | Old CB behavior | New CB-B behavior | Gap to fix |
@@ -17,12 +44,12 @@
 | `undo` | `/cb undo`, `/cb undo <N>` (undo N steps), `/cb undo clear` | Single undo only | Add multi-undo (`undo <N>`) and `undo clear` |
 | `redo` | `/cb redo`, `/cb redo <N>` | Single redo only | Add multi-redo (`redo <N>`) |
 | `give` | `/cb give <id> <amount> <player>` | `/cb give <id>` only | Add `<amount>` and `<player>` arguments |
-| `favorite` | `favorite` command + dedicated `unfavorite` command | `fav` only (toggle), no `unfavorite` | Restore `favorite` as primary name, add dedicated `unfavorite`, keep `fav` as alias |
+| `favorite` | `favorite` command + dedicated `unfavorite` command | `fav` only (toggle), no `unfavorite` | Restore `favorite` primary + dedicated `unfavorite`, keep `fav` alias — **feature owned by G25**; row is a regression check |
 | `search` | Opened a searchable GUI | Text output only | Search GUI (chest-based) |
 | `config` | Opened full settings GUI | Reduced/no GUI | Full Config GUI (Group 21, but regression must not block other commands) |
 | `delete` | `/cb delete <id>` and `/cb delete #` (delete the block you're looking at) | `/cb delete <id>` only | Add `#` shorthand for targeted block |
 | `export` | `exportall`, `exportcategory`, `list export csv` | Different structure | Align with Group 12 export structure |
-| `recent` | `/cb recent` — recently used blocks list | Missing | Restored (text output + chest GUI link) |
+| `recent` | `/cb recent` — recently used blocks list | Missing | Restored — **feature owned by G25**; row is a regression check |
 
 ---
 
@@ -33,11 +60,11 @@
 | Multi-undo | `/cb undo <N>`, `/cb undo clear` |
 | Multi-redo | `/cb redo <N>` |
 | Give with args | `/cb give <id> [amount] [player]` |
-| Favorite alias | `/cb favorite <id>` (primary), `/cb fav <id>` (alias) |
-| Unfavorite | `/cb unfavorite <id>` (dedicated command) |
+| Favorite alias | `/cb favorite <id>` (primary), `/cb fav <id>` (alias) — **owned by G25**, regression check here |
+| Unfavorite | `/cb unfavorite <id>` (dedicated command) — **owned by G25** |
 | Search GUI | `/cb search <query>` → results in chest GUI |
 | Delete shorthand | `/cb delete #` |
-| Recent blocks | `/cb recent` |
+| Recent blocks | `/cb recent` — **owned by G25**, regression check here |
 
 ---
 
@@ -46,25 +73,46 @@
 ### 1. Multi-Undo and Undo Clear
 
 `/cb undo` — undoes one action (existing behavior, preserved).
-`/cb undo <N>` — undoes the last N actions in one command. Max = `maxUndoDepth` (default 100).
-`/cb undo clear` — clears the entire undo stack for the current player.
+`/cb undo <N>` — undoes the last N actions in one command. Max = `maxUndoDepth` (default 100). If
+N exceeds the available steps, undo what's there and report the real number (no error).
+`/cb undo all` — undoes the entire stack in one command.
+`/cb undo clear` — **asks to confirm** (`Clear N undo steps? [confirm]`, reusing the `BulkConfirm`
+hold), then clears the undo **and** redo stacks and reports the count cleared.
 
-Each step in a multi-undo is shown in chat: `Undid N action(s): [list of actions]`.
+Each multi-undo prints a **detailed, value-bearing** summary:
+```
+Undid 3 actions:
+  • glow g17a 12→8
+  • glow g17a 8→4
+  • glow g17a 4→0
+  (2 left)
+```
+A BATCH (bulk op) counts as one step and renders as `label (N blocks)`. Tab-complete on `/cb undo`
+offers `all`, `clear`, and sample numbers. Per-player vs global behavior follows the existing `undoMode`.
 
 ### 2. Multi-Redo
 
 `/cb redo` — redoes one action (existing behavior, preserved).
-`/cb redo <N>` — redoes the last N undone actions.
+`/cb redo <N>` — redoes the last N undone actions (over-count → redo what's there, report real number).
+`/cb redo all` — redoes the entire redo stack. Same detailed summary + `all`/number tab-complete.
 
 ### 3. Give with Amount and Player
 
 `/cb give <id>` — gives 1 of the block to the calling player (existing behavior).
-`/cb give <id> <amount>` — gives `<amount>` items to the calling player.
-`/cb give <id> <amount> <player>` — gives to a specific online player.
+`/cb give <id> <amount>` — gives `<amount>` (1–6400) items to the calling player. If the inventory
+fills, give only what fits and report the rest: `Gave 12 × GiveTest (52 didn't fit — inventory full).`
+`/cb give <id> <amount> <player>` — gives to a specific **online** player. This form is
+**OP / permission-level-2 only** (self-give stays open to everyone). Offline/unknown name → error.
 
-Tab-complete for `<player>` shows online player names.
+Feedback: the giver sees `Gave N × Name to <player>.`; the recipient is notified
+`You received N × Name from <giver>.`
+
+Tab-complete: `<amount>` offers samples (1/16/32/64); `<player>` shows online player names.
 
 ### 4. Favorite / Unfavorite
+
+> **Ownership (sweep 2026-06-21):** the favorites feature is owned by **G25** (`GROUP_25_BLOCK_MANAGEMENT_EXTRAS.md`).
+> G17 keeps tests G17.6–G17.8 as a regression check only; the canonical spec lives in G25.
 
 `/cb favorite <id>` — adds block to favorites. This is the **primary** command name.
 `/cb fav <id>` — alias of `favorite` (existing behavior preserved).
@@ -83,11 +131,19 @@ All four forms tab-complete block IDs.
 
 ### 6. Delete Shorthand
 
-`/cb delete #` — deletes the custom block that the player is currently looking at (crosshair targeting). If the targeted block is not a custom block: `"The block you're looking at isn't a custom block."`
+`/cb delete #` — resolves the block the player is looking at (server raycast, ~6-block reach) to its
+custom id and deletes the **whole block definition** — identical to `/cb delete <id>` (lock check,
+snapshot, undoable). Message: `Deleted "g17a" (targeted block). Undo with /cb undo.` **No confirm**
+prompt — a mis-aim is recovered with `/cb undo`.
+
+Targets **custom (slot) blocks only**. Aiming at an Arabic letter block, a vanilla block, or air →
+`The block you're looking at isn't a custom block.`
 
 `/cb delete <id>` remains unchanged.
 
 ### 7. Recent Blocks
+
+> **Ownership (sweep 2026-06-21):** `recent` is owned by **G25**. G17 keeps test G17.12 as a regression check.
 
 `/cb recent` — shows the last 10 blocks the player interacted with (gave, edited, created, or retextured). Output: chest GUI with up to 10 block slots. Click a slot → opens block editor.
 

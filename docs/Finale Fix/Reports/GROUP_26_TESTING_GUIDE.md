@@ -12,8 +12,8 @@
 | | |
 |---|---|
 | **Verdict** | 🟡 Partial |
-| **Progress** | 🟩🟩🟩🟥🟥🟥🟥🟥🟥🟥 · 3 / 10 passed |
-| **Last tested** | 2026-06-15 (§2·§3) |
+| **Progress** | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 · 4 / 10 passed |
+| **Last tested** | 2026-06-20 (§4 FIX D — name shows on server ✅) · 2026-06-15 (§2·§3) |
 | **Jar** | 1.0.0 |
 | **Tester** | — |
 
@@ -24,6 +24,7 @@
 | | What | § |
 |:--:|---|:--:|
 | 🎯 **TEST NOW** | **Part C** — `textures_names/` named-texture mirror (`/cb config mirrornames`) | §1 |
+| ✅ **PASSED 2026-06-20** | **FIX D** — multiplayer display name: a block/item shows its real name on a dedicated server, not `"Custom Block"` | §4 |
 | ✅ Passed 2026-06-15 | **FIX A** clean display names · **FIX B** case-insensitive `/cb give` | §2 · §3 |
 
 ---
@@ -126,6 +127,45 @@
 |:--:|:--:|---|
 | 🟩 | 1 | any capitalisation of the id finds the block |
 | — | **1 / 1** | |
+
+---
+
+# ⏳ Not built
+
+## §4 · FIX D — multiplayer display name  ✅ PASSED 2026-06-20
+
+> 💡 **What it fixes:** on your **dedicated server**, a freshly created block — and its item in hand /
+> inventory — showed the literal words **"Custom Block"** instead of its real name, and a rejoin didn't fix
+> it. Singleplayer was always correct. Cause: the name was read from the **server-only** `SlotManager` on the
+> **client**, which on a server has no data for the block; the real name sits in the synced `ClientSlotCache`,
+> which the naming code never read. Fix: client falls back to `ClientSlotCache` (`SlotBlock.CLIENT_NAME_RESOLVER`,
+> wired in `CustomBlocksClient`). Full spec → `GROUP_26_NAME_AND_GIVE_FIXES.md` → **FIX D**.
+>
+> 🔧 **Status:** 🎯 **built, build-green.** Must be tested **on the dedicated server** (it cannot reproduce in
+> singleplayer — singleplayer was always correct and is unchanged).
+
+**Tests — run on the SERVER:**
+- ⬜ **New block names right:** `/cb create d_name "Royal Banner" <url>` → the item in hand/hotbar reads **Royal Banner**, not `Custom Block`.
+- ⬜ **Placed block HUD:** place it, look at it → HUD shows **Royal Banner**.
+- ⬜ **A second player sees it too:** another player on the server who never had local data also sees the real name.
+- ⬜ **Rejoin still right:** relog → still the real name (no regression of the old "rejoin doesn't help").
+- ⬜ **Rename updates live:** `/cb rename d_name "Royal Flag"` → name updates to **Royal Flag** on hand/HUD without restart.
+- ⬜ **Singleplayer unchanged:** same block in singleplayer still names correctly (server read untouched).
+- ⬜ **No raw key:** never shows `block.customblocks.slot_N` or `Custom Block N`.
+
+**📋 Scorecard**
+
+| ✓ | # | Proves |
+|:--:|:--:|---|
+| ✅ | ① | New block shows real name on the server (hand/inventory) |
+| ✅ | ② | Placed-block HUD shows real name |
+| ✅ | ③ | A second player sees the real name |
+| ✅ | ④ | Real name survives a rejoin |
+| ✅ | ⑤ | Rename updates the name live |
+| ✅ | ⑥ | Singleplayer naming unchanged |
+| — | **6 / 6 ✅ confirmed 2026-06-20** | |
+
+> ↩️ **Undo:** `/cb delete d_name`.
 
 ---
 

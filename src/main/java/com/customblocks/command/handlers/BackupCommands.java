@@ -153,7 +153,7 @@ public final class BackupCommands {
                 });
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Backup save failed for \"" + name + "\"", e);
+                IncidentRecorder.record("Backup save failed for \"" + name + "\"", null, src.getName(), e);
                 server.execute(() -> Chat.error(src, "Couldn't save the backup. " + msg));
             }
         }, "CustomBlocks-Backup");
@@ -272,7 +272,7 @@ public final class BackupCommands {
         } catch (Exception e) {
             ResourcePackServer.resume();
             String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-            IncidentRecorder.record("Backup restore failed for \"" + name + "\"", e);
+            IncidentRecorder.record("Backup restore failed for \"" + name + "\"", null, src.getName(), e);
             Chat.error(src, "Restore failed — your data was left as it was. " + msg);
             return;
         }

@@ -15,7 +15,11 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.arabic.ArabicNaming;
+import com.customblocks.block.ArabicLetterBlock;
+import com.customblocks.block.ArabicLetterBlockEntity;
 import com.customblocks.block.SlotBlock;
+import com.customblocks.command.Chat;
 import com.customblocks.core.ColorVariantService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -27,10 +31,12 @@ import net.minecraft.item.ItemUsageContext;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 
 import java.util.List;
 
-public class ShapeToolItem extends Item {
+public class ShapeToolItem extends Item implements ColorSwapTool {
 
     private final String colorName;  // "Green", "Yellow", "Red", "Black"
     private final String colorCode;  // §a / §e / §c / §8
@@ -43,6 +49,12 @@ public class ShapeToolItem extends Item {
         this.shape = shape;
     }
 
+    /** Square → its fixed colour key (red/yellow/green/black); Triangle → null (creates, can't predict). */
+    @Override
+    public String swapColourKey(ItemStack stack) {
+        return "Square".equals(shape) ? colorName.toLowerCase(java.util.Locale.ROOT) : null;
+    }
+
     /** Live name showing the configured hex, e.g. "Black Square [#0A0A0A]" (M3 hex). */
     @Override
     public Text getName(ItemStack stack) {
@@ -52,7 +64,19 @@ public class ShapeToolItem extends Item {
 
     @Override
     public ActionResult useOnBlock(ItemUsageContext ctx) {
-        if (!(ctx.getWorld().getBlockState(ctx.getBlockPos()).getBlock() instanceof SlotBlock slot)) {
+        var clicked = ctx.getWorld().getBlockState(ctx.getBlockPos()).getBlock();
+        // Auto-join Arabic letters (Group 13): a Square recolours the placed letter in place. Colour is
+        // per-block BlockEntity data, so we touch ONLY the BlockEntity — never the blockstate — leaving
+        // FACING and the join flow exactly as placed (walking around the letter then recolouring can't
+        // re-orient or re-join it). Triangles don't apply: there is no slot variant to create.
+        if (clicked instanceof ArabicLetterBlock) {
+            if (!"Square".equals(shape)) return ActionResult.PASS;
+            if (!(ctx.getPlayer() instanceof ServerPlayerEntity letterPlayer)) {
+                return ActionResult.SUCCESS; // client swings instantly; server does the work
+            }
+            return recolorArabicLetter(letterPlayer, ctx.getWorld(), ctx.getBlockPos());
+        }
+        if (!(clicked instanceof SlotBlock slot)) {
             return ActionResult.PASS;
         }
         if (!(ctx.getPlayer() instanceof ServerPlayerEntity player)) {
@@ -74,6 +98,28 @@ public class ShapeToolItem extends Item {
         }
         // Square (M3) — swap the placed block to this colour's existing variant.
         ColorVariantService.swapPlaced(player, ctx.getWorld(), ctx.getBlockPos(), d, colourKey);
+        return ActionResult.SUCCESS;
+    }
+
+    /**
+     * Recolour a placed auto-join Arabic letter to this Square's colour — COLOUR ONLY. We mutate the
+     * BlockEntity's colour and sync it; we never setBlockState or re-run the join flow, so FACING, form
+     * and neighbours are untouched (recolouring after walking around the block can't bug its direction).
+     * The client renderer rebuilds the glyph tile per-colour, so the swap is instant — no pack rebuild.
+     */
+    private ActionResult recolorArabicLetter(ServerPlayerEntity player, World world, BlockPos pos) {
+        if (!(world.getBlockEntity(pos) instanceof ArabicLetterBlockEntity be) || be.letter() == 0) {
+            return ActionResult.SUCCESS; // letter not stamped yet — nothing to recolour
+        }
+        String colour = colorName.toLowerCase(java.util.Locale.ROOT); // green/yellow/red/black — bundled set
+        String name = ArabicNaming.displayName(be.letter(), colour, be.effectiveForm());
+        if (colour.equals(be.color())) {
+            Chat.tool(player, "§7Already §f" + name + "§7.");
+            return ActionResult.SUCCESS;
+        }
+        be.setColor(colour); // colour only — no blockstate change, no re-flow
+        be.sync();           // push the new colour to clients; renderer rebuilds the tile per-colour
+        Chat.tool(player, "§bSwapped to §f" + name);
         return ActionResult.SUCCESS;
     }
 

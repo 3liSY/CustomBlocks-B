@@ -110,14 +110,13 @@ public final class ServerPackGenerator {
             AnimData anim = SlotManager.animFor(i);
             String shape = SlotManager.shapeFor(i);
             if (anim.isAnimated() && TextureStore.has(i)) {
-                // Group 14 Phase 1b: the PLACED animated block is drawn off-atlas by AnimSlotBER (crisp,
-                // no atlas mipmap muffle), so its world model is INVISIBLE (barrier-style — particle only).
-                // The strip + .mcmeta still ship so the INVENTORY/HAND icon animates via the atlas; its
-                // item model points straight at the strip (decoupled from the now-invisible block model so
-                // the icon still shows). Never emit a frame spec against the 1×1 placeholder.
-                put(sink, written, blockModel(key), invisibleBlockModelJson(key));
-                put(sink, written, tex(key) + ".mcmeta", mcmetaBytes(anim)); // slot_N.png.mcmeta
-                put(sink, written, itemModel(key), cubeAllJson(key)); // decoupled item → atlas-animated icon
+                // Group 14 ADR-012: the animated block renders through the vanilla block ATLAS — a plain
+                // cube_all model + a sidecar .mcmeta strip, the proven way the old mod did it. The atlas
+                // builds mipmaps for free, so the placed GIF is crisp (no off-atlas speckle). The default
+                // item model at the loop end gives the hand/inventory icon. Never frame-spec the 1×1
+                // placeholder. (.mcmeta is what animates the sprite, in world and as the item icon.)
+                put(sink, written, blockModel(key), cubeAllJson(key));
+                put(sink, written, tex(key) + ".mcmeta", mcmetaBytes(anim)); // slot_N.png.mcmeta (animation)
             } else if (!com.customblocks.block.BlockShapes.isFull(shape)) {
                 put(sink, written, blockModel(key), shapeModelJson(shape, key));
             } else if (TextureStore.hasAnyFace(i)) {
@@ -127,8 +126,13 @@ public final class ServerPackGenerator {
                 }
                 put(sink, written, blockModel(key), cubeFacesJson(i, key));
             } else {
+                // Group 14 ADR-012: a STATIC, full-shape, single-texture block — the common /cb create block
+                // — renders through the vanilla atlas as a plain cube_all. The default item model at the loop
+                // end gives the icon. (Shaped + per-face blocks above were already on the atlas.)
                 put(sink, written, blockModel(key), cubeAllJson(key));
             }
+            // Default item model for the atlas paths (shape / per-face). put() skips this as a duplicate when
+            // a branch above already wrote the item model (animated → atlas icon, off-atlas static → builtin).
             put(sink, written, itemModel(key), itemJson(MOD_ID + ":block/" + key));
         }
 
@@ -192,18 +196,10 @@ public final class ServerPackGenerator {
     }
 
     /**
-     * Group 14 Phase 1b: an invisible block model (vanilla barrier pattern — a "particle" texture but no
-     * geometry), so a placed animated block draws NOTHING from the pack and AnimSlotBER paints it off-atlas.
-     * Particle is the block's strip so break/step particles stay themed.
+     * Group 14 ADR-012: a plain {@code cube_all} block model textured with the slot's strip. For animated
+     * slots a sidecar {@code .mcmeta} drives the strip; the atlas builds mipmaps for free, so the placed
+     * block is crisp (this is the revert from the off-atlas renderer — see ADR-012).
      */
-    private static byte[] invisibleBlockModelJson(String key) {
-        JsonObject tex = new JsonObject();
-        tex.addProperty("particle", MOD_ID + ":block/" + key);
-        JsonObject m = new JsonObject();
-        m.add("textures", tex);
-        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
-    }
-
     private static byte[] cubeAllJson(String key) {
         JsonObject tex = new JsonObject();
         tex.addProperty("all", MOD_ID + ":block/" + key);

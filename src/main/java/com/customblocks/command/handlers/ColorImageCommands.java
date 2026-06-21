@@ -161,7 +161,7 @@ public final class ColorImageCommands {
                 });
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Resize failed for \"" + id + "\" to " + px + "px", e);
+                IncidentRecorder.record("Resize failed for \"" + id + "\" to " + px + "px", id, src.getName(), e);
                 server.execute(() -> Chat.error(src, "Couldn't resize that texture. " + msg));
             }
         }, "CustomBlocks-Resize");
@@ -202,7 +202,7 @@ public final class ColorImageCommands {
                                     net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal(url))))), false);
         } catch (Exception e) {
             String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-            IncidentRecorder.record("Export PNG failed for \"" + id + "\"", e);
+            IncidentRecorder.record("Export PNG failed for \"" + id + "\"", id, src.getName(), e);
             Chat.error(src, "Couldn't export that texture. " + msg);
             return 0;
         }
@@ -272,7 +272,8 @@ public final class ColorImageCommands {
                 });
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Gradient failed for \"" + id1 + "\" → \"" + id2 + "\" (" + n + ")", e);
+                IncidentRecorder.record("Gradient failed for \"" + id1 + "\" → \"" + id2 + "\" (" + n + ")",
+                        id1, src.getName(), e);
                 server.execute(() -> Chat.error(src, "Couldn't build that gradient. " + msg));
             }
         }, "CustomBlocks-Gradient");

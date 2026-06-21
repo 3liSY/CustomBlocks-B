@@ -30,24 +30,28 @@
 
 ## What this group covers
 
-> **Command names (final, post-cleanup 2026-06-14):** the cryptic old names were dropped. `/cb categories`
-> is the single category browser GUI; adding to a category uses the clear `/cb setcategory`. The table
-> below shows the **commands as actually shipped**.
+> **Command names (final — UPDATED on sweep 2026-06-21):** the cryptic old names were dropped, then in the
+> Round-2 cleanup the scattered category verbs were **folded into one unified `/cb category <action>`**
+> command (verified in code: `CategoryCommands.java` registers only `literal("category")`). The standalone
+> `renamecategory` / `mergecategory` / `givecategory` / `exportcategory` / `sharecategory` / `importcategory` /
+> `categorydesc` are **GONE**. `/cb categories` remains the browser GUI; adding to a category still uses
+> `/cb setcategory`. Test bodies below show the old forms historically (they passed pre-unification) — the
+> shipped equivalents are the `/cb category …` subcommands.
 
-| Feature | Commands |
+| Feature | Command (as shipped) |
 |---|---|
 | Category overview GUI | `/cb categories` (left-click → browse · right-click → CategoryEditMenu) |
 | Flat block list GUI | `/cb blockslist` (alias of `/cb listgui`) |
 | Add to category | `/cb setcategory <id> <category>` |
-| Give all in category | `/cb givecategory <category>` |
+| Give all in category | `/cb category give <category>` |
 | Set category icon (display block) | CategoryEditMenu → Display Block picker tile (commands `setdisplayblock`/`cleardisplayblock` removed) |
-| Rename category | `/cb renamecategory <old> <new>` (also the Rename tile) |
-| Merge categories | `/cb mergecategory <source> <dest>` (also the Merge tile) |
-| Category description | `/cb categorydesc <category> <text…>` (also the Description tile) |
+| Rename category | `/cb category rename <old> <new>` (also the Rename tile) |
+| Merge categories | `/cb category merge <source> <dest>` (also the Merge tile) |
+| Category description | `/cb category desc <category> <text…>` (also the Description tile) |
 | Export (dashboard GUI) | `/cb export` (player → Export Dashboard chest GUI; console → text) |
-| Export category | `/cb exportcategory <category>` |
-| Share category | `/cb sharecategory <category>` |
-| Import category by code | `/cb importcategory <code>` |
+| Export category | `/cb category export <category>` |
+| Share category | `/cb category share <category>` |
+| Import category by code | `/cb category import <code>` |
 | Auto-categorize | create-time hint on `/cb create` only (standalone `/cb autocategorize` removed) |
 
 ---
@@ -357,7 +361,7 @@ Right-click "blockstest" → **Delete** → confirm in the sub-menu.
 | G11.3 | `/cb categories` category list | ✅ in-game (2026-06-14) |
 | G11.4 | Give category gives all items | ✅ in-game (2026-06-14) |
 | G11.5 | `setcategory` adds block to category | ✅ in-game (2026-06-14) |
-| G11.6 | Export category creates ZIP | ✅ in-game (2026-06-14) |
+| G11.6 | Export category creates ZIP | 🟡 ZIP write ✅ (2026-06-14); **`[download]` link host-leaks + unreachable — same cross-cutting fix as G12 (§A), `getZipUrl()`** |
 | G11.7 | Share category generates code | ⚠️ deferred — vault Worker not deployed yet |
 | G11.8 | Auto-categorize suggests category | ⚠️ redesigned — `/cb autocategorize` command removed; auto-categorize kept as create-time hint on `/cb create` only |
 | G11.9 | Category tile browse/edit lore | ✅ in-game (2026-06-14) |
@@ -387,6 +391,17 @@ If anything shows ❌ — paste:
 3. Last 20 lines of `latest.log`
 
 ---
+
+## Follow-ups (sweep 2026-06-21)
+
+- **Command names updated** — scattered category verbs unified into `/cb category <action>` (verified: code
+  registers only `literal("category")`). Covers table corrected; test bodies left as historical old forms.
+- **🔴 G11.6 export link** — category ZIP posts a `[download]` link via `ResourcePackServer.getZipUrl()` —
+  same host-leak/unreachable bug as G12.2–.5 and G10.5. Fix together; remove IP/host (SWEEP_INDEX §A).
+- **Known gap (carried)** — CategoryEditMenu "Bulk Retexture" tile points at `/cb bulkretexture`, which was
+  never built (no such literal in code). Either build it or remove the tile.
+- **Ownership** — G11 owns `categories`, `category <action>`, `setcategory`, `blockslist`, CategoryEditMenu,
+  display blocks, auto-categorize hint. Export/share ZIP delivery shares G12's download-link fix.
 
 ## Cleanup
 

@@ -45,7 +45,9 @@ public final class HudBrickPalette {
             int ry = y + 4 + i * ROW;
             boolean hover = mx >= x && mx <= x + PW && my >= ry && my < ry + ROW;
             if (hover) ctx.fill(x, ry, x + PW, ry + ROW, 0x44FFFFFF);
-            ctx.drawText(tr, Text.literal((hover ? "§f" : "§7") + types[i].label()), x + 6, ry + 3, 0xFFFFFFFF, false);
+            // §G27.14 — Template brick stands out in gold (the "Templates" entry).
+            String col = types[i] == HudFieldType.TEMPLATE ? (hover ? "§6§l" : "§6") : (hover ? "§f" : "§7");
+            ctx.drawText(tr, Text.literal(col + types[i].label()), x + 6, ry + 3, 0xFFFFFFFF, false);
         }
     }
 

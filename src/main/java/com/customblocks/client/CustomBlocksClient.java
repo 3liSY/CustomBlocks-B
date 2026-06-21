@@ -64,6 +64,15 @@ public class CustomBlocksClient implements ClientModInitializer {
         // Restore persisted HUD settings (position / scale / color / opacity / visibility).
         HudConfig.load();
 
+        // Group 26 / FIX D — on a DEDICATED server the client's SlotManager is empty, so a custom
+        // block's name (item in hand/inventory + placed-block name) would read "Custom Block".
+        // Install the client name seam so SlotBlock falls back to the synced ClientSlotCache.
+        // Common code can't import a client class, so the resolver is wired here (ADR-009 pattern).
+        com.customblocks.block.SlotBlock.CLIENT_NAME_RESOLVER = idx -> {
+            ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
+            return e == null ? null : e.name();
+        };
+
         // OpenGuiPayload → open the right screen
         ClientPlayNetworking.registerGlobalReceiver(OpenGuiPayload.ID, (payload, context) -> {
             GuiMode mode = GuiMode.fromId(payload.mode());
@@ -126,6 +135,15 @@ public class CustomBlocksClient implements ClientModInitializer {
                 context.client().execute(() -> SilentPackState.set(payload.silent())));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> SilentPackState.set(false));
 
+        // TransparentBgPayload → off-atlas background mode (Group 14 Phase 1c Step 2b). Setting it rebuilds
+        // the off-atlas caches. Reset to false (black) on disconnect so another server's choice never bleeds.
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.TransparentBgPayload.ID, (payload, context) ->
+                        context.client().execute(() ->
+                                com.customblocks.client.render.OffAtlasBgState.set(payload.transparent())));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                com.customblocks.client.render.OffAtlasBgState.set(false));
+
         // ArabicLabelsPayload → set this server's live join form labels (Group 13 / O6). Reset to the
         // shipped defaults on disconnect so another server's labels never bleed across.
         ClientPlayNetworking.registerGlobalReceiver(ArabicLabelsPayload.ID, (payload, context) ->
@@ -138,6 +156,22 @@ public class CustomBlocksClient implements ClientModInitializer {
         ClientPlayNetworking.registerGlobalReceiver(RegenPackPayload.ID, (payload, context) ->
                 ResourcePackGenerator.regenerate(context.client(), payload.hash()));
 
+        // Group 05 remote fix: on a DEDICATED server the modded client can't rebuild from its own
+        // stale slot data, so the server streams the pack files. Receive manifest → request lacking
+        // files → buffer chunks → write → silent reload. (Integrated host still uses RegenPack above.)
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackManifestPayload.ID, (payload, context) ->
+                        com.customblocks.client.packsync.ClientPackReceiver.onManifest(context.client(), payload.gz()));
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackFilePayload.ID, (payload, context) ->
+                        com.customblocks.client.packsync.ClientPackReceiver.onFile(
+                                context.client(), payload.path(), payload.index(), payload.count(), payload.data()));
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackDonePayload.ID, (payload, context) ->
+                        com.customblocks.client.packsync.ClientPackReceiver.onDone(context.client(), payload.hash()));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
+                com.customblocks.client.packsync.ClientPackReceiver.reset());
+
         // HudStatePayload → update + persist HUD visibility so the renderer reflects the toggle
         ClientPlayNetworking.registerGlobalReceiver(HudStatePayload.ID, (payload, context) ->
                 context.client().execute(() -> {
@@ -148,11 +182,15 @@ public class CustomBlocksClient implements ClientModInitializer {
         // HUD look-at hover sound: edge-triggered each client tick (Group 27 §G27.4).
         ClientTickEvents.END_CLIENT_TICK.register(HudHoverSound::tick);
 
-        // Group 14 / Phase 1b — draw placed ANIMATED blocks off-atlas (crisp, no mipmap muffle).
-        // Static slots render nothing here and keep their normal atlas model.
-        net.minecraft.client.render.block.entity.BlockEntityRendererFactories.register(
-                com.customblocks.block.AnimSlotRegistry.BLOCK_ENTITY,
-                com.customblocks.client.render.AnimSlotBER::new);
+        // Group 13 / O10 — warm held Arabic letter tiles ahead of placement, so a placed letter's
+        // glyph is cached the first frame it shows (no build behind the place, no slow fill).
+        ClientTickEvents.END_CLIENT_TICK.register(com.customblocks.client.render.ArabicPrewarm::tick);
+
+        // Group 14 / ADR-012 — the off-atlas renderer is GONE. Custom blocks (animated + static) now render
+        // through the vanilla block atlas (cube_all + .mcmeta), the way the old mod did — crisp, mipmaps for
+        // free, no off-atlas speckle. The former AnimSlotBER / SlotBeBackfill / SlotItemRenderer registrations
+        // were removed here (those classes are now dead code, deleted in a later cleanup). The Arabic renderers
+        // below are a SEPARATE feature and stay.
 
         // Group 13 / Pass 4 (real feature) — draw joinable Arabic letters from live in-memory textures.
         net.minecraft.client.render.block.entity.BlockEntityRendererFactories.register(
@@ -163,6 +201,14 @@ public class CustomBlocksClient implements ClientModInitializer {
         net.fabricmc.fabric.api.client.rendering.v1.BuiltinItemRendererRegistry.INSTANCE.register(
                 com.customblocks.block.ArabicLetterRegistry.ITEM,
                 new com.customblocks.client.render.ArabicLetterItemRenderer());
+
+        // Group 06 — instant colour-Square swaps: paint the predicted variant on the client the same
+        // tick as the click; the server still does the authoritative swap (ADR-009).
+        ClientSwapPredictor.register();
+
+        // Group 13 / O11 — instant auto-join Arabic letter recolour: paint the new colour on the client
+        // the same tick as the click (the server still does the authoritative recolour). ADR-009 pattern.
+        ClientArabicRecolorPredictor.register();
 
         // Register the three CustomBlocks key bindings (toggle HUD / menu / HUD editor).
         CbKeybinds.register();

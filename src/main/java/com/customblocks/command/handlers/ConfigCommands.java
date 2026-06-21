@@ -78,6 +78,9 @@ public final class ConfigCommands {
                         .then(CommandManager.literal("on").executes(ctx -> setSilentPack(ctx, true)))
                         .then(CommandManager.literal("off").executes(ctx -> setSilentPack(ctx, false)))));
 
+        // /cb config transparent [...] — off-atlas block background mode (Group 14 Phase 1c Step 2b).
+        RenderConfigCommands.register(root);
+
         // /cb config background [NoBgRemove|BgRemove|BgRemove&More] — strip image backgrounds to
         // black on (re)texture (M1). A greedy arg is used so "BgRemove&More" (with the &) parses.
         root.then(CommandManager.literal("config")

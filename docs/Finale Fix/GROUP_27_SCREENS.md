@@ -1795,3 +1795,109 @@ Nothing here is ✅ DONE until the dev confirms in-game:
 - Success, info, and error feedback all appear as toasts (correct colour per kind).
 - Typed server commands (`/cb setglow …`, bulk results) still reply in chat as before (unchanged).
 - The Studio "coming soon" stubs and the Save flash now toast instead of chatting.
+
+---
+
+## §G27.14 — HUD: templates section + shape backgrounds (pill default) (design locked 2026-06-20)
+
+> **Status:** design locked with the dev **2026-06-20**. **Nothing built yet.** Spec only; per-slice status
+> → testing guide. Extends §G27.4 (Lego HUD). **Purely additive — keep every existing brick, drag, snap,
+> inspector, preset and the whole HUD menu untouched** (dev: "make it still lego and dragable… but don't
+> touch or ruin current hud menu"). Reuse, don't fork (CLAUDE.md §5).
+>
+> **Objective:** bring back the old mod's two HUD comforts, rebuilt on the brick system: **(A) background
+> shapes** — Pill (default) / Glow box / Plain, like the old `style` switch; and **(B) a Templates section**
+> — text lines mixing words with live `{tokens}` (`{name}`, `{id}`, `{light}`…). Each line stays its own
+> draggable brick (dev: "each is a different lego", not Name+ID fused into one box).
+
+### Why this exists
+The old mod ([HudConfig.java](../../../CustomBlocks/src/main/java/com/customblocks/client/HudConfig.java), drawn at
+[CustomBlocksClient.java:1155](../../../CustomBlocks/src/main/java/com/customblocks/client/CustomBlocksClient.java))
+had one styled nameplate with 3 looks — `0 = Pill, 1 = Glow Box, 2 = Plain Text` — plus a "template text"
+mode (3 lines of `{name} {id} {light}` placeholders). The -B Lego HUD (§G27.4) dropped both: every brick's
+background is a flat filled rectangle ([HudRenderer.drawBackground:140](../../src/main/java/com/customblocks/client/HudRenderer.java)),
+and `CUSTOM_TEXT` shows literal text only — no tokens ([HudFieldType.resolve](../../src/main/java/com/customblocks/client/hud/HudFieldType.java)).
+Dev wants both back **as additions** to the brick system, not a replacement.
+
+### Feature A — shape backgrounds (pill / glow box / plain), pill = default
+Today the bg is one `ctx.fill` rectangle. Add a background **shape**, mirroring the existing
+global-default-or-per-brick-override pattern that already governs bg colour + opacity.
+
+**Decisions (locked 2026-06-20)**
+- Shapes the user picks: **Pill** (true rounded capsule + thin accent stripe down the left) · **Glow box**
+  (inset fill + accent border on all 4 sides + a brighter top glow strip) · **Plain** (no background — text +
+  shadow only; this is the existing `bgOff`). A 4th **Box** = today's flat rectangle, kept so nothing existing
+  changes.
+- **Default = Pill** for fresh installs, the default layout, and every newly added brick.
+- **Accent colour** drives the pill stripe + glow-box border. Global default = the old blue `0xFF5B8DFF`;
+  optional per-brick override.
+- **Upgrade over old:** the old "pill" was actually square corners — do a **real rounded** capsule.
+
+> **OPEN — flag for dev at build:** existing saved HUDs. To honour "don't ruin", a brick loaded from an
+> **old** config (no shape key) defaults to **Box** (flat — looks exactly like today); pill only auto-applies
+> to fresh / newly added bricks. Offer a one-click **"apply pill to all"**. → confirm: pill on your *existing*
+> bricks too, or only new ones?
+
+**How (build-time, not built)**
+- `client/hud/HudField.java` (change): add `BgShape bgShape` (PILL / GLOW_BOX / BOX / PLAIN) + optional
+  `accentColor` override + JSON keys (default-safe so old configs load).
+- `client/HudConfig.java` (change): global `bgShape` default (PILL) + global `accentColor` (`0x5B8DFF`).
+  Mirrors existing `bgColor` / `bgOpacity`.
+- `client/HudRenderer.java` → `drawBackground` (change): switch on shape — pill (rounded fill + left stripe),
+  glow box (inset + border + top glow), box (today's flat fill, unchanged path), plain (nothing).
+- `client/hud/HudBgShapes.java` (new, if needed): rounded-rect / pill / glow draw helpers — keeps
+  `HudRenderer` under the 500-line gate.
+- `client/gui/hud/HudBrickInspector.java` (change): a **shape picker** control per brick (additive; existing
+  controls stay). Global default shape + accent control added wherever the box-level globals UI lives today.
+- `client/HudConfigStore.java` (change): migration — missing `bgShape` → BOX (preserve look); fresh/default → PILL.
+
+### Feature B — Templates section (live `{token}` text lines)
+Old "template text" lines become **Template bricks**: one line = one brick = independently draggable.
+
+**Decisions (locked 2026-06-20)**
+- New brick type **Template** holding a `text` string with `{tokens}`. `resolve()` expands tokens from the
+  same per-frame look-at context, **reusing the existing field resolvers** (no fork).
+- Token set = the existing bricks: `{name} {id} {slot} {coords} {light} {distance} {facing} {category} {glow}
+  {hardness} {sound} {shape} {solid}`, with literal words around them.
+- A **Templates** group in the **[+ Add brick ▾]** palette adds a Template brick. The brick **inspector** gets
+  a text box + **token-insert chips** (click `{name}` to insert). Existing palette / inspector untouched.
+- Visibility: a line containing any **block-info** token follows the block-info rule (shows only while aiming
+  a custom block); otherwise it's a world brick (resolver returns null when a needed block token can't resolve).
+
+> **OPEN — flag at build:** Minecraft `§` colour codes inside a template — allow (on top of the brick's base
+> colour) or strip? Lean: allow.
+
+**How (build-time, not built)**
+- `client/hud/HudFieldType.java` (change): add `TEMPLATE` + a small `{token}` expander (maps `{key}` → the
+  matching type's `resolve`).
+- `client/gui/hud/HudBrickPalette.java` (change): add the **Templates** group + Template entry.
+- `client/gui/hud/HudBrickInspector.java` (change): multiline text + token chips for a Template brick.
+- Persistence rides the existing `HudField.text` JSON — no new store work. **Verify** the scope=all sync
+  (`network/.../HudSync*`) carries the new shape / accent / template fields.
+
+### New / changed files (≤500-line gate)
+| File | New/changed | Purpose |
+|---|---|---|
+| `client/hud/HudField.java` | change | `bgShape` + accent override; JSON (default-safe) |
+| `client/HudConfig.java` | change | global default `bgShape` (PILL) + `accentColor` |
+| `client/HudRenderer.java` | change | `drawBackground` switches shape; pill / glow / box / plain |
+| `client/hud/HudBgShapes.java` | new (if needed) | rounded-rect / pill / glow helpers (keep renderer < 500) |
+| `client/hud/HudFieldType.java` | change | `TEMPLATE` type + `{token}` expander (reuse resolvers) |
+| `client/gui/hud/HudBrickInspector.java` | change | per-brick shape picker + template text box + token chips |
+| `client/gui/hud/HudBrickPalette.java` | change | "Templates" palette group + entry |
+| `client/HudConfigStore.java` | change | migration: old brick → BOX; fresh / new → PILL |
+| box-level globals UI (where global bg lives) | change | global default shape + accent colour control |
+| `network/…/HudSync*` | verify | new fields ride the scope=all sync |
+
+### Build order (small slices — ONE in-game test each)
+1. **Shapes data + render** — fields + JSON + migration → `drawBackground` pill/glow/box/plain → inspector
+   shape picker + global default. *Test: default HUD is pill; switch a brick to glow/plain; existing layout unchanged.*
+2. **Templates** — `TEMPLATE` type + token expander → palette "Templates" + inspector text/chips.
+   *Test: add a `{name} [{id}]` template brick, drag it, it tracks the aimed block live.*
+
+### Success criteria (per CLAUDE.md §2 — the Golden Rule)
+Nothing here is ✅ DONE until the dev confirms in-game:
+- New / default bricks show the **pill** background; bricks still drag + snap; the existing HUD menu is unchanged.
+- The per-brick **shape picker** switches Pill / Glow box / Plain (+ Box) and persists across relog.
+- A **Template** brick resolves `{tokens}` live and is its own draggable brick.
+- **Old saved HUD configs still load** with their look preserved (no crash, no surprise restyle).

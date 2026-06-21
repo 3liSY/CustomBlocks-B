@@ -121,7 +121,8 @@ public final class ColorToolService {
                             + "). /cb undo to revert.");
                 });
             } catch (Exception e) {
-                IncidentRecorder.record("bgstudio apply failed for \"" + id + "\" (" + m + " @ " + t + ")", e);
+                IncidentRecorder.record("bgstudio apply failed for \"" + id + "\" (" + m + " @ " + t + ")",
+                        id, player.getName().getString(), e);
                 server.execute(() -> Chat.tool(player, "§cCouldn't update that background — texture left unchanged."));
             }
         }, "CustomBlocks-BgStudio");
@@ -180,7 +181,8 @@ public final class ColorToolService {
                     Chat.tool(player, "§a\"" + finalVid + "\" created §7(" + v.label() + "). /cb undo removes it.");
                 });
             } catch (Exception e) {
-                IncidentRecorder.record("Colour variant failed for \"" + srcId + "\" (" + v.key() + ")", e);
+                IncidentRecorder.record("Colour variant failed for \"" + srcId + "\" (" + v.key() + ")",
+                        srcId, player.getName().getString(), e);
                 server.execute(() -> Chat.tool(player, "§cCouldn't make that variant."));
             }
         }, "CustomBlocks-ColorVariantImg");
@@ -220,7 +222,8 @@ public final class ColorToolService {
                     Chat.tool(player, "§aRecoloured \"" + id + "\". §7/cb undo to revert.");
                 });
             } catch (Exception e) {
-                IncidentRecorder.record("Live recolour failed for \"" + id + "\"", e);
+                IncidentRecorder.record("Live recolour failed for \"" + id + "\"",
+                        id, player.getName().getString(), e);
                 server.execute(() -> Chat.tool(player, "§cCouldn't recolour that texture."));
             }
         }, "CustomBlocks-Recolor");

@@ -77,8 +77,8 @@ public final class StudioReskin {
                 server.execute(() -> finishStatic(player, src, id, index, raw, finalPng));
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Studio re-skin failed for \"" + id + "\" (by "
-                        + src.getName() + ", url: " + url + ")", e);
+                IncidentRecorder.record("Studio re-skin failed for \"" + id + "\" (url: " + url + ")",
+                        id, src.getName(), e);
                 server.execute(() -> Chat.error(src,
                         "Couldn't get an image from that URL, so the picture was NOT changed (other settings were saved). " + msg));
             }

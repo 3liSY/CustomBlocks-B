@@ -244,14 +244,14 @@ Note the code. Then:
 
 | Test | Description | Result |
 |---|---|---|
-| G12.1 | Export dashboard opens as chest GUI | ⬜ |
-| G12.2 | Single block JSON export with download link | ⬜ |
-| G12.3 | Single block PNG export | ⬜ |
-| G12.4 | Bulk export all to ZIP | ⬜ |
-| G12.5 | Export category to ZIP | ⬜ |
-| G12.6 | Blueprint item generated | ⬜ |
-| G12.7 | Share code → import round-trip | ⬜ |
-| G12.8 | Marketplace GUI opens | ⬜ |
+| G12.1 | Export dashboard opens as chest GUI | ✅ in-game (2026-06-21) — opens, but layout differs from spec (hand-pick "Bulk Choose" bundle flow, not per-slot click). Spec corrected |
+| G12.2 | Single block JSON export with download link | ❌ in-game (2026-06-21) — download link broken (`ERR_CONNECTION_REFUSED`) AND leaks server host. Needs rework |
+| G12.3 | Single block PNG export | 🟡 in-game (2026-06-21) — export runs, but same broken/IP-leaking download link as G12.2 |
+| G12.4 | Bulk export all to ZIP | 🟡 in-game (2026-06-21) — same download-link issue as G12.2 |
+| G12.5 | Export category to ZIP | 🟡 in-game (2026-06-21) — same download-link issue as G12.2 |
+| G12.6 | Blueprint item generated | ✅ in-game (2026-06-21) — generates, but value questionable on same server; needs rework/rethink |
+| G12.7 | Share code → import round-trip | ⏸️ DEFERRED — needs cloud vault deployed |
+| G12.8 | Marketplace GUI opens | ⏸️ DEFERRED — needs cloud vault deployed |
 
 **Group 12 passes when the Export Dashboard works in-game and all export/import/share paths function correctly.**
 
@@ -261,6 +261,21 @@ If anything shows ❌ — paste:
 3. Last 20 lines of `latest.log`
 
 ---
+
+## Follow-ups (from in-game test 2026-06-21)
+
+- **🔴 CROSS-CUTTING — kill IP/host-exposing download links.** Chat download buttons currently point at
+  `http://<serverHost>:<httpPort>/export/<id>` (screenshot: `yoyoo.mcsh.io:8123/export/3lisy`). Two problems:
+  (1) it **leaks the server address** — unacceptable for a PUBLIC mod; (2) the route is **unreachable**
+  (`ERR_CONNECTION_REFUSED`) so downloads don't even work. **Decision:** remove IP/host from every chat
+  download button across the mod and rethink delivery (e.g. write to a known local folder + show the path,
+  or in-game delivery, or a proper opt-in public URL via the vault). Affects G12.2–.5 and any other group
+  that posts a download link (e.g. G10.5 export PNG). Tracked in SWEEP_INDEX §A.
+- **G12.1 spec corrected** — dashboard uses a hand-pick "Bulk Choose" bundle flow (tick blocks → pick
+  format), not the per-block-slot-click sub-menu the spec described.
+- **G12.6 — Blueprint rework/rethink.** Generates, but a Blueprint that only works on the same server is
+  low value. Reconsider its purpose (cross-server trade? offline import?) before polishing.
+- **Export system rework (17.15)** still wanted overall once delivery is fixed.
 
 ## Cleanup
 

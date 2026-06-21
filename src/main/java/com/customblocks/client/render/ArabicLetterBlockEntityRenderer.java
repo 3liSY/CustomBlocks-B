@@ -59,6 +59,8 @@ import org.joml.Matrix4f;
 import java.io.ByteArrayInputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ArabicLetterBlockEntityRenderer implements BlockEntityRenderer<ArabicLetterBlockEntity> {
 
@@ -66,6 +68,15 @@ public class ArabicLetterBlockEntityRenderer implements BlockEntityRenderer<Arab
     private static final Map<String, Identifier> CACHE = new HashMap<>();
     /** Keys we already tried and failed to build, so we don't retry (and spam) every frame. */
     private static final Map<String, Boolean> FAILED = new HashMap<>();
+    /** Keys whose tile is being built right now on the background thread (don't resubmit every frame). */
+    private static final Map<String, Boolean> PENDING = new HashMap<>();
+    /** One daemon thread that runs the heavy AWT tile build OFF the render thread (O10 lag fix). The GPU
+     *  upload itself still happens on the client thread via MinecraftClient.execute(). */
+    private static final ExecutorService BUILD_POOL = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "cb-arabic-tile-build");
+        t.setDaemon(true);
+        return t;
+    });
 
     private static final int WHITE = 0xFFFFFFFF;
 
@@ -186,21 +197,51 @@ public class ArabicLetterBlockEntityRenderer implements BlockEntityRenderer<Arab
 
     // ── texture cache ─────────────────────────────────────────────────────────
 
-    /** Dynamic-texture id for one (letter, form, colour); built + uploaded once, then cached. */
+    /**
+     * Dynamic-texture id for one (letter, form, colour), or null while it is not ready yet.
+     *
+     * O10 lag fix: the tile build is heavy AWT work at textureSize×SS (1024px by default) — doing it inline
+     * on the render thread froze the frame on first sighting of every new combo, and a word re-flow stacked
+     * several of those back-to-back. So on a cache miss we kick the build to ONE daemon thread and return
+     * null this frame (both callers draw nothing when null — block/item is blank for a few frames, no stall).
+     * The texture object + GPU registration must stay on the client thread, so that part runs in
+     * MinecraftClient.execute(). All three maps are only touched on the client thread (textureFor and the
+     * execute() callback both run there), so plain HashMaps are safe — the daemon thread only runs build().
+     */
     public static Identifier textureFor(char letter, int form, String color) {
         String key = ((int) letter) + "_" + form + "_" + (color == null ? "black" : color);
         Identifier cached = CACHE.get(key);
         if (cached != null) return cached;
         if (FAILED.containsKey(key)) return null;
+        if (PENDING.containsKey(key)) return null; // already building off-thread — nothing to draw yet
 
-        NativeImage img = build(letter, form, color);
-        if (img == null) { FAILED.put(key, Boolean.TRUE); return null; }
+        PENDING.put(key, Boolean.TRUE);
+        final String col = (color == null || color.isEmpty()) ? "black" : color;
+        BUILD_POOL.submit(() -> {
+            NativeImage img = build(letter, form, col); // heavy AWT work, off the render thread
+            MinecraftClient.getInstance().execute(() -> {
+                PENDING.remove(key);
+                if (img == null) { FAILED.put(key, Boolean.TRUE); return; }
+                Identifier id = Identifier.of(CustomBlocksMod.MOD_ID, "arabic_dyn_" + key);
+                MinecraftClient.getInstance().getTextureManager()
+                        .registerTexture(id, new NativeImageBackedTexture(img));
+                CACHE.put(key, id);
+            });
+        });
+        return null; // not ready this frame; the next frame after the build finishes will hit the cache
+    }
 
-        Identifier id = Identifier.of(CustomBlocksMod.MOD_ID, "arabic_dyn_" + key);
-        MinecraftClient.getInstance().getTextureManager()
-                .registerTexture(id, new NativeImageBackedTexture(img));
-        CACHE.put(key, id);
-        return id;
+    /**
+     * Warm the four contextual-form tiles of one letter+colour into the cache BEFORE it is placed
+     * (O10 lag fix — port of the old mod's cb-color-prewarm). Each form just routes through
+     * {@link #textureFor}, so an already-built or in-flight key is a no-op and a cold key kicks its
+     * build on the daemon thread NOW, off the placement hot path — the first frame the placed letter
+     * is shown its tile is already cached (no synchronous build behind the place, no slow fill).
+     * Client thread only (touches the cache maps). {@code letter == 0} warms nothing.
+     */
+    public static void prewarm(char letter, String color) {
+        if (letter == 0) return;
+        for (int form = 0; form <= 3; form++) textureFor(letter, form, color);
     }
 
     /**

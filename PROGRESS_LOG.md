@@ -1,5 +1,716 @@
 # Progress Log
 
+## 2026-06-21 (Group 17 · Command Regressions) — slices 1–3 built (build-green; slice 1 confirmed, 2–3 to test)
+
+Interview locked scope/semantics/build order earlier (design entry folded here). Owner confirmed
+**slice 1 (undo/redo) in-game ✅**, then: "build leftovers correctly to test all in one go." Built
+slices 2 + 3; one clean green build covering all three.
+
+**Done:**
+- **Slice 1 — multi-undo/redo** (already in-game confirmed). `HistoryCommands` rewritten: `undo <N>` ·
+  `undo all` · `undo clear` (BulkConfirm hold) · `redo <N>` · `redo all`, value-bearing list
+  (`glow g17a 12→8`), over-count safe. `UndoManager.clearHistory()` (mode-aware) added.
+- **Slice 2 — give with args.** New `command/handlers/GiveCommands` (split out of `UtilityCommands`,
+  which was 396/400). `/cb give <id>` (1 to you) · `<amount>` 1–6400 to you · `<amount> <player>`
+  to an online player (**OP / perm-2 only**). Overflow inserts what fits and reports
+  `(N didn't fit — inventory full)` — never drops. Recipient notified; amount + online-player
+  tab-complete. Removed `give` from `UtilityCommands` (now 371 lines).
+- **Slice 3 — delete `#`.** New `command/handlers/DeleteCommands` (split `delete` out of
+  `CreationCommands`, which was 392/400 with no room). `/cb delete #` = ~6-block server raycast →
+  if the looked-at block is a `SlotBlock` with SlotData, deletes the whole definition (lock check,
+  texture snapshot, undoable, no confirm). Vanilla / air / Arabic-letter blocks → `The block you're
+  looking at isn't a custom block.` `/cb delete <id>` unchanged. `CreationCommands` now 366 lines.
+- **Wiring:** `CommandRegistrar` registers `DeleteCommands` (after `CreationCommands`) and
+  `GiveCommands` (after `UtilityCommands`).
+- **Docs:** `GROUP_17_REGRESSIONS.md` slice table + status, `Reports/GROUP_17_TESTING_GUIDE.md`
+  (slice 2 §3 give, slice 3 §4 delete #, slice 1 marked confirmed).
+
+**Build:** `BUILD SUCCESSFUL` (clean build) — verifyFileSize / verifyMojibake / verifySound pass.
+All handlers under 400 (Creation 366, Utility 371, Give 158, Delete 116, History 297). **Slices 2–3
+NOT in-game tested.**
+
+**Next (owner — one test round):** guide §3 (give amount/overflow/player) + §4 (delete # + undo +
+vanilla error) + §2 (search GUI verify). Confirm → Group 17 buildable scope done (favorites/recent
+→ G25; export → Issue 17.15).
+
+## 2026-06-21 (Group 16 finish pass) — remaining items built (build-green, one owner test round left)
+
+Owner confirmed slice 5 **R1 + R2** in-game ✅. Then: "fix everything that's left, correctly, one by
+one — I'll test all the remaining at once." Built the 3 open items below; each its own green build.
+
+**Done:**
+- **Deferred FX wired (R4).**
+  - `bulk_complete` → fires at the end of every bulk op (property / delete / rename), at the
+    `Chat.line` summary (those don't fire FX, so no double burst). New `core/FeedbackFx` helper
+    (`play` / `fire(src,…)`) so the pair isn't repeated.
+  - `rp_regenerate` → **manual pack reloads only** (owner call): `/cb sync` + `/cb rp resume`. Both
+    used `Chat.success` (generic FX); added `Chat.successFx(…, category)` and routed them through it so
+    they fire the pack FX, not a doubled success. Auto-debounced rebuilds stay silent; `/cb reload`
+    (data reload) keeps generic success.
+  - `achievement` → **left preview-only** (owner: keep partial until the achievement system exists).
+- **Debug Log viewer.** `core/DebugLog` reads `logs/latest.log`, filters `[CustomBlocks]` lines,
+  newest first, capped 200, severity parsed from the vanilla `/LEVEL]` field. `gui/chest/DebugLogMenu`
+  = paged 6-row, colour/icon by severity, full line wrapped into lore. New `Nav.Dest.DEBUG_LOG` +
+  router case + IT-Chest Row 6 button (slot 50, bookshelf).
+- **`/cb showbrokenblocks`** — already built (G09: `BrokenBlockScanner` + `BrokenBlocksMenu`); G16
+  owned only the spec. No code change — added the test spec (guide §7) + marked the ownership row.
+- **Docs** — testing guide (R4 §5, Debug Log §6, showbrokenblocks §7, status/verdict/tables),
+  `GROUP_16_DIAGNOSTICS.md` (deferred-FX note, Later row, showbrokenblocks row), `CHANGELOG.md`.
+
+**Build:** `BUILD SUCCESSFUL` (exit 0) on each chunk — verifyFileSize / verifyMojibake / verifySound
+pass. New files: `core/FeedbackFx`, `core/DebugLog`, `gui/chest/DebugLogMenu`. **NOT in-game tested.**
+
+**Next (owner — one test round):** guide §5 R3 (centred tiles) + §5 R4 (bulk_complete on a bulk op;
+rp_regenerate on `/cb sync` / `/cb rp resume`, NOT on ordinary edits) + §6 Debug Log + §7
+showbrokenblocks. After that G16 is feature-complete except the `achievement` FX (waits on the
+achievement system).
+
+## 2026-06-21 (Group 16 slice 5 R3 polish) — Feedback FX board vertically centred (build-green, awaiting in-game)
+
+Owner feedback on R2 board: layout is perfect but "the gui kinda feels too big for smth like this".
+Decision: **keep** the 6-row board as-is, just **centre the tiles** so it doesn't look top-heavy.
+
+**Done:**
+- **`gui/chest/FeedbackMenu`** — master tile row moved from row 1 (slots 10-16) to **row 2**
+  (slots 19-25). Expansion sub-tiles ride `+9` / `+18` (rows 3-4) automatically; header row 0,
+  footer (Back/Close) row 5 unchanged. Now a balanced block: blank row 1 above, footer below.
+  Horizontal centring was already fine (cols 1-7, col 0/8 empty) — untouched. (Master can't drop to
+  row 3 — sub-tiles would land in the footer row.) One-line change (the `MASTER` array).
+- **Docs** — `GROUP_16_DIAGNOSTICS.md` §Slice 5 board (layout note), `GROUP_16_TESTING_GUIDE.md`
+  §5 R2 (new check ①ᵇ centred tiles), `CHANGELOG.md`.
+
+**Build:** `BUILD SUCCESSFUL` (exit 0) — verifyFileSize / verifyMojibake / verifySound pass. **NOT in-game tested.**
+
+**Next (owner test):** open `/cb feedback` — tiles sit in the vertical middle, not the top; expand
+still drops 2 sub-tiles below without hitting Back/Close. After confirm: G16 is feature-complete bar
+the 2 deferred items below.
+
+## 2026-06-21 (Group 16 slice 5 R2) — Merged Feedback FX board (build-green, awaiting in-game)
+
+Owner feedback on R1: bare `/cb sounds` printed text — "they arent chest guis". Fixed by building the
+merged board now (was planned as R2) so every entry point opens a chest, not chat.
+
+**Done:**
+- **`gui/chest/FeedbackMenu`** (replaces `ParticlesMenu`) — one chest, 7 category **master tiles**.
+  **Left-click** master = toggle BOTH particle + sound. **Shift-click** = expand that category into two
+  sub-tiles (Particle / Sound) for independent control; shift-click again collapses (only one expanded
+  at a time). **Right-click** = preview both, ignoring toggles. Expanded category rides in the
+  `MenuKey.arg` so `GuiRouter.repage` refreshes in place (no cursor snap). Tile colour: green = both on,
+  yellow = one on, grey = both off.
+- **Router** — `Dest.PARTICLES` now builds `FeedbackMenu.build(player, key.arg())`. `ParticlesMenu`
+  deleted (only the router referenced it).
+- **Commands now open the board** — bare `/cb sounds` and `/cb particles` open the chest for players
+  (console still prints their text list). New **`/cb feedback`** opens it too; `/cb feedback <cat> on|off`
+  is the master (sets BOTH flags). Split stays: `/cb particles <cat>` = FX flag, `/cb sounds <cat>` = sound.
+- **IT Chest Row 6** — button relabelled "Particle FX" → "Feedback FX" (same `Dest.PARTICLES`).
+
+**Build:** BUILD SUCCESSFUL — verifyFileSize / verifyMojibake / verifySound pass. **NOT in-game tested.**
+
+**Next (owner test):** testing guide §5 — R1 (sounds fire + `/cb sounds error off` splits) **and** R2
+(board: `/cb feedback`/`particles`/`sounds` open one chest; master toggles both; shift-click splits;
+right-click previews both). After confirm: wire the 3 deferred events (bulk/rp/achievement).
+
+## 2026-06-21 (Group 16 slice 5 R1) — Sound layer + merged firing (build-green, awaiting in-game)
+
+Slice 5 = merge particles + sounds into one per-category **Feedback FX** (owner decision, see
+`GROUP_16_DIAGNOSTICS.md` §Slice 5). Round 1 adds the sound half + merges the firing; the
+expand/collapse board is Round 2.
+
+**Done:**
+- **`core/SoundFx`** — per-category event sound, parallel to `ParticleFx`. `play()` gated by
+  `soundsOn(cat)`; `preview()` ignores the toggle (board). Note-block uses `.value()` (verifySound).
+  Palette: success=XP-orb · error=note bass · gui/selection=amethyst chime · bulk=beacon · rp=soft
+  amethyst · achievement=UI toast.
+- **Config** — new `soundsEnabled` map (default all on) + `soundsOn()`, persisted as
+  `soundsEnabled_<category>` in `CustomBlocksConfigStore` (load + save), mirroring particles.
+- **Merged firing** — `Chat.success/error` now fire both `ParticleFx` + `SoundFx`. `GuiFx.click/select`
+  route their chime through `SoundFx`, so the per-category sound toggle actually gates it (removed the
+  old un-gated hard-coded chime). Other GuiFx cues (open/apply/danger/deny) unchanged — not categories.
+- **`/cb sounds <category> on|off`** — new `SoundCommands`; toggles the **sound flag only**
+  (tab-completes category + on/off). Bare `/cb sounds` prints the state list. Particle toggle stays
+  fully independent (that's the "splittable" half of the merge).
+
+**Build:** BUILD SUCCESSFUL — verifyFileSize / verifyMojibake / verifySound pass. **NOT in-game tested.**
+
+**Next (owner test):** testing guide §5 Round 1 — success/error/menu-click now make a sound + particle
+together; `/cb sounds error off` silences the buzz but keeps the puff; states persist across restart.
+After confirm: Round 2 (expand/collapse `FeedbackMenu` + `/cb feedback` master + board aliases).
+
+## 2026-06-21 (Group 16 slice 4) — Particle FX set + `/cb particles` (✅ in-game verified by owner)
+
+The mod emitted **zero** particles before this. Slice 4 adds the FX set first, then the toggle.
+
+**✅ Verified in-game (owner, 2026-06-21):** slice-4 test list A–D all pass — live triggers
+(success/error/gui/selection), Particle FX board (left-click toggle, right-click preview incl. the
+3 not-yet-live FX), `/cb particles <cat> on|off` + autocomplete, toggle persistence across restart,
+console text readout. The 3 deferred FX confirmed via right-click **preview** (still no live event).
+
+**Done:**
+- **`core/ParticleFx`** — server-side particle bursts for the 7 FX categories (`success`, `error`,
+  `gui`, `selection`, `bulk_complete`, `rp_regenerate`, `achievement`). Each is a small effect
+  around the player (happy-villager ring, angry-villager puff, enchant glyphs, end-rod sparkle,
+  totem ring, portal swirl, firework column). `play()` respects the per-category toggle;
+  `preview()` ignores it (GUI sampling). Spawns scheduled on the server thread (thread-safe from
+  any caller).
+- **Config** — `CustomBlocksConfig.FX_CATEGORIES` + a `particlesEnabled` map (default all ON),
+  persisted as `particlesEnabled_<category>` keys (graceful default if missing). Helpers
+  `particlesOn()` / `isFxCategory()`. Slice 5 sounds will reuse `FX_CATEGORIES`.
+- **Live triggers** (centralized hubs, 4 of 7 categories): `Chat.success` → success, `Chat.error`
+  → error (fire on any command for a player), `GuiFx.click` → gui, `GuiFx.select` → selection.
+- **`/cb particles`** — player opens the **Particle FX board** (`ParticlesMenu`): one tile per
+  category, **left-click toggles** on/off (saved), **right-click previews**. Console prints the
+  state list. `/cb particles <category> on|off` toggles directly (tab-completes category + on/off).
+- **IT Chest Row 6** → new **Particle FX** button opens the same board.
+
+**Deferred (noted):** dedicated auto-triggers for `bulk_complete`, `rp_regenerate`, `achievement`
+are not wired to their events yet — their effects exist, toggle, and are testable via the board's
+right-click **preview**. (Their natural sites lack a clean player context / would double the
+`success` burst; wiring them is a small follow-up after this is confirmed.)
+
+**Build:** `BUILD SUCCESSFUL` — verifyFileSize / verifyMojibake / verifySound all pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested.**
+
+**Next (owner test):** see the slice-4 test list. After confirm: wire the 3 deferred triggers (if
+wanted) + slice 5 (`/cb sounds <category> on|off`, reuses `FX_CATEGORIES`) + the Debug-Log viewer.
+
+## 2026-06-21 (Group 16 slice 3 polish) — `/cb audit` + `/cb report` now chest GUIs (build-green, awaiting in-game)
+
+Owner feedback: "nothing should be chat based" — audit and report each got a real GUI face. They
+already worked + passed; this is the polish pass. Console keeps its text fallback.
+
+**Done:**
+- **`/cb audit` → chest GUI** — new `AuditMenu`: paginated mutation log (newest first), reuses
+  `HistoryMenu.placeEntry` so entries render + click-to-editor identically to Edit-history. The
+  optional player filter (`/cb audit <name>`) opens it pre-filtered; title shows `Audit · <name>`
+  and a **Show all edits** button clears the filter. Console still gets the text log.
+- **Username autocomplete fixed** — `/cb audit <player>` now tab-completes currently-online player
+  names (`PLAYER_NAMES` suggestion provider via `CommandSource.suggestMatching`). It was a plain
+  word arg before (no suggestions).
+- **`/cb report` → chest GUI** — new `ReportMenu` (3 rows): explains the report contents, shows
+  when one was last written + its size, and offers **Generate Report** (→ `report generate`, writes
+  + posts the `[download]` link) and **Get Download Link** (→ `report link`, re-posts the link for
+  the existing file, greyed out until one exists). Console `/cb report` writes + prints as before.
+- **Command split** — `report` now routes: bare = GUI (player) / generate (console); `report
+  generate` always writes + links; `report link` re-posts without rewriting. Link-building moved to
+  one shared `sendDownloadLink`.
+- **IT Chest Row 6** — the "Generate Report" button now opens the Report screen (`navigate` →
+  `Dest.REPORT`) so Back returns to the IT Chest, instead of firing the command blind.
+
+**Build:** `BUILD SUCCESSFUL` — verifyFileSize / verifyMojibake / verifySound all pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested.**
+
+**Next (owner test):** `/cb audit` opens a chest (not text); `/cb audit <name>` filters + the name
+tab-completes; **Show all** clears it. `/cb report` opens a chest → **Generate Report** writes the
+file + drops a `[download]` link in chat; **Get Download Link** re-posts it. IT Chest Row 6 →
+Diagnostic Report opens the same screen. After confirm: Group 16 slice 4 (particles) + slice 5
+(sounds toggle) + deferred Debug-Log viewer.
+
+## 2026-06-21 (Group 16 slice 3b) — Generate Report + `/cb cache clear` (build-green, awaiting in-game)
+
+Finished slice 3. Owner approved the `cache clear` scope = **exports + temp only** (safest).
+
+**Done:**
+- **`/cb cache clear`** — deletes `config/customblocks/cloud_exports/*` + stray `*.tmp` under
+  `config/customblocks`. Live textures, saved sources, the pack and backups are **never touched**.
+  Reports files removed + bytes freed.
+- **Generate Report** — new `core/DiagReport` writes `config/customblocks/data/diag_report.txt`
+  atomically: server info, full health snapshot (`DiagnosticsHelper.collect` + the 5 gauges), last 100
+  incidents, last 50 mutations. Minecraft `§` colour codes stripped for clean text.
+- **`/cb report`** writes it and posts the file path + a clickable `[download]` link.
+- HTTP `/report/diag_report.txt` route added to `ResourcePackServer` (mirrors `/export/` `/png/` `/zip/`)
+  + `getReportUrl()`. ⚠️ The link only opens if the mod's HTTP server is reachable from the client —
+  on this server (ports 8080/8081 blocked, IP detect fails) the link may not resolve, but the file +
+  printed path always work.
+- **IT Chest Row 6** gains a "Generate Report" button (slot 51) → runs `/cb report`.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass
+(DiagnosticsCommands ~250 lines, ResourcePackServer ~438 — both under their gates). Jar at
+`build/libs/customblocks-1.0.0.jar`. **NOT in-game tested.**
+
+**Next (owner test 3b):** `/cb cache clear` (then `/cb cache` shows exports back to 0); `/cb report` →
+prints a path, file exists at `config/customblocks/data/diag_report.txt`; IT Chest Row 6 → Generate
+Report does the same from the GUI. After confirm, Group 16 remaining: **slice 4 (particles)** + **slice 5
+(sounds toggle)** + the deferred Debug-Log viewer.
+
+## 2026-06-21 (Group 16 slice 3a) — Admin readouts: `/cb audit` + `/cb cache` (build-green, awaiting in-game)
+
+Owner confirmed slice 2 ("works greatly"). Started slice 3 (admin commands) with the **read-only,
+non-destructive half** first so it's safe to test in one go; the file-writing/deleting half (Generate
+Report + `cache clear`) is held as 3b pending an owner OK on what `clear` removes.
+
+**Backend read first — stale spec assumptions found** (noted for 3b):
+- `ImageDownloader` is **stateless — there is no in-memory download cache** to clear. So `/cb cache clear`
+  (3b) will clear the disposable artifacts instead: `cloud_exports/` + stray `*.tmp`. Live textures, the
+  pack, and backups are never touched (spec: "live PNGs not cleared").
+- The HTTP server already serves files for download (`/export/`, `/png/`, `/zip/`), so the report's
+  [download] link (3b) can reuse that pattern.
+
+**Done (3a), both text, player + console:**
+- **`/cb audit [player]`** — the mutation log as text (last 50), optionally filtered to one player by
+  name. Reuses `MutationLog.recent()`; resolves actor UUIDs to names.
+- **`/cb cache`** — read-only readout: live textures (count + size, "never cleared"), saved sources,
+  exports/temp (count + size, "cleared by cache clear"), resource-pack size + last-built time
+  (`getPackFile`), and pending-rebuild state (`isRebuilding`).
+- Both live in `DiagnosticsCommands` (now ~190 lines, well under the 400 gate); no new classes.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested.**
+
+**Next (owner test 3a):** `/cb audit` lists recent edits; `/cb audit <yourname>` filters to you;
+`/cb cache` prints the readout. Then **3b** (Generate Report + `cache clear`) once the clear scope above
+is OK'd.
+
+## 2026-06-21 (Group 16 slice 2) — Incident auto-fix: click → re-download from last URL (build-green, awaiting in-game)
+
+Owner confirmed slice 1 in-game ("/cb diag is cool"). Built slice 2 — the headline auto-fix.
+
+**Found (read backend first):** no per-block source URL is persisted anywhere — the "last known URL"
+only lives in the incident. Broken-block restore/delete already has a full home (`/cb showbrokenblocks`
+→ rebake-from-source / delete-to-trash), so slice 2 doesn't rebuild that; it adds the *re-download*.
+
+**Done:**
+- `IncidentRecorder`: added an optional `url` field (5-arg canonical `record(ctx, block, actor, url, ex)`;
+  the 4-arg / 2-arg / 1-arg overloads delegate, so every existing site still compiles). `Incident` record
+  + `recent()` carry `url`; old entries → null. Atomic write + last-100 cap unchanged.
+- Only the **retexture** failure site stores the URL (the block exists there → safely re-downloadable).
+  Create / face / studio failures keep slice-1 click behaviour (no mis-fire of `retexture` on a face paint).
+- `ItChestMenu` incident click: when the block still exists **and** a URL is stored → the wool reads
+  "§aClick to re-download from the last URL" (URL shown in lore) and clicking runs the tested
+  `/cb retexture <id> <url>` via `GuiRouter.runCommand`. No re-implementation. Otherwise unchanged
+  (editor if the block exists, else full detail in chat).
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested.**
+
+**Next (owner test):** make a block, retexture it with a bad URL (logs an incident), `/cb diag` → click
+that red wool → it re-runs the download from the stored URL with no retyping. A bad test URL fails again
+(expected — proves it fired); a real URL fixes the block. After confirm → slice 3 (admin commands:
+`/cb audit`, `/cb cache`, Generate Report).
+
+## 2026-06-21 (Group 16 slice 1) — IT Chest dashboard + structured incidents (build-green, awaiting in-game)
+
+Built slice 1 of Group 16 (Diagnostics) per the locked design (`docs/Finale Fix/GROUP_16_DIAGNOSTICS.md`).
+
+**New 6-row IT Chest** (`gui/chest/ItChestMenu.java`) replaces the old 3-row `DiagMenu` (deleted):
+- Row 1 (slots 0–8): five live health gauges — TPS, Block Registry, Network Sync, Pack Status, Memory.
+- Rows 2–4 (9–35, 27 slots): incident log, one wool per incident, colour = severity, newest first.
+  Click → opens the block's editor if it still exists, else prints full detail to chat.
+- Row 5 (36–44): last 9 mutation-log entries (reuses the history renderer — see below).
+- Row 6 (45–53): Refresh (repage live), Clear Incidents (incidents only), Back, Close.
+- `Nav.Dest.DIAG` now routes here; both `/cb diag` and `/cb incidents` open it for players (console
+  still gets the text incident log).
+
+**Health gauges** (`DiagnosticsHelper`): added a `Health` enum + `Gauge` record and five best-effort
+gauge methods. Thresholds per spec (TPS ≥18/15–17/<15; Memory <70/70–85/>85%). Pack Status reads two
+new getters on `ResourcePackServer` — `getPackFile()` (size + last-modified) and `isRebuilding()`.
+Network Sync = online count + pack SHA (no per-client lag, as agreed).
+
+**Structured incidents** (`IncidentRecorder`): each entry now carries `block`, `player` and an
+auto-derived `severity` (throwable / "fail|error" → error/red, "skip|warn" → warn/yellow, else
+info/lime — never passed by a call site). New `Incident` record + `recent()` for the dashboard;
+`list()` kept for the console text path. Schema is backward-compatible: old entries with no
+block/player/severity degrade gracefully (missing → "—", severity derived on read). Atomic write +
+last-100 cap unchanged.
+
+**Call sites wired** (~21 of 24): every `record(...)` site with a block id / player in scope now
+passes them. Sites with neither — auto-backup tick, pack-rebuild failure, trash-pin update — correctly
+stay `System` / "—". The old 2-arg/1-arg `record` overloads were kept, so this was additive (no site
+broke). Reused `HistoryMenu.placeEntry` (extracted) for the mutation row so it renders identically.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound
+pass. Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested** (build-green = compiles +
+gates only).
+
+**Next (owner test):** `docs/Finale Fix/Reports/GROUP_16_TESTING_GUIDE.md` §1 — make a block, force a
+bad-URL retexture, `/cb diag` → 6-row chest opens; health hovers live + colour-coded; a red wool for
+the failed download (hover = time/you/action/error); click it → opens that block's editor; Row 5 shows
+recent mutations; Clear Incidents wipes rows 2–4 only; Refresh re-reads health. After confirm → slice 2
+(structured auto-fix: click a failed-texture incident → re-download / restore-from-backup / open editor).
+
+## 2026-06-21 (Group 14 §6) — DECISION REVERSED: delete the off-atlas renderer, revert to atlas + `.mcmeta` (docs only, handed to new chat)
+
+Owner, after ~10 failed off-atlas attempts (nyan/nyan1 still muffled): *"i give up, this is never gonna be
+fixed."* Then chose the revert. **No code written this session — deep-searched + documented for a fresh chat.**
+
+**Root cause finally found (traced BOTH mods end to end):** the off-atlas renderer uploads textures with
+**mipmaps OFF** (`setFilter(true,false)`); a sharp texture minified to block size with no mipmaps **aliases**
+— *that is* the speckle/muffle. The old working mod (`CustomBlocks/`) has **no custom renderer at all**
+(verified: zero BlockEntityRenderer / setFilter) — it used plain `cube_all` + frame-strip + `.mcmeta` at
+≤256px, and looked fine because **the atlas builds mipmaps for free**. Off-atlas dropped exactly that.
+Bonus: this mod's **atlas-animated path was already owner-confirmed working** (Testing Guide §2, 2026-06-19);
+Phase 1b/1c regressed it. So the revert returns to a known-good state.
+
+**Decision (ADR-012, supersedes ADR-011 "no atlas forever" + ADR-008 hybrid; ADR-007 still caps 256px):**
+delete the off-atlas renderer; render all custom blocks via the vanilla atlas + `.mcmeta`. **GIFs 256px**
+(machinery already exists: `AnimationDecoder.ATLAS_MAX_SIZE=256`, `AnimCommands` already caps). Static =
+`textureSize` (default 256). The `transparent` toggle is removed (off-atlas-only). Block entity kept
+(harmless on atlas; removing risks worlds — optional later cleanup).
+
+**Wrote:** `docs/adr/ADR-012-revert-to-atlas-mcmeta-rendering.md`; `docs/Finale Fix/Reports/
+GROUP_14_ATLAS_REVERT_HANDOFF.md` (exact file-by-file delete/flip plan + build-green slices + test
+checklist); banners on `GROUP_14_ANIMATION_VIDEO.md` + `GROUP_14_TESTING_GUIDE.md` (§6 marked superseded).
+
+**Next:** new chat executes the handoff (Slice 1 = pack flip → owner confirms the muffle is gone in-game).
+
+## 2026-06-21 (Group 14 §6 Step 4a) — Off-atlas "muffle" = wrong filter (nearest, not linear) — fixed to the locked spec (build-green, awaiting in-game)
+
+Owner: 2b GUI tile ✅; muffle STILL not fixed (screenshot: placed nyan block, text crunchy/speckled). Asked
+me to check the log for nyan. **Diagnosed from the live files (no guessing):**
+- nyan = slot **1017**, animated, 12 frames. `slots.json` confirms `anim.frameCount=12`.
+- Pack regenerated correctly after Step 3: `models/block/slot_1017.json` has **no parent** (off-atlas ✓),
+  `models/item/slot_1017.json` = **builtin/entity** ✓ (so the icon routes to SlotItemRenderer). Pack hash
+  `91ed95…` written (4090 files) + applied — Step 3 IS live.
+- `textures/block/slot_1017.png` = **256×3072** (12×256² frames). Viewed it: the baked strip is **clean**
+  (proper Nyan frames). So the in-game noise is NOT the atlas and NOT a bad source — it's **sampling**.
+
+**Root cause:** both off-atlas caches uploaded with `setFilter(false, false)` = **NEAREST**. But the locked
+quality decision (this log, Step direction) was **"smooth/linear sampling, mipmaps off."** The code had
+deviated to nearest → hard/aliased pixels on text + Nyan stars = the "muffle" the owner sees.
+
+**Fix (2 lines):** `StaticFrameCache` + `AnimFrameCache` → `setFilter(true, false)` = linear/smooth, mipmaps
+off (full-res, no atlas pre-shrink). Matches the locked spec; smooths photos/text while staying full-res.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested.**
+
+**Next (owner test):** install jar → the cached textures rebuild on a resource reload (relog, or **F3+T**),
+so look at nyan again — is the text smooth now (not crunchy)? If a little sparkle remains at DISTANCE, that's
+the leftover minification → Step 4b = generate own mipmaps (true Option B). Up-close should already be clean.
+
+## 2026-06-21 (Group 14 §6 Step 2b GUI + Step 3) — Transparent toggle in chest GUI + GIF muffle killed (build-green, awaiting in-game)
+
+Owner: 2b command works; asked to wire it into the chest GUI, then continue to the next fix. Done both.
+
+**2b GUI tile (chest):** added a "Block Background = black/transparent" tile to `ConfigMenu` (slot 18, next
+to Texture Quality). Clicking runs the existing `/cb config transparent toggle` via `GuiRouter.runAndReopen`
+(no new mutation logic) → pushes to clients live. Step 2b is now complete (command + chest GUI).
+
+**Step 3 — kill the GIF muffle (route the animated icon off-atlas).** The PLACED animated block was already
+off-atlas; the last atlas user was the animated block's HAND/INVENTORY icon (it animated via the atlas
+`.mcmeta` + a `cube_all` item model). Now off-atlas too:
+- `ServerPackGenerator` animated branch: item model `cube_all` → `builtin/entity` (routes the icon to
+  `SlotItemRenderer`). The `.mcmeta` still ships — `AnimFrameCache` reads it for playback timing. Removed the
+  now-dead `cubeAllJson` helper.
+- `SlotItemRenderer`: after the static-cache branch, falls back to `AnimFrameCache` and draws the current
+  frame band (timed off the client world tick) — same crisp off-atlas cube as the placed block, mipmaps off.
+  So the icon honours Step 2 (black bg) + the transparent toggle automatically (shared cache).
+
+No custom block touches the atlas for its visual anymore (static + animated, placed + icon). Shaped /
+per-face blocks still use the atlas (the agreed small follow-up).
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested** (build-green = compiles + gates only).
+
+**Next (owner test):** (a) chest config GUI shows the Block Background tile; clicking it flips
+black↔transparent live. (b) GIF muffle: an animated block's INVENTORY/HAND icon is now crisp (no muffle)
+and still animates. ⚠️ **Existing animated blocks need a pack regen** (rejoin / restart, or re-create one) to
+pick up the new item model. If an animated icon shows blank, the renderer couldn't read its strip — report
+with `latest.log`. After confirm → Step 4 (sharpness/quality pass; Option B only if distance sparkle bugs you).
+
+## 2026-06-20 (Group 14 §6 Step 2b) — Off-atlas `transparent` toggle + mandated config split (build-green, awaiting in-game)
+
+Step 2a (black default) confirmed (owner screenshot). Built **Step 2b** — `/cb config transparent` so the
+black backdrop can be turned off (see-through) per server. Command-side done; **GUI tile still pending**
+(small follow-up). Owner picked "both [2b + Step 3], but be careful" → handing 2b back for a quick confirm
+BEFORE Step 3, mainly because the file-size gate forced a config split (below) that should be sanity-checked.
+
+**Feature (mirror of the silentpack toggle):**
+- `CustomBlocksConfig.transparentBackground` (server config, default false = black), persisted.
+- New `network/payloads/TransparentBgPayload` (bool) — registered S2C; sent on JOIN + on the command.
+- New `client/render/OffAtlasBgState` (client holder, default false) — on change, clears both off-atlas
+  caches so textures rebuild; reset to false on disconnect (no bleed across servers).
+- `StaticFrameCache` + `AnimFrameCache` only composite-over-black when `!OffAtlasBgState.isTransparent()`
+  (transparent mode keeps the texture's alpha → the existing cutout layer shows through).
+- New `command/handlers/RenderConfigCommands` — `/cb config transparent [toggle|on|off]`, pushes to all
+  clients. `CustomBlocksClient` registers the receiver + disconnect reset. `CustomBlocksMod` registers the
+  payload + JOIN send.
+
+**Mandated split (§9.3 — the gate failed, so split first):** adding the config field pushed two files over
+their limits. Both split with NO behaviour change and NO external call-site changes:
+- `CustomBlocksConfig` (was 299/300) → JSON load/save moved into new `CustomBlocksConfigStore` (mirrors the
+  HudConfig/HudConfigStore pattern); `CustomBlocksConfig.load()/save()` are now thin delegators. Fields +
+  public helpers (sanitizeTextureSize / normalizeHexColor / normalizeDidYouMean) stay put.
+- `ConfigCommands` (was 415/400) → the new `transparent` command moved into `RenderConfigCommands`,
+  registered from `ConfigCommands.register`.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested** (build-green = compiles + gates only).
+
+**Next (owner test 2b first — esp. the config split):** confirm (1) existing config still loads/saves (your
+settings intact after restart), (2) `/cb config transparent on` → blocks go see-through; `off` → black
+again, live. Then: GUI tile for the toggle (small) + **Step 3** (kill the GIF muffle — route the animated
+block's hand/inventory icon off-atlas).
+
+## 2026-06-20 (Group 14 §6 Step 2a) — Off-atlas blocks: black background by default (build-green, awaiting in-game)
+
+Step 1 confirmed working SP + MP (owner). Started **Step 2** — the see-through background. Split into 2a
+(this: black by default, the regression owner SEES) and 2b (the `transparent` toggle in `/cb config` + GUI,
+next slice).
+
+**Root cause:** a baked slot texture has transparent pixels by design — aspect-ratio letterbox padding
+(`ImageProcessor`) + any transparent area of the source image. Off-atlas they're drawn with an alpha-tested
+cutout layer, so those pixels show the world THROUGH the block. The old atlas cube was solid (transparent →
+black backdrop).
+
+**Fix — composite the off-atlas texture over black at cache-load (1 new file + 2 one-line calls):**
+- New `client/render/OffAtlasImage.compositeOverBlack(NativeImage)` — flattens each pixel onto opaque black
+  (`out = src*a/255`, alpha→255) in place. Opaque pixels (a baked bg colour, an opaque photo) are left
+  exactly as-is, so the bg-colour feature still shows; only transparent/semi-transparent pixels darken to
+  black. No resize/filter → crispness untouched.
+- `StaticFrameCache.build` + `AnimFrameCache.build` call it right before uploading the NativeImage, so both
+  static and animated off-atlas blocks (and the hand/inventory icon via `SlotItemRenderer`) get a black bg.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. ✅ **CONFIRMED IN-GAME by owner 2026-06-20 (screenshot —
+placed block shows a solid BLACK background).** Step 2a DONE.
+
+**Next:** Step 2b — the `transparent` toggle (`/cb config` field + GUI). Owner: doesn't see a config for it
+yet (expected — 2b not built).
+
+## 2026-06-20 (Group 14 §6 Step 1) — Every placed block visible again off-atlas: BE backfill (build-green, awaiting in-game)
+
+Implemented **Step 1** of the agreed 4-step off-atlas plan: make old + new placed blocks all draw via the
+off-atlas renderer. **Root cause (confirmed against live code):** `AnimSlotBER` draws a block only if it
+carries a client `BlockEntity`; the client render region looks one up with `CreationType.CHECK` (never
+creates). A `SlotBlock` placed by an OLDER jar — before Phase 1b made `SlotBlock` a `BlockEntityProvider` —
+has no saved BE, so the BER never fires and the invisible off-atlas model draws nothing → invisible. Newly
+placed blocks get a BE on placement and already rendered.
+
+**Fix — client-side BE backfill (1 new file + 1 registration line):**
+- New `client/render/SlotBeBackfill.java` — on `ClientChunkEvents.CHUNK_LOAD`, scan loaded sections and
+  force-create the client BE (`chunk.getBlockEntity(pos, CreationType.IMMEDIATE)`) for every `SlotBlock`
+  position lacking one. Idempotent, client-only (no disk / NBT / sync), fires before the section's first
+  render build. Cheap: a section is fully scanned only when its palette `hasAny` SlotBlock.
+- `CustomBlocksClient.onInitializeClient` calls `SlotBeBackfill.register()` beside the BER registration.
+
+Covers singleplayer AND dedicated server identically (the client always backfills its own ClientWorld
+chunks, regardless of which jar placed the block). Steps 2–4 (black bg + transparent toggle, kill the GIF
+muffle, sharpness pass) untouched.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. ✅ **CONFIRMED IN-GAME by owner 2026-06-20 — blocks visible on
+both singleplayer AND the dedicated server.** Step 1 DONE.
+
+**Next:** Step 2 — black backgrounds by default + a `transparent` toggle (`/cb config` + GUI). Owner
+confirms the see-through background is still open.
+
+## 2026-06-20 (Group 14 §6 / issue 4) — Off-atlas crispness: DIRECTION DECIDED with owner (docs only, NO code this session)
+
+Issue 4 ("created blocks blurry; the off-atlas attempt regressed") — re-read the live code with the owner and
+**confirmed the §6 diagnosis**: off-atlas static + animated blocks emit an INVISIBLE pack model (no
+`"parent"`), so ONLY `AnimSlotBER` can draw them — and it draws only blocks that carry a client
+`AnimSlotBlockEntity`. Blocks placed by an older jar have no saved BlockEntity → nothing draws them →
+invisible. Backgrounds went see-through because the draw uses an alpha-tested cutout layer
+(`getEntityCutoutNoCull`) where the old atlas cube was solid (alpha → black). The GIF "muffle" survives
+because an animated block's hand/inventory ICON still goes through the atlas (`cubeAllJson`).
+
+**Owner DECISION (locked): go FULL OFF-ATLAS — "no atlas, forever" — NOT the safe revert.** Owner accepts the
+world staying broken a bit longer over touching the atlas again. Web search confirmed there is **no
+replacement product**: the off-atlas own-texture renderer (`NativeImageBackedTexture` + `BlockEntityRenderer`)
+IS the standard technique every image / picture-frame mod uses (OnlinePictureFrame, ImageFrame, MC maps). The
+half-finished implementation, not the idea, is what broke. This **supersedes ADR-008's "reject full Path B /
+hybrid LOD"** → see new **ADR-011**.
+
+**Owner's success bar (for now):** (1) every placed block VISIBLE again, (2) the GIF muffle GONE for good.
+Owner isn't actively using the blocks right now — just wants to SEE them + end the muffle (their words: "my
+only last suffering").
+
+**Quality choices (locked):** images are a mix but **mainly smooth high-quality photos** (both pixel-art and
+photos must look good); **512px** cap; **mipmaps OFF** (the thing that permanently kills the muffle);
+**smooth/linear sampling** (clean photos, pixel-art still crisp at 512). **Background: black by default + a
+`transparent` toggle in `/cb config` AND the config GUI** (owner's standing decision). **Keep the auto-join
+Arabic architecture as-is.**
+
+**Accepted tradeoff — OPTION A (chosen now):** with mipmaps off, fine photo detail can "sparkle" slightly at
+DISTANCE (razor-sharp up close). Owner picked **A now → test → then decide on Option B** (generate full-res
+down-scaled mip levels FROM the 512px image so distant blocks smooth out — this is NOT the old atlas muffle;
+that came from the atlas pre-shrinking the image to a tiny tile). B is a later, separate polish step, no
+deadline.
+
+**The agreed 4-step plan (each tested in-game before the next; nothing DONE until owner confirms):**
+1. **Every placed block visible again, off-atlas** — make old + new placed blocks all draw via the off-atlas
+   renderer (fix the missing-BlockEntity gap). Un-breaks the world without returning to the atlas.
+2. **Black backgrounds + transparent toggle** — opaque draw (black default); add `transparent` to
+   `/cb config` + the config GUI.
+3. **Kill the GIF muffle for good** — route the animated block's hand/inventory ICON through the same
+   off-atlas renderer (the last thing still on the atlas).
+4. **Sharpness/quality pass** — lock 512px + linear + mipmaps-off (Option A). Option B only if the distance
+   sparkle bothers the owner in-game.
+
+(Shaped / per-face blocks staying on the atlas = small optional follow-up, later.)
+
+**Done this session:** documentation only — this log, GROUP_14 testing guide §6, GROUP_14 spec (Phase 1c
+quality note), new **ADR-011** (ADR-008 marked superseded-in-part). **No code written, no build run.**
+
+**Next:** owner gives go-ahead → implement **Step 1** (every placed block visible off-atlas) → build → owner
+tests in-game.
+
+## 2026-06-20 (Groups 26 / 13 / 14) — Four multiplayer bug fixes, one pass (build-green, awaiting in-game on the SERVER)
+
+Owner reported 4 bugs, all **dedicated-server only** (singleplayer was always correct). Diagnosed: three share
+one root cause — the multiplayer client reads server-only state or waits on a network round-trip where the shared
+JVM hid it in singleplayer. Implemented one at a time, build-green after each. **Architecture kept everywhere
+(no slot conversion); added prediction / off-atlas, per the owner.**
+
+**Fix 1 — name shows "Custom Block" on a server (Group 26 FIX D).** `SlotBlock.getName()` / `SlotItem.getName()`
+read the **server-only** `SlotManager` on the client → empty on a dedicated server → fallback text. Added a
+common-side seam `SlotBlock.CLIENT_NAME_RESOLVER` (`IntFunction<String>`, no client import) + `resolveName()`;
+client wires it to the synced `ClientSlotCache` in `CustomBlocksClient`. Singleplayer/server-JVM behaviour is
+byte-identical (resolver only consulted when SlotManager has no data). 3 edits, 2 files.
+
+**Fix 2 — auto-join letter flashes transparent on place (Group 13 O10, Part B).** The INVISIBLE block drew
+nothing until the place round-trip returned. `ArabicLetterBlock.onPlaced` no longer early-returns on the client —
+it stamps the held letter/colour/form onto the predicted BlockEntity and runs the (client-safe) `ArabicJoinFlow`,
+so the glyph draws the tick it's placed. Server sync reconciles identically. 1 edit.
+
+**Fix 3 — recolouring an auto-join letter is slow on a server (Group 13 O11).** No client prediction + new
+colour was a tile cache-miss. Added `client/ClientArabicRecolorPredictor` (ADR-009 pattern: paints the colour on
+the client BE the same tick) + `ArabicPrewarm` now warms the looked-at letter's tiles in the held Square's colour.
+Registered in `CustomBlocksClient`. 1 new file + 2 edits.
+
+**Fix 4 — created blocks look blurry even at 512px (Group 14 Phase 1c) — off-atlas, owner: "no atlas, forever."**
+Static **full-cube single-texture** blocks now render off-atlas (the actual `/cb create` blur). New
+`client/render/StaticFrameCache` (one `NativeImageBackedTexture` per slot, mipmaps OFF, loaded once; off-atlas
+gate = pack model has no `"parent"`). `AnimSlotBER` gains a static branch + shared public `drawCube`. New
+`client/render/SlotItemRenderer` draws the crisp cube in hand/inventory (registered for every slot item; only
+off-atlas-static slots get a `builtin/entity` item model so only they use it). `ServerPackGenerator` emits the
+invisible block model + builtin item model for that branch. Cache cleared on both reload paths. **Scope:** shaped
+(slab/stairs/cross) + per-face blocks stay on the atlas (clean follow-up) — they render correctly, just not yet
+off-atlas. 6 files.
+
+**Verified:** `gradlew build` BUILD SUCCESSFUL after each fix; verifyFileSize / verifyMojibake / verifySound pass.
+Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested** (build-green = compiles only).
+
+**Next:** owner deploys the jar to the dedicated server and runs the 🎯 sections — GROUP_26 §4 (name), GROUP_13
+§LAG (flash) + §16 (recolour), GROUP_14 §6 (blur, incl. hand/inventory + shaped/per-face must NOT go invisible).
+
+## 2026-06-20 (Group 13 §O10) — Arabic placement lag/flash: tile PREWARM (Part A, build-green, awaiting in-game)
+
+Dev: O10 "placement lag + transparent flash on a server" was still broken in-game **after** the latest build.
+Re-investigated against the live code — the doc's items 1+2 ARE already in (`onPlaced` unconditional
+`be.sync()`; tile build moved off the render thread to the `cb-arabic-tile-build` daemon). They removed the
+*freeze* but not the felt symptoms, because the two real bottlenecks on a server are different:
+- **Lag:** tiles are built **lazily, serially, on ONE daemon thread, AFTER placement.** A word needs ~2 tiles
+  per letter (own + back mirror) and the join re-flow changes several forms → many cold cache keys queued
+  back-to-back → the word "fills in" letter-by-letter. The cache is cold every session.
+- **Flash:** the block is `INVISIBLE`; on a server the letter only exists client-side **one round-trip** after
+  placement, so until then the block draws nothing = see-through. (Only client-side prediction removes that.)
+
+**Done — Part A: prewarm (kills the lag; shrinks the flash to one round-trip). 3 files, build-green, deployed, NOT in-game tested:**
+- **`ArabicLetterBlockEntityRenderer.prewarm(letter, colour)`** — warms all 4 contextual forms via the existing
+  `textureFor` (so already-built / in-flight keys are no-ops; cold keys build off-thread NOW, before placement).
+- New **`client/render/ArabicPrewarm.java`** — each client tick, warms the tiles of every Arabic letter item in
+  the player's hotbar + offhand. Idempotent; a handful of cache-map lookups once warm.
+- **`CustomBlocksClient`** registers it as a second `END_CLIENT_TICK` handler (beside `HudHoverSound::tick`).
+- **Chose NOT to drop the PNG encode/decode** in `build()` (O10 fix-plan item 2's tail): once prewarmed, that
+  cost is paid during idle warm, not at placement — so removing it adds NativeImage colour-order risk for ~0 gain.
+
+**Not built — Part B (client placement prediction, O10 item 4):** stamp the client BE's letter/colour/iso-form
+from the held stack the same tick as the click (mirror of `ClientSwapPredictor`), to remove the residual
+server round-trip flash. Add only if a brief flash still shows after Part A.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass. **NOT in-game tested.**
+
+**Next:** dev loads the deployed jar on the server, holds a letter item, places a lone letter + builds a 5–6
+letter word fast → should appear with no per-letter hitch / slow fill. Report whether any transparent flash
+remains (→ would mean build Part B). Tests in GROUP_13_TESTING_GUIDE §LAG.
+
+## 2026-06-20 (Group 06) — INSTANT colour-Square swaps via client prediction (build-green, awaiting in-game)
+
+Owner: "swapping blocks with colour squares is way too slow, i want it instant." Root cause found, not guessed:
+the swap is already instant on the server (`ColorVariantService.swapPlaced` = one `setBlockState`, no pack
+rebuild) — the lag is purely the **network round-trip**, because the B Square items do nothing on the client and
+wait for the server's block-update packet. The old project felt instant only because its `ColorSquareItem` had an
+`if (world.isClient)` branch that painted the swap locally; B dropped it in the rewrite. **Did not copy it back** —
+built a cleaner version.
+
+**Done (5 files + ADR, build-green, all gates pass — NOT in-game tested):**
+- New **`client/ClientSwapPredictor.java`** — a Fabric `UseBlockCallback` (client-only). On right-click with a
+  Square on a `SlotBlock` it computes the target variant with the **server's own** id math
+  (`ColorVariantService.variantId`/`stripColourSuffix`), looks it up in the synced `ClientSlotCache`, and paints
+  it on the client world the same tick (`setBlockState` with the correct `LIGHT`/glow). Returns `PASS` so the
+  server still does the authoritative swap — the predicted state mirrors it exactly, so reconcile is invisible.
+- New **`item/ColorSwapTool.java`** interface (`swapColourKey(stack)` → colour key or null). Implemented by
+  **`ShapeToolItem`** (Square → red/yellow/green/black) and **`CustomColorToolItem`** (Square → hex_rrggbb);
+  Triangles return null. One shared prediction path for both square types.
+- **`ClientSlotCache.indexForId(...)`** reverse lookup. **`CustomBlocksClient`** registers the predictor.
+- ADR-009 records the decision + why it beats the old in-item branch.
+
+**Premium over old:** shared id math (no client/server drift) · glow-accurate (no relight flash) · predict hits,
+defer misses (no wrong guess; server still sends "make it with the Triangle first") · `PASS`-only so it does NOT
+reintroduce the §7 "client-side skip delay" pitfall · empty-cache → graceful fallback to today's round-trip
+(worst case = current, never worse).
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL; verifyFileSize / verifyMojibake / verifySound pass.
+**NOT in-game tested.**
+
+**Next:** owner builds + loads, then right-clicks a placed block with a colour Square that has an existing
+variant — the block should change with **no visible delay**. Also confirm: swapping to a non-existent variant
+still shows the "create it first" message (no flicker); Black Square with no `_black` variant falls back to the
+base block. Report pass/fail.
+
+## 2026-06-20 (Group 27 §G27.14) — HUD shape backgrounds (pill default) + Templates section (build-green, awaiting in-game)
+
+Built both slices of §G27.14 in order, purely **additive** to the Lego HUD (§G27.4) — existing bricks, drag,
+snap, inspector, presets and the editor menu untouched. Owner decisions this session: **pill everything on
+load** (old configs restyle to pill, not kept flat); **build both slices then one test**; **§ colour codes in
+templates = allowed**.
+
+**Done (9 files, build-green, all gates pass, deployed — NOT in-game tested):**
+- **Slice A — shape backgrounds.** `HudField` gains `bgShape` (PILL/GLOW_BOX/BOX/PLAIN, default **PILL**) +
+  optional per-brick `accentOverride`/`accentColor`, JSON default-safe (missing `bgShape` → PILL = "pill
+  everything"). `HudConfig`/`HudConfigStore` add a global `accentColor` (default `0x5B8DFF`) + reset/save/load.
+  New **`client/hud/HudBgShapes.java`** — pill (per-row rounded-rect span fill + left accent stripe) + glow box
+  (fill + 4-side accent border + top glow strip); kept out of `HudRenderer` to hold the 500-line gate.
+  `HudRenderer.drawBackground` now switches on shape (PLAIN → nothing, BOX → today's flat fill unchanged).
+- **Slice B — Templates.** `HudFieldType` gains a **`TEMPLATE`** brick + `expandTemplate()` — replaces `{token}`
+  with the matching brick's live resolver value (reuses the existing resolvers, no fork); a line that references
+  a block-info token returns null (hides) when not aiming a custom block, so it follows the block-info
+  visibility rule automatically. `HudBrickPalette` shows the **Template** entry in gold.
+- **Inspector** (`HudBrickInspector`): per-brick **Shape** cycle + **Accent ■** colour button (slice A); for a
+  Template brick, a row of **token-insert chips** ({name}{id}{slot}{coords}…{solid}) that append to its text box
+  (slice B). `openPicker` refactored to text/bg/accent.
+
+**Decisions:** no `HudSync` change needed — HUD layout is client-side config (`hud-config-server.json`); template
+tokens resolve from block data already synced in §G27.4 (category/glow/hardness/sound/shape/passable). Per-brick
+accent override is wired + persisted though the tests only require the shape switch. `HudEditorScreen` deliberately
+**not touched** (it sits at 494/500 lines) — the per-brick shape/template controls live in the ⚙ inspector instead.
+
+**Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL in 49s; verifyFileSize / verifyMojibake / verifySound pass;
+remapJar OK. Jar (8,238,749 B) deployed to `%APPDATA%\.minecraft\mods\` + `OneDrive\Desktop\MODS\mods\`
+(customblocks-1.0.0.jar). **NOT in-game tested.**
+
+**Next:** owner replaces the jar with MC **closed**, then `/cb edithud` → run the 5 §G27.14 tests in
+`GROUP_27_TESTING_GUIDE.md` (pill default · shape+accent picker · old HUD loads w/ pill · template `{name} [{id}]`
+tracks the aimed block · token chips insert). Report pass/fail (a screenshot helps).
+
+## 2026-06-20 (Squares recolour auto-join letters + cleaner hotbar) — BUILD-GREEN, awaiting in-game
+
+Two owner-requested fixes (jar built, gates pass, awaiting in-game confirm):
+
+**1 — Coloured Squares now recolour placed AUTO-JOIN Arabic letters** (`item/ShapeToolItem.java`).
+Before, a Square hit `instanceof SlotBlock` → `PASS` on a letter (different block: `ArabicLetterBlock`),
+so it did nothing. Added a letter branch: a Square reads the `ArabicLetterBlockEntity`, sets its colour
+NBT and `sync()`s — **colour ONLY**. No `setBlockState`, no `ArabicJoinFlow` re-run, so FACING / form /
+joins stay exactly as placed (walking 180° around a letter then recolouring can't re-orient or re-join
+it — explicit owner worry). Square colours green/yellow/red/black map 1:1 onto the bundled letter colours;
+the renderer rebuilds the glyph tile per-colour, so the swap is instant (no pack rebuild). Triangles still
+PASS on letters (no slot variant to create). Same-colour click → "§7Already §f<Name>".
+
+**2 — Hotbar tool popups un-branded + cleaner swap line** (`command/Chat.java`, `core/ColorVariantService.java`).
+`Chat.tool` (action-bar only) no longer prepends the `[CB]` tag — owner chose ALL hotbar popups clean
+(chat lines keep `[CB]` via success/error/info/line). Swap success reworded to `§bSwapped to §f<DisplayName>`
+(aqua + clean name e.g. "Repo Green" / "Ba Green", not the raw id), and the already-this-colour line to
+`§7Already §f<DisplayName>`. Letter names come from `ArabicNaming.displayName`.
+
+**Verified:** `gradlew build` green; verifyMojibake / verifySound / verifyFileSize pass; jar at
+`build/libs/customblocks-1.0.0.jar`. **NOT** in-game confirmed yet.
+
+**In-game tests:** (a) Square a placed auto-join letter → recolours instantly, hotbar shows
+"Swapped to <Letter Colour>", no `[CB]`. (b) Place a letter, walk 180° around it, Square it → colour
+changes, direction/joins unchanged. (c) Same colour twice → "Already …". (d) Square a normal CB block →
+"Swapped to <Name>", clean hotbar. (e) Other hotbar popups (chisel/deleter/etc.) show no `[CB]`.
+
 ## 2026-06-20 (Group 15) — AI textures PARKED as PARTIAL; provider pivot to Cloudflare (pending discussion)
 
 Continued from the Group 15 timeout fix (shipped earlier today — AI fetch 60s + retry + WARN log). Tuned the

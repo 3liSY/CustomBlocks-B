@@ -54,6 +54,7 @@ final class HudConfigStore {
         HudConfig.snapEnabled  = bool(o, "snap",         HudConfig.DEF_SNAP);
         HudConfig.bgColor      = num (o, "bgColor",      HudConfig.DEF_BG_COLOR) & 0xFFFFFF;
         HudConfig.bgOpacity    = HudConfig.clamp01((float) dbl(o, "bgOpacity", HudConfig.DEF_BG_OPACITY));
+        HudConfig.accentColor  = num (o, "accent",       HudConfig.DEF_ACCENT) & 0xFFFFFF;
         HudConfig.masterScale  = HudConfig.clampScale((float) dbl(o, "masterScale", HudConfig.DEF_MASTER_SCALE));
         HudConfig.hoverTrigger = num (o, "hoverTrigger", HudConfig.DEF_HOVER_TRIGGER);
         HudConfig.hoverSound   = str (o, "hoverSound",   HudConfig.DEF_HOVER_SOUND);
@@ -107,6 +108,7 @@ final class HudConfigStore {
             o.addProperty("snap",         HudConfig.snapEnabled);
             o.addProperty("bgColor",      HudConfig.bgColor & 0xFFFFFF);
             o.addProperty("bgOpacity",    HudConfig.bgOpacity);
+            o.addProperty("accent",       HudConfig.accentColor & 0xFFFFFF);
             o.addProperty("masterScale",  HudConfig.masterScale);
             o.addProperty("hoverTrigger", HudConfig.hoverTrigger);
             o.addProperty("hoverSound",   HudConfig.hoverSound);

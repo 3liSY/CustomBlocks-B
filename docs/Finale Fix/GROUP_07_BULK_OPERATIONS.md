@@ -294,15 +294,15 @@ bulkduplicate / bulklock / bulkunlock / bulkfavorite / bulkunfavorite / bulksoun
 
 | Test | Description | Result |
 |---|---|---|
-| G07.1 | Bulk property sets glow on category | ⬜ |
-| G07.2 | Bulk operation is undoable as single entry | ⬜ |
-| G07.3 | Confirmation guard fires at threshold | ⬜ |
-| G07.4 | `/cb confirm` executes the operation | ⬜ |
-| G07.5 | Bulk rename adds prefix | ⬜ |
-| G07.6 | Bulk duplicate creates clones | ⬜ |
-| G07.7 | Bulk lock and unlock | ⬜ |
-| G07.8 | Bulk export creates ZIP | ⬜ |
-| G07.9 | Bulk GUI opens | ⬜ |
+| G07.1 | Bulk property sets glow on category | ✅ in-game (2026-06-21) — works; complete rework wanted (see Follow-ups) |
+| G07.2 | Bulk operation is undoable as single entry | ✅ in-game (2026-06-21) |
+| G07.3 | Confirmation guard fires at threshold | ✅ in-game (2026-06-21) — works; rework wanted |
+| G07.4 | `/cb confirm` executes the operation | ✅ in-game (2026-06-21) |
+| G07.5 | Bulk rename adds prefix | ⬜ NOT BUILT |
+| G07.6 | Bulk duplicate creates clones | ⬜ NOT BUILT |
+| G07.7 | Bulk lock and unlock | ⬜ NOT BUILT |
+| G07.8 | Bulk export creates ZIP | ⬜ NOT BUILT |
+| G07.9 | Bulk GUI opens | ✅ in-game (2026-06-21) — works; needs revamp (see Follow-ups) |
 
 **Group 07 passes when all bulk operations work, confirmations fire correctly, and bulk GUI is functional.**
 
@@ -312,6 +312,17 @@ If anything shows ❌ — paste:
 3. Last 20 lines of `latest.log`
 
 ---
+
+## Follow-ups (from in-game test 2026-06-21)
+
+Built slice (G07.1–.4, .9) all pass. Open:
+
+- **G07.1 — bulkproperty complete rework.** Engine works (sets glow on category, batch undo) but
+  developer wants the whole bulkproperty flow redesigned. Scope TBD.
+- **G07.3 — confirm guard rework.** Fires correctly; wants rework (scope TBD).
+- **G07.9 — bulk GUI revamp.** Opens + functions; wants a revamp. Scope TBD.
+- **NOT BUILT (later slices):** G07.5 bulkrename, G07.6 bulkduplicate, G07.7 bulklock/unlock,
+  G07.8 bulkexport — plus bulkmove/reid/recolor(edge)/sound/favorite. `bulkshape` needs Group 08.
 
 ## 💡 Parked idea — `/cb setall <setting> <value>` shorthand (revisit later)
 

@@ -24,6 +24,8 @@ public final class HudField {
     public enum Align { LEFT, CENTER, RIGHT }
     /** Optional cosmetic effect; NONE renders a plain solid-colour line. */
     public enum Effect { NONE, RAINBOW, PULSE, GRADIENT }
+    /** Background shape behind the brick (§G27.14). PLAIN = no background, text only. */
+    public enum BgShape { PILL, GLOW_BOX, BOX, PLAIN }
 
     public HudFieldType type;
     public int     offsetX = 0;
@@ -45,6 +47,11 @@ public final class HudField {
     public int     bgColor    = 0x000000;
     public float   bgOpacity  = 0.4f;
 
+    // Background shape (§G27.14). PILL is the default look; old configs migrate to PILL too.
+    public BgShape bgShape       = BgShape.PILL;
+    public boolean accentOverride= false;   // true → use this brick's accentColor below
+    public int     accentColor   = 0x5B8DFF;// pill stripe / glow-box border (else global default)
+
     // Text payload for CUSTOM_TEXT / HEADER bricks.
     public String  text = "";
 
@@ -55,6 +62,7 @@ public final class HudField {
         this.prefix = type.suggestedPrefix();
         if (type == HudFieldType.HEADER) { this.bold = true; this.text = "Header"; }
         if (type == HudFieldType.CUSTOM_TEXT) this.text = "Text";
+        if (type == HudFieldType.TEMPLATE) this.text = "{name}";
     }
 
     public HudField(HudFieldType type, int offsetX, int offsetY, Anchor anchor, float size) {
@@ -73,6 +81,7 @@ public final class HudField {
         f.visible = visible; f.size = size; f.color = color; f.bold = bold; f.shadow = shadow;
         f.prefix = prefix; f.align = align; f.effect = effect;
         f.bgOverride = bgOverride; f.bgOff = bgOff; f.bgColor = bgColor; f.bgOpacity = bgOpacity;
+        f.bgShape = bgShape; f.accentOverride = accentOverride; f.accentColor = accentColor;
         f.text = text;
         return f;
     }
@@ -97,6 +106,9 @@ public final class HudField {
         o.addProperty("bgOff",   bgOff);
         o.addProperty("bgColor", bgColor & 0xFFFFFF);
         o.addProperty("bgOpac",  bgOpacity);
+        o.addProperty("bgShape", bgShape.name());
+        o.addProperty("accOver", accentOverride);
+        o.addProperty("accent",  accentColor & 0xFFFFFF);
         o.addProperty("text",    text);
         return o;
     }
@@ -119,6 +131,10 @@ public final class HudField {
         f.bgOff     = bool(o, "bgOff", false);
         f.bgColor   = num(o, "bgColor", 0x000000) & 0xFFFFFF;
         f.bgOpacity = clamp01((float) dbl(o, "bgOpac", 0.4));
+        // Missing bgShape (old config) → PILL: dev chose "pill everything on load" (§G27.14).
+        f.bgShape   = bgShapeOf(str(o, "bgShape", "PILL"));
+        f.accentOverride = bool(o, "accOver", false);
+        f.accentColor    = num(o, "accent", 0x5B8DFF) & 0xFFFFFF;
         f.text      = str(o, "text", "");
         return f;
     }
@@ -126,9 +142,10 @@ public final class HudField {
     public static float clampSize(float s) { return Math.max(0.5f, Math.min(3.0f, s)); }
     public static float clamp01(float v)    { return Math.max(0f, Math.min(1f, v)); }
 
-    private static Anchor anchorOf(String s) { try { return Anchor.valueOf(s); } catch (Exception e) { return Anchor.TL; } }
-    private static Align  alignOf(String s)  { try { return Align.valueOf(s);  } catch (Exception e) { return Align.LEFT; } }
-    private static Effect effectOf(String s) { try { return Effect.valueOf(s); } catch (Exception e) { return Effect.NONE; } }
+    private static Anchor  anchorOf(String s)  { try { return Anchor.valueOf(s);  } catch (Exception e) { return Anchor.TL; } }
+    private static Align   alignOf(String s)   { try { return Align.valueOf(s);   } catch (Exception e) { return Align.LEFT; } }
+    private static Effect  effectOf(String s)  { try { return Effect.valueOf(s);  } catch (Exception e) { return Effect.NONE; } }
+    private static BgShape bgShapeOf(String s) { try { return BgShape.valueOf(s); } catch (Exception e) { return BgShape.PILL; } }
 
     private static String  str (JsonObject o, String k, String def)  { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsString()  : def; }
     private static int     num (JsonObject o, String k, int def)     { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt()     : def; }

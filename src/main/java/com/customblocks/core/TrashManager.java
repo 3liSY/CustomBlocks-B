@@ -100,7 +100,7 @@ public final class TrashManager {
             }
         } catch (Exception e) {
             // A failed trash capture must NOT break the delete — just log it.
-            IncidentRecorder.record("Trash capture failed for \"" + d.customId() + "\"", e);
+            IncidentRecorder.record("Trash capture failed for \"" + d.customId() + "\"", d.customId(), null, e);
         }
     }
 

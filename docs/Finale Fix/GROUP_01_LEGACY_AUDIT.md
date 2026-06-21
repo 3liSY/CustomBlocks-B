@@ -153,10 +153,10 @@ Developer reviews the full audit output and confirms:
 
 | Test | Description | Result |
 |---|---|---|
-| G01.1 | Audit table — all 150+ commands accounted for | ⬜ |
-| G01.2 | GUI workflow gaps identified | ⬜ |
-| G01.3 | Config field coverage complete | ⬜ |
-| G01.4 | Developer sign-off granted | ⬜ |
+| G01.1 | Audit table — all 150+ commands accounted for | ✅ (153 rows, no blanks) |
+| G01.2 | GUI workflow gaps identified | ✅ |
+| G01.3 | Config field coverage complete | ✅ (1 intentional drop: `voiceMode`) |
+| G01.4 | Developer sign-off granted | ✅ approved 2026-06-21 |
 
 **Group 01 passes only when the developer explicitly approves the audit output. No other group may begin implementation until G01.4 is ✅.**
 

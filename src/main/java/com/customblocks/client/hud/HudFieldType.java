@@ -16,6 +16,8 @@
 package com.customblocks.client.hud;
 
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public enum HudFieldType {
 
@@ -35,7 +37,8 @@ public enum HudFieldType {
     HARDNESS    ("hardness",  "Hardness",          Family.BLOCK_INFO, true,  "Hardness "),
     SOUND       ("sound",     "Sound type",        Family.BLOCK_INFO, true,  "Sound "),
     SHAPE       ("shape",     "Shape",             Family.BLOCK_INFO, true,  "Shape "),
-    SOLID       ("solid",     "Solid / passable",  Family.BLOCK_INFO, true,  "");
+    SOLID       ("solid",     "Solid / passable",  Family.BLOCK_INFO, true,  ""),
+    TEMPLATE    ("template",  "Template",          Family.WORLD,      false, "");
 
     /** Visibility family — controls when a brick is allowed to render. */
     public enum Family { BLOCK_INFO, WORLD }
@@ -61,13 +64,19 @@ public enum HudFieldType {
     public String suggestedPrefix(){ return suggestedPrefix; }
 
     /** True for the static, user-authored bricks whose text comes from the brick itself. */
-    public boolean isText()    { return this == CUSTOM_TEXT || this == HEADER; }
+    public boolean isText()    { return this == CUSTOM_TEXT || this == HEADER || this == TEMPLATE; }
     /** True for the rule-line brick that the renderer draws as a divider, not text. */
     public boolean isDivider() { return this == DIVIDER; }
 
     public static HudFieldType fromKey(String key) {
         for (HudFieldType t : values()) if (t.key.equals(key)) return t;
         return BLOCK_ID;
+    }
+
+    /** Like fromKey but returns null for an unknown key (used by the template token expander). */
+    public static HudFieldType fromKeyOrNull(String key) {
+        for (HudFieldType t : values()) if (t.key.equals(key)) return t;
+        return null;
     }
 
     /**
@@ -93,7 +102,38 @@ public enum HudFieldType {
             case SOUND        -> isBlank(c.sound()) ? "stone" : c.sound();
             case SHAPE        -> isBlank(c.shape()) ? "full" : c.shape();
             case SOLID        -> c.passable() ? "Passable" : "Solid";
+            case TEMPLATE     -> expandTemplate(text, c);
         };
+    }
+
+    private static final Pattern TOKEN = Pattern.compile("\\{(\\w+)}");
+
+    /**
+     * Expand a Template brick's text: replace each {key} with the matching brick's resolved value,
+     * keeping the literal words around it. Reuses the per-type resolvers (no fork). Returns null
+     * (line hidden) when the line needs a custom-block token but the crosshair isn't on one — so a
+     * template follows the block-info visibility rule only when it actually references block data.
+     * Unknown tokens are left literal. § colour codes inside the text are kept (dev: allow).
+     */
+    public static String expandTemplate(String text, Ctx c) {
+        if (text == null || text.isEmpty()) return null;
+        Matcher m = TOKEN.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        while (m.find()) {
+            HudFieldType t = fromKeyOrNull(m.group(1).toLowerCase(Locale.ROOT));
+            String rep;
+            if (t == null || t == TEMPLATE) {
+                rep = m.group(0);                       // unknown / self-reference: leave literal
+            } else {
+                if (t.family == Family.BLOCK_INFO && !c.hasBlock()) return null;  // needs a block, none aimed
+                String v = t.resolve(c, "");
+                rep = v == null ? "" : v;
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(rep));
+        }
+        m.appendTail(sb);
+        String out = sb.toString();
+        return out.isBlank() ? null : out;
     }
 
     private static String emptyToNull(String s) { return (s == null || s.isEmpty()) ? null : s; }

@@ -212,7 +212,8 @@ public final class GradientPickerMenu {
                                     + String.join(", ", made) + "§r. §7One /cb undo removes them all.");
                 });
             } catch (Exception e) {
-                com.customblocks.core.IncidentRecorder.record("Gradient picker failed", e);
+                com.customblocks.core.IncidentRecorder.record("Gradient picker failed",
+                        null, player.getName().getString(), e);
                 server.execute(() -> com.customblocks.command.Chat.error(player.getCommandSource(),
                         "Couldn't build that gradient."));
             }

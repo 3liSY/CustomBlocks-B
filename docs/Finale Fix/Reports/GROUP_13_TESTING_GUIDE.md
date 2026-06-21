@@ -11,9 +11,9 @@
 
 | | |
 |---|---|
-| **Verdict** | ✅ Round 3 **6 / 6** · auto-join complete · **Build A ✅ · Build B ✅** (chunk-load deadlock fixed, confirmed in-game). Static letters fully retired. Remaining: Hide (§13) · Type-a-word (§14) — 🟡 **deferred, low priority** (not urgent). |
-| **Progress** | 🟩🟩🟩🟩🟩🟩 · Round 3: 6 / 6 passed · Build A + B ✅ |
-| **Last tested** | 2026-06-20 (§15B Build B — static letters retired, world loads clean) |
+| **Verdict** | ✅ Round 3 **6 / 6** · auto-join complete · **Build A ✅ · Build B ✅** (chunk-load deadlock fixed, confirmed in-game). Static letters fully retired. ✅ **Two server-only bugs FIXED + CONFIRMED on the server (2026-06-20):** §LAG placement transparent flash + §16 slow recolour — client prediction works (instant, no flash). Remaining: Hide (§13) · Type-a-word (§14) — 🟡 **deferred, low priority** (not urgent). |
+| **Progress** | 🟩🟩🟩🟩🟩🟩 · Round 3: 6 / 6 passed · Build A + B ✅ · §LAG ✅ · §16 ✅ |
+| **Last tested** | 2026-06-20 (§LAG flash ✅ + §16 recolour ✅ — both confirmed on the server) |
 | **Jar** | 1.0.0 |
 | **Tester** | — |
 
@@ -23,6 +23,8 @@
 
 | | What | § |
 |:--:|---|:--:|
+| ✅ **PASSED 2026-06-20** | **Recolour a placed auto-join letter** — was slow on the server; client prediction + target-colour prewarm (`ClientArabicRecolorPredictor` + `ArabicPrewarm`). Now instant on the server. | §16 |
+| ✅ **PASSED 2026-06-20** | **Placement transparent flash** — was flashing on the server; **Part B client placement prediction** (`ArabicLetterBlock.onPlaced`). Now appears instantly. | §LAG |
 | ✅ **Confirmed 2026-06-18** | No-reload proof block — picture changes on click with NO resource-pack reload. PASSED — auto-join texture path proven. | §P |
 | ✅ **PASSED — PERFECT** | Text/word stroke — outline 10 (Eng) / 12 (Arabic + numbers); 1-char full, long words solid. | §0 |
 | ✅ **Confirmed 2026-06-19** | Render preview — live preview screen: real word in your colours, 3D rotatable block, no pack/prompt/world-block | §1 |
@@ -46,6 +48,59 @@
 
 # 🎯 Test now
 
+## §16 · Recolour placed auto-join letters with the Squares  ✅ PASSED 2026-06-20
+
+> 💡 **What changed:** the coloured **Squares** now recolour a placed **auto-join** letter to their colour —
+> the same way they swap colours on normal custom blocks. Before, a Square did nothing on a letter.
+> **Colour only** — it never re-orients the letter or breaks its joins (design + why → `GROUP_13_ARABIC.md`
+> → **O11**). No resource-pack reload.
+>
+> 🔧 **Status:** 🎯 **prediction BUILT, build-green — re-test on the server (2026-06-20).** Both server-only
+> causes are now addressed: **(1)** a new client predictor (`ClientArabicRecolorPredictor`, ADR-009 pattern)
+> paints the new colour on the client the same tick as the click — no round-trip wait; **(2)** the target
+> colour's tiles are prewarmed (own glyph + back-face partner) when you look at the letter holding a Square
+> (`ArabicPrewarm`), so there's no tile rebuild stall. Architecture unchanged (owner: keep auto-join, add
+> prediction). Detail → `GROUP_13_ARABIC.md` → **O11**. **Test:** on the dedicated server it should now feel
+> **as instant as recolouring a normal block.** The colour-only / joins-survive checks below still apply.
+
+🧰 Get a letter + the Squares: `/cb arabic letter ba` · `/cb square` (or the Squares from `/cb` → Magic Items).
+
+① **Recolour a letter** 🔴 — place a `ba`, right-click it with the **Green Square**
+   ✅ glyph background turns green **instantly** (no reload); hotbar reads `Swapped to Ba Green` (no `[CB]`).
+   ❌ nothing happens, or it needs a pack reload / flashes.
+
+② **Direction is NOT touched** 🔴 — place a letter, **walk 180° around it**, then Green-Square it
+   ✅ only the colour changes — the letter keeps its facing and stays joined to its row exactly as before.
+   ❌ the letter re-orients, flips, or breaks/relinks its join → **report immediately** (this is the bug to catch).
+
+③ **All four colours** 🟡 — Square it with Yellow, then Red, then Black
+   ✅ each swaps the colour instantly; hotbar names the colour (`Ba Yellow` / `Ba Red` / `Ba Black`).
+
+④ **Already-that-colour** 🟡 — Square it again with the colour it already is
+   ✅ hotbar reads `Already Ba <Colour>`; nothing changes.
+
+⑤ **Joined word keeps joining** 🔴 — build a 3-letter row, recolour the middle letter a different colour
+   ✅ the row stays connected (initial / medial / final unchanged); only that block's colour differs.
+
+⑥ **Triangle does nothing** 🟡 — right-click a letter with a **Triangle**
+   ✅ nothing happens (Triangles only create SlotBlock variants; correct to ignore letters).
+
+📋 **Scorecard**
+
+| ✓ | # | Proves |
+|:--:|:--:|---|
+| ✅ | ① | Square recolours a placed letter instantly, clean hotbar line |
+| ✅ | ② | recolour is colour-only — facing/joins survive walking around it |
+| ✅ | ③ | all four Square colours work |
+| ✅ | ④ | same-colour click → "Already …", no change |
+| ✅ | ⑤ | recolouring one letter in a word keeps the word joined |
+| ✅ | ⑥ | Triangle correctly ignores letters |
+| — | **6 / 6 ✅ confirmed 2026-06-20 (server)** | |
+
+↩️ **Undo:** Square it back to its original colour (recolour is reversible — no registry change).
+
+---
+
 ## §15 · Retire static letters → ONE system  (Build A, 2026-06-19)
 
 > 💡 **What changed:** the old static letter blocks are being retired so auto-join is the **only** letter
@@ -56,10 +111,10 @@
 
 **Test (Build A):**
 - ✅ `/cb arabic letter jeem` → gives an **auto-join** jeem (place a few right-to-left → they connect). **CONFIRMED 2026-06-19.**
-- ⬜ `/cb arabic letter jeem red 3` → gives **3 red** auto-join jeem (colour + count both work).
-- ⬜ `/cb arabic join …` → **command no longer exists** (it was a duplicate of `letter`).
+- ✅ `/cb arabic letter jeem red 3` → gives **3 red** auto-join jeem (colour + count both work). **CONFIRMED 2026-06-21.**
+- ✅ `/cb arabic join …` → **command no longer exists** (it was a duplicate of `letter`). **CONFIRMED 2026-06-21.**
 - ✅ Creative inventory → the tab is now named **"Arabic Letters"** (was "Arabic Letters (Join)"). **CONFIRMED 2026-06-19.**
-- ⬜ **Numbers still work:** `/cb arabic list` → Arabic Numbers / English Numbers sections still give number blocks.
+- ✅ **Numbers still work:** `/cb arabic list` → Arabic Numbers / English Numbers sections still give number blocks. **CONFIRMED 2026-06-21.**
 
 > 🟡 **Known + expected (→ Build B):** the creative **search** still shows the OLD static letter blocks
 > (owner: "the 5 on the left" — the old per-letter static entries). Build A only stops *creating* them and
@@ -350,6 +405,30 @@
 - ⬜ **Collision:** build aimed into an existing block → stops before it, message "placed N", nothing overwritten.
 - ⬜ **Undo:** `/cb arabic undo` removes the last word in one step; works again after a relog/restart; a
   block you broke by hand is left alone.
+
+---
+
+## §LAG · Placement lag + transparent flash on a server  ✅ PASSED 2026-06-20
+
+> 💡 **Symptom (dev, on a server):** placing auto-join letters **lags** and the block **flashes transparent**
+> for a moment before the glyph shows; "a bit buggy."
+>
+> 🔧 **Status:** 🎯 **Part B (client placement prediction) BUILT, build-green — re-test on the server
+> (2026-06-20).** The residual flash was the **network round-trip** — the client only learned the letter
+> *after* the place packet returned, and the INVISIBLE block drew nothing in that gap. Fix: `ArabicLetterBlock.onPlaced`
+> now stamps the held letter/colour/form onto the client's predicted BlockEntity and runs the same join flow
+> on the client, so the glyph draws the very tick the block is placed (server's authoritative sync reconciles
+> identically). Architecture unchanged (owner: keep auto-join live-texture, add prediction — NOT converted to
+> slots). Root cause + plan → `GROUP_13_ARABIC.md` → **O10**. **Test:** place a lone letter on the server →
+> it should appear **immediately**, no transparent gap.
+
+**Tests:** ✅ **all confirmed 2026-06-20 on the server.**
+- ✅ **Lone letter, server:** place a single letter → appears immediately, no transparent gap.
+- ✅ **No hitch:** a fresh letter/colour → no frame freeze / stutter when it appears.
+- ✅ **Build a word fast:** place 5–6 in a quick row → smooth, no per-letter hitch.
+- ✅ **Reconnect:** relog → all placed letters render (no transparent ones).
+
+> ⚠️ **Tell me:** any letter still flashing transparent, or a stutter when a new letter first shows → send `latest.log` + your ping.
 
 ---
 

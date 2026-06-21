@@ -1,7 +1,10 @@
 # ADR-008: Hybrid rendering — atlas everywhere + own-texture renderer for the world close-up
 
 Date: 2026-06-19
-Status: Accepted
+Status: **Superseded in part by ADR-011 (2026-06-20).** The owner reversed Decision §5 ("reject full Path B")
+and the §1/§3 reliance on the atlas + LOD fallback: the new direction is **full off-atlas for ALL custom
+blocks, including the hand/inventory icon** ("no atlas, forever"). The 512px own-texture mechanism (§2) and
+the engine facts in Context still hold and carry into ADR-011.
 
 > Builds on **ADR-007** (which still holds for the atlas layer). Decided with the owner on 2026-06-19
 > after reviewing in-game-style mockups (`cb_mockups/1_quality_current_vs_pathB.png`,

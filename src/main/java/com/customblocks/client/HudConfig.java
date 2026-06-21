@@ -35,6 +35,7 @@ public final class HudConfig {
     public static final boolean DEF_SNAP         = true;
     public static final int     DEF_BG_COLOR     = 0x000000;
     public static final float   DEF_BG_OPACITY   = 0.4f;
+    public static final int     DEF_ACCENT       = 0x5B8DFF;   // §G27.14 pill stripe / glow border
     public static final float   DEF_MASTER_SCALE = 1.0f;
     public static final int     DEF_HOVER_TRIGGER= 0;        // 0 = none, 1 = custom only, 2 = any
     public static final String  DEF_HOVER_SOUND  = "none";
@@ -50,6 +51,8 @@ public final class HudConfig {
     public static int     bgColor      = DEF_BG_COLOR;
     /** Global default background opacity (0..1; 0 = none). */
     public static float   bgOpacity    = DEF_BG_OPACITY;
+    /** Global default accent colour (0xRRGGBB) for un-overridden pill stripes / glow borders. */
+    public static int     accentColor  = DEF_ACCENT;
     /** Master scale multiplier applied on top of each brick's own size. */
     public static float   masterScale  = DEF_MASTER_SCALE;
     /** Hover-sound trigger (0 none / 1 custom only / 2 any block). */
@@ -80,6 +83,7 @@ public final class HudConfig {
         snapEnabled = DEF_SNAP;
         bgColor     = DEF_BG_COLOR;
         bgOpacity   = DEF_BG_OPACITY;
+        accentColor = DEF_ACCENT;
         masterScale = DEF_MASTER_SCALE;
         setFields(defaultFields());
     }

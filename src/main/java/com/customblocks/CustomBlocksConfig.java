@@ -10,25 +10,7 @@
  */
 package com.customblocks;
 
-import com.customblocks.image.BackgroundRemover;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
-
 public final class CustomBlocksConfig {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger("CustomBlocks");
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final String CONFIG_DIR = "config/customblocks";
-    private static final String CONFIG_FILE = "config.json";
 
     // ── Phase 1 ──────────────────────────────────────────────────────────────
 
@@ -71,6 +53,12 @@ public final class CustomBlocksConfig {
     /** Auto-accept the resource-pack prompt so textures apply with no dialog (default true; false shows
      *  the vanilla "download pack?" dialog). Server-forced packs always prompt — a Minecraft limitation. */
     public static volatile boolean silentPack = true;
+
+    // ── Group 14 / Phase 1c — off-atlas background ───────────────────────────
+
+    /** Off-atlas blocks: when false (default) transparent/letterbox pixels render solid BLACK; when true
+     *  they stay see-through. Client-side visual; pushed to clients on join + on /cb config transparent. */
+    public static volatile boolean transparentBackground = false;
 
     // ── Group 04 — chat & command communication ──────────────────────────────
 
@@ -174,105 +162,49 @@ public final class CustomBlocksConfig {
     public static volatile String arabicFormMid = "Mid";
     public static volatile String arabicFormFin = "Fin";
 
+    // ── Group 16 / Slice 4 — per-category particle effects ───────────────────
+    /** The FX category keys, shared by the particle toggles (slice 4) and the sound toggles (slice 5). */
+    public static final String[] FX_CATEGORIES = {
+        "success", "error", "gui", "selection", "bulk_complete", "achievement"
+    };
+
+    /** Per-category particle-effect enable flags (default all on). Toggle via /cb particles <cat> on|off. */
+    public static final java.util.Map<String, Boolean> particlesEnabled = new java.util.concurrent.ConcurrentHashMap<>();
+    static {
+        for (String c : FX_CATEGORIES) particlesEnabled.put(c, true);
+    }
+
+    /** True if particle FX for {@code category} are enabled (unknown category → false). */
+    public static boolean particlesOn(String category) {
+        return category != null && Boolean.TRUE.equals(particlesEnabled.get(category));
+    }
+
+    // ── Group 16 / Slice 5 — per-category event sounds (merged with particles) ──
+    /** Per-category event-sound enable flags (default all on). Toggle via /cb sounds <cat> on|off. */
+    public static final java.util.Map<String, Boolean> soundsEnabled = new java.util.concurrent.ConcurrentHashMap<>();
+    static {
+        for (String c : FX_CATEGORIES) soundsEnabled.put(c, true);
+    }
+
+    /** True if the event sound for {@code category} is enabled (unknown category → false). */
+    public static boolean soundsOn(String category) {
+        return category != null && Boolean.TRUE.equals(soundsEnabled.get(category));
+    }
+
+    /** Whether {@code c} is one of {@link #FX_CATEGORIES}. */
+    public static boolean isFxCategory(String c) {
+        if (c == null) return false;
+        for (String k : FX_CATEGORIES) if (k.equals(c)) return true;
+        return false;
+    }
+
     private CustomBlocksConfig() {} // static-only
 
-    /** Load config from disk, writing defaults if the file is missing. */
-    public static void load() {
-        Path dir = Path.of(CONFIG_DIR);
-        Path file = dir.resolve(CONFIG_FILE);
-        try {
-            Files.createDirectories(dir);
-            if (!Files.exists(file)) {
-                save();
-                LOGGER.info("[CustomBlocks] Created default config at {}", file);
-                return;
-            }
-            String json = Files.readString(file, StandardCharsets.UTF_8);
-            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-            maxSlots        = clamp(getInt(root, "maxSlots", maxSlots), 1, 8192);
-            httpPort        = clamp(getInt(root, "httpPort", httpPort), 1, 65535);
-            textureSize     = sanitizeTextureSize(getInt(root, "textureSize", textureSize)); // pow2, ≤256 (atlas mipmap safety)
-            httpHost        = getString(root, "httpHost", httpHost);
-            maxUndoDepth    = clamp(getInt(root, "maxUndoDepth", maxUndoDepth), 1, 1000);
-            String m        = getString(root, "undoMode", undoMode);
-            undoMode        = ("per_player".equals(m) || "global".equals(m)) ? m : "global";
-            hudEnabled      = getBool(root, "hudEnabled", hudEnabled);
-            silentPack      = getBool(root, "silentPack", silentPack);
-            didYouMean      = normalizeDidYouMean(getString(root, "didYouMean", didYouMean));
-            aiApiKey        = getString(root, "aiApiKey", aiApiKey);
-            aiTextureEnabled = getBool(root, "aiTextureEnabled", aiTextureEnabled);
-            aiTextureStyle  = getString(root, "aiTextureStyle", aiTextureStyle);
-            vaultEndpoint   = getString(root, "vaultEndpoint", vaultEndpoint);
-            discordWebhookUrl = getString(root, "discordWebhookUrl", discordWebhookUrl);
-            backgroundMode  = BackgroundRemover.normalize(getString(root, "backgroundMode", backgroundMode));
-            backgroundTolerance = clamp(getInt(root, "backgroundTolerance", backgroundTolerance), 0, 100);
-            triangleRedHex    = normalizeHexColor(getString(root, "triangleRedHex",    triangleRedHex),    triangleRedHex);
-            triangleYellowHex = normalizeHexColor(getString(root, "triangleYellowHex", triangleYellowHex), triangleYellowHex);
-            triangleGreenHex  = normalizeHexColor(getString(root, "triangleGreenHex",  triangleGreenHex),  triangleGreenHex);
-            triangleBlackHex  = normalizeHexColor(getString(root, "triangleBlackHex",  triangleBlackHex),  triangleBlackHex);
-            bulkConfirmThreshold = clamp(getInt(root, "bulkConfirmThreshold", bulkConfirmThreshold), 1, 100000);
-            autoBackupInterval  = clamp(getInt(root, "autoBackupInterval", autoBackupInterval), 0, 10080); // 0..1 week
-            autoBackupKeepCount = clamp(getInt(root, "autoBackupKeepCount", autoBackupKeepCount), 0, 1000);
-            trashRetentionDays  = clamp(getInt(root, "trashRetentionDays", trashRetentionDays), 0, 3650);
-            autoCategorizeEnabled = getBool(root, "autoCategorizeEnabled", autoCategorizeEnabled);
-            mirrorNamedTextures = getBool(root, "mirrorNamedTextures", mirrorNamedTextures);
-            arabicDefaultBgHex     = normalizeHexColor(getString(root, "arabicDefaultBgHex",     arabicDefaultBgHex),     arabicDefaultBgHex);
-            arabicDefaultLetterHex = normalizeHexColor(getString(root, "arabicDefaultLetterHex", arabicDefaultLetterHex), arabicDefaultLetterHex);
-            arabicFormIni = getString(root, "arabicFormIni", arabicFormIni);
-            arabicFormMid = getString(root, "arabicFormMid", arabicFormMid);
-            arabicFormFin = getString(root, "arabicFormFin", arabicFormFin);
-            LOGGER.info("[CustomBlocks] Config loaded: maxSlots={}, httpPort={}, textureSize={}, hudEnabled={}",
-                    maxSlots, httpPort, textureSize, hudEnabled);
-        } catch (Exception e) {
-            LOGGER.error("[CustomBlocks] Failed to load config, using defaults", e);
-        }
-    }
+    /** Load config from disk (delegates to {@link CustomBlocksConfigStore}). */
+    public static void load() { CustomBlocksConfigStore.load(); }
 
-    /** Save current config to disk via an atomic temp-file + move. */
-    public static void save() {
-        Path dir = Path.of(CONFIG_DIR);
-        Path file = dir.resolve(CONFIG_FILE);
-        try {
-            Files.createDirectories(dir);
-            JsonObject root = new JsonObject();
-            root.addProperty("maxSlots",          maxSlots);
-            root.addProperty("httpPort",           httpPort);
-            root.addProperty("textureSize",        textureSize);
-            root.addProperty("httpHost",           httpHost);
-            root.addProperty("maxUndoDepth",       maxUndoDepth);
-            root.addProperty("undoMode",           undoMode);
-            root.addProperty("hudEnabled",         hudEnabled);
-            root.addProperty("silentPack",         silentPack);
-            root.addProperty("didYouMean",         didYouMean);
-            root.addProperty("aiApiKey",           aiApiKey);
-            root.addProperty("aiTextureEnabled",   aiTextureEnabled);
-            root.addProperty("aiTextureStyle",     aiTextureStyle);
-            root.addProperty("vaultEndpoint",      vaultEndpoint);
-            root.addProperty("discordWebhookUrl",  discordWebhookUrl);
-            root.addProperty("backgroundMode",     backgroundMode);
-            root.addProperty("backgroundTolerance", backgroundTolerance);
-            root.addProperty("triangleRedHex",     triangleRedHex);
-            root.addProperty("triangleYellowHex",  triangleYellowHex);
-            root.addProperty("triangleGreenHex",   triangleGreenHex);
-            root.addProperty("triangleBlackHex",   triangleBlackHex);
-            root.addProperty("bulkConfirmThreshold", bulkConfirmThreshold);
-            root.addProperty("autoBackupInterval",  autoBackupInterval);
-            root.addProperty("autoBackupKeepCount", autoBackupKeepCount);
-            root.addProperty("trashRetentionDays",  trashRetentionDays);
-            root.addProperty("autoCategorizeEnabled", autoCategorizeEnabled);
-            root.addProperty("mirrorNamedTextures", mirrorNamedTextures);
-            root.addProperty("arabicDefaultBgHex",     arabicDefaultBgHex);
-            root.addProperty("arabicDefaultLetterHex", arabicDefaultLetterHex);
-            root.addProperty("arabicFormIni", arabicFormIni);
-            root.addProperty("arabicFormMid", arabicFormMid);
-            root.addProperty("arabicFormFin", arabicFormFin);
-            Path tmp = dir.resolve(CONFIG_FILE + ".tmp");
-            Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-        } catch (Exception e) {
-            LOGGER.error("[CustomBlocks] Failed to save config", e);
-        }
-    }
+    /** Save config to disk (delegates to {@link CustomBlocksConfigStore}). */
+    public static void save() { CustomBlocksConfigStore.save(); }
 
     /**
      * Validate a "#RRGGBB" hex colour (a missing "#" is tolerated and added). Returns the
@@ -292,9 +224,4 @@ public final class CustomBlocksConfig {
         String v = raw.trim().toLowerCase(java.util.Locale.ROOT);
         return ("always".equals(v) || "off".equals(v)) ? v : "smart";
     }
-
-    private static int    getInt   (JsonObject o, String k, int    d) { return o.has(k) ? o.get(k).getAsInt()     : d; }
-    private static String getString(JsonObject o, String k, String d) { return o.has(k) ? o.get(k).getAsString()  : d; }
-    private static boolean getBool (JsonObject o, String k, boolean d){ return o.has(k) ? o.get(k).getAsBoolean() : d; }
-    private static int    clamp    (int v, int min, int max)          { return Math.max(min, Math.min(max, v)); }
 }

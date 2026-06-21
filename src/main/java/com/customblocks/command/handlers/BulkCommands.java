@@ -26,6 +26,7 @@ import com.customblocks.block.SlotLighting;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockNotesManager;
 import com.customblocks.core.BulkScope;
+import com.customblocks.core.FeedbackFx;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -210,6 +211,7 @@ public final class BulkCommands {
                 .append(Text.literal(" §a✔"));
         if (locked > 0) msg.append(Text.literal("  §8" + locked + " locked"));
         Chat.line(src, msg);
+        FeedbackFx.fire(src, "bulk_complete");
     }
 
 
@@ -278,6 +280,7 @@ public final class BulkCommands {
                 .append(Text.literal(" §a✔"));
         if (locked > 0) msg.append(Text.literal("  §8" + locked + " locked"));
         Chat.line(src, msg);
+        FeedbackFx.fire(src, "bulk_complete");
     }
 
     // ── Bulk rename (prefix / suffix / replace — display name only, no pack rebuild) ──
@@ -356,6 +359,7 @@ public final class BulkCommands {
                 .append(Text.literal(" §a✔"));
         if (locked > 0) msg.append(Text.literal("  §8" + locked + " locked"));
         Chat.line(src, msg);
+        FeedbackFx.fire(src, "bulk_complete");
     }
 
     private static String renameWhat(String mode, String a, String b) {

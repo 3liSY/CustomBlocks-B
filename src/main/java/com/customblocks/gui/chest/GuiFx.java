@@ -12,6 +12,8 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.core.ParticleFx;
+import com.customblocks.core.SoundFx;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.sound.SoundEvents;
 
@@ -24,14 +26,16 @@ public final class GuiFx {
         p.playSound(SoundEvents.ITEM_BOOK_PAGE_TURN, 0.7f, 1.0f);
     }
 
-    /** A tile was clicked / a choice cycled — light chime. */
+    /** A tile was clicked / a choice cycled — light chime + glyphs (gated by the gui category). */
     public static void click(ServerPlayerEntity p) {
-        p.playSound(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, 0.6f, 1.25f);
+        SoundFx.play(p, "gui");
+        ParticleFx.play(p, "gui");
     }
 
-    /** A picker choice landed — slightly lower chime so it reads as "set". */
+    /** A picker choice landed — lower chime + sparkle (gated by the selection category). */
     public static void select(ServerPlayerEntity p) {
-        p.playSound(SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, 0.7f, 1.0f);
+        SoundFx.play(p, "selection");
+        ParticleFx.play(p, "selection");
     }
 
     /** A non-destructive action was kicked off — XP orb blip. */

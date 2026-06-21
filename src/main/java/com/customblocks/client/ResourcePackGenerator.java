@@ -105,9 +105,10 @@ public final class ResourcePackGenerator {
                     .thenRun(() -> client.execute(() -> {
                         reloadInFlight.set(false);
                         lastAppliedHash = hash;
-                        // Group 14 Phase 1b: the strips just changed on disk — drop the off-atlas anim
-                        // textures so placed animated blocks re-read the fresh strip on the next frame.
+                        // Group 14 Phase 1b/1c: the textures just changed on disk — drop the off-atlas
+                        // anim AND static caches so placed blocks re-read the fresh image next frame.
                         com.customblocks.client.render.AnimFrameCache.clear();
+                        com.customblocks.client.render.StaticFrameCache.clear();
                         CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack applied (hash {}).", hash);
                         if (hasPending) {
                             hasPending = false;

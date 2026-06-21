@@ -12,7 +12,6 @@ package com.customblocks.command.handlers;
 
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
-import com.customblocks.core.BlockNotesManager;
 import com.customblocks.core.IncidentRecorder;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
@@ -60,10 +59,7 @@ public final class CreationCommands {
                                                 StringArgumentType.getString(ctx, "name"),
                                                 StringArgumentType.getString(ctx, "url").trim()))))));
 
-        root.then(CommandManager.literal("delete")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> delete(ctx, id(ctx)))));
+        // delete lives in DeleteCommands (Group 17 slice 3) — split out for /cb delete # + size cap.
 
         root.then(CommandManager.literal("rename")
                 .then(CommandManager.argument("id", StringArgumentType.word())
@@ -200,36 +196,14 @@ public final class CreationCommands {
                 });
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Create-with-texture failed for \"" + id + "\" (by "
-                        + src.getName() + ", url: " + url + ")", e);
+                IncidentRecorder.record("Create-with-texture failed for \"" + id + "\" (url: " + url + ")",
+                        id, src.getName(), e);
                 server.execute(() -> Chat.error(src,
                         "Couldn't get an image from that URL, so the block was NOT created. " + msg));
             }
         }, "CustomBlocks-CreateTexture");
         worker.setDaemon(true);
         worker.start();
-    }
-
-    private static int delete(CommandContext<ServerCommandSource> ctx, String id) {
-        ServerCommandSource src = ctx.getSource();
-        // Snapshot the block + its texture BEFORE deleting, so undo can fully restore it.
-        SlotData before = SlotManager.getById(id);
-        if (before == null) {
-            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
-            return 0;
-        }
-        if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
-            return 0;
-        }
-        byte[] texture = TextureStore.load(before.index());
-        SlotManager.delete(id);
-        BlockNotesManager.onBlockDeleted(id); // clean up orphaned note if any
-        ResourcePackServer.updatePack(); // free the slot's texture from the pack
-        UndoManager.recordDelete(actor(src), before, texture);
-        Chat.success(src, "Block \"" + id + "\" deleted. You can undo this with /cb undo.");
-        syncHud(src);
-        return 1;
     }
 
     private static int rename(CommandContext<ServerCommandSource> ctx, String id, String name) {
@@ -319,8 +293,8 @@ public final class CreationCommands {
                 });
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Texture download failed for \"" + id + "\" (by "
-                        + src.getName() + ", url: " + url + ")", e);
+                IncidentRecorder.record("Texture download failed for \"" + id + "\" (url: " + url + ")",
+                        id, src.getName(), url, e);
                 server.execute(() -> Chat.error(src,
                         "Couldn't get a texture from that URL. " + msg));
             }
@@ -377,7 +351,7 @@ public final class CreationCommands {
                 ResourcePackServer.updatePack(); // ONE rebuild after the whole batch (§7)
                 if (fs > 0) {
                     IncidentRecorder.record("Retexture-all to " + newSize + "px skipped " + fs
-                            + " slot(s) (no source/texture or decode error)");
+                            + " slot(s) (no source/texture or decode error)", null, src.getName(), null);
                 }
                 String animNote = fa > 0 ? " §b" + fa + "§r animated left untouched." : "";
                 Chat.success(src, "Retexture complete — §a" + fr + "§r re-rendered, §e" + fu

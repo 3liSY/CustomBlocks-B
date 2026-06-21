@@ -91,6 +91,10 @@ public final class ResourcePackServer {
     public static void setServer(MinecraftServer s) { serverInstance = s; }
     public static int activePort() { return activePort; }
     public static String getHash() { return currentHash; }
+    /** The currently-served pack file (size + last-modified), or null before the first build. */
+    public static java.io.File getPackFile() { return currentPackFile; }
+    /** True while a rebuild is scheduled within the debounce window (IT Chest "rebuilding"). */
+    public static boolean isRebuilding() { return rebuildScheduled.get(); }
 
     public static void start() {
         if (server != null) server.stop(0);
@@ -199,6 +203,21 @@ public final class ResourcePackServer {
             exchange.sendResponseHeaders(200, f.length());
             try (OutputStream os = exchange.getResponseBody()) { Files.copy(f.toPath(), os); }
         });
+        // Serves the diagnostic report as a downloadable text file: GET /report/diag_report.txt
+        // (written by /cb report + the IT Chest "Generate Report" button to config/customblocks/data).
+        server.createContext("/report/", exchange -> {
+            File f = new File("config/customblocks/data", "diag_report.txt");
+            if (!f.exists()) {
+                byte[] msg = "no report generated yet".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(404, msg.length);
+                try (OutputStream os = exchange.getResponseBody()) { os.write(msg); }
+                return;
+            }
+            exchange.getResponseHeaders().set("Content-Type", "text/plain; charset=utf-8");
+            exchange.getResponseHeaders().set("Content-Disposition", "attachment; filename=\"diag_report.txt\"");
+            exchange.sendResponseHeaders(200, f.length());
+            try (OutputStream os = exchange.getResponseBody()) { Files.copy(f.toPath(), os); }
+        });
         server.setExecutor(null);
         server.start();
         CustomBlocksMod.LOGGER.info("[CustomBlocks] Resource-pack HTTP server live on port {}", activePort);
@@ -225,6 +244,12 @@ public final class ResourcePackServer {
     public static String getPngUrl(String id) {
         int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
         return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/png/" + id + ".png";
+    }
+
+    /** Public URL for the generated diagnostic report (the chat [download] link target). */
+    public static String getReportUrl() {
+        int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
+        return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/report/diag_report.txt";
     }
 
     /** Public URL for a block's current baked texture (used by the live-recolour preview). */
@@ -290,7 +315,12 @@ public final class ResourcePackServer {
                     currentPackFile = PACK_FILE;
                     currentHash = sha1(PACK_FILE);
                     MinecraftServer s = serverInstance;
-                    if (s != null) s.execute(ResourcePackServer::sendToAll);
+                    if (s != null) {
+                        s.execute(ResourcePackServer::sendToAll);
+                        // Dedicated server: re-capture the manifest and push it to modded clients so
+                        // each pulls just the changed files (no-op on the integrated host).
+                        s.execute(() -> com.customblocks.network.packsync.PackSyncService.refresh(s));
+                    }
                 }
             } catch (Exception e) {
                 CustomBlocksMod.LOGGER.error("[CustomBlocks] Pack rebuild failed", e);
@@ -334,6 +364,12 @@ public final class ResourcePackServer {
         // push and instead generates the pack locally on this signal (Group 05 fix). Skip the self
         // HTTP push for them; vanilla friends still get the real download below.
         if (ServerPlayNetworking.canSend(player, RegenPackPayload.ID)) {
+            // On a DEDICATED server the modded client's OWN local slot data is stale, so a local
+            // regen renders server-created blocks magenta (Group 05 remote bug). PackSyncService
+            // streams the real files from the server instead — it's driven by the JOIN handler
+            // (beginSync) and rebuild (refresh), so just skip the regen push here. The integrated
+            // host (singleplayer / LAN) shares the JVM, so its local regen below stays correct.
+            if (serverInstance != null && serverInstance.isDedicated()) return;
             try {
                 ServerPlayNetworking.send(player, new RegenPackPayload(hash));
                 LAST_SENT_PACK.put(player.getUuid(), id);

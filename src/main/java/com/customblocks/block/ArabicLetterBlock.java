@@ -136,12 +136,24 @@ public class ArabicLetterBlock extends Block implements BlockEntityProvider {
     @Override
     public void onPlaced(World world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
         super.onPlaced(world, pos, state, placer, stack);
-        if (world.isClient) return;
+        // O10 transparent-flash fix (part B — client prediction): stamp + re-flow on BOTH sides.
+        //  - SERVER: authoritative stamp + ArabicJoinFlow re-flow, then sync to clients (unchanged).
+        //  - CLIENT: vanilla predicts the placement locally and calls this onPlaced for the predicted block,
+        //    so we stamp the held letter/colour/form onto the predicted BlockEntity and run the SAME join
+        //    flow here. The INVISIBLE block now draws its glyph the very tick it is placed instead of waiting
+        //    a full network round-trip (the old transparent flash). The server's authoritative sync arrives a
+        //    moment later with identical data (same flow, same neighbours) → reconciles with no visible change.
+        //    ArabicJoinFlow is client-safe: it only reads world/BlockEntity state and be.sync() no-ops off a
+        //    ServerWorld.
         char letter = letterOf(stack);
         if (world.getBlockEntity(pos) instanceof ArabicLetterBlockEntity be) {
             be.setLetter(letter);
             be.setColor(colorOf(stack));
             be.setLockedForm(lockedFormOf(stack));
+            // be.sync() pushes to clients on the server; it is a no-op on the client (predicted locally).
+            // Required even when ArabicJoinFlow makes no FORM change (a lone / first letter keeps its default
+            // form) — otherwise the server would never sync letter==0→letter and the client would stay blank.
+            be.sync();
         }
         ArabicJoinFlow.onPlace(world, pos);
     }

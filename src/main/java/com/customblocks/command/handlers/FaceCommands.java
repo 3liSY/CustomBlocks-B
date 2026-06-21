@@ -132,7 +132,7 @@ public final class FaceCommands {
             } catch (Exception e) {
                 String msg = e.getMessage() != null ? e.getMessage() : e.toString();
                 IncidentRecorder.record("Face paint failed for \"" + id + "\" " + face
-                        + " (by " + src.getName() + ", url: " + url + ")", e);
+                        + " (url: " + url + ")", id, src.getName(), e);
                 server.execute(() -> Chat.error(src, "Couldn't get a texture from that URL. " + msg));
             }
         }, "CustomBlocks-FacePaint");

@@ -21,7 +21,7 @@
 | Panic mode | `/cb panic` — emergency rollback | Missing | Restored |
 | Recover | `/cb recover` — restore from latest backup | Missing | Restored |
 | Trash browser | `/cb deletedblocks` — browse recently deleted blocks | Not accessible | Restored as chest GUI |
-| Broken blocks report | `/cb showbrokenblocks` — blocks with placement issues or missing textures | Missing | Restored |
+| ~~Broken blocks report~~ | `/cb showbrokenblocks` | **MOVED → G16** (diagnostics, decision B 2026-06-21) | — |
 | Data paths | `config/customblocks/*.json` (root) | Mixed paths | All normalized to `config/customblocks/data/` |
 | Auto-backup | Timed automatic backup every 30 min | Not running | Restored, interval configurable |
 | Cloud backup | Sync to CustomBlocks Vault | Missing | Restored (depends on Group 20) |
@@ -41,7 +41,7 @@
 | Auto-backup config | `autoBackupInterval` (default 30 min) |
 | Trash browser | `/cb deletedblocks` |
 | Trash pin | Pin items to prevent auto-delete |
-| Broken blocks | `/cb showbrokenblocks` |
+| ~~Broken blocks~~ | **MOVED → G16** (`/cb showbrokenblocks` is diagnostics) |
 | Recover | `/cb recover` |
 | Safety check | `/cb safety` |
 | Data migration | Automatic on first boot |
@@ -86,14 +86,11 @@ Opens a chest GUI listing recently deleted blocks (sorted newest first):
 - Pinned items are never auto-pruned.
 - Auto-delete timer: configurable `trashRetentionDays` (default 30).
 
-### 7. Broken Blocks Report — `/cb showbrokenblocks`
+### 7. ~~Broken Blocks Report~~ — MOVED → G16
 
-Scans all registered blocks and reports:
-- Blocks with missing texture files.
-- Blocks registered in `SlotData` but with no physical file on disk.
-- Placed instances of missing blocks in the world.
-
-Output: chest GUI with Red Wool slots for each broken block. Click → auto-fix options.
+`/cb showbrokenblocks` is owned by **G16** (diagnostics) as of decision B (2026-06-21) — it scans for
+missing textures / broken registrations and feeds the IT Chest auto-fix flow. Spec + test live in
+`GROUP_16_DIAGNOSTICS.md`. Removed from G09.
 
 ### 8. First-Boot Migration (MigrationManager)
 
@@ -231,18 +228,10 @@ In `/cb deletedblocks`, click `g09b` → click "Restore".
 
 ---
 
-## Test G09.8 — Broken blocks report
+## Test G09.8 — ⛔ MOVED → G16
 
-Manually delete a texture file: remove `config/customblocks/textures/slot_X.png` for one of the test blocks. Then:
-
-```
-/cb showbrokenblocks
-```
-
-**Expected:** Chest GUI opens with the affected block shown as a Red Wool slot. Click → "Re-download texture" option available.
-
-**Pass:** Broken block detected and listed.
-**Fail:** Broken block not detected, or GUI empty.
+The broken-blocks report test (`/cb showbrokenblocks`) now lives in `GROUP_16_DIAGNOSTICS.md` (decision B).
+Skip here.
 
 ---
 
@@ -273,7 +262,7 @@ Check: does `config/customblocks/data/slots.json.gz` exist? If yes:
 | G09.5 | Auto-backup fires on schedule | ⬜ |
 | G09.6 | Trash browser shows deleted blocks | ⬜ |
 | G09.7 | Restore from trash works | ⬜ |
-| G09.8 | Broken blocks detected and reported | ⬜ |
+| ~~G09.8~~ | ~~Broken blocks detected and reported~~ | ⛔ MOVED → G16 (decision B) |
 | G09.9 | First-boot migration converts old data | ⬜ |
 
 **Group 09 passes when backups are reliable, trash is browsable, broken blocks are detectable, and migration runs cleanly.**

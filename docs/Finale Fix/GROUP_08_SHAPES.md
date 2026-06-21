@@ -37,7 +37,7 @@
 | Add shape | `/cb addshape <id> <shape>` |
 | Remove shape | `/cb removeshape <id> <shape>` |
 | Clear shape | `/cb clearshape <id>` |
-| Shape editor | `/cb shapeeditor <id>` |
+| Shape editor | `/cb shapeeditor` — **screen folded into Block Studio Shape section (G27 §G27.11, decision E)**; standalone `ShapeEditorScreen` retired. G08 owns the shape *logic/commands*; G27 owns the editor *screen* |
 | Shape list | `/cb shapelist` |
 | Shape preview | `/cb shapepreview <shape>` |
 | Set face texture | `/cb setface <id> <face> <url>` |
@@ -84,7 +84,13 @@ Each block can have a different texture on each of 6 faces: `top`, `bottom`, `no
 - Face textures stored alongside the main texture in `config/customblocks/textures/slot_N_face_top.png` etc.
 - Face texture data stored in `SlotData`.
 
-### 4. Shape Editor Chest GUI
+### 4. Shape Editor — folded into Block Studio (G27)
+
+> **Ownership (sweep 2026-06-21, decision E):** the standalone `ShapeEditorScreen` is **retired**.
+> `/cb shapeeditor` now opens the **Block Studio Shape section** (`GROUP_27_SCREENS.md §G27.11`). G08 keeps
+> the shape *commands/logic*; the editor *screen* is G27's. Also flagged: a **duplicate `shapeeditor`
+> command registration** exists in code (G27 line 873) — dedupe when building. The chest-GUI design below
+> is historical.
 
 `/cb shapeeditor <id>` opens a chest GUI with:
 - Shape selector slots (one per available shape, with visual icon).

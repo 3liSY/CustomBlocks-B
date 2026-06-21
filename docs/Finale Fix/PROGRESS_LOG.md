@@ -7,6 +7,72 @@
 
 ---
 
+## Group 17 · Command Regressions — interview + design locked, slice plan set · 2026-06-21 (📐 design only — no code)
+
+> Owner wants Group 17 started. Surveyed the live command code first, ran a 3-round owner interview,
+> and locked scope + semantics + a 3-slice build order. **Nothing built.** Full spec:
+> `GROUP_17_REGRESSIONS.md` (Locked Decisions block); tests: `Reports/GROUP_17_TESTING_GUIDE.md`.
+
+- **Reality corrections (read, not guessed):** the **search GUI already exists** — `/cb search <query>`
+  routes players to a `Nav.Dest.SEARCH` chest (`UtilityCommands.searchGui/search`), so G17.9 is a
+  verify-only, not a build. **Export is already extensive** (json/txt/csv/md/html/yaml/png/zip/vault +
+  per-id) — the regression "align with G12" row is folded into the Issue 17.15 export-rework session,
+  not touched here. `UndoManager` already has per-player/global stacks, `undoSize`, `clearPlayer`, and a
+  `MutationLog` audit hook; only the multi-step command layer is missing. **`UtilityCommands` is at
+  397/400 lines** → give-args needs a handler split first.
+- **Decisions (owner interview):** pace = **one slice at a time**, in-game confirm between each.
+  Slice 1 = `undo <N>`/`undo all`/`undo clear`(confirm)/`redo <N>`/`redo all`, **detailed value-bearing**
+  multi-undo chat (`glow g17a 12→8`), over-count reverts what's there + reports real number, `undo clear`
+  reuses the `BulkConfirm` hold and wipes undo+redo. Slice 2 = give `<amount>` (1–6400, self) +
+  `<player>` (**OP/perm-2 only**, recipient notified, overflow → give-what-fits + "inventory full").
+  Slice 3 = delete `#` (~6-block raycast → **whole definition**, custom slot blocks only, no confirm,
+  undoable). **Deferred:** favorite-primary / unfavorite / recent → **Group 25** (G17 keeps G17.6–8 +
+  G17.12 as regression checks); export alignment → Issue 17.15.
+- **Slice plan:** 1 undo/redo (`HistoryCommands` + `UndoManager`) → 2 give (split give/search out of
+  `UtilityCommands`, then add amount+player) → 3 delete `#` (`CreationCommands` + a server-raycast
+  helper). Search GUI = verify-only between slices.
+
+**Docs only this pass:** `GROUP_17_REGRESSIONS.md` (added Locked Decisions & Slice Plan; refined the
+undo/redo, give, and delete-shorthand requirement sections), `Reports/GROUP_17_TESTING_GUIDE.md` (new —
+slice-1 = 🎯 §1, 5 tests; search = verify-only; slices 2–3 + G25 items listed). **No source changed.**
+**NOT done** — this is a plan; each slice needs an in-game confirm once built.
+
+---
+
+## Group 16 · Diagnostics / IT Chest — design locked, slice plan set · 2026-06-21 (📐 design only — no code)
+
+> Owner wants Group 16 started. Surveyed the live code first: the spec was **partly stale**. Ran a 3-round
+> Q&A and locked the slice-1 design + a 5-slice roadmap. **Nothing built.** Full spec:
+> `GROUP_16_DIAGNOSTICS.md`; tests: `Reports/GROUP_16_TESTING_GUIDE.md`.
+
+- **Reality corrections (read, not guessed):** the **mutation/history log already exists**
+  (`MutationLog` + paginated `HistoryMenu`, fed by `UndoManager.record`); **`/cb confirm`/`/cb cancel`
+  already exist** (`BulkConfirm`, 60s per-actor hold); `/cb diag` already opens a **3-row** `DiagMenu`
+  (not the 6-row dashboard); `/cb incidents` is **text only** (`IncidentRecorder` stores time+context+error
+  only — no player/blockId/severity); incidents are **already recorded at ~22 sites** (incl. the bad-URL
+  download case → G16.3 data is free); the mod emits **zero particles anywhere**; server-side screenshot
+  is impractical on a headless server.
+- **Decisions:** screenshot **dropped**; particles = **add FX first, then toggle**; debug-log viewer
+  **deferred** (tracked); auto-fix = **its own slice (2)**; old `DiagMenu` **replaced** by the 6-row IT
+  Chest; **structured incidents pulled into slice 1** (all ~22 sites get block+player); health row = **all 5**
+  best-effort (Network Sync = online count + pack SHA, no per-client lag); severity colour **auto-derived**
+  (throwable/"fail|error"→red, "skip|warn"→yellow, else lime); `/cb incidents` **opens the dashboard**.
+- **Slice plan:** 1 IT Chest dashboard + structured incident model → 2 auto-fix (re-download / restore-from-
+  backup / editor) → 3 admin cmds (`/cb audit [player]`, `/cb cache` + clear, Generate Report) → 4 particles
+  (FX then toggle) → 5 sounds toggle. Later: Debug Log viewer. Already done: mutation log, confirm/cancel.
+- **Slice 1 locked design:** 6-row chest "IT Chest", `Nav.Dest.DIAG` routes here, `/cb diag` + `/cb incidents`
+  open it. Row 1 = 5 health gauges (TPS/Registry/Network/Pack/Memory, colour-coded, exact-value hover);
+  Rows 2–4 = incident wool (severity colour, newest first, hover time/player/action/error, click → block
+  editor); Row 5 = last 9 `MutationLog` entries (click → editor); Row 6 = Refresh / Clear Incidents / Back /
+  Close. Data model: `IncidentRecorder` gains severity+blockId+player, `incidents.json` schema extended,
+  old entries degrade to "—", non-player sources log as "System".
+
+**Docs only this pass:** `GROUP_16_DIAGNOSTICS.md` (rewritten — reality check + decisions + slice plan,
+status-free), `Reports/GROUP_16_TESTING_GUIDE.md` (new — slice-1 = 🎯 §1, 6 tests). **No source changed.**
+**NOT done** — this is a plan; slice 1 needs in-game confirmation once built.
+
+---
+
 ## Group 13 · Arabic — retire static letters, one system (Issue 3 dedupe) · 2026-06-19 (🟢 Build A jar green + deployed — in-game pending)
 
 > Owner decision: now that auto-join is his dream system, **delete the 144 static letter blocks** and keep
