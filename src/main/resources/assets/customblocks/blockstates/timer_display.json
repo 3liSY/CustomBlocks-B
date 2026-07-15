@@ -1,0 +1,8 @@
+{
+  "variants": {
+    "facing=north": { "model": "customblocks:block/timer_display" },
+    "facing=south": { "model": "customblocks:block/timer_display" },
+    "facing=east":  { "model": "customblocks:block/timer_display" },
+    "facing=west":  { "model": "customblocks:block/timer_display" }
+  }
+}

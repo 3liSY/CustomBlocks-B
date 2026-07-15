@@ -28,7 +28,7 @@ public final class CbActionBar {
     /** One bar button. {@code primary} draws green + gets the save flash. */
     public record Item(String label, Runnable action, boolean primary) {}
 
-    private static final int GOLD = 0xFF_FF_AA_00, BAR_BG = 0xF0101010;
+    private static final int EDGE = com.customblocks.client.gui.CbTheme.ACCENT, BAR_BG = com.customblocks.client.gui.CbTheme.PANEL_BG;
     private static final int BTN_BG = 0xFF333333, BTN_HOVER = 0xFF555555, PRIMARY = 0xFF2E8B2E;
     private static final int BTN_H = 16, PAD = 4, GAP = 3, GRIP = 12, TOGGLE = 14;
     private static final int DOCK_BOTTOM = 0, DOCK_LEFT = 1, DOCK_RIGHT = 2;
@@ -60,7 +60,10 @@ public final class CbActionBar {
         ix = new int[items.size()]; iy = new int[items.size()]; iw = new int[items.size()];
     }
 
-    public void flashPrimary() { flashEnd = System.currentTimeMillis() + 600; }
+    public void flashPrimary() {
+        if (CbScreenPrefs.get().reducedMotion) return; // §G27.8.B Reduced motion kills the pulse
+        flashEnd = System.currentTimeMillis() + 600;
+    }
 
     public boolean isPointInside(double mx, double my) {
         return mx >= bx && mx < bx + bw && my >= by && my < by + bh;
@@ -96,8 +99,8 @@ public final class CbActionBar {
             togX = bx + (bw - TOGGLE) / 2; togY = by + bh - TOGGLE + 2;
         }
 
-        // Strip background + gold edge.
-        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GOLD);
+        // Strip background + red edge.
+        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, EDGE);
         ctx.fill(bx, by, bx + bw, by + bh, BAR_BG);
         // Drag grip (dots).
         for (int i = 0; i < 3; i++) {
@@ -112,24 +115,30 @@ public final class CbActionBar {
             ctx.fill(ix[i], iy[i], ix[i] + iw[i], iy[i] + BTN_H, bg);
             ctx.drawCenteredTextWithShadow(tr, Text.literal("§f" + it.label()), ix[i] + iw[i] / 2, iy[i] + 4, 0xFFFFFFFF);
         }
-        // Save flash over the primary button.
+        // Save flash over the primary button (lime = success only).
         if (primaryIndex >= 0 && System.currentTimeMillis() < flashEnd) {
-            ctx.fill(ix[primaryIndex], iy[primaryIndex], ix[primaryIndex] + iw[primaryIndex], iy[primaryIndex] + BTN_H, 0x6600FF44);
+            ctx.fill(ix[primaryIndex], iy[primaryIndex], ix[primaryIndex] + iw[primaryIndex], iy[primaryIndex] + BTN_H,
+                    com.customblocks.client.gui.CbTheme.FLASH_OK);
         }
         // Hide toggle.
         ctx.fill(togX, togY, togX + TOGGLE - 2, togY + 12, 0xFF000000);
-        ctx.drawTextWithShadow(tr, Text.literal("§e_"), togX + 3, togY + 2, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7_"), togX + 3, togY + 2, 0xFFFFFFFF);
     }
 
     private void renderSliver(DrawContext ctx, TextRenderer tr) {
-        // A thin tab on the docked edge with a "show" arrow.
-        if (dock == DOCK_BOTTOM) { bx = screenW / 2 - 14; by = screenH - 12; bw = 28; bh = 12; }
-        else if (dock == DOCK_LEFT) { bx = 2; by = screenH / 2 - 14; bw = 12; bh = 28; }
-        else { bx = screenW - 14; by = screenH / 2 - 14; bw = 12; bh = 28; }
-        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, GOLD);
-        ctx.fill(bx, by, bx + bw, by + bh, BAR_BG);
+        // §K4 — a chunky, solid-red tab on the docked edge with a bold, scaled-up "show" arrow so the
+        // collapsed action bar reads clearly as a clickable handle (the old thin dim-red arrow was easy to miss).
+        if (dock == DOCK_BOTTOM) { bx = screenW / 2 - 20; by = screenH - 16; bw = 40; bh = 16; }
+        else if (dock == DOCK_LEFT) { bx = 2; by = screenH / 2 - 20; bw = 16; bh = 40; }
+        else { bx = screenW - 18; by = screenH / 2 - 20; bw = 16; bh = 40; }
+        ctx.fill(bx - 1, by - 1, bx + bw + 1, by + bh + 1, 0xFF000000); // black outline
+        ctx.fill(bx, by, bx + bw, by + bh, EDGE);                       // solid red tab so it pops
         String arrow = dock == DOCK_BOTTOM ? "^" : (dock == DOCK_LEFT ? ">" : "<");
-        ctx.drawCenteredTextWithShadow(tr, Text.literal("§e" + arrow), bx + bw / 2, by + bh / 2 - 4, 0xFFFFFFFF);
+        ctx.getMatrices().push();
+        ctx.getMatrices().translate(bx + bw / 2f, by + bh / 2f, 0);
+        ctx.getMatrices().scale(1.7f, 1.7f, 1f);
+        ctx.drawCenteredTextWithShadow(tr, Text.literal("§f§l" + arrow), 0, -4, 0xFFFFFFFF); // bold white, high contrast
+        ctx.getMatrices().pop();
         togX = bx; togY = by; // whole tab toggles
     }
 
@@ -147,6 +156,9 @@ public final class CbActionBar {
         }
         for (int i = 0; i < items.size(); i++) {
             if (mx >= ix[i] && mx < ix[i] + iw[i] && my >= iy[i] && my < iy[i] + BTN_H) {
+                // §G27.8.A UI sounds — chime on the primary (Apply/Save/Create), click otherwise.
+                if (items.get(i).primary()) com.customblocks.client.gui.CbUiSounds.chime();
+                else com.customblocks.client.gui.CbUiSounds.click();
                 items.get(i).action().run();
                 return true;
             }

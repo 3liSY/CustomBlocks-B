@@ -8,7 +8,7 @@
  *   /cb tolerance <value>        — set the GLOBAL default background-removal strength (0-100).
  *   /cb tolerance <value> <id>   — set just <id>'s strength (persisted per-block; global untouched)
  *                                  and re-apply its current mode now.
- *   /cb livecolor <id>           — open the live recolour slider (client screen) for <id>.
+ *   /cb recolor <id>             — open the live recolour slider (client screen) for <id>. (was livecolor, §G27.11)
  *   /cb eyedrop                  — open the screen eyedrop (client screen) to pick a colour.
  *
  * Per-block strengths live in BlockToleranceStore; the global default in CustomBlocksConfig. The two
@@ -23,6 +23,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockToleranceStore;
@@ -74,11 +75,12 @@ public final class ImageToolCommands {
         root.then(CommandManager.literal("coloring").executes(ImageToolCommands::colors));
         root.then(CommandManager.literal("colors").executes(ImageToolCommands::colors));
 
-        root.then(CommandManager.literal("livecolor")
-                .executes(ImageToolCommands::livecolorPick) // G27 §C1 — no id → block picker
+        // §G27.11 — renamed from /cb livecolor (locked rename, NO alias).
+        root.then(CommandManager.literal("recolor")
+                .executes(ImageToolCommands::recolorPick) // G27 §C1 — no id → block picker
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> livecolor(ctx, StringArgumentType.getString(ctx, "id")))));
+                        .executes(ctx -> recolor(ctx, StringArgumentType.getString(ctx, "id")))));
 
         root.then(CommandManager.literal("eyedrop").executes(ImageToolCommands::eyedrop));
     }
@@ -113,8 +115,8 @@ public final class ImageToolCommands {
     private static int toleranceGlobal(CommandContext<ServerCommandSource> ctx, int value) {
         CustomBlocksConfig.backgroundTolerance = Math.max(0, Math.min(100, value));
         CustomBlocksConfig.save();
-        Chat.success(ctx.getSource(), "Global background tolerance set to §e" + CustomBlocksConfig.backgroundTolerance
-                + "%§r. §7Used by new removals and any block without its own setting.");
+        Chat.success(ctx.getSource(), "Global background tolerance set to " + CbFmt.VALUE + CustomBlocksConfig.backgroundTolerance
+                + "%" + CbFmt.RESET + ". " + CbFmt.DIM + "Used by new removals and any block without its own setting.");
         return 1;
     }
 
@@ -130,7 +132,7 @@ public final class ImageToolCommands {
         BlockToleranceStore.set(id, v);
         BgStudioSession.setTol(p.getUuid(), id, v);
         BgStudioSession.State s = BgStudioSession.get(p.getUuid(), id);
-        Chat.success(ctx.getSource(), "Set \"" + id + "\" tolerance to §e" + v + "%§r §7(global default stays "
+        Chat.success(ctx.getSource(), "Set \"" + id + "\" tolerance to " + CbFmt.VALUE + v + "%" + CbFmt.RESET + " " + CbFmt.DIM + "(global default stays "
                 + CustomBlocksConfig.backgroundTolerance + "%). Applying…");
         ColorToolService.applyBgRemoval(p, id, s.mode, v);
         return 1;
@@ -145,17 +147,17 @@ public final class ImageToolCommands {
         return 1;
     }
 
-    // ── /cb livecolor + /cb eyedrop (client screens) ───────────────────────────
+    // ── /cb recolor + /cb eyedrop (client screens) ─────────────────────────────
 
-    /** /cb livecolor (no id) — open the chest block-picker; clicking a block opens the recolour slider. */
-    private static int livecolorPick(CommandContext<ServerCommandSource> ctx) {
+    /** /cb recolor (no id) — open the chest block-picker; clicking a block opens the recolour slider. */
+    private static int recolorPick(CommandContext<ServerCommandSource> ctx) {
         ServerPlayerEntity p = player(ctx);
         if (p == null) { Chat.error(ctx.getSource(), "Only a player can open the live recolour slider."); return 0; }
-        GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.COLOR_PICK, "livecolor"));
+        GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.COLOR_PICK, "recolor"));
         return 1;
     }
 
-    private static int livecolor(CommandContext<ServerCommandSource> ctx, String id) {
+    private static int recolor(CommandContext<ServerCommandSource> ctx, String id) {
         ServerPlayerEntity p = player(ctx);
         if (p == null) { Chat.error(ctx.getSource(), "Only a player can open the live recolour slider."); return 0; }
         SlotData d = SlotManager.getById(id);

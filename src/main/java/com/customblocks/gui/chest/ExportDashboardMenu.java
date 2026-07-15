@@ -8,21 +8,23 @@
  *                      csv, md, html, yaml, png) via formatTiles(), routed through
  *                      /cb bulkexport <scope> <format>. A "← Scopes" tile returns to phase 1.
  *
- * "Bulk Choose" opens the block list (Dest.BLOCK_LIST) in listPickForExport mode; ticking
- * blocks there and confirming returns here as the "selection" phase.
+ * "Bulk Choose" opens the Bulk Workbench Screen in "pick" mode (§G07-3 replaced the chest block list) with
+ * listPickForExport set; ticking blocks there and pressing "Use these N" returns here as the "selection"
+ * phase, via BulkNet's PICK_DONE.
  *
  * The MenuKey arg encodes the phase: "" = scope selection, "block" = block picker,
  * "category" = category picker, "all" = format choices for all, "selection" = format
  * choices for the hand-picked set, "block:<id>" = formats for one block,
  * "cat:<name>" = formats for one category.
  *
- * Depends on: ChestMenu, Icons, Layout, GuiFx, GuiRouter, Nav,
+ * Depends on: ChestMenu, Icons, Layout, GuiFx, GuiRouter, Nav, BulkSnapshot,
  *             SlotManager, SlotData, SlotBlock, BlockExporter, ListSelection
- * Called by:  GuiRouter (Dest.EXPORT_DASHBOARD), UtilityCommands (/cb export)
+ * Called by:  GuiRouter (Dest.EXPORT_DASHBOARD), UtilityCommands (/cb export), BulkNet (PICK_DONE)
  */
 package com.customblocks.gui.chest;
 
 import com.customblocks.block.SlotBlock;
+import com.customblocks.command.handlers.BulkSnapshot;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.chest.Nav.Dest;
@@ -88,16 +90,18 @@ public final class ExportDashboardMenu {
                     GuiRouter.repage(p, MenuKey.of(Dest.EXPORT_DASHBOARD, "all"));
                 });
 
-        // Bulk Choose (slot 16) — open the block list to hand-pick blocks, then export them.
+        // Bulk Choose (slot 16) — hand-pick blocks, then export them. The chest BlockListMenu this used to
+        // open is gone (§G07-3); the Bulk Workbench opens in "pick" mode instead, and its "Use these N"
+        // button hands the ticked ids back here through BulkNet's PICK_DONE.
         m.set(16, Icons.of(Items.BUNDLE, "§e§lBulk Choose",
                         "§7Hand-pick blocks to export.",
-                        "§7Opens the block list — tick the",
+                        "§7Opens the block browser — tick the",
                         "§7ones you want, then pick a format."),
                 (p, b, a) -> {
                     GuiFx.click(p);
                     ListSelection.clear(p.getUuid());           // start the pick fresh
                     BulkSession.get(p.getUuid()).listPickForExport = true;
-                    GuiRouter.navigate(p, MenuKey.of(Dest.BLOCK_LIST));
+                    BulkSnapshot.openFromChest(p, BulkSnapshot.TAB_PICK);
                 });
 
         m.set(18, Icons.back(), (p, b, a) -> GuiRouter.back(p));
@@ -221,6 +225,10 @@ public final class ExportDashboardMenu {
                         "§7Hand it to a friend; they run",
                         "§7/cb importblock while holding it."),
                 (p, b, a) -> { GuiFx.apply(p); GuiRouter.runCommand(p, "exportblock " + id); });
+        m.set(17, Icons.of(Items.ENDER_PEARL, "\u00a7b\u00a7lUpload to Vault",
+                        "\u00a77Share this block through the cloud",
+                        "\u00a77and get a copyable code in chat."),
+                (p, b, a) -> { GuiFx.apply(p); GuiRouter.runCommand(p, "export " + id + " vault"); });
 
         m.set(18, Icons.of(Items.ARROW, "§e← Scopes", "§8Back to scope selection"),
                 (p, b, a) -> goBackToScopes(p));
@@ -302,10 +310,14 @@ public final class ExportDashboardMenu {
                         "§7into one .zip + a [download] link."),
                 (p, b, a) -> { GuiFx.apply(p); GuiRouter.runCommand(p, "export zip"); });
 
-        // Vault (slot 17) — coming soon
-        m.set(17, Icons.of(Items.ENDER_PEARL, "§8§lTo Vault §8(coming soon)",
-                        "§8Vault Worker not deployed yet."),
-                (p, b, a) -> GuiFx.deny(p));
+        // Vault sharing is currently one block at a time; route players to the block picker.
+        m.set(17, Icons.of(Items.ENDER_PEARL, "\u00a7b\u00a7lCloud Share",
+                        "\u00a77Vault share is one block at a time.",
+                        "\u00a77Pick a block to upload."),
+                (p, b, a) -> {
+                    GuiFx.click(p);
+                    GuiRouter.repage(p, MenuKey.of(Dest.EXPORT_DASHBOARD, "block").withPage(0));
+                });
 
         m.set(18, Icons.of(Items.ARROW, "§e← Scopes", "§8Back to scope selection"),
                 (p, b, a) -> goBackToScopes(p));

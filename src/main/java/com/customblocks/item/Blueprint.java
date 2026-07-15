@@ -14,6 +14,7 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.SlotData;
 import net.minecraft.component.DataComponentTypes;
@@ -43,14 +44,14 @@ public final class Blueprint {
         s.set(DataComponentTypes.CUSTOM_DATA, NbtComponent.of(nbt));
 
         s.set(DataComponentTypes.CUSTOM_NAME,
-                line("§b§lBlueprint: §f" + d.displayName()));
+                line(CbFmt.VALUE + CbFmt.BOLD + "Blueprint: " + CbFmt.BODY + d.displayName()));
 
         List<Text> lore = new ArrayList<>();
-        lore.add(line("§7id: §f" + d.customId()));
-        lore.add(line("§7glow: §f" + d.glow() + "   §7hardness: §f" + d.hardness()));
-        lore.add(line("§7sound: §f" + d.soundType()));
-        if (!d.category().isEmpty()) lore.add(line("§7category: §f" + d.category()));
-        lore.add(line("§8Hold this and run §7/cb importblock"));
+        lore.add(line(CbFmt.DIM + "id: " + CbFmt.BODY + d.customId()));
+        lore.add(line(CbFmt.DIM + "glow: " + CbFmt.BODY + d.glow() + "   " + CbFmt.DIM + "hardness: " + CbFmt.BODY + d.hardness()));
+        lore.add(line(CbFmt.DIM + "sound: " + CbFmt.BODY + d.soundType()));
+        if (!d.category().isEmpty()) lore.add(line(CbFmt.DIM + "category: " + CbFmt.BODY + d.category()));
+        lore.add(line(CbFmt.FAINT + "Hold this and run " + CbFmt.DIM + "/cb importblock"));
         s.set(DataComponentTypes.LORE, new LoreComponent(lore));
 
         s.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);

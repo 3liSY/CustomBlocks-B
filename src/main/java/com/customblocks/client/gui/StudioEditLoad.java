@@ -48,6 +48,7 @@ public final class StudioEditLoad {
         String color = a.getOrDefault("color", "none");
         if (!color.equals("none")) try { st.pickBg(Integer.parseInt(color)); } catch (NumberFormatException ignored) {}
         st.anim = parseAnim(a.get("anim"), a.get("animtimes"));
+        st.openSection = a.getOrDefault("open", ""); // §G27.11 — which section to focus (e.g. "shape")
     }
 
     /** Rebuild an AnimData from the edit-load CSV "frameCount,uniformTicks,loop,interp,trimS,trimE" + times. */
@@ -61,7 +62,8 @@ public final class StudioEditLoad {
             List<Integer> times = new ArrayList<>();
             if (timesCsv != null && !timesCsv.isBlank())
                 for (String t : timesCsv.split("_")) try { times.add(Integer.parseInt(t)); } catch (NumberFormatException ignored) {}
-            return new AnimData(fc, ut, p[2], "1".equals(p[3]), ts, te, false, times);
+            // No per-frame ms in the studio edit-load CSV → empty; the renderer falls back to ticks × 50.
+            return new AnimData(fc, ut, p[2], "1".equals(p[3]), ts, te, false, times, java.util.List.of());
         } catch (NumberFormatException e) {
             return AnimData.NONE;
         }

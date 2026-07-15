@@ -1,10 +1,10 @@
 /**
- * AnimListMenu.java — Group 14 Phase 2: the animated-blocks-only picker behind /cb anim (no id).
+ * AnimListMenu.java — Group 14 Phase 2: the animated-blocks-only picker behind /cb animation (no id).
  *
  * Lists ONLY animated blocks (SlotData.isAnimated()), paginated. Clicking one closes the chest and
  * opens the Block Creation Studio on that block's Animation tab in edit mode — the same
- * CreationStudioBridge.openStudioEdit rail /cb anim <id> uses. This replaces the old behaviour where
- * /cb anim opened the FULL block list and a click toggled a bulk ✔ / opened the chest editor (neither
+ * CreationStudioBridge.openStudioEdit rail /cb animation <id> uses. This replaces the old behaviour where
+ * /cb animation opened the FULL block list and a click toggled a bulk ✔ / opened the chest editor (neither
  * was animated-only nor landed on the Animation tab — owner-reported 2026-06-19).
  *
  * Depends on: SlotManager, SlotData, CreationStudioBridge, Layout, Icons, ChestMenu, Nav.

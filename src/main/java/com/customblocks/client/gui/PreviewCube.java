@@ -75,6 +75,7 @@ public final class PreviewCube {
                        double yaw, double pitch, CellColor transform, long version) {
         if (grid == null || disposed) return;
         ensureBaked(grid, transform, version);
+        drawStageShadow(ctx, cx, cy, half);
         beginCube(ctx);
         drawCube(ctx, cx, cy, half, yaw, pitch);
         endCube();
@@ -89,10 +90,24 @@ public final class PreviewCube {
                             double yaw, double pitch, int[][] boxes, CellColor transform, long version) {
         if (grid == null || disposed) return;
         ensureBaked(grid, transform, version);
+        drawStageShadow(ctx, cx, cy, half);
         int[][] bs = (boxes == null || boxes.length == 0) ? new int[][]{{0, 0, 0, 16, 16, 16}} : boxes;
         beginCube(ctx);
         for (int[] b : bs) drawBox(ctx, cx, cy, half, yaw, pitch, b);
         endCube();
+    }
+
+    /**
+     * §G27.8.A cube stage: a soft contact shadow under the cube. Deferred fills, issued before the
+     * immediate cube quads, so the shadow always sits behind the block. Three stacked translucent
+     * bands approximate a soft ellipse.
+     */
+    private static void drawStageShadow(DrawContext ctx, int cx, int cy, int half) {
+        int y = cy + half + 8;
+        int w1 = (int) (half * 1.35), w2 = (int) (half * 1.05), w3 = (int) (half * 0.7);
+        ctx.fill(cx - w1, y,     cx + w1, y + 2, 0x22000000);
+        ctx.fill(cx - w2, y - 1, cx + w2, y + 3, 0x2A000000);
+        ctx.fill(cx - w3, y,     cx + w3, y + 2, 0x33000000);
     }
 
     /** Release the GL texture. Call from the screen's {@code removed()} (render thread). */

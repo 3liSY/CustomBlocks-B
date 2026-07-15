@@ -37,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public final class ResourcePackServer {
 
@@ -63,6 +64,49 @@ public final class ResourcePackServer {
     });
     /** true while a rebuild is already scheduled within the debounce window. */
     private static final AtomicBoolean rebuildScheduled = new AtomicBoolean(false);
+
+    // Group 05 B3 (SINGLEPLAYER-ONLY coalescing) ─────────────────────────────
+    // Two /cb image commands fired within ~1s each download their image FIRST (1–6s) and only
+    // THEN rebuild, so their rebuilds land seconds apart — past the 500ms debounce — giving TWO
+    // silent reloads. A time-window can't fix a gap as long as a download; instead we COUNT the
+    // in-flight image downloads and HOLD the integrated-host reload until the last one commits,
+    // so the burst collapses into ONE reload.
+    //
+    // MP-SAFETY: this counter is READ in exactly one place — the RegenPackPayload branch of
+    // sendToPlayer — which the dedicated server returns BEFORE reaching (isDedicated()). rebuild()
+    // and updatePack() are untouched, so dedicated pack-sync timing is identical. The B3 redo rule.
+    private static final AtomicInteger imageOpsInFlight = new AtomicInteger(0);
+    /** A rebuild wanted to reload the integrated host but was HELD mid-burst; a reload is owed. */
+    private static volatile boolean hostReloadHeld = false;
+
+    /**
+     * A /cb image download started — hold the singleplayer reload until it (and its peers) finish.
+     * Returns a SINGLE-FIRE release: run it once (in a finally, AFTER this op's updatePack) to drop
+     * the count no matter which path the op exits by — the CAS makes extra calls harmless.
+     */
+    public static Runnable beginImageOp() {
+        imageOpsInFlight.incrementAndGet();
+        AtomicBoolean done = new AtomicBoolean(false);
+        return () -> { if (done.compareAndSet(false, true)) endImageOp(); };
+    }
+
+    /**
+     * A /cb image download's work finished — call in a finally AFTER its {@code updatePack()} so the
+     * count only drops once this op has committed. When the last op leaves and a reload was held back
+     * during the burst, the last op's own rebuild (now that the count is 0) delivers the single reload.
+     * The safety flush below covers the one case where no rebuild follows — e.g. the last op FAILED to
+     * download, so nothing scheduled a rebuild — by pushing the current pack once (idempotent: the
+     * LAST_SENT_PACK guard dedups if a real rebuild also sends). No-op on dedicated (sendToPlayer
+     * returns before the held branch there).
+     */
+    public static void endImageOp() {
+        int n = imageOpsInFlight.updateAndGet(v -> v > 0 ? v - 1 : 0); // clamp; never negative
+        if (n == 0 && hostReloadHeld && !rebuildScheduled.get()) {
+            hostReloadHeld = false;
+            MinecraftServer s = serverInstance;
+            if (s != null) s.execute(ResourcePackServer::sendToAll);
+        }
+    }
 
     // Group 02: pause auto-regeneration and suppress auto re-sends until explicitly resumed.
     private static volatile boolean paused = false;
@@ -218,6 +262,9 @@ public final class ResourcePackServer {
             exchange.sendResponseHeaders(200, f.length());
             try (OutputStream os = exchange.getResponseBody()) { Files.copy(f.toPath(), os); }
         });
+        // Group 20 §K — auto-update. Hash this server's own jar once, then expose /version + /download.
+        com.customblocks.update.ServerJarInfo.init();
+        com.customblocks.update.UpdateHttpRoutes.register(server, ResourcePackServer::getDownloadUrl);
         server.setExecutor(null);
         server.start();
         CustomBlocksMod.LOGGER.info("[CustomBlocks] Resource-pack HTTP server live on port {}", activePort);
@@ -238,6 +285,12 @@ public final class ResourcePackServer {
     public static String getExportUrl(String id) {
         int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
         return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/export/" + id;
+    }
+
+    /** Group 20 §K: the URL a client hits to download this server's jar (goes in /version + the join packet). */
+    public static String getDownloadUrl() {
+        int port = activePort > 0 ? activePort : CustomBlocksConfig.httpPort;
+        return "http://" + CustomBlocksConfig.httpHost + ":" + port + "/download/latest";
     }
 
     /** Public URL for an exported PNG (the chat [download] link target). */
@@ -370,9 +423,14 @@ public final class ResourcePackServer {
             // (beginSync) and rebuild (refresh), so just skip the regen push here. The integrated
             // host (singleplayer / LAN) shares the JVM, so its local regen below stays correct.
             if (serverInstance != null && serverInstance.isDedicated()) return;
+            // Group 05 B3: mid-burst, an image download is still in flight → HOLD this reload so the
+            // rapid ops collapse into one. We deliberately do NOT record LAST_SENT_PACK here, so the
+            // eventual real send (last op's rebuild, or endImageOp's flush) still goes through.
+            if (imageOpsInFlight.get() > 0) { hostReloadHeld = true; return; }
             try {
                 ServerPlayNetworking.send(player, new RegenPackPayload(hash));
                 LAST_SENT_PACK.put(player.getUuid(), id);
+                hostReloadHeld = false; // a reload just went out — nothing owed
                 AWAITING_FIRST_PACK.remove(player.getUuid());
                 CustomBlocksMod.LOGGER.info("[CustomBlocks] Signaled modded client {} to regen pack locally (hash {}).",
                         player.getName().getString(), hash);

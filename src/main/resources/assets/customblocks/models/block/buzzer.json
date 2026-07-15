@@ -1,0 +1,45 @@
+{
+  "textures": {
+    "base": "minecraft:block/black_concrete",
+    "button": "minecraft:block/red_concrete",
+    "rim": "minecraft:block/light_gray_concrete"
+  },
+  "elements": [
+    {
+      "from": [2, 0, 2],
+      "to": [14, 5, 14],
+      "faces": {
+        "down": { "texture": "#base" },
+        "up": { "texture": "#rim" },
+        "north": { "texture": "#base" },
+        "south": { "texture": "#base" },
+        "west": { "texture": "#base" },
+        "east": { "texture": "#base" }
+      }
+    },
+    {
+      "from": [4, 5, 4],
+      "to": [12, 8, 12],
+      "faces": {
+        "down": { "texture": "#rim" },
+        "up": { "texture": "#button" },
+        "north": { "texture": "#rim" },
+        "south": { "texture": "#rim" },
+        "west": { "texture": "#rim" },
+        "east": { "texture": "#rim" }
+      }
+    },
+    {
+      "from": [5, 8, 5],
+      "to": [11, 10, 11],
+      "faces": {
+        "down": { "texture": "#button" },
+        "up": { "texture": "#button" },
+        "north": { "texture": "#button" },
+        "south": { "texture": "#button" },
+        "west": { "texture": "#button" },
+        "east": { "texture": "#button" }
+      }
+    }
+  ]
+}

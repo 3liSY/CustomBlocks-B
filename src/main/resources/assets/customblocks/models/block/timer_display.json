@@ -1,0 +1,3 @@
+{
+  "__comment": "Group 31 item 1 — the placed timer-display block is INVISIBLE in-world (its visual is the ItemDisplay entity spawned by the block entity). Empty model = nothing rendered by the block itself."
+}

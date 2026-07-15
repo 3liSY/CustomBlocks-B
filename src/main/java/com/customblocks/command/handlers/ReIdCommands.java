@@ -78,7 +78,7 @@ public final class ReIdCommands {
             return 0;
         }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
         ReIdMenu.openAnvil(p, id, () -> {}); // from the command there is no menu to return to
@@ -93,27 +93,33 @@ public final class ReIdCommands {
             Chat.error(src, "There's no block called \"" + oldId + "\". Check /cb list for the right id.");
             return 0;
         }
-        if (LockManager.isLocked(oldId)) {
-            Chat.error(src, "\"" + oldId + "\" is locked. Use /cb unlock " + oldId + " to edit it.");
+        // getById resolves case-insensitively, so the typed oldId may differ in case from the STORED id.
+        // Use the stored id from here on — SlotManager.reId's internal lookup is exact, so passing the raw
+        // typed id (wrong case) made it find nothing and fail ("Couldn't change…"). (G25 case-mismatch fix.)
+        String realOld = before.customId();
+        if (LockManager.isLocked(realOld)) {
+            Chat.lockedError(src, realOld);
             return 0;
         }
-        if (newId.equals(oldId)) {
+        if (newId.equals(realOld)) {
             Chat.info(src, "\"" + newId + "\" is already its id — nothing to change.");
             return 1;
         }
-        if (SlotManager.hasId(newId)) {
+        // A pure case-change of the SAME id (newId differs from realOld only by case) is allowed — it just
+        // re-cases this block. A clash with a DIFFERENT existing block is the real "already taken" conflict.
+        if (SlotManager.hasId(newId) && !newId.equalsIgnoreCase(realOld)) {
             Chat.error(src, "\"" + newId + "\" is already taken by another block. Pick a different id.");
             return 0;
         }
 
-        SlotData after = SlotManager.reId(oldId, newId);
+        SlotData after = SlotManager.reId(realOld, newId);
         if (after == null) {
-            Chat.error(src, "Couldn't change the id \"" + oldId + "\" to \"" + newId + "\".");
+            Chat.error(src, "Couldn't change the id \"" + realOld + "\" to \"" + newId + "\".");
             return 0;
         }
         UndoManager.recordReid(actor(src), before, after);
-        Chat.success(src, "Changed id \"" + oldId + "\" to \"" + newId + "\". Undo with /cb undo.");
-        if (src.getEntity() instanceof ServerPlayerEntity p) HudSync.sendTo(p);
+        Chat.success(src, "Changed id \"" + realOld + "\" to \"" + newId + "\". Undo with /cb undo.");
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: id/name change shows live for ALL players (was actor-only)
         return 1;
     }
 

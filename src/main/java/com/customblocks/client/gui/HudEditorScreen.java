@@ -44,10 +44,10 @@ import java.util.List;
 @Environment(EnvType.CLIENT)
 public class HudEditorScreen extends Screen {
 
-    // Group 27 standard colours.
+    // Group 27 standard colours — locked red+black (2026-07-04). Cyan stays: spec'd snap-guide colour.
     private static final int BACKDROP = 0x33000000;
-    private static final int BAR_BG   = 0xAA000000;
-    private static final int GOLD     = 0xFFFFAA00;
+    private static final int BAR_BG   = CbTheme.BAR_BG;
+    private static final int GOLD     = CbTheme.ACCENT;
     private static final int CYAN      = 0xFF39E0C8;
     private static final int BAR_H    = 42;
 
@@ -87,9 +87,9 @@ public class HudEditorScreen extends Screen {
     private boolean confirmingCancel = false;
     private boolean helpOpen = false;
 
-    // Save flash.
-    private boolean saveFlash = false;
-    private long    saveFlashEnd = 0;
+    // §A4 movable/dockable action bar (replaces the old fixed full-width button strip).
+    private com.customblocks.client.gui.panel.CbActionBar bar;
+    private final CbSettingsOverlay settings = new CbSettingsOverlay(); // §G27.8.B ⚙ Settings
 
     private ButtonWidget masterBtn, snapBtn, triggerBtn, soundBtn, volBtn;
 
@@ -99,26 +99,21 @@ public class HudEditorScreen extends Screen {
 
     @Override
     protected void init() {
-        int barY = height - BAR_H;
+        // §A4 movable action bar: [Undo] [Redo] ··· [Save] ··· [Copy] [Reset] [Cancel]
+        if (bar == null) bar = new com.customblocks.client.gui.panel.CbActionBar("hud", List.of(
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Undo", this::undo, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Redo", this::redo, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Save", this::save, true),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Copy", this::copyLayout, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Reset", () -> { pushUndo(); HudConfig.resetDefaults(); selected = -1; rebuild(); }, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Cancel", this::onCancel, false)));
+        bar.init(width, height);
 
-        // Bottom action bar: [Undo] [Redo] ··· [§aSave] ··· [Copy] [Reset] [Cancel]
-        addDrawableChild(ButtonWidget.builder(Text.literal("Undo"), b -> undo())
-                .dimensions(8, barY + 11, 44, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Redo"), b -> redo())
-                .dimensions(56, barY + 11, 44, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("§aSave"), b -> save())
-                .dimensions(width / 2 - 44, barY + 11, 88, 20).build());
-        int right = width - 8;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> onCancel())
-                .dimensions(right - 66, barY + 11, 66, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Reset"), b -> { pushUndo(); HudConfig.resetDefaults(); selected = -1; rebuild(); })
-                .dimensions(right - 136, barY + 11, 66, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Copy"), b -> copyLayout())
-                .dimensions(right - 206, barY + 11, 66, 20).build());
-
-        // [?] help overlay.
+        // [?] help overlay + ⚙ settings (§G27.8.B).
         addDrawableChild(ButtonWidget.builder(Text.literal("?"), b -> helpOpen = !helpOpen)
                 .dimensions(width - 24, 10, 16, 16).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("⚙"), b -> settings.toggle())
+                .dimensions(width - 44, 10, 16, 16).build());
 
         if (panelCollapsed) return;   // see-through collapse (Tab) — hide panel widgets
 
@@ -173,7 +168,7 @@ public class HudEditorScreen extends Screen {
 
     @Override
     public void render(DrawContext ctx, int mx, int my, float delta) {
-        ctx.fill(0, 0, width, height, BACKDROP);
+        ctx.fill(0, 0, width, height, CbScreenPrefs.get().backdrop()); // §A2/§G27.8.B persisted dim
 
         // Live preview (sample when not aiming at a custom block).
         HudFieldType.Ctx live = HudRenderer.buildContext(this.client);
@@ -190,28 +185,21 @@ public class HudEditorScreen extends Screen {
         // Title bar.
         ctx.fill(0, 0, width, BAR_H, BAR_BG);
         ctx.fill(0, BAR_H - 1, width, BAR_H, GOLD);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lHUD Editor"), 8, 10, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(textRenderer, CbTheme.title("HUD Editor"), 8, 10, 0xFFFFFFFF);
         ctx.drawTextWithShadow(textRenderer,
                 Text.literal("§7drag bricks to place · magnetic snap · arrows nudge · shift = free"), 8, 22, 0xFFFFFFFF);
         ctx.drawTextWithShadow(textRenderer,
                 Text.literal("§8Ctrl+Z undo · Ctrl+C copy · Enter save · ? help"), 8, 32, 0xFFFFFFFF);
 
-        // Bottom action bar.
-        int barY = height - BAR_H;
-        ctx.fill(0, barY, width, height, BAR_BG);
-        ctx.fill(0, barY, width, barY + 1, GOLD);
-
         drawPanel(ctx, mx, my);
         super.render(ctx, mx, my, delta);   // widgets
 
+        // §A4 movable action bar (hidden while a modal overlay is up).
+        if (!confirmingCancel && bar != null) bar.render(ctx, width, height, textRenderer, mx, my);
+
         if (palette.isOpen()) palette.draw(ctx, textRenderer, width, PANEL_W, BAR_H, mx, my);
 
-        if (saveFlash) {
-            if (System.currentTimeMillis() < saveFlashEnd)
-                ctx.fill(width / 2 - 44, barY + 11, width / 2 + 44, barY + 31, 0x4400FF44);
-            else saveFlash = false;
-        }
-
+        settings.render(ctx, width, height, textRenderer, mx, my); // §G27.8.B ⚙ popup
         if (helpOpen) HudEditorOverlays.drawHelp(ctx, textRenderer, width, height);
         if (confirmingCancel) HudEditorOverlays.drawConfirm(ctx, textRenderer, width, height);
     }
@@ -250,6 +238,7 @@ public class HudEditorScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (helpOpen) { helpOpen = false; return true; }
+        if (settings.mouseClicked(mouseX, mouseY)) return true; // settings open → modal
         if (confirmingCancel) return handleConfirmClick(mouseX, mouseY);
         if (palette.isOpen()) {
             HudFieldType t = palette.click(mouseX, mouseY, width, PANEL_W, BAR_H);
@@ -264,6 +253,7 @@ public class HudEditorScreen extends Screen {
         }
         if (handlePanelClick(mouseX, mouseY)) return true;
         if (super.mouseClicked(mouseX, mouseY, button)) return true;
+        if (bar != null && bar.mouseClicked(mouseX, mouseY, button)) return true; // §A4 action bar
 
         // Begin dragging a brick if the cursor is over its preview bounds.
         if (button == 0) {
@@ -319,6 +309,8 @@ public class HudEditorScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dx, double dy) {
+        if (settings.mouseDragged(mouseX, mouseY)) return true;                           // settings sliders
+        if (bar != null && bar.mouseDragged(mouseX, mouseY, button, dx, dy)) return true; // bar re-dock drag
         if (reorderFrom >= 0 && button == 0) { reorderTo = rowAt(mouseY); return true; }
         if (dragging && button == 0 && selected >= 0 && selected < HudConfig.fields.size()) {
             HudField f = HudConfig.fields.get(selected);
@@ -354,6 +346,8 @@ public class HudEditorScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (settings.mouseReleased()) return true;
+        if (bar != null && bar.mouseReleased(mouseX, mouseY, button)) return true; // bar re-dock drop
         if (button == 0 && reorderFrom >= 0) {
             int to = rowAt(mouseY);
             if (to != reorderFrom && reorderFrom < HudConfig.fields.size()) {
@@ -384,6 +378,7 @@ public class HudEditorScreen extends Screen {
     public boolean keyPressed(int key, int scan, int mods) {
         boolean ctrl = (mods & GLFW.GLFW_MOD_CONTROL) != 0;
         boolean shift = (mods & GLFW.GLFW_MOD_SHIFT) != 0;
+        if (settings.keyPressed(key)) return true; // settings open → Esc closes, keys swallowed
         if (ctrl) {
             switch (key) {
                 case GLFW.GLFW_KEY_Z -> { if (shift) redo(); else undo(); return true; }
@@ -438,16 +433,14 @@ public class HudEditorScreen extends Screen {
     // ── Actions ────────────────────────────────────────────────────────────
     private void save() {
         HudConfig.save();
-        saveFlash = true;
-        saveFlashEnd = System.currentTimeMillis() + 600;
-        if (client != null && client.player != null)
-            client.player.sendMessage(Text.literal("§a✔ HUD layout saved."), false);
+        if (bar != null) bar.flashPrimary(); // lime "saved" pulse (Group 27 save feedback)
+        CbToast.success("HUD layout saved."); // §G27.13 — toast, not chat
         super.close();
     }
 
-    /** Cancel: confirm first if the layout changed since the editor opened. */
+    /** Cancel: confirm first if the layout changed since the editor opened (§G27.8.B toggleable). */
     private void onCancel() {
-        if (isDirty()) confirmingCancel = true;
+        if (isDirty() && CbScreenPrefs.get().confirmDiscard) confirmingCancel = true;
         else discard();
     }
 
@@ -465,8 +458,7 @@ public class HudEditorScreen extends Screen {
     private void copyLayout() {
         if (client == null) return;
         client.keyboard.setClipboard(HudPresetStore.encode(HudConfig.fields));
-        if (client.player != null)
-            client.player.sendMessage(Text.literal("§7HUD layout copied to clipboard."), false);
+        CbToast.info("HUD layout copied to clipboard."); // §G27.13 — toast, not chat
     }
 
     private void pasteLayout() {
@@ -475,9 +467,9 @@ public class HudEditorScreen extends Screen {
         if (list != null) {
             pushUndo();
             HudConfig.fields.clear(); HudConfig.fields.addAll(list); selected = -1; rebuild();
-            if (client.player != null) client.player.sendMessage(Text.literal("§aHUD layout pasted."), false);
-        } else if (client.player != null) {
-            client.player.sendMessage(Text.literal("§cClipboard isn't a valid HUD layout."), false);
+            CbToast.success("HUD layout pasted.");
+        } else {
+            CbToast.error("Clipboard isn't a valid HUD layout.");
         }
     }
 

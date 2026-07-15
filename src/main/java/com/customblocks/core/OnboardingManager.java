@@ -12,6 +12,9 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.Chat;
+
+import com.customblocks.command.CbFmt;
 import com.google.gson.*;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.ClickEvent;
@@ -54,12 +57,14 @@ public final class OnboardingManager {
     }
 
     private static void sendWelcome(ServerPlayerEntity p) {
-        p.sendMessage(Text.literal("\n§6§lWelcome to §eCustomBlocks§6§l!"), false);
-        p.sendMessage(Text.literal("§7Turn any image URL into a working block:"), false);
-        p.sendMessage(suggest("  §a/cb create §7<id> <name> <url>", "/cb create "), false);
-        p.sendMessage(suggest("  §a/cb list", "/cb list"), false);
-        p.sendMessage(suggest("  §a/cb give §7<id>", "/cb give "), false);
-        p.sendMessage(Text.literal("§7Open the GUI with §a/cb gui§7, or type §a/cb help§7."), false);
+        Chat.toPlayer(p, Text.literal("\n" + CbFmt.HEAD + CbFmt.BOLD + "Welcome to " + CbFmt.VALUE + "CustomBlocks" + CbFmt.HEAD + CbFmt.BOLD + "!"));
+        Chat.toPlayer(p, CbFmt.DIM + "Turn any image URL into a working block:");
+        Chat.toPlayer(p, suggest("  " + CbFmt.OK + "/cb create " + CbFmt.DIM + "<id> <name> <url>", "/cb create "));
+        Chat.toPlayer(p, suggest("  " + CbFmt.OK + "/cb list", "/cb list"));
+        Chat.toPlayer(p, suggest("  " + CbFmt.OK + "/cb give " + CbFmt.DIM + "<id>", "/cb give "));
+        Chat.toPlayer(p, CbFmt.DIM + "Open the GUI with " + CbFmt.OK + "/cb gui" + CbFmt.DIM + ", or type " + CbFmt.OK + "/cb help" + CbFmt.DIM + ".");
+        // Group 23: hand the new player the Starter Guide book (first join only).
+        com.customblocks.core.onboarding.StarterBook.give(p);
     }
 
     private static MutableText suggest(String label, String cmd) {

@@ -68,7 +68,7 @@ public final class ColorsMenu {
                         "§7Drag Hue / Saturation / Lightness with a",
                         "§7live preview, then apply. §8(client screen)",
                         "§aClick §7→ pick a block"),
-                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.COLOR_PICK, "livecolor")));
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.COLOR_PICK, "recolor"))); // §G27.11 rename
 
         m.set(33, Icons.of(Items.SPYGLASS, "§eScreen Eyedrop",
                         "§7Click any pixel of your screen to grab",

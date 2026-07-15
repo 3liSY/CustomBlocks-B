@@ -55,7 +55,7 @@ public final class MagicMenu {
                 m.set(slot, icon, (pl, b, a) -> {
                     if (it.enabled()) {
                         pl.getInventory().insertStack(new ItemStack(toolFor(it.id())));
-                        Chat.tool(pl, "§fGave §e" + it.name());
+                        Chat.tool(pl, "Gave", it.name());
                     }
                 });
             }

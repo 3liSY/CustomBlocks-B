@@ -10,6 +10,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.HelpTopics;
@@ -42,44 +43,32 @@ public final class HelpCommands {
         }
         // Console fallback: a compact text list, one line per category.
         for (HelpTopics.Category c : HelpTopics.CATEGORIES) {
-            StringBuilder sb = new StringBuilder("§e" + c.name() + "§7: ");
+            StringBuilder sb = new StringBuilder(CbFmt.VALUE + c.name() + CbFmt.DIM + ": ");
             for (int i = 0; i < c.topics().size(); i++) {
-                if (i > 0) sb.append("§8, ");
-                sb.append("§f").append(c.topics().get(i).label());
+                if (i > 0) sb.append(CbFmt.FAINT + ", ");
+                sb.append(CbFmt.BODY).append(c.topics().get(i).label());
             }
             String line = sb.toString();
-            src.sendFeedback(() -> Text.literal(line), false);
+            Chat.raw(src, Text.literal(line));
         }
         return 1;
     }
 
     private static int welcome(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§b§lWelcome to CustomBlocks!§r §7Turn any "
-                + "image URL into a real, placeable block — here's how to get going:"), false);
-        src.sendFeedback(() -> Text.literal("§7 ")
-                .append(suggestButton("[Create your first block]", "/cb create ",
+        Chat.raw(src, CbFmt.VALUE + CbFmt.BOLD + "Welcome to CustomBlocks!" + CbFmt.RESET + " " + CbFmt.DIM + "Turn any "
+                + "image URL into a real, placeable block — here's how to get going:");
+        Chat.raw(src, Text.literal(CbFmt.DIM + " ")
+                .append(Chat.suggestButton("[Create your first block]", "/cb create ",
                         "Pre-fills /cb create — add an id, a name and an image URL"))
                 .append(Text.literal(" "))
-                .append(runButton("[Open the dashboard]", "/cb",
+                .append(Chat.runButton("[Open the dashboard]", "/cb",
                         "Open the CustomBlocks dashboard"))
                 .append(Text.literal(" "))
-                .append(runButton("[Browse help]", "/cb help",
-                        "Open the command browser")), false);
+                .append(Chat.runButton("[Browse help]", "/cb help",
+                        "Open the command browser")));
         return 1;
     }
 
-    private static MutableText runButton(String label, String command, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withColor(Formatting.GREEN)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
-    }
 
-    private static MutableText suggestButton(String label, String command, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withColor(Formatting.AQUA)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
-    }
 }

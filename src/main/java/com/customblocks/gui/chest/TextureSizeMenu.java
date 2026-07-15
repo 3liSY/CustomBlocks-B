@@ -49,10 +49,10 @@ public final class TextureSizeMenu {
         return switch (px) {
             case 16  -> "very blocky";
             case 32  -> "blocky";
-            case 64  -> "soft (old default)";
+            case 64  -> "soft";
             case 128 -> "sharp";
-            case 256 -> "sharpest (atlas-safe, default)";
-            case 512 -> "max — needs the new renderer (ADR-008)";
+            case 256 -> "sharper";
+            case 512 -> "sharpest (default)";
             default  -> "";
         };
     }

@@ -8,11 +8,13 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.core.LoreFormat;
 import net.minecraft.component.DataComponentTypes;
 import net.minecraft.component.type.LoreComponent;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
+import net.minecraft.text.Style;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
@@ -31,6 +33,16 @@ public final class Icons {
             for (String l : lore) lines.add(Text.literal(l).styled(st -> st.withItalic(false)));
             s.set(DataComponentTypes.LORE, new LoreComponent(lines));
         }
+        return s;
+    }
+
+    /**
+     * Like {@link #of} but the {@code name} carries '&' colour/format codes parsed with modern
+     * semantics — a colour keeps any bold/italic/etc., so '&l' works anywhere in the text (lore fix).
+     */
+    public static ItemStack ofCoded(Item item, String codedName, String... lore) {
+        ItemStack s = of(item, " ", lore);
+        s.set(DataComponentTypes.CUSTOM_NAME, LoreFormat.parse(codedName, Style.EMPTY.withItalic(false)));
         return s;
     }
 

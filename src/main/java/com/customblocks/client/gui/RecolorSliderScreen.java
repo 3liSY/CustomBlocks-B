@@ -6,8 +6,9 @@
  * shift is applied per cell live (same ColorMath the server bakes with). Apply sends RecolorApplyPayload
  * — the SERVER bakes the real texture; the client only previews (CLAUDE.md §5.8).
  *
- * G27.2 adds: 0x33 backdrop, gold title bar + hints, [?] help, sliders in a right panel, bottom action
- * bar [Undo][Redo][Rand]···[§aApply]···[Copy][Reset][Cancel], session undo/redo of slider moves,
+ * G27.2 adds: dimmable backdrop, red+black title bar + hints (locked palette 2026-07-04), [?] help,
+ * sliders in a right panel, the movable/dockable CbActionBar (§A4)
+ * [Undo][Redo][Rand]···[Apply]···[Copy][Reset][Cancel], session undo/redo of slider moves,
  * cancel-confirm. Called by CustomBlocksClient (OpenGuiPayload mode=RECOLOR_SLIDER).
  */
 package com.customblocks.client.gui;
@@ -24,14 +25,10 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.net.URI;
-
 @Environment(EnvType.CLIENT)
 public class RecolorSliderScreen extends Screen {
 
-    private static final int BAR_BG = 0xAA000000, GOLD = 0xFF_FF_AA_00, BAR_H = 42;
+    private static final int BAR_BG = CbTheme.BAR_BG, GOLD = CbTheme.ACCENT, BAR_H = 42;
     private static final double DEF_YAW = 28, DEF_PITCH = 16, DEF_SPIN = 0.45;
     private static final int DEF_HALF = 62, HALF_MIN = 36, HALF_MAX = 120, ZOOM_STEP = 8;
     private static final double SPIN_MAX = 2.5, SPIN_STEP = 0.15;
@@ -48,11 +45,12 @@ public class RecolorSliderScreen extends Screen {
     private CbGradSlider dragSlider;
 
     // Camera + frame state.
-    private double yaw = DEF_YAW, pitch = DEF_PITCH, spinSpeed = DEF_SPIN;
+    private double yaw = DEF_YAW, pitch = DEF_PITCH, spinSpeed = CbScreenPrefs.get().spinDefault;
     private boolean spinning = true, cubeDragging, dragged;
     private int half = DEF_HALF;
     private boolean confirmingCancel;
-    private long saveFlashEnd;
+    private com.customblocks.client.gui.panel.CbActionBar bar; // §A4 movable/dockable action bar
+    private final CbSettingsOverlay settings = new CbSettingsOverlay(); // §G27.8.B ⚙ Settings
     private final java.util.Deque<double[]> undo = new java.util.ArrayDeque<>(); // {hue,sat,light}
     private final java.util.Deque<double[]> redo = new java.util.ArrayDeque<>();
     private final CbHelpOverlay help = new CbHelpOverlay("Live Recolour", java.util.List.of(
@@ -77,16 +75,22 @@ public class RecolorSliderScreen extends Screen {
     protected void init() {
         if (confirmingCancel) { addCancelButtons(); return; }
         layoutSliders();
-        int cx = width / 2, by = height - BAR_H + 11, right = width - 8;
-        addDrawableChild(ButtonWidget.builder(Text.literal("Undo"), b -> undo()).dimensions(8,   by, 44, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Redo"), b -> redo()).dimensions(56,  by, 44, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Rand"), b -> randomize()).dimensions(104, by, 44, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("§aApply"), b -> apply()).dimensions(cx - 55, by, 110, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Cancel"), b -> close()).dimensions(right - 66,  by, 66, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Reset"),  b -> reset()).dimensions(right - 136, by, 66, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("Copy"),   b -> copy()).dimensions(right - 206, by, 66, 20).build());
+        // §A4 movable/dockable action bar (replaces the old fixed full-width button strip).
+        if (bar == null) bar = new com.customblocks.client.gui.panel.CbActionBar("recolor", java.util.List.of(
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Undo", this::undo, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Redo", this::redo, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Rand", this::randomize, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Apply", this::apply, true),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Copy", this::copy, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Reset", this::reset, false),
+                new com.customblocks.client.gui.panel.CbActionBar.Item("Cancel", this::close, false)));
+        bar.init(width, height);
         addDrawableChild(ButtonWidget.builder(Text.literal("?"), b -> help.toggle()).dimensions(width - 24, 10, 16, 16).build());
-        addDrawableChild(new CbDimSlider(width - 110, 8, 78, 13)); // §A2 backdrop dim
+        addDrawableChild(ButtonWidget.builder(Text.literal("⚙"), b -> settings.toggle()).dimensions(width - 44, 10, 16, 16).build()); // §G27.8.B
+        // §G27.8.A quick view angles
+        addDrawableChild(ButtonWidget.builder(Text.literal("Front"), b -> { yaw = 0; pitch = 0; }).dimensions(8, BAR_H + 6, 38, 14).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Iso"), b -> { yaw = DEF_YAW; pitch = DEF_PITCH; }).dimensions(48, BAR_H + 6, 30, 14).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Top"), b -> { yaw = 45; pitch = 85; }).dimensions(80, BAR_H + 6, 30, 14).build());
         if (grid == null && !failed) fetchAsync();
     }
 
@@ -100,25 +104,24 @@ public class RecolorSliderScreen extends Screen {
 
     private void fetchAsync() {
         Thread t = new Thread(() -> {
-            try {
-                BufferedImage img = ImageIO.read(URI.create(texUrl).toURL());
-                if (img == null) { failed = true; return; }
-                grid = PreviewCube.downsample(img);
-            } catch (Exception e) {
-                failed = true;
-            }
+            // §F3: prefer the block's already-baked local pack texture (no network, never 403s).
+            int[] local = LocalTexturePreview.load(id);
+            if (local != null) { grid = local; return; }
+            // Fallback: robust URL fetch (browser UA + Tenor/Giphy resolve) for blocks not baked locally.
+            StudioTextureLoader.Result r = StudioTextureLoader.load(texUrl);
+            if (r == null || r.frames() == null || r.frames().length == 0) { failed = true; return; }
+            grid = r.frames()[0];
         }, "CustomBlocks-RecolorFetch");
         t.setDaemon(true);
         t.start();
     }
 
     private void apply() {
-        saveFlashEnd = System.currentTimeMillis() + 600;
+        if (bar != null) bar.flashPrimary(); // lime "saved" pulse (Group 27 save feedback)
         ClientPlayNetworking.send(new RecolorApplyPayload(
                 id, (float) hue.value, (float) (sat.value / 100.0), (float) (light.value / 100.0),
                 tone.temp(), tone.contrast(), tone.shadow(), tone.highlight(), tone.filter()));
-        if (client != null && client.player != null)
-            client.player.sendMessage(Text.literal("§a✔ Recolour applied to '" + id + "'"), false);
+        CbToast.success("Recolour applied to '" + id + "'"); // §G27.13 — toast, not chat
         ClientPlayNetworking.send(new GuiBackPayload());
         super.close();
     }
@@ -130,7 +133,9 @@ public class RecolorSliderScreen extends Screen {
     /** Cancel / Esc — confirm if sliders moved, else ask the server to reopen the menu. */
     @Override
     public void close() {
-        if (isDirty() && !confirmingCancel) { confirmingCancel = true; clearChildren(); init(); return; }
+        if (isDirty() && CbScreenPrefs.get().confirmDiscard && !confirmingCancel) { // §G27.8.B toggleable
+            confirmingCancel = true; clearChildren(); init(); return;
+        }
         ClientPlayNetworking.send(new GuiBackPayload());
         super.close();
     }
@@ -179,22 +184,18 @@ public class RecolorSliderScreen extends Screen {
         // Title bar.
         ctx.fill(0, 0, width, BAR_H, BAR_BG);
         ctx.fill(0, BAR_H - 1, width, BAR_H, GOLD);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lLive Recolour §7— §f" + id), 8, 10, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(textRenderer, CbTheme.title("Live Recolour", id), 8, 10, 0xFFFFFFFF);
         ctx.drawTextWithShadow(textRenderer,
                 Text.literal("§7drag rotate · scroll = spin · shift+scroll = zoom · R = reset"), 8, 22, 0xFFFFFFFF);
         ctx.drawTextWithShadow(textRenderer,
                 Text.literal("§8Ctrl+Z undo · Ctrl+C copy · Enter apply · ? help"), 8, 32, 0xFFFFFFFF);
 
-        // Bottom action bar.
-        int barY = height - BAR_H;
-        ctx.fill(0, barY, width, height, BAR_BG);
-        ctx.fill(0, barY, width, barY + 1, GOLD);
-
         super.render(ctx, mx, my, delta);
 
-        if (System.currentTimeMillis() < saveFlashEnd)
-            ctx.fill(width / 2 - 55, barY + 11, width / 2 + 55, barY + 31, 0x4400FF44);
+        // §A4 movable action bar (hidden during the discard confirm).
+        if (!confirmingCancel && bar != null) bar.render(ctx, width, height, textRenderer, mx, my);
         if (confirmingCancel) renderCancelConfirm(ctx);
+        settings.render(ctx, width, height, textRenderer, mx, my); // §G27.8.B ⚙ popup
         help.render(ctx, width, height, textRenderer, mx, my); // drawn last → always on top; only the red X closes it
 
         if (!cubeDragging && spinning && !confirmingCancel) yaw = (yaw + spinSpeed * delta) % 360.0;
@@ -204,13 +205,13 @@ public class RecolorSliderScreen extends Screen {
         String spin = spinning ? Math.round(spinSpeed / SPIN_MAX * 100) + "%" : "paused";
         int zoom = (int) Math.round((half - HALF_MIN) * 100.0 / (HALF_MAX - HALF_MIN));
         ctx.drawTextWithShadow(textRenderer,
-                Text.literal("§8spin §7" + spin + " §8· zoom §7" + zoom + "%"), 8, height - BAR_H - 11, 0xFFFFFFFF);
+                Text.literal("§8spin §7" + spin + " §8· zoom §7" + zoom + "%"), 8, height - 14, 0xFFFFFFFF);
     }
 
     private void renderCancelConfirm(DrawContext ctx) {
         int cx = width / 2, cy = height / 2, pw = 200, ph = 70;
         ctx.fill(cx - pw / 2 - 1, cy - ph / 2 - 1, cx + pw / 2 + 1, cy + ph / 2 + 1, GOLD);
-        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, 0xFF1A1A1A);
+        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, CbTheme.DIALOG_BG);
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§fDiscard slider changes?"), cx, cy - 18, 0xFFFFFFFF);
     }
 
@@ -242,7 +243,7 @@ public class RecolorSliderScreen extends Screen {
         String code = (int) Math.round(hue.value) + "/" + (int) Math.round(sat.value) + "/" + (int) Math.round(light.value);
         if (client == null) return;
         client.keyboard.setClipboard(code);
-        if (client.player != null) client.player.sendMessage(Text.literal("§a✔ Copied HSL §7" + code), false);
+        CbToast.success("Copied H/S/L §7" + code); // §G27.13 — code is on the clipboard; no chat echo
     }
 
     private void paste() {
@@ -264,8 +265,10 @@ public class RecolorSliderScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (help.mouseClicked(mx, my)) return true;                       // help open → only the red X closes it
+        if (settings.mouseClicked(mx, my)) return true;                   // settings open → modal
         if (confirmingCancel) return super.mouseClicked(mx, my, button);
         if (super.mouseClicked(mx, my, button)) return true;
+        if (bar != null && bar.mouseClicked(mx, my, button)) return true; // §A4 action bar
         for (CbGradSlider s : new CbGradSlider[]{ hue, sat, light }) {
             if (s.hit(mx, my)) { pushUndo(); dragSlider = s; s.setFromX(mx); return true; }
         }
@@ -276,6 +279,8 @@ public class RecolorSliderScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+        if (settings.mouseDragged(mx, my)) return true;                           // settings sliders
+        if (bar != null && bar.mouseDragged(mx, my, button, dx, dy)) return true; // bar re-dock drag
         if (dragSlider != null) { dragSlider.setFromX(mx); return true; }
         if (tone.mouseDragged(mx)) return true;
         if (cubeDragging) {
@@ -289,6 +294,8 @@ public class RecolorSliderScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
+        if (settings.mouseReleased()) { cubeDragging = false; return true; }
+        if (bar != null && bar.mouseReleased(mx, my, button)) { cubeDragging = false; return true; }
         if (cubeDragging && !dragged) spinning = !spinning;
         dragSlider = null; cubeDragging = false; tone.mouseReleased();
         return super.mouseReleased(mx, my, button);
@@ -296,6 +303,7 @@ public class RecolorSliderScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mx, double my, double hAmt, double vAmt) {
+        if (bar != null && bar.isPointInside(mx, my)) return true; // don't spin/zoom over the action bar
         if (hasShiftDown())
             half = Math.max(HALF_MIN, Math.min(HALF_MAX, half + (int) Math.signum(vAmt) * ZOOM_STEP));
         else
@@ -310,6 +318,7 @@ public class RecolorSliderScreen extends Screen {
             if (key == GLFW.GLFW_KEY_ESCAPE) help.close();                      // Esc closes the help, not the screen
             return true;
         }
+        if (settings.keyPressed(key)) return true;                              // settings open → Esc closes, keys swallowed
         if (key == GLFW.GLFW_KEY_SLASH) { help.open(); return true; }           // ? opens help
         if (ctrl) {
             switch (key) {
@@ -321,7 +330,7 @@ public class RecolorSliderScreen extends Screen {
             }
         }
         switch (key) {
-            case GLFW.GLFW_KEY_R -> { yaw = DEF_YAW; pitch = DEF_PITCH; spinSpeed = DEF_SPIN; half = DEF_HALF; spinning = true; return true; }
+            case GLFW.GLFW_KEY_R -> { yaw = DEF_YAW; pitch = DEF_PITCH; spinSpeed = CbScreenPrefs.get().spinDefault; half = DEF_HALF; spinning = true; return true; }
             case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> { apply(); return true; }
         }
         return super.keyPressed(key, scan, mods);

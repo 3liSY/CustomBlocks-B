@@ -4,17 +4,17 @@
  * Responsibility: the local Blueprint share path (Group 12).
  *   /cb exportblock <id>   — give the player a Blueprint item carrying that block's recipe.
  *   /cb importblock        — recreate the block from a Blueprint held in the main hand.
- *   /cb importblock <code> — import by vault share code (deferred until the vault is deployed).
+ *   /cb importblock <code> — import by vault share code.
  *
  * Recipe (de)serialisation reuses BlockExporter so the Blueprint, the single-block JSON and the
  * category ZIP all speak the same schema. Stays well under the 400-line handler gate (§9.3).
  *
- * Depends on: Blueprint, BlockExporter, SlotManager, ResourcePackServer, CloudVaultClient, Chat
+ * Depends on: Blueprint, BlockExporter, SlotManager, ResourcePackServer, Chat, CloudCommands
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
-import com.customblocks.cloud.CloudVaultClient;
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.SlotData;
@@ -56,8 +56,8 @@ public final class BlueprintCommands {
         }
         ServerPlayerEntity player = src.getPlayerOrThrow();
         player.getInventory().insertStack(Blueprint.create(d));
-        Chat.success(src, "Made a Blueprint of §e" + id + "§r — it's in your inventory. "
-                + "Hand it to a friend; they run §7/cb importblock§r while holding it.");
+        Chat.success(src, "Made a Blueprint of " + CbFmt.VALUE + id + CbFmt.RESET + " — it's in your inventory. "
+                + "Hand it to a friend; they run " + CbFmt.DIM + "/cb importblock" + CbFmt.RESET + " while holding it.");
         return 1;
     }
 
@@ -74,7 +74,7 @@ public final class BlueprintCommands {
         BlockExporter.ImportResult r = BlockExporter.importJson(json);
         if (!r.created().isEmpty()) {
             ResourcePackServer.updatePack();
-            Chat.success(src, "Imported §e" + String.join(", ", r.created()) + "§r from the Blueprint.");
+            Chat.success(src, "Imported " + CbFmt.VALUE + String.join(", ", r.created()) + CbFmt.RESET + " from the Blueprint.");
             return 1;
         }
         if (!r.skipped().isEmpty()) {
@@ -86,15 +86,8 @@ public final class BlueprintCommands {
         return 0;
     }
 
-    /** /cb importblock <code> — vault share-code import (deferred until the vault is deployed). */
+    /** /cb importblock <code> — vault share-code import. */
     private static int importByCode(CommandContext<ServerCommandSource> ctx, String code) {
-        ServerCommandSource src = ctx.getSource();
-        if (!CloudVaultClient.isConfigured()) {
-            Chat.info(src, "Share-code import needs the cloud vault, which isn't set up yet. "
-                    + "For now, share blocks with a Blueprint item: /cb exportblock <id>.");
-            return 1;
-        }
-        Chat.info(src, "Share-code import is coming with the marketplace. Stay tuned!");
-        return 1;
+        return CloudCommands.downloadBlock(ctx.getSource(), code);
     }
 }

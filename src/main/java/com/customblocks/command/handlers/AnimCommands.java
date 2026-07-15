@@ -5,8 +5,8 @@
  *   • {@link #maybeCreateAnimated} — the create-animated rail: when /cb create's downloaded image is
  *     a multi-frame GIF/WebP, decode it to a vertical strip, store it, and mark the slot animated.
  *     Returns false (→ caller falls back to the static path) if the data isn't really animated.
- *   • /cb anim <id> — prints a clean, CLICKABLE control card (speed presets, loop, smoothing, trim).
- *   • /cb anim <id> ticks|fps|original|loop|smoothing|trim … — edit the animation's PLAIN NUMBERS,
+ *   • /cb animation <id> — opens the studio's Animation tab (edit mode) for that block.
+ *   • /cb animation <id> ticks|fps|original|loop|smoothing|trim … — edit the animation's PLAIN NUMBERS,
  *     then regenerate the .mcmeta + do ONE pack rebuild. Never re-downloads (the strip is stored).
  *
  * All decode work runs OFF the server thread (the caller is already on a daemon worker); only the
@@ -17,6 +17,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.AnimData;
@@ -41,15 +42,17 @@ import net.minecraft.server.network.ServerPlayerEntity;
 
 import java.util.Locale;
 import java.util.UUID;
+import java.util.function.Consumer;
 
 public final class AnimCommands {
 
     private AnimCommands() {} // static-only
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
-        // Group 14 Phase 2: /cb anim <id> opens the studio's Animation tab (edit mode); /cb anim (no id)
-        // opens the block list to pick one. The typed shortcuts below stay for scripting.
-        root.then(CommandManager.literal("anim")
+        // Group 14: /cb animation <id> opens the studio's Animation tab (edit mode); /cb animation (no id)
+        // opens the animated-only block list to pick one. The typed shortcuts below stay for scripting.
+        // Renamed from /cb anim 2026-06-22 (owner: hard rename — the old /cb anim is gone).
+        root.then(CommandManager.literal("animation")
                 .executes(ctx -> openList(ctx.getSource()))
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
@@ -91,7 +94,7 @@ public final class AnimCommands {
     }
 
     private static void syncHud(ServerCommandSource src) {
-        if (src.getEntity() instanceof ServerPlayerEntity p) HudSync.sendTo(p);
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: refresh all players' slot cache (was actor-only)
     }
 
     // ── create-animated rail (called from CreationCommands' download worker) ───
@@ -101,13 +104,19 @@ public final class AnimCommands {
      * animated, and rebuild the pack — then return true. Returns false when the data isn't actually
      * animated (or decodes to a single frame), so the caller can take the normal static path.
      * Runs on the caller's daemon worker thread; the slot mutation hops back to the server thread.
+     *
+     * {@code postApply} (nullable) runs on the server thread once the animated block exists, mirroring
+     * the static path in {@link CreationCommands}#createWithTexture so a caller (e.g. /cb guess … link)
+     * can react to the finished block — GIF links must fire it too, not just still images.
      */
     public static boolean maybeCreateAnimated(ServerCommandSource src, String id, String name,
-                                              byte[] raw, MinecraftServer server) {
+                                              byte[] raw, String url, MinecraftServer server,
+                                              Consumer<SlotData> postApply) {
         if (!AnimationDecoder.isAnimated(raw)) return false;
-        // Atlas strip → cap at 256 so a 512 config can't overflow the block atlas (the muffle); see ADR-007/008.
-        int atlasSize = Math.min(AnimationDecoder.ATLAS_MAX_SIZE, CustomBlocksConfig.textureSize);
-        AnimationDecoder.Decoded dec = AnimationDecoder.decode(raw, atlasSize);
+        // Off-atlas grid → decode at the full requested cell size (the decoder caps it only if the packed
+        // grid would exceed its memory budget). No 256 atlas cap, no frame-dropping to fit a strip.
+        int cellSize = Math.min(AnimationDecoder.OFFATLAS_MAX_SIZE, Math.max(64, CustomBlocksConfig.textureSize));
+        AnimationDecoder.Decoded dec = AnimationDecoder.decode(raw, cellSize);
         if (dec == null || dec.frameCount() <= 1) return false; // not usably animated → static fallback
 
         server.execute(() -> {
@@ -120,10 +129,12 @@ public final class AnimCommands {
             }
             TextureStore.save(created.index(), dec.stripPng());
             TextureStore.saveSource(created.index(), raw); // keep the original GIF/WebP for later re-decode (Part B)
-            AnimData anim = AnimData.ofDecoded(dec.frameCount(), dec.frameTimes(), dec.transparency());
+            TextureStore.saveUrl(created.index(), url);    // remember the link so the studio can show it later
+            AnimData anim = AnimData.ofDecoded(dec.frameCount(), dec.frameTimes(), dec.frameTimesMs(), dec.transparency());
             SlotManager.setAnim(id, anim);
             SlotData full = SlotManager.getById(id);
             UndoManager.recordCreate(actor(src), full != null ? full : created);
+            if (postApply != null) postApply.accept(full != null ? full : created); // e.g. set as a guess look, before the rebuild
             ResourcePackServer.updatePack();
             Chat.success(src, "Animated block \"" + id + "\" created (" + dec.frameCount() + " frames)"
                     + (CustomBlocksConfig.silentPack ? " — it'll play in a moment."
@@ -134,44 +145,44 @@ public final class AnimCommands {
         return true;
     }
 
-    // ── /cb anim — open the GUI (Group 14 Phase 2 replaced the chat card) ──────
+    // ── /cb animation — open the GUI (Group 14 Phase 2 replaced the chat card) ──
 
-    /** /cb anim (no id) — open the ANIMATED-ONLY block list; clicking one opens the studio's Animation
+    /** /cb animation (no id) — open the ANIMATED-ONLY block list; clicking one opens the studio's Animation
      *  tab for that block (Group 14 Phase 2 open fix — was the full block list with the wrong click). */
     private static int openList(ServerCommandSource src) {
         if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
-            Chat.error(src, "Run /cb anim <id> to edit a block's animation in the studio.");
+            Chat.error(src, "Run /cb animation <id> to edit a block's animation in the studio.");
             return 0;
         }
         GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.ANIM_LIST));
         return 1;
     }
 
-    // ── /cb anim <id> … editors (no re-download — strip already stored) ───────
+    // ── /cb animation <id> … editors (no re-download — strip already stored) ──
 
     private static int setTicks(ServerCommandSource src, String id, int ticks) {
         return edit(src, id, a -> a.withUniform(ticks),
-                "Speed set to §e" + ticks + "§r ticks/frame (" + fmt(20.0 / ticks) + " fps).");
+                "Speed set to " + CbFmt.VALUE + ticks + CbFmt.RESET + " ticks/frame (" + fmt(20.0 / ticks) + " fps).");
     }
 
     private static int setFps(ServerCommandSource src, String id, int fps) {
         int ticks = Math.max(1, Math.round(20f / fps));
         return edit(src, id, a -> a.withUniform(ticks),
-                "Speed set to §e" + fps + "§r fps (" + ticks + " ticks/frame).");
+                "Speed set to " + CbFmt.VALUE + fps + CbFmt.RESET + " fps (" + ticks + " ticks/frame).");
     }
 
     private static int setOriginal(ServerCommandSource src, String id) {
-        return edit(src, id, AnimData::withMatchOriginal, "Speed back to the clip's §eoriginal§r timing.");
+        return edit(src, id, AnimData::withMatchOriginal, "Speed back to the clip's " + CbFmt.VALUE + "original" + CbFmt.RESET + " timing.");
     }
 
     private static int setLoop(ServerCommandSource src, String id, String mode) {
         String m = AnimData.normalizeLoop(mode);
-        return edit(src, id, a -> a.withLoopMode(m), "Loop mode set to §e" + m + "§r.");
+        return edit(src, id, a -> a.withLoopMode(m), "Loop mode set to " + CbFmt.VALUE + m + CbFmt.RESET + ".");
     }
 
     private static int setSmoothing(ServerCommandSource src, String id, String onoff) {
         boolean on = "on".equalsIgnoreCase(onoff) || "true".equalsIgnoreCase(onoff);
-        return edit(src, id, a -> a.withInterpolate(on), "Smoothing turned §e" + (on ? "on" : "off") + "§r.");
+        return edit(src, id, a -> a.withInterpolate(on), "Smoothing turned " + CbFmt.VALUE + (on ? "on" : "off") + CbFmt.RESET + ".");
     }
 
     private static int setTrim(ServerCommandSource src, String id, int start, int end) {
@@ -184,7 +195,7 @@ public final class AnimCommands {
             return 0;
         }
         return edit(src, id, a -> a.withTrim(start, end),
-                "Trimmed to frames §e" + Math.min(start, end) + "–" + Math.max(start, end) + "§r.");
+                "Trimmed to frames " + CbFmt.VALUE + Math.min(start, end) + "–" + Math.max(start, end) + CbFmt.RESET + ".");
     }
 
     /** Shared edit rail: validate, apply the immutable change, rebuild the pack ONCE, report. */
@@ -194,7 +205,7 @@ public final class AnimCommands {
         if (d == null) { notFound(src, id); return 0; }
         if (!d.isAnimated()) { notAnimated(src, id); return 0; }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
         SlotData before = d;

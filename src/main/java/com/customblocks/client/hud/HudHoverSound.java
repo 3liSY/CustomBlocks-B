@@ -8,7 +8,7 @@
  * lives in HudConfig.
  *
  * Sound note (NFR-12): only BLOCK_NOTE_BLOCK_* constants are RegistryEntry and need .value();
- * every other SoundEvents constant here is a bare SoundEvent. The verifySound gate enforces it.
+ * every other SoundEvents constant here is a bare SoundEvent. The soundGate gate enforces it.
  *
  * Depends on: HudConfig, SlotBlock, vanilla SoundEvents.
  * Called by: CustomBlocksClient (client tick → tick()), HudEditorScreen (sound dropdown → preview()).

@@ -4,8 +4,13 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [
+    "AbstractBlockStateMixin",
+    "BipedArmPoseMixin",
+    "ItemDisguiseMixin",
+    "ParticleDisguiseMixin",
     "ClientCommonNetworkHandlerMixin",
     "HudRenderMixin",
+    "RegistrySyncHealMixin",
     "ScreenInvoker"
   ],
   "injectors": {

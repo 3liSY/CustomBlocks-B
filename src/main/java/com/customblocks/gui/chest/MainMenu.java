@@ -6,7 +6,10 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.command.handlers.BulkSnapshot;
 import com.customblocks.core.SlotManager;
+import com.customblocks.core.onboarding.AchievementManager;
+import com.customblocks.core.onboarding.TipPool;
 import com.customblocks.gui.chest.Nav.Dest;
 import com.customblocks.gui.chest.Nav.MenuKey;
 import net.minecraft.item.Items;
@@ -29,8 +32,9 @@ public final class MainMenu {
                 "§7Blocks: §f" + SlotManager.usedSlots() + " §7/ §f" + SlotManager.getMaxSlots()));
 
         // Row 1 — content & data features.
+        // Block List + Bulk Operations both leave the chest for the Bulk Workbench Screen (§G07-3).
         m.set(19, Icons.of(Items.CHEST, "§a§lBlock List", "§7Browse and edit every block"),
-                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.BLOCK_LIST)));
+                (p, b, a) -> { GuiFx.open(p); BulkSnapshot.openFromChest(p, BulkSnapshot.TAB_BROWSE); });
         m.set(20, Icons.of(Items.BOOKSHELF, "§eCategories", "§7Browse blocks by category"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.CATEGORY_LIST)));
         m.set(21, Icons.of(Items.PAPER, "§eTemplates", "§7Show /cb template list"),
@@ -53,14 +57,22 @@ public final class MainMenu {
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.HISTORY)));
         m.set(31, Icons.of(Items.COMMAND_BLOCK, "§5§lBulk Operations", "§7Edit, delete, rename, move,",
                         "§7lock or favorite many blocks at once"),
-                (p, b, a) -> { BulkSession.get(p.getUuid()).prePicked = false; // fresh entry, not from a pick
-                        GuiRouter.navigate(p, MenuKey.of(Dest.BULK_HUB)); });
+                (p, b, a) -> { GuiFx.open(p); BulkSnapshot.openFromChest(p, BulkSnapshot.TAB_BULK); });
         m.set(32, Icons.of(Items.BRUSH, "§b§lColoring", "§7Backgrounds, palettes, gradients,",
                         "§7variants — every colour tool in one place"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.COLORS)));
         m.set(34, Icons.of(Items.LEVER, "§6§lConfig", "§7Open the server config",
                         "§8Live server settings — asks to confirm first"),
                 (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.CONFIG_CONFIRM)));
+
+        // Bottom row — onboarding (Group 23): rotating tip + achievements text view.
+        m.set(48, Icons.of(Items.LANTERN, "§e§lTip",
+                "§7" + TipPool.next(player.getUuid()),
+                "§8A new tip each time you open this."));
+        m.set(50, Icons.of(Items.GOLD_INGOT, "§6§lAchievements",
+                        "§7" + AchievementManager.progressLine(player.getUuid()),
+                        "§7Click to see your list."),
+                (p, b, a) -> GuiRouter.runCommand(p, "achievements"));
 
         m.set(49, Icons.close(), (p, b, a) -> p.closeHandledScreen());
         return m;

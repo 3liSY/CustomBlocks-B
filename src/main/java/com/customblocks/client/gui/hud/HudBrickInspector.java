@@ -26,7 +26,7 @@ import net.minecraft.text.Text;
 @Environment(EnvType.CLIENT)
 public class HudBrickInspector extends Screen {
 
-    private static final int GOLD = 0xFFFFAA00;
+    private static final int GOLD = com.customblocks.client.gui.CbTheme.ACCENT; // locked red (2026-07-04)
     private static final int PW = 224;
 
     // §G27.14 — tokens a Template brick can insert (resolve live from the look-at context).
@@ -209,8 +209,8 @@ public class HudBrickInspector extends Screen {
         if (parent != null) parent.render(ctx, mx, my, 0);
         ctx.fill(0, 0, width, height, 0x66000000);
         ctx.fill(px - 1, py - 1, px + PW + 1, py + ph + 1, GOLD);
-        ctx.fill(px, py, px + PW, py + ph, 0xF0101010);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lBrick · " + field.type.label()), px + 12, py + 9, 0xFFFFFFFF);
+        ctx.fill(px, py, px + PW, py + ph, com.customblocks.client.gui.CbTheme.PANEL_BG);
+        ctx.drawTextWithShadow(textRenderer, com.customblocks.client.gui.CbTheme.red("Brick · " + field.type.label()), px + 12, py + 9, 0xFFFFFFFF);
         // Colour chips next to the colour buttons.
         super.render(ctx, mx, my, delta);
     }

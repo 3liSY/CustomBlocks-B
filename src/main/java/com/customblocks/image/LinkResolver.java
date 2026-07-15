@@ -13,6 +13,7 @@
 package com.customblocks.image;
 
 import java.net.URI;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
@@ -34,6 +35,8 @@ public final class LinkResolver {
     private static final Pattern LINK_IMAGE_SRC = Pattern.compile(
             "<link\\b[^>]*rel\\s*=\\s*[\"']image_src[\"'][^>]*href\\s*=\\s*[\"']([^\"']+)[\"']",
             Pattern.CASE_INSENSITIVE);
+    // Google Drive file id from the /d/<id>/ path form (the ?id=<id> form is read via queryParam).
+    private static final Pattern DRIVE_PATH_ID = Pattern.compile("/d/([\\w-]+)");
 
     /** Image meta keys we trust, best first. */
     private static final List<String> IMAGE_KEYS = List.of(
@@ -92,6 +95,86 @@ public final class LinkResolver {
             if (stripQuery(abs).toLowerCase(Locale.ROOT).endsWith(".gif")) return abs;
         }
         return best;
+    }
+
+    /**
+     * Per-site shortcut: turn a known page / share / wrapper link into the DIRECT image URL using
+     * pure string rules (no network). Returns null when no rule matches — the caller then fetches
+     * the link as-is and, if it turns out to be a web page, falls back to {@link #resolveImageUrl}
+     * (the generic og:image reader, which handles imgur, Discord, Reddit, Pinterest, Tenor, Giphy,
+     * Steam, Flickr, DeviantArt, Tumblr, Wikimedia and most other sites once the download no longer
+     * asks for text/html). Only well-established, deterministic rewrites live here — never a guess
+     * that could break a link which would otherwise have worked.
+     */
+    public static String directImageUrl(String url) {
+        if (url == null || url.isBlank()) return null;
+        String u = url.trim();
+        String host = hostOf(u);
+        if (host == null) return null;
+
+        // Google Images result wrapper: the real picture is in the imgurl= query parameter.
+        if (host.contains("google.") && u.contains("imgurl=")) {
+            String v = queryParam(u, "imgurl");
+            if (v != null && (v.startsWith("http://") || v.startsWith("https://"))) return v;
+        }
+        // Google Drive share link (.../file/d/<ID>/... or ?id=<ID>) -> direct download form.
+        if (host.endsWith("drive.google.com") || host.endsWith("docs.google.com")) {
+            String id = driveId(u);
+            if (id != null) return "https://drive.google.com/uc?export=download&id=" + id;
+        }
+        // Dropbox: serve the raw bytes from the content host instead of the HTML preview page.
+        if (host.endsWith("dropbox.com")) {
+            return u.replaceFirst("://(www\\.)?dropbox\\.com", "://dl.dropboxusercontent.com")
+                    .replaceFirst("[?&]dl=0", "");
+        }
+        // Twitter/X media host: request the full-size original.
+        if (host.equals("pbs.twimg.com")) {
+            String fmt = queryParam(u, "format");
+            String ext = (fmt != null && !fmt.isBlank()) ? fmt : "jpg";
+            return stripQuery(u) + "?format=" + ext + "&name=large";
+        }
+        // GitHub "blob" file page -> the raw file.
+        if (host.equals("github.com") && u.contains("/blob/")) {
+            return u.replaceFirst("^https?://github\\.com/", "https://raw.githubusercontent.com/")
+                    .replaceFirst("/blob/", "/");
+        }
+        return null;
+    }
+
+    /** Host of a URL, lower-cased, or null if it can't be parsed. */
+    private static String hostOf(String url) {
+        try {
+            String h = URI.create(url).getHost();
+            return (h == null) ? null : h.toLowerCase(Locale.ROOT);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Read one query parameter's value (URL-decoded), or null if absent. */
+    private static String queryParam(String url, String key) {
+        int q = url.indexOf('?');
+        if (q < 0) return null;
+        for (String pair : url.substring(q + 1).split("&")) {
+            int eq = pair.indexOf('=');
+            if (eq <= 0) continue;
+            if (pair.substring(0, eq).equals(key)) {
+                try {
+                    return URLDecoder.decode(pair.substring(eq + 1), StandardCharsets.UTF_8);
+                } catch (Exception e) {
+                    return null;
+                }
+            }
+        }
+        return null;
+    }
+
+    /** Pull a Google Drive file id from the /d/<id>/ path form, else the ?id=<id> query form. */
+    private static String driveId(String url) {
+        Matcher m = DRIVE_PATH_ID.matcher(url);
+        if (m.find()) return m.group(1);
+        String id = queryParam(url, "id");
+        return (id != null && !id.isBlank()) ? id : null;
     }
 
     private static String stripQuery(String url) {

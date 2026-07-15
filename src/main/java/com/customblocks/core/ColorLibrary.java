@@ -34,6 +34,9 @@ public final class ColorLibrary {
 
     private static final Map<String, LibColor> BY_NAME;
 
+    /** name-slug ("light_gray") → colour, for hex-free variant ids (G06-5). */
+    private static final Map<String, LibColor> BY_SLUG;
+
     static {
         List<LibColor> all = new ArrayList<>(List.of(
                 // Vibrants
@@ -92,6 +95,29 @@ public final class ColorLibrary {
         alias(map, "indigo", "deep purple", "deeppurple");
         alias(map, "peach",  "apricot");
         BY_NAME = Collections.unmodifiableMap(map);
+
+        Map<String, LibColor> slugMap = new LinkedHashMap<>();
+        for (LibColor c : ALL) slugMap.put(slugOf(c.name()), c);
+        BY_SLUG = Collections.unmodifiableMap(slugMap);
+    }
+
+    /** A colour name as its id-suffix slug: "Light Gray" → "light_gray". */
+    public static String slugOf(String name) {
+        return name == null ? "" : name.toLowerCase(Locale.ROOT).replace(' ', '_');
+    }
+
+    /** Library name for an id-suffix slug: "light_gray" → "Light Gray"; null if not a preset slug. */
+    public static String nameForSlug(String slug) {
+        if (slug == null) return null;
+        LibColor c = BY_SLUG.get(slug.toLowerCase(Locale.ROOT));
+        return c == null ? null : c.name();
+    }
+
+    /** Library "#RRGGBB" for an id-suffix slug, or null if not a preset slug. */
+    public static String hexForSlug(String slug) {
+        if (slug == null) return null;
+        LibColor c = BY_SLUG.get(slug.toLowerCase(Locale.ROOT));
+        return c == null ? null : c.hex();
     }
 
     private static void alias(Map<String, LibColor> map, String canonical, String... aliases) {
@@ -124,6 +150,44 @@ public final class ColorLibrary {
             if (c.hex().equalsIgnoreCase(hex)) return c.name();
         }
         return null;
+    }
+
+    /**
+     * The library name of the preset NEAREST to an 0xRRGGBB colour (squared RGB distance) —
+     * e.g. 0xFF1493 → "Magenta". Used to name custom-hex variants by colour instead of "#hex"
+     * (G06-5). Never null: the 29 presets always yield a winner.
+     */
+    public static String nearestName(int rgb) {
+        int r = rgb >> 16 & 0xFF, g = rgb >> 8 & 0xFF, b = rgb & 0xFF;
+        String best = ALL.get(0).name();
+        long bestD = Long.MAX_VALUE;
+        for (LibColor c : ALL) {
+            int cr = c.rgb() >> 16 & 0xFF, cg = c.rgb() >> 8 & 0xFF, cb = c.rgb() & 0xFF;
+            long d = (long) (r - cr) * (r - cr) + (long) (g - cg) * (g - cg) + (long) (b - cb) * (b - cb);
+            if (d < bestD) { bestD = d; best = c.name(); }
+        }
+        return best;
+    }
+
+    /**
+     * Drop ONE trailing colour word from a display name so variant names don't compound
+     * (G06-5): "A4 Black" → "A4", "Mars Light Gray" → "Mars". Matches any of the 29 preset
+     * names (longest match wins, case-insensitive) only when preceded by a space — so a block
+     * literally named "Red" keeps its name. Returns the input unchanged when the trailing word
+     * isn't a colour or when stripping would leave nothing.
+     */
+    public static String stripTrailingColorName(String name) {
+        if (name == null || name.isBlank()) return name;
+        String trimmed = name.strip();
+        String low = trimmed.toLowerCase(Locale.ROOT);
+        String match = null;
+        for (LibColor c : ALL) {
+            String cn = c.name().toLowerCase(Locale.ROOT);
+            if (low.endsWith(" " + cn) && (match == null || cn.length() > match.length())) match = cn;
+        }
+        if (match == null) return trimmed;
+        String stripped = trimmed.substring(0, trimmed.length() - match.length()).strip();
+        return stripped.isEmpty() ? trimmed : stripped;
     }
 
     /** Up to 3 preset names similar to a failed input (for friendlier errors). */

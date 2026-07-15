@@ -51,7 +51,7 @@ public final class BulkValues {
                 String soundKey = value.trim().toLowerCase(Locale.ROOT);
                 boolean valid = false;
                 for (String s : SlotBlock.SOUND_TYPES) if (s.equals(soundKey)) { valid = true; break; }
-                if (!valid) { Chat.error(src, "Unknown sound '" + value + "'. Options: " + String.join(", ", SlotBlock.SOUND_TYPES)); return null; }
+                if (!valid) { Chat.error(src, "Unknown sound \"" + value + "\". Options: " + String.join(", ", SlotBlock.SOUND_TYPES)); return null; }
                 pv.strVal = soundKey;
                 pv.display = soundKey;
             }
@@ -62,7 +62,7 @@ public final class BulkValues {
                 pv.display = passable ? "passable" : "solid";
             }
             default -> {
-                Chat.error(src, "Unknown setting '" + prop + "'. Options: glow, hardness, sound, collision.");
+                Chat.error(src, "Unknown setting \"" + prop + "\". Options: glow, hardness, sound, collision.");
                 return null;
             }
         }

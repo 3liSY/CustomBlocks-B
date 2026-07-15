@@ -1,0 +1,1 @@
+Before making any decisions, changes, or responding to requests, you MUST read the CLAUDE.md file in the root of this repository. It contains the strict operating protocols and architecture rules for this project.

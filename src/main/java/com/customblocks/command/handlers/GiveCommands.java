@@ -19,6 +19,7 @@ import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.core.onboarding.FirstUseHints;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -93,6 +94,7 @@ public final class GiveCommands {
         Chat.success(src, notFit > 0
                 ? "Gave " + gave + " × " + d.displayName() + " (" + notFit + " didn't fit — inventory full)."
                 : "Gave you " + gave + " × " + d.displayName() + ".");
+        FirstUseHints.onFirstGive(player); // Group 23: one-time offhand-preview hint
         return 1;
     }
 

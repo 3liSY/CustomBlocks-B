@@ -11,6 +11,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.ParticleFx;
@@ -55,12 +56,12 @@ public final class FeedbackCommands {
             GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.PARTICLES));
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§eFeedback FX (particle / sound):"), false);
+        Chat.raw(src, CbFmt.VALUE + "Feedback FX (particle / sound):");
         for (String c : CustomBlocksConfig.FX_CATEGORIES) {
             boolean pOn = CustomBlocksConfig.particlesOn(c);
             boolean sOn = CustomBlocksConfig.soundsOn(c);
-            src.sendFeedback(() -> Text.literal("§7" + c + ": particle " + (pOn ? "§aon" : "§7off")
-                    + " §7/ sound " + (sOn ? "§aon" : "§7off")), false);
+            Chat.raw(src, Text.literal(CbFmt.DIM + c + ": particle " + (pOn ? CbFmt.OK + "on" : CbFmt.DIM + "off")
+                    + " " + CbFmt.DIM + "/ sound " + (sOn ? CbFmt.OK + "on" : CbFmt.DIM + "off")));
         }
         return 1;
     }
@@ -71,19 +72,19 @@ public final class FeedbackCommands {
         String cat = StringArgumentType.getString(ctx, "category").toLowerCase(Locale.ROOT);
         String state = StringArgumentType.getString(ctx, "state").toLowerCase(Locale.ROOT);
         if (!CustomBlocksConfig.isFxCategory(cat)) {
-            Chat.error(src, "Unknown category '" + cat + "'. Options: "
+            Chat.error(src, "Unknown category \"" + cat + "\". Options: "
                     + String.join(", ", CustomBlocksConfig.FX_CATEGORIES));
             return 0;
         }
         boolean on;
         if (state.equals("on")) on = true;
         else if (state.equals("off")) on = false;
-        else { Chat.error(src, "Use §fon §cor §foff§c."); return 0; }
+        else { Chat.error(src, "Use " + CbFmt.BODY + "on " + CbFmt.BAD + "or " + CbFmt.BODY + "off" + CbFmt.BAD + "."); return 0; }
         CustomBlocksConfig.particlesEnabled.put(cat, on);
         CustomBlocksConfig.soundsEnabled.put(cat, on);
         CustomBlocksConfig.save();
-        Chat.success(src, "Feedback (particle + sound) for §f" + cat + " §fis now "
-                + (on ? "§aON" : "§7OFF") + "§f.");
+        Chat.success(src, "Feedback (particle + sound) for " + CbFmt.BODY + cat + " " + CbFmt.BODY + "is now "
+                + (on ? CbFmt.OK + "ON" : CbFmt.DIM + "OFF") + CbFmt.BODY + ".");
         if (on && src.getEntity() instanceof ServerPlayerEntity p) {
             ParticleFx.preview(p, cat);
             SoundFx.preview(p, cat);

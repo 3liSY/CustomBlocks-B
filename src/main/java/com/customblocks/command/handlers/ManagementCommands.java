@@ -1,22 +1,24 @@
 /**
  * ManagementCommands.java
  *
- * Responsibility: Block management commands — lock/unlock, notes, favorites, drafts.
- * These are organizational tools: locking prevents modification; notes annotate a block;
- * favorites let each player bookmark blocks; drafts mark blocks as work-in-progress.
+ * Responsibility: Block management commands — lock/unlock and favorites. These are organizational
+ * tools: locking prevents modification; favorites let each player bookmark blocks. Notes moved to
+ * NoteCommands (Group 18); the draft/publish staging system was scrapped (SWEEP_INDEX §A).
  * Registered into the /cb tree by CommandRegistrar.
  *
- * Depends on: LockManager, BlockNotesManager, FavoritesManager, DraftManager, Chat, BlockSuggestions
+ * Depends on: LockManager, FavoritesManager, UndoManager, Chat, BlockSuggestions
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.core.WidgetSync;
+
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
-import com.customblocks.core.BlockNotesManager;
-import com.customblocks.core.DraftManager;
 import com.customblocks.core.FavoritesManager;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotManager;
+import com.customblocks.core.UndoManager;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -50,20 +52,7 @@ public final class ManagementCommands {
 
         root.then(CommandManager.literal("locked").executes(ManagementCommands::listLocked));
 
-        // ── Notes ─────────────────────────────────────────────────────────────
-        // /cb note <id>           → show note
-        // /cb note <id> clear     → clear note  (literal takes priority over argument)
-        // /cb note <id> <text...> → set note
-        root.then(CommandManager.literal("note")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> showNote(ctx, StringArgumentType.getString(ctx, "id")))
-                        .then(CommandManager.literal("clear")
-                                .executes(ctx -> clearNote(ctx, StringArgumentType.getString(ctx, "id"))))
-                        .then(CommandManager.argument("text", StringArgumentType.greedyString())
-                                .executes(ctx -> setNote(ctx,
-                                        StringArgumentType.getString(ctx, "id"),
-                                        StringArgumentType.getString(ctx, "text"))))));
+        // Notes → NoteCommands (Group 18). Draft/publish staging → scrapped (SWEEP_INDEX §A).
 
         // ── Favorites ─────────────────────────────────────────────────────────
         root.then(CommandManager.literal("fav")
@@ -72,35 +61,33 @@ public final class ManagementCommands {
                         .executes(ctx -> toggleFav(ctx, StringArgumentType.getString(ctx, "id")))));
 
         root.then(CommandManager.literal("favs").executes(ManagementCommands::listFavs));
-
-        // ── Drafts ────────────────────────────────────────────────────────────
-        root.then(CommandManager.literal("draft")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> markDraft(ctx, StringArgumentType.getString(ctx, "id")))));
-
-        root.then(CommandManager.literal("publish")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> publishDraft(ctx, StringArgumentType.getString(ctx, "id")))));
-
-        root.then(CommandManager.literal("drafts").executes(ManagementCommands::listDrafts));
     }
 
     // ── Lock handlers ─────────────────────────────────────────────────────────
 
+    /**
+     * G04-UNDO-DIALECT (2026-07-15): the success line used to read "Locked <id> — use /cb unlock <id> to
+     * edit it again", which is almost word-for-word the LOCK ERROR (Chat.lockedError) — so a successful
+     * lock and a refused edit looked like the same message. It now says what the lock DOES, quotes the id
+     * like every other line, and carries ↩ Undo. Both the lock and the unlock are recorded as a FLAG op,
+     * so that chip undoes THE LOCK — not some older unrelated edit it used to reach past.
+     */
     private static int lockBlock(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
         if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        if (!LockManager.lock(id)) { Chat.info(src, "'" + id + "' is already locked"); return 1; }
-        Chat.success(src, "Locked §f" + id + "§r — use §f/cb unlock " + id + "§r to edit it again");
+        if (!LockManager.lock(id)) { Chat.info(src, "\"" + id + "\" is already locked."); return 1; }
+        WidgetSync.pushAll(src.getServer());   // G03: the padlock is a server-wide fact
+        UndoManager.recordFlag(BulkConfirm.actor(src), new UndoManager.Flag(id, "lock", true, null), "lock");
+        Chat.successWith(src, "Locked \"" + id + "\" — nobody can edit it until it's unlocked.", Chat.undoButton());
         return 1;
     }
 
     private static int unlockBlock(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
-        if (!LockManager.unlock(id)) { Chat.info(src, "'" + id + "' is not locked"); return 1; }
-        Chat.success(src, "Unlocked §f" + id);
+        if (!LockManager.unlock(id)) { Chat.info(src, "\"" + id + "\" is not locked."); return 1; }
+        WidgetSync.pushAll(src.getServer());   // G03: the padlock is a server-wide fact
+        UndoManager.recordFlag(BulkConfirm.actor(src), new UndoManager.Flag(id, "lock", false, null), "unlock");
+        Chat.successWith(src, "Unlocked \"" + id + "\" — it can be edited again.", Chat.undoButton());
         return 1;
     }
 
@@ -108,42 +95,12 @@ public final class ManagementCommands {
         ServerCommandSource src = ctx.getSource();
         List<String> ids = LockManager.list();
         if (ids.isEmpty()) { Chat.info(src, "No locked blocks"); return 1; }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§c" + ids.size() + " locked block(s):"), false);
+        Chat.raw(src, CbFmt.BAD + ids.size() + " locked block(s):");
         for (String id : ids) {
-            MutableText line = Text.literal("§7 - §f" + id + " ")
-                    .append(runButton("[unlock]", "/cb unlock " + id, "Unlock " + id));
-            src.sendFeedback(() -> line, false);
+            MutableText line = Text.literal(CbFmt.DIM + " - " + CbFmt.BODY + id + " ")
+                    .append(Chat.runButton("[unlock]", "/cb unlock " + id, "Unlock " + id));
+            Chat.raw(src, line);
         }
-        return 1;
-    }
-
-    // ── Note handlers ─────────────────────────────────────────────────────────
-
-    private static int showNote(CommandContext<ServerCommandSource> ctx, String id) {
-        ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        String note = BlockNotesManager.getNote(id);
-        if (note == null) {
-            src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§7No note for §f" + id
-                    + "§7. Set one: §f/cb note " + id + " <text>"), false);
-        } else {
-            src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§fNote on §e" + id + "§r: §7" + note), false);
-        }
-        return 1;
-    }
-
-    private static int setNote(CommandContext<ServerCommandSource> ctx, String id, String text) {
-        ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        BlockNotesManager.setNote(id, text);
-        Chat.success(src, "Note on §f" + id + "§r saved");
-        return 1;
-    }
-
-    private static int clearNote(CommandContext<ServerCommandSource> ctx, String id) {
-        ServerCommandSource src = ctx.getSource();
-        if (!BlockNotesManager.clearNote(id)) { Chat.info(src, "No note set on '" + id + "'"); return 1; }
-        Chat.success(src, "Note cleared from §f" + id);
         return 1;
     }
 
@@ -159,10 +116,15 @@ public final class ManagementCommands {
         UUID uuid = player.getUuid();
         if (FavoritesManager.isFavorite(uuid, id)) {
             FavoritesManager.remove(uuid, id);
-            Chat.info(src, "Removed §f" + id + "§7 from favorites");
+            WidgetSync.push(player);
+            // The Flag carries the OWNER uuid, not the clicker's — undo must un-do it on THIS player's list.
+            UndoManager.recordFlag(BulkConfirm.actor(src), new UndoManager.Flag(id, "favorite", false, uuid), "unfavorite");
+            Chat.successWith(src, "Removed \"" + id + "\" from your favorites.", Chat.undoButton());
         } else {
             FavoritesManager.add(uuid, id);
-            Chat.success(src, "Added §f" + id + "§r to favorites ★");
+            WidgetSync.push(player);
+            UndoManager.recordFlag(BulkConfirm.actor(src), new UndoManager.Flag(id, "favorite", true, uuid), "favorite");
+            Chat.successWith(src, "Added \"" + id + "\" to your favorites ★", Chat.undoButton());
         }
         return 1;
     }
@@ -175,56 +137,20 @@ public final class ManagementCommands {
         }
         List<String> ids = FavoritesManager.list(player.getUuid());
         if (ids.isEmpty()) {
-            src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§7No favorites yet. Use §f/cb fav <id>§7 to bookmark a block."), false);
+            Chat.raw(src, CbFmt.DIM + "No favorites yet. Use " + CbFmt.BODY + "/cb fav <id>" + CbFmt.DIM + " to bookmark a block.");
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + ids.size() + " favorite(s):"), false);
+        Chat.raw(src, CbFmt.VALUE + ids.size() + " favorite(s):");
         for (String id : ids) {
-            MutableText line = Text.literal("§7 - §f" + id + " ")
-                    .append(runButton("[give]", "/cb give " + id, "Give " + id))
+            MutableText line = Text.literal(CbFmt.DIM + " - " + CbFmt.BODY + id + " ")
+                    .append(Chat.runButton("[give]", "/cb give " + id, "Give " + id))
                     .append(Text.literal(" "))
-                    .append(runButton("[unfav]", "/cb fav " + id, "Remove from favorites"));
-            src.sendFeedback(() -> line, false);
-        }
-        return 1;
-    }
-
-    // ── Draft handlers ────────────────────────────────────────────────────────
-
-    private static int markDraft(CommandContext<ServerCommandSource> ctx, String id) {
-        ServerCommandSource src = ctx.getSource();
-        if (SlotManager.getById(id) == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        if (!DraftManager.markDraft(id)) { Chat.info(src, "'" + id + "' is already a draft"); return 1; }
-        Chat.success(src, "§f" + id + "§r marked as draft. Publish with §f/cb publish " + id);
-        return 1;
-    }
-
-    private static int publishDraft(CommandContext<ServerCommandSource> ctx, String id) {
-        ServerCommandSource src = ctx.getSource();
-        if (!DraftManager.publish(id)) { Chat.info(src, "'" + id + "' is not a draft"); return 1; }
-        Chat.success(src, "§f" + id + "§r published ✔");
-        return 1;
-    }
-
-    private static int listDrafts(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource src = ctx.getSource();
-        List<String> ids = DraftManager.list();
-        if (ids.isEmpty()) { Chat.info(src, "No draft blocks"); return 1; }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§7" + ids.size() + " draft(s):"), false);
-        for (String id : ids) {
-            MutableText line = Text.literal("§7 - §f" + id + " ")
-                    .append(runButton("[publish]", "/cb publish " + id, "Publish " + id));
-            src.sendFeedback(() -> line, false);
+                    .append(Chat.runButton("[unfav]", "/cb fav " + id, "Remove from favorites"));
+            Chat.raw(src, line);
         }
         return 1;
     }
 
     // ── Clickable helpers ─────────────────────────────────────────────────────
 
-    private static MutableText runButton(String label, String cmd, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withColor(Formatting.AQUA)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, cmd))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
-    }
 }

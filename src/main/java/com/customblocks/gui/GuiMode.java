@@ -21,7 +21,14 @@ public enum GuiMode {
     EYEDROP(8),         // Group 10 — sample a colour from the Minecraft screen (client screen)
     ARABIC_PREVIEW(9),  // Group 13 — live Arabic word preview, 3D rotatable block (client screen)
     SHAPE_EDITOR(10),   // Group 27 §G27.5 — named-shape picker, 3D shape preview (client screen)
-    CREATE_STUDIO(11);  // Group 27 §G27.6 — block creation studio, /cb create no-args (client screen)
+    CREATE_STUDIO(11),  // Group 27 §G27.6 — block creation studio, /cb create no-args (client screen)
+    RECORD_OVERLAY(12), // Group 29 Build B - Record Overlay Studio/actions (client-local)
+    CATEGORY_HUB(13),   // Group 27 Category Hub — full red+black category manager (client screen)
+    GUESS_SETTINGS(14), // Group 30 §10 / G30-4 — shared Guess Settings screen (Pose tab: sliders + live dummy)
+    BUZZER_PANEL(15),   // Group 31 item 4 — BuzzerGame admin panel screen (control + settings + link list)
+    BULK_WORKBENCH(16), // Group 07 — Bulk Operations Hub (Catalog · Console · Health tabs; replaces the chest bulk flow)
+    BACKUP_SCREEN(17),  // Group 09 §G09-A4 — Backup Screen (list · restore · delete · rename · protect; replaces the chest backup menu)
+    SETALL_SCREEN(18);  // Group 07 — Set All Screen (/cb setall on a dedicated screen: setting + value → apply to every block)
 
     public final int id;
 

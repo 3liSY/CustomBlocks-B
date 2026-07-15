@@ -10,6 +10,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.image.BackgroundRemover;
@@ -136,8 +137,8 @@ public final class ConfigCommands {
             GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CONFIG_CONFIRM));
             return 1;
         }
-        Chat.info(src, "Undo mode: §f" + label(CustomBlocksConfig.undoMode)
-                + " §8(/cb config undomode to switch)");
+        Chat.info(src, "Undo mode: " + CbFmt.BODY + label(CustomBlocksConfig.undoMode)
+                + " " + CbFmt.FAINT + "(/cb config undomode to switch)");
         return 1;
     }
 
@@ -148,9 +149,9 @@ public final class ConfigCommands {
 
     private static int autoBackupStatus(CommandContext<ServerCommandSource> ctx) {
         int iv = CustomBlocksConfig.autoBackupInterval;
-        Chat.info(ctx.getSource(), "Auto-backup: " + (iv <= 0 ? "§cOFF" : "§aevery " + iv + " min")
-                + " §7· keep §f" + CustomBlocksConfig.autoBackupKeepCount
-                + " §8(/cb config autobackup interval <min> · keep <count>)");
+        Chat.info(ctx.getSource(), "Auto-backup: " + (iv <= 0 ? CbFmt.BAD + "OFF" : CbFmt.OK + "every " + iv + " min")
+                + " " + CbFmt.DIM + "· keep " + CbFmt.BODY + CustomBlocksConfig.autoBackupKeepCount
+                + " " + CbFmt.FAINT + "(/cb config autobackup interval <min> · keep <count>)");
         return 1;
     }
 
@@ -214,13 +215,13 @@ public final class ConfigCommands {
         CustomBlocksConfig.undoMode = mode;
         CustomBlocksConfig.save();
         UndoManager.clearAll(); // switching scope invalidates the old stacks
-        Chat.success(ctx.getSource(), "Undo mode → " + label(mode) + " §7(history cleared)");
+        Chat.success(ctx.getSource(), "Undo mode → " + label(mode) + " " + CbFmt.DIM + "(history cleared)");
         return 1;
     }
 
     private static int hudStatus(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "HUD: " + (CustomBlocksConfig.hudEnabled ? "§aON" : "§cOFF")
-                + " §8(/cb config hud toggle · /cb edithud to customize)");
+        Chat.info(ctx.getSource(), "HUD: " + (CustomBlocksConfig.hudEnabled ? CbFmt.OK + "ON" : CbFmt.BAD + "OFF")
+                + " " + CbFmt.FAINT + "(/cb config hud toggle · /cb edithud to customize)");
         return 1;
     }
 
@@ -235,8 +236,8 @@ public final class ConfigCommands {
     }
 
     private static int didYouMeanStatus(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Typo correction (Did-you-mean) is set to §f"
-                + CustomBlocksConfig.didYouMean + "§7. Options: smart, always, off.");
+        Chat.info(ctx.getSource(), "Typo correction (Did-you-mean) is set to " + CbFmt.BODY
+                + CustomBlocksConfig.didYouMean + CbFmt.DIM + ". Options: smart, always, off.");
         return 1;
     }
 
@@ -261,8 +262,8 @@ public final class ConfigCommands {
     }
 
     private static int silentPackStatus(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Silent resource pack: " + (CustomBlocksConfig.silentPack ? "§aON" : "§cOFF")
-                + " §8(/cb config silentpack toggle)");
+        Chat.info(ctx.getSource(), "Silent resource pack: " + (CustomBlocksConfig.silentPack ? CbFmt.OK + "ON" : CbFmt.BAD + "OFF")
+                + " " + CbFmt.FAINT + "(/cb config silentpack toggle)");
         return 1;
     }
 
@@ -292,35 +293,35 @@ public final class ConfigCommands {
     }
 
     private static int textureSizeStatus(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Texture size: §e" + CustomBlocksConfig.textureSize
-                + "px §8(/cb config texturesize 16-" + CustomBlocksConfig.MAX_TEXTURE_SIZE
+        Chat.info(ctx.getSource(), "Texture size: " + CbFmt.VALUE + CustomBlocksConfig.textureSize
+                + "px " + CbFmt.FAINT + "(/cb config texturesize 16-" + CustomBlocksConfig.MAX_TEXTURE_SIZE
                 + " · higher = sharper, bigger pack)");
         return 1;
     }
 
     private static int setTextureSize(CommandContext<ServerCommandSource> ctx, int px) {
-        int size = CustomBlocksConfig.sanitizeTextureSize(px); // pow2; ≤256 is atlas-safe, 512 needs the own-texture renderer
+        int size = CustomBlocksConfig.sanitizeTextureSize(px); // pow2, 16..512 — all blocks render off-atlas (ADR-008) so 512 is crisp
         CustomBlocksConfig.textureSize = size;
         CustomBlocksConfig.save();
         String note;
         if (px != size) {
-            note = " §7(snapped from " + px + "px — sizes are powers of two up to "
+            note = " " + CbFmt.DIM + "(snapped from " + px + "px — sizes are powers of two up to "
                     + CustomBlocksConfig.MAX_TEXTURE_SIZE + "px).";
-        } else if (size > 256) {
-            note = " §e(heads up: " + size + "px is past the atlas-safe 256px — current blocks render via the"
-                    + " atlas and may soften at this size until the own-texture renderer ships. See ADR-008.)";
+        } else if (size >= 512) {
+            note = " " + CbFmt.OK + "(" + size + "px — sharpest; bigger pack).";
         } else {
-            note = " §7(" + size + "px is atlas-safe and crisp).";
+            note = " " + CbFmt.DIM + "(higher = sharper; 512 is the crisp default).";
         }
-        Chat.success(ctx.getSource(), "Texture size → §e" + size + "px§r. "
-                + "Re-create or retexture a block to see it at the new resolution" + note);
+        Chat.success(ctx.getSource(), "Texture size → " + CbFmt.VALUE + size + "px" + CbFmt.RESET + ". "
+                + "Run " + CbFmt.VALUE + "/cb retextureall " + size + CbFmt.RESET + " to rebuild existing blocks — images AND GIFs, "
+                + "from each block's saved original (it backs everything up first, so it's safe to try)" + note);
         return 1;
     }
 
     private static int backgroundStatus(CommandContext<ServerCommandSource> ctx) {
         String mode = CustomBlocksConfig.backgroundMode;
-        Chat.info(ctx.getSource(), "Background removal: §f" + BackgroundRemover.displayName(mode)
-                + " §8(arg: " + BackgroundRemover.commandArg(mode)
+        Chat.info(ctx.getSource(), "Background removal: " + CbFmt.BODY + BackgroundRemover.displayName(mode)
+                + " " + CbFmt.FAINT + "(arg: " + BackgroundRemover.commandArg(mode)
                 + " · options: NoBgRemove · BgRemove · BgRemove&More)");
         return 1;
     }
@@ -333,8 +334,8 @@ public final class ConfigCommands {
         }
         CustomBlocksConfig.backgroundMode = mode;
         CustomBlocksConfig.save();
-        Chat.success(ctx.getSource(), "Background removal → §f" + BackgroundRemover.displayName(mode)
-                + "§a. " + switch (mode) {
+        Chat.success(ctx.getSource(), "Background removal → " + CbFmt.BODY + BackgroundRemover.displayName(mode)
+                + CbFmt.OK + ". " + switch (mode) {
                     case "edges"  -> "New textures get their edge background painted black.";
                     case "closed" -> "Edge + enclosed background areas painted black.";
                     default        -> "Textures are used exactly as downloaded.";
@@ -345,9 +346,9 @@ public final class ConfigCommands {
     private static int toleranceStatus(CommandContext<ServerCommandSource> ctx) {
         int t = CustomBlocksConfig.backgroundTolerance;
         String mode = CustomBlocksConfig.backgroundMode;
-        Chat.info(ctx.getSource(), "Background strength: §f" + t + "§7/100 §8("
+        Chat.info(ctx.getSource(), "Background strength: " + CbFmt.BODY + t + CbFmt.DIM + "/100 " + CbFmt.FAINT + "("
                 + ("none".equals(mode) ? "off" : BackgroundRemover.displayName(mode))
-                + ") §7— /cb tolerance <0-100>");
+                + ") " + CbFmt.DIM + "— /cb tolerance <0-100>");
         return 1;
     }
 
@@ -357,20 +358,20 @@ public final class ConfigCommands {
             CustomBlocksConfig.backgroundTolerance = 0;
             CustomBlocksConfig.backgroundMode = "none";
             CustomBlocksConfig.save();
-            Chat.success(src, "Background removal turned §coff§a §7(strength 0). Textures are used exactly as downloaded.");
+            Chat.success(src, "Background removal turned " + CbFmt.BAD + "off" + CbFmt.OK + " " + CbFmt.DIM + "(strength 0). Textures are used exactly as downloaded.");
             return 1;
         }
         CustomBlocksConfig.backgroundTolerance = value;
         CustomBlocksConfig.save();
         // Ask (clickable) which reach to apply the new strength at.
-        MutableText msg = Text.literal(Chat.PREFIX + "§fStrip strength set to §e" + value
-                        + "§7/100. Choose how far it reaches:  ")
-                .append(modeButton("§a§l[ Background Only ]", "/cb config background BgRemove",
+        MutableText msg = Text.literal(CbFmt.BODY + "Strip strength set to " + CbFmt.VALUE + value
+                        + CbFmt.DIM + "/100. Choose how far it reaches:  ")
+                .append(modeButton(CbFmt.OK + CbFmt.BOLD + "[ Background Only ]", "/cb config background BgRemove",
                         "Remove only the outer background connected to the image edges"))
                 .append(Text.literal("  "))
-                .append(modeButton("§b§l[ Background + Enclosed Areas ]", "/cb config background BgRemove&More",
+                .append(modeButton(CbFmt.VALUE + CbFmt.BOLD + "[ Background + Enclosed Areas ]", "/cb config background BgRemove&More",
                         "Also remove enclosed background pockets trapped inside the image"));
-        src.sendFeedback(() -> msg, false);
+        Chat.line(src, msg);
         return 1;
     }
 

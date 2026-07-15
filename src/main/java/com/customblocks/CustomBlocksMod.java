@@ -23,18 +23,10 @@ import com.customblocks.item.ToolItems;
 import com.customblocks.network.HudSync;
 import com.customblocks.network.ResourcePackServer;
 import com.customblocks.network.payloads.ArabicLabelsPayload;
-import com.customblocks.network.payloads.ChatPrefillPayload;
-import com.customblocks.network.payloads.HudStatePayload;
-import com.customblocks.network.payloads.HudSyncPayload;
-import com.customblocks.network.payloads.OpenGuiPayload;
-import com.customblocks.network.payloads.GuiBackPayload;
-import com.customblocks.network.payloads.RecolorApplyPayload;
-import com.customblocks.network.payloads.RegenPackPayload;
 import com.customblocks.network.payloads.SilentPackPayload;
 import net.fabricmc.api.ModInitializer;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.itemgroup.v1.FabricItemGroup;
-import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
@@ -64,7 +56,8 @@ public class CustomBlocksMod implements ModInitializer {
     public static final RegistryKey<ItemGroup> CUSTOM_TOOLS_TAB =
             RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(MOD_ID, "tools"));
 
-    /** Group 13: searchable Arabic auto-join letters (every letter x 4 forms x 4 colours). */
+    /** Group 13 / G13-25 CP5: the dedicated Arabic tab, now listing the REAL letter/number slot
+     *  blocks (the old customblocks:arabic_letter NBT system was removed entirely). */
     public static final RegistryKey<ItemGroup> ARABIC_JOIN_TAB =
             RegistryKey.of(RegistryKeys.ITEM_GROUP, Identifier.of(MOD_ID, "arabic_join"));
 
@@ -80,151 +73,87 @@ public class CustomBlocksMod implements ModInitializer {
                 CustomBlocksConfig.arabicFormMid, CustomBlocksConfig.arabicFormFin);
         // Group 13 / Pass 1: extract JAR-bundled fonts (arabtype + Rockwell) before any text render.
         com.customblocks.arabic.FontAssets.extractAll();
+        // Ensure a raise-only pool floor: an older config.json capped at 800 is lifted to
+        // REQUIRED_MAX_SLOTS once, on disk (a hand-set HIGHER value — e.g. 2000 — is kept).
+        // Registration hasn't run yet, so the new size takes effect THIS boot; no extra restart.
+        if (CustomBlocksConfig.maxSlots < com.customblocks.core.SlotPools.REQUIRED_MAX_SLOTS) {
+            LOGGER.info("[CustomBlocks] Raising maxSlots {} -> {} (pool floor).",
+                    CustomBlocksConfig.maxSlots, com.customblocks.core.SlotPools.REQUIRED_MAX_SLOTS);
+            CustomBlocksConfig.maxSlots = com.customblocks.core.SlotPools.REQUIRED_MAX_SLOTS;
+            CustomBlocksConfigStore.save();
+        }
         int maxSlots = CustomBlocksConfig.maxSlots;
 
-        // Register server→client payloads (Phase 10/11)
-        PayloadTypeRegistry.playS2C().register(OpenGuiPayload.ID,   OpenGuiPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(HudSyncPayload.ID,   HudSyncPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(HudStatePayload.ID,  HudStatePayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(ChatPrefillPayload.ID, ChatPrefillPayload.CODEC); // Group 04
-        PayloadTypeRegistry.playS2C().register(SilentPackPayload.ID, SilentPackPayload.CODEC);   // Group 05
-        PayloadTypeRegistry.playS2C().register(                                                  // Group 14 Phase 1c Step 2b
-                com.customblocks.network.payloads.TransparentBgPayload.ID,
-                com.customblocks.network.payloads.TransparentBgPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(RegenPackPayload.ID,  RegenPackPayload.CODEC);    // Group 05 — modded local regen (integrated host)
-        // Group 05 — remote/dedicated file-level pack sync (modded client on a real server).
-        PayloadTypeRegistry.playS2C().register(
-                com.customblocks.network.payloads.PackManifestPayload.ID,
-                com.customblocks.network.payloads.PackManifestPayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(
-                com.customblocks.network.payloads.PackFilePayload.ID,
-                com.customblocks.network.payloads.PackFilePayload.CODEC);
-        PayloadTypeRegistry.playS2C().register(
-                com.customblocks.network.payloads.PackDonePayload.ID,
-                com.customblocks.network.payloads.PackDonePayload.CODEC);
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.PackRequestPayload.ID,
-                com.customblocks.network.payloads.PackRequestPayload.CODEC);
-        // Modded client (dedicated server) asks for the pack files it lacks → queue them for streaming.
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.PackRequestPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() ->
-                            com.customblocks.network.packsync.PackSyncService.onRequest(player, payload.gz()));
-                });
-        PayloadTypeRegistry.playS2C().register(ArabicLabelsPayload.ID, ArabicLabelsPayload.CODEC); // Group 13 / O6
-        PayloadTypeRegistry.playS2C().register(                                                    // Group 14 Phase 2 — studio edit-load
-                com.customblocks.network.payloads.StudioEditPayload.ID,
-                com.customblocks.network.payloads.StudioEditPayload.CODEC);
-        // Group 10: client→server live-recolour Apply. Server bakes; client only previews.
-        PayloadTypeRegistry.playC2S().register(RecolorApplyPayload.ID, RecolorApplyPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                RecolorApplyPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() -> com.customblocks.core.ColorToolService.applyRecolor(
-                            player, payload.id(), payload.hue(), payload.sat(), payload.light(),
-                            payload.temp(), payload.contrast(), payload.shadowLift(), payload.highlightDrop(), payload.filter()));
-                });
-
-        // Group 10: client→server "go back" — cancelling a colour client screen reopens the menu
-        // the player came from (Nav.current), instead of dropping them to the world.
-        PayloadTypeRegistry.playC2S().register(GuiBackPayload.ID, GuiBackPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                GuiBackPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    com.customblocks.gui.chest.Nav.MenuKey prev =
-                            com.customblocks.gui.chest.Nav.current(player.getUuid());
-                    if (prev != null) com.customblocks.gui.chest.GuiRouter.render(player, prev);
-                });
-
-        // Group 13: client→server actions from the live Arabic preview screen — change the preview
-        // colours (re-render pack-free) or Create the real block. Server stays authoritative.
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.ArabicPreviewPayload.ID,
-                com.customblocks.network.payloads.ArabicPreviewPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.ArabicPreviewPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() -> {
-                        if (payload.action() == com.customblocks.network.payloads.ArabicPreviewPayload.ACTION_CREATE)
-                            com.customblocks.arabic.ArabicMaker.finalizeFromPreview(player);
-                        else
-                            com.customblocks.arabic.ArabicMaker.updatePreviewColours(
-                                    player, payload.letterArgb(), payload.bgArgb());
-                    });
-                });
-
-        // Group 27 §G27.5: client→server Shape Editor save. Server applies via the /cb setshape rail.
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.ShapeEditorPayload.ID,
-                com.customblocks.network.payloads.ShapeEditorPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.ShapeEditorPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() -> com.customblocks.command.handlers.ShapeCommands
-                            .applyFromEditor(player, payload.id(), payload.shape()));
-                });
-
-        // Group 27 §G27.6: client→server Block Creation Studio "Create & Publish". Server creates via
-        // the same CreationCommands rail /cb create uses (validate id → SlotManager.create → texture).
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.CreateStudioPayload.ID,
-                com.customblocks.network.payloads.CreateStudioPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.CreateStudioPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() -> com.customblocks.command.handlers.CreationStudioBridge
-                            .createFromStudio(player, payload.id(), payload.name(), payload.url(), payload.attrs()));
-                });
-
-        // Group 14 Phase 2: client→server studio "Save changes" (edit mode). Applies attrs + merges the
-        // animation knobs onto the block's existing AnimData (per-frame timing preserved). Authoritative.
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.StudioSavePayload.ID,
-                com.customblocks.network.payloads.StudioSavePayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.StudioSavePayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() -> com.customblocks.command.handlers.CreationStudioBridge
-                            .saveFromStudio(player, payload.origId(), payload.id(), payload.name(),
-                                    payload.url(), payload.attrs()));
-                });
-
-        // Group 27 §G27.6: client→server category management from the studio's Category tab
-        // (rename / delete / colour / set-default). Applied through the existing category rails.
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.CategoryAdminPayload.ID,
-                com.customblocks.network.payloads.CategoryAdminPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.CategoryAdminPayload.ID, (payload, context) -> {
-                    var player = context.player();
-                    player.server.execute(() -> com.customblocks.command.handlers.CategoryAdminBridge
-                            .handle(player, payload.op(), payload.cat(), payload.arg()));
-                });
+        // Register server→client/client→server payloads + their receivers (Phase 10/11 onward).
+        // Moved into PayloadRegistrar to keep this file under the §9.3 500-line cap.
+        PayloadRegistrar.registerAll();
 
         SlotManager.registerAll(maxSlots);
         SlotManager.loadAll();
+        // G06-2/G06-3 (improved Opt-2, 2026-06-26): migrate any old FreedSlots reservations into the new
+        // permanent DeletedSlots set so previously-deleted indices are never reused and their placements
+        // get swept to (Removed) too. Idempotent (a no-op once freed_slots.json is empty/gone).
+        java.util.List<Integer> freedLegacy = com.customblocks.core.FreedSlots.all();
+        if (!freedLegacy.isEmpty()) {
+            com.customblocks.core.DeletedSlots.addAll(freedLegacy);
+            LOGGER.info("[CustomBlocks] Migrated {} legacy freed slot(s) into the permanent deleted set.", freedLegacy.size());
+        }
         // Group 26 / FIX A: clean legacy display names (underscores -> spaces) once on boot.
         // Idempotent — a no-op once every name is already clean.
         int cleaned = SlotManager.migrateDisplayNames();
         if (cleaned > 0) LOGGER.info("[CustomBlocks] Cleaned {} legacy display name(s) (underscores -> spaces).", cleaned);
-        // Group 13 / Pass 2: ensure the 224 bundled Arabic art blocks exist (idempotent, no rebuild
-        // here — the SERVER_STARTED handler below builds the pack once with them included).
-        com.customblocks.arabic.ArabicBlockRegistry.importArt(false);
-        // Group 13 / Build B: retire the 144 old static letter blocks (auto-join is the only letter
-        // system now), reclaim their slots, and air-clean any placed copies as chunks load. Numbers
-        // (A0-A9 + E0-E9) are never touched. Idempotent -- a no-op on later boots.
+        // G06-5: de-bracket colour-variant names ("Vart (Green)" -> "Vart Green"), turn "#hex" names
+        // into their nearest preset ("A4 Black (#FF1493)" -> "A4 Magenta"), and de-hex legacy ids
+        // ("a4_hex_ff1493" -> "a4_magenta"). Idempotent; Arabic/non-colour names are left alone.
+        com.customblocks.core.ColorVariantNameMigration.Result cv = com.customblocks.core.ColorVariantNameMigration.migrate();
+        if (cv.any()) LOGGER.info("[CustomBlocks] G06-5: cleaned {} colour-variant name(s) + {} legacy hex id(s).", cv.names(), cv.ids());
+        // Group 13 / G13-25 CP5: retire ALL old static Arabic art blocks (letters AND numbers —
+        // the real Arabic slot blocks below are the only letter/number system now), reclaim their
+        // slots, and air-clean any placed copies as chunks load. Idempotent -- a no-op once gone.
         com.customblocks.arabic.ArabicLetterRetirement.init();
+        // Group 13 / G13-25 CP1+CP4: ensure the 656 base Arabic letter/number slots (all four
+        // colours, exact config triangle hexes) exist as REAL slot blocks (data-only ArabicMeta
+        // flag, normal pool allocation, idempotent by stable id). First boot creates + bakes;
+        // later boots skip; a config-hex change re-bakes that coloured set once. No pack rebuild
+        // here — the SERVER_STARTED handler below builds the pack once with them included.
+        com.customblocks.arabic.ArabicSlotBootstrap.ensure();
         ToolItems.registerAll();
         // Group 14 / Phase 1b — attach a BlockEntity to every slot block so the own-texture world
         // renderer can draw placed animated blocks off-atlas (crisp, no mipmap muffle). Must run
         // AFTER SlotManager.registerAll() (the blocks must exist to build the BlockEntityType).
         com.customblocks.block.AnimSlotRegistry.register();
-        // Group 13 / Pass 4 (real feature) — the dedicated joinable Arabic letter block.
-        com.customblocks.block.ArabicLetterRegistry.register();
+        // G06-2/G06-3 (improved Opt-2): the shared (Removed) placeholder a deleted block's placements
+        // become, + the chunk sweeper that swaps them live (no rejoin) and on chunk load.
+        com.customblocks.block.RemovedBlock.register();
+        com.customblocks.block.DeletedPlacementSweeper.init();
+        // G06-14 (Unified Recycle-Bin deletion) slice 1 — the identity-carrying Deleted marker block
+        // (BlockEntity holds the deleted block's id + name). Replaces the (Removed) system above, built
+        // in slices; the old system is removed in slice 5.
+        com.customblocks.block.DeletedMarkerRegistry.register();
+        // Group 31 (BuzzerGame) Phase 1 — the buzzer block + BlockEntity + BlockItem.
+        com.customblocks.buzzergame.BuzzerGameRegistry.register();
+        // Group 30 · G30-8b — the Guess-mode Showcase display block + BlockEntity (op-spawned, no item).
+        com.customblocks.block.GuessShowcaseRegistry.register();
+        // Group 32 Phase A — the Explosive Tomato: the mod's FIRST custom entity type, its item, and the
+        // dispenser behaviour. Its renderer is registered in CustomBlocksClient — an entity type with no
+        // renderer crashes the client the moment one spawns, so the two must stay in step.
+        com.customblocks.tomato.TomatoRegistry.register();
+        // Group 32 §B — the 3 splat sounds (random pick per blast) + the in-memory crater-restore sweep.
+        com.customblocks.tomato.TomatoSounds.register();
+        com.customblocks.tomato.TomatoCraterManager.init();
+        // Group 30 · G30 §R (R2) — the "?"-textured break/dig debris particle (shown to a flagged holder
+        // instead of the real block particles, which would leak the answer). Client factory in CustomBlocksClient.
+        com.customblocks.particle.MysteryParticles.register();
+        // Group 30 · G30-8b (§S: S8) — a Showcase is removed ONLY by an op shift-right-click or
+        // /cb guess showcase delete. Cancel any left-click / mining break (op or not) so it can't be
+        // destroyed by accident. (world.removeBlock in onUse + the delete command bypass this event.)
+        net.fabricmc.fabric.api.event.player.PlayerBlockBreakEvents.BEFORE.register(
+                (world, player, pos, state, blockEntity) ->
+                        !(state.getBlock() instanceof com.customblocks.block.GuessShowcaseBlock));
         registerCreativeTab();
         registerToolsTab();
         registerArabicJoinTab();
+        com.customblocks.buzzergame.BuzzerGameRegistry.registerTab(); // Group 31 — dedicated BuzzerGame tab
         CommandRegistrar.register();
 
         // Resource-pack HTTP server: start with the world, rebuild the pack, stop on shutdown.
@@ -246,16 +175,40 @@ public class CustomBlocksMod implements ModInitializer {
             // Group 14 Phase 1c Step 2b: tell the client whether off-atlas blocks use a black or transparent bg.
             net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.player,
                     new com.customblocks.network.payloads.TransparentBgPayload(CustomBlocksConfig.transparentBackground));
+            // Group 06 / M3 hex (G06-C): push the live variant hexes so the Square/Triangle tool names
+            // (rendered client-side) show THIS server's colours, not the client's own defaults.
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.player,
+                    new com.customblocks.network.payloads.ColorHexSyncPayload(
+                            CustomBlocksConfig.triangleRedHex, CustomBlocksConfig.triangleYellowHex,
+                            CustomBlocksConfig.triangleGreenHex, CustomBlocksConfig.triangleBlackHex));
             // Group 13 / O6: push the live Arabic form labels so join-block names match this server.
             net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.player,
                     new ArabicLabelsPayload(CustomBlocksConfig.arabicFormIni,
                             CustomBlocksConfig.arabicFormMid, CustomBlocksConfig.arabicFormFin));
             ResourcePackServer.sendToPlayer(handler.player);
+            // Group 20 §K — tell the joining client THIS server's version + where to grab the jar, so an
+            // older client can auto-update (or, when autoUpdateEnabled is off, just warn). Empty download
+            // fields when the server has no packaged jar (dev run) → client shows a toast only.
+            {
+                String dl = com.customblocks.update.ServerJarInfo.available()
+                        ? ResourcePackServer.getDownloadUrl() : "";
+                String sha = com.customblocks.update.ServerJarInfo.available()
+                        ? com.customblocks.update.ServerJarInfo.sha256() : "";
+                String ver = com.customblocks.update.ServerJarInfo.version();
+                if (ver != null) {
+                    net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(handler.player,
+                            new com.customblocks.network.payloads.VersionHandshakePayload(
+                                    ver, dl, sha, CustomBlocksConfig.autoUpdateEnabled));
+                }
+            }
             // Dedicated server + modded client: stream the pack files (no-op on integrated host /
             // for vanilla clients — beginSync self-gates on isDedicated + canSend). Group 05 remote fix.
             com.customblocks.network.packsync.PackSyncService.beginSync(handler.player);
             HudSync.sendTo(handler.player);
+            // Group 30 — tell the joining client the current guess-mode set (their own blinding + everyone's pose).
+            com.customblocks.network.GuessSync.sendTo(handler.player);
             OnboardingManager.onPlayerJoin(handler.player);
+            com.customblocks.core.WidgetSync.push(handler.player);   // G03: seed the HUD widgets
         });
         // Drop the player's pack-send history so a later rejoin gets exactly one prompt again.
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
@@ -322,6 +275,8 @@ public class CustomBlocksMod implements ModInitializer {
                             entries.add(ToolItems.OMNI_TOOL);
                             entries.add(ToolItems.RAINBOW_RECTANGLE);
                             entries.add(ToolItems.DELETER);
+                            // Group 32 Phase A — the Explosive Tomato (not craftable; command + this tab only).
+                            entries.add(com.customblocks.tomato.TomatoRegistry.ITEM);
                             // The eight colour/shape tools (Squares + Triangles).
                             for (var shape : ToolItems.SHAPES) entries.add(shape);
                         })
@@ -329,29 +284,25 @@ public class CustomBlocksMod implements ModInitializer {
     }
 
     /**
-     * Group 13: the searchable Arabic letters tab. ONE isolated tile per letter per colour (O6, dev
-     * 2026-06-19) — every entry is the SAME single registered block (customblocks:arabic_letter) with
-     * different custom-data, so this adds ZERO registrations and costs ZERO slots. BLACK letters
-     * auto-join into words; coloured letters are decoration that always stay isolated. The old fixed
-     * Ini/Mid/Fin decoration variants were dropped so every tile you grab behaves the obvious way.
-     * Searchable by name, e.g. "jeem" or "black" in creative search.
+     * Group 13 / G13-25: the dedicated Arabic tab. Lists every REAL Arabic slot block (SlotData
+     * carries ArabicMeta) — letters in all four contextual forms plus numbers, every pre-baked
+     * colour. Same items as the main blocks tab / creative search, gathered in one place. Icon =
+     * the isolated black Jeem slot (falls back to a bookshelf if it hasn't been created yet).
      */
     private static void registerArabicJoinTab() {
         Registry.register(Registries.ITEM_GROUP, ARABIC_JOIN_TAB,
                 FabricItemGroup.builder()
                         .displayName(Text.literal("Arabic Letters"))
-                        .icon(() -> com.customblocks.block.ArabicLetterBlock.stackFor('\u062c', 1)) // black jeem
+                        .icon(() -> {
+                            SlotData jeem = SlotManager.getById("arabic_jeem_iso");
+                            SlotBlock.SlotItem item = (jeem == null) ? null : SlotManager.itemAt(jeem.index());
+                            return item != null ? new ItemStack(item) : new ItemStack(Items.BOOKSHELF);
+                        })
                         .entries((displayContext, entries) -> {
-                            for (com.customblocks.arabic.ArabicArt.Glyph g : com.customblocks.arabic.ArabicArt.ALL) {
-                                if (g.group() != com.customblocks.arabic.ArabicArt.Group.LETTER) continue;
-                                java.util.Optional<Character> ch =
-                                        com.customblocks.arabic.ArabicGlyphs.charForName(g.idBase());
-                                if (ch.isEmpty()) continue;
-                                char letter = ch.get();
-                                for (String color : com.customblocks.arabic.ArabicArt.COLORS) {
-                                    // One isolated tile per colour. Black auto-joins; colours stay isolated.
-                                    entries.add(com.customblocks.block.ArabicLetterBlock.stackFor(letter, color, -1, 1));
-                                }
+                            for (SlotData d : SlotManager.assignedSlots()) {
+                                if (!d.isArabic()) continue;
+                                SlotBlock.SlotItem item = SlotManager.itemAt(d.index());
+                                if (item != null) entries.add(item);
                             }
                         })
                         .build());

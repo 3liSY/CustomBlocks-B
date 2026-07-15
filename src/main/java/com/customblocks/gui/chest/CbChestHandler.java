@@ -75,7 +75,7 @@ public final class CbChestHandler extends GenericContainerScreenHandler {
                 menu.click(sp, slotIndex, button, actionType);
             } catch (Exception e) {
                 CustomBlocksMod.LOGGER.error("[CustomBlocks] Chest GUI click error in slot {}", slotIndex, e);
-                sp.sendMessage(Text.literal(Chat.PREFIX + "§cSomething went wrong. The action was not applied."), true);
+                Chat.toolError(sp, "Something went wrong. The action was not applied.");
                 sp.closeHandledScreen();
                 return;
             }

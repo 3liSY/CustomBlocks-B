@@ -6,7 +6,8 @@
  * Place video files in config/customblocks/videos/.
  *
  * Depends on: jcodec 0.2.5 (core + javase), ImageProcessor, CustomBlocksConfig
- * Called by: VideoCommands
+ * Called by: (none) — the /cb video command was removed 2026-06-22; retained for the planned in-studio
+ *            video import (Group 14 Phase 7).
  */
 package com.customblocks.video;
 

@@ -2,8 +2,9 @@
  * ReIdMenu.java — the "change a block's id" GUI (reid slice B).
  *
  * Two ways in, one shared anvil:
- *   - build(player, page): a paginated block-picker (clone of BlockListMenu); clicking a block
- *     opens the anvil for that block's id.
+ *   - build(player, page): a paginated block-picker (its own list; the BlockListMenu it was cloned
+ *     from was deleted with the chest bulk flow, Group 07 §G07-3); clicking a block opens the anvil
+ *     for that block's id.
  *   - openAnvil(player, id, onCancel): the shared anvil prompt, pre-filled with the current id.
  *     On submit it DELEGATES to the tested `/cb reid <id> <newId>` command (so the lock check,
  *     id-key migration, undo recording and chat feedback all behave exactly as the command does).

@@ -14,17 +14,21 @@ public final class CustomBlocksConfig {
 
     // ── Phase 1 ──────────────────────────────────────────────────────────────
 
-    /** Number of slot blocks to pre-register at startup. Requires a restart to change. */
-    public static volatile int maxSlots = 800;
+    /** Number of slot blocks to pre-register at startup. Requires a restart to change.
+     *  G13-25 raised the default 800 → 1448: indices 800..1447 are the dedicated Arabic pool
+     *  (see core/SlotPools). Boot enforces 1448 as a raise-only floor for older config files. */
+    public static volatile int maxSlots = 1448;
 
     /** Port for the embedded resource-pack HTTP server. */
     public static volatile int httpPort = 8123;
 
-    /** Block texture size (px), a power of two 16..{@link #MAX_TEXTURE_SIZE}. Set via /cb config texturesize. */
-    public static volatile int textureSize = 256;
+    /** Block texture size (px), a power of two 16..{@link #MAX_TEXTURE_SIZE}. Set via /cb config texturesize.
+     *  Default 512: every block now renders OFF the atlas (ADR-008 own-texture renderer), so full 512px is
+     *  carried crisp — the old 256 default was an atlas-era cap and made blocks soft up close. */
+    public static volatile int textureSize = 512;
 
-    /** Hard ceiling for {@link #textureSize}. Atlas-rendered blocks muffle above 256px (ADR-007); the
-     *  own-texture renderer (ADR-008) carries full resolution with no atlas, so 512px is allowed for it. */
+    /** Hard ceiling for {@link #textureSize}. The own-texture renderer (ADR-008) carries full resolution with
+     *  no atlas, so 512px renders crisp; only the legacy atlas paths (ADR-007) softened above 256px. */
     public static final int MAX_TEXTURE_SIZE = 512;
 
     /** Snap a requested size to a power of two, 16..{@link #MAX_TEXTURE_SIZE} (512→512, 300→256, 200→128). */
@@ -85,6 +89,18 @@ public final class CustomBlocksConfig {
     /** Discord webhook URL for block-event notifications (leave empty to disable). */
     public static volatile String discordWebhookUrl = "";
 
+    // ── Group 20 / S1 — cloud block share ────────────────────────────────────
+    /** Master switch for cloud block sharing (D9). When false, every /cb vault command refuses
+     *  gracefully and nothing hits the network. Default on (D11 — owner ships their vault enabled). */
+    public static volatile boolean cloudShareEnabled = true;
+
+    // ── Group 20 / §K — auto-update (AU6) ─────────────────────────────────────
+    /** Server-side master switch for client auto-update (§CS3 AU6). When true (default), a client
+     *  joining with an older jar is offered the auto-download+swap flow; when false, a version
+     *  mismatch only shows a warning toast — no download. Pushed to the client on join inside the
+     *  version-handshake packet, so the client honours THIS server's choice. */
+    public static volatile boolean autoUpdateEnabled = true;
+
     // ── Group 06 / M1 — background remover ────────────────────────────────────
 
     /**
@@ -122,8 +138,12 @@ public final class CustomBlocksConfig {
 
     // ── Group 07 — bulk operations ────────────────────────────────────────────
 
-    /** A bulk operation affecting MORE than this many blocks asks for /cb confirm first. */
-    public static volatile int bulkConfirmThreshold = 10;
+    /**
+     * A bulk operation affecting MORE than this many blocks asks for /cb confirm first (chat path) or is
+     * gated by the Hub's Deploy modal. Default is 2 (§G07-4, locked 2026-07-11): almost every batch confirms,
+     * so a stray Delete/Re-ID over more than one block can never run un-gated.
+     */
+    public static volatile int bulkConfirmThreshold = 2;
 
     // ── Group 09 / Slice 3 — auto-backup ──────────────────────────────────────
 
@@ -162,6 +182,9 @@ public final class CustomBlocksConfig {
     public static volatile String arabicFormMid = "Mid";
     public static volatile String arabicFormFin = "Fin";
 
+    // ── Group 30 — Guess Mode ─────────────────────────────────────────────────
+    // (v2 redesign: the blank name is hardcoded "???" and the disguise look the bundled "?" — no config.)
+
     // ── Group 16 / Slice 4 — per-category particle effects ───────────────────
     /** The FX category keys, shared by the particle toggles (slice 4) and the sound toggles (slice 5). */
     public static final String[] FX_CATEGORIES = {
@@ -197,6 +220,26 @@ public final class CustomBlocksConfig {
         for (String k : FX_CATEGORIES) if (k.equals(c)) return true;
         return false;
     }
+
+    // ── Group 32 — Explosive Tomato blast (owner-locked 2026-07-15) ────────────
+    //
+    // A REAL vanilla explosion drives crater + damage + knockback off ONE power, exactly like TNT: point-blank
+    // with no armour is LETHAL, full iron survives (the explosion runs damage through armour for free), and the
+    // crater is destruction-ON but restores after tomatoRestoreSeconds (anti-grief). A tomato named "nuke"
+    // overrides the power to TomatoEntity.NUKE_POWER. The old decoupled radius/damage keys are gone — one
+    // power owns all three, which is why the hand-rolled falloff loop was dropped.
+
+    /** Explosion power. TNT is 4.0; the tomato is hotter at 6.0 (a "nuke"-named tomato jumps to 12.0). */
+    public static volatile double tomatoBlastPower = 6.0;
+
+    /** Whether the blast throws entities. The knockback is the point of the weapon — on by default. */
+    public static volatile boolean tomatoBlastKnockback = true;
+
+    /** Whether the blast sets fire. Off: the tomato leaves a crater and a bad mood, not a wildfire. */
+    public static volatile boolean tomatoBlastFire = false;
+
+    /** How long (seconds) a crater waits before it restores to the original terrain (in-memory anti-grief). */
+    public static volatile int tomatoRestoreSeconds = 15;
 
     private CustomBlocksConfig() {} // static-only
 

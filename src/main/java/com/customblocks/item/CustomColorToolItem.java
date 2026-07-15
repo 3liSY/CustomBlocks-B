@@ -14,6 +14,7 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.core.ColorLibrary;
@@ -79,12 +80,12 @@ public class CustomColorToolItem extends Item implements ColorSwapTool {
                         .append(Text.literal(" " + shape + " ").styled(s -> s.withColor(0xFFFFFF).withBold(false).withItalic(false)))
                         .append(Text.literal("[" + hex + "]").styled(s -> s.withColor(0x888888).withBold(false).withItalic(false))));
         List<Text> lore = "Triangle".equals(shape)
-                ? List.of(line("§7Right-click a custom block to create its " + hex + " variant."),
-                          line("§7The image's background is recoloured; the design stays."),
-                          line("§8Made by /cb customcolor — the colour is in the item."))
-                : List.of(line("§7Right-click a placed custom block to swap it to its " + hex + " variant."),
-                          line("§7Swaps only — create the variant with the matching Triangle."),
-                          line("§8Made by /cb customcolor — the colour is in the item."));
+                ? List.of(line(CbFmt.DIM + "Right-click a custom block to create its " + hex + " variant."),
+                          line(CbFmt.DIM + "The image's background is recoloured; the design stays."),
+                          line(CbFmt.FAINT + "Made by /cb customcolor — the colour is in the item."))
+                : List.of(line(CbFmt.DIM + "Right-click a placed custom block to swap it to its " + hex + " variant."),
+                          line(CbFmt.DIM + "Swaps only — create the variant with the matching Triangle."),
+                          line(CbFmt.FAINT + "Made by /cb customcolor — the colour is in the item."));
         stack.set(DataComponentTypes.LORE, new LoreComponent(lore));
         stack.set(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true);
         return stack;
@@ -114,7 +115,7 @@ public class CustomColorToolItem extends Item implements ColorSwapTool {
         }
         int rgb = rgbOf(ctx.getStack());
         if (rgb < 0) {
-            Chat.tool(player, "§cThis tool has no colour — get a pair with /cb customcolor.");
+            Chat.toolError(player, "This tool has no colour — get a pair with /cb customcolor.");
             return ActionResult.SUCCESS;
         }
         String key = ColorVariantService.keyForRgb(rgb);

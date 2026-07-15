@@ -35,7 +35,8 @@ public final class CbColorPanel {
         void apply(int rgb);
     }
 
-    private static final int GOLD = 0xFF_FF_AA_00, PANEL_BG = 0xF0101010, HEAD_BG = 0xFF2A2A2A;
+    private static final int GOLD = com.customblocks.client.gui.CbTheme.ACCENT, // selected/active accent — locked red (2026-07-04)
+            PANEL_BG = com.customblocks.client.gui.CbTheme.PANEL_BG, HEAD_BG = 0xFF1A1A1A;
     private static final int PW = 124, PAD = 6, SW = 14, GAP = 2, PER_ROW = 7, HEAD_H = 14, SNAP = 16;
 
     // Hit kinds dispatched in mouseClicked.
@@ -114,11 +115,13 @@ public final class CbColorPanel {
         ctx.fill(x, y, x + PW, y + HEAD_H - 1, HEAD_BG);
         ctx.fill(x, y + HEAD_H - 1, x + PW, y + HEAD_H, GOLD);
         for (int i = 0; i < 3; i++) ctx.fill(x + 4, y + 3 + i * 3, x + 11, y + 4 + i * 3, 0xFFBBBBBB); // grip
-        ctx.drawTextWithShadow(tr, Text.literal("§6Colours"), x + 16, y + 3, 0xFFFFFFFF);
-        int cbx = x + PW - 12;
-        ctx.fill(cbx, y + 2, cbx + 9, y + 11, 0xFF000000);
-        ctx.drawTextWithShadow(tr, Text.literal(collapsed ? "§a+" : "§e-"), cbx + 2, y + 2, 0xFFFFFFFF);
-        hits.add(new Hit(K_COLLAPSE, 0, cbx, y + 2, 9, 9));
+        ctx.drawTextWithShadow(tr, com.customblocks.client.gui.CbTheme.red("Colours"), x + 16, y + 3, 0xFFFFFFFF);
+        // §G27.8.0 — collapse toggle was a 9×9 target; enlarged + clearer affordance.
+        int cbx = x + PW - 16;
+        ctx.fill(cbx, y + 1, cbx + 13, y + 13, 0xFF000000);
+        ctx.fill(cbx, y + 1, cbx + 13, y + 2, com.customblocks.client.gui.CbTheme.ACCENT_DIM);
+        ctx.drawCenteredTextWithShadow(tr, Text.literal(collapsed ? "§f+" : "§f-"), cbx + 7, y + 3, 0xFFFFFFFF);
+        hits.add(new Hit(K_COLLAPSE, 0, cbx - 2, y, 17, 14));
 
         if (collapsed) { finishOverlays(ctx, tr, mx, my); return; }
 
@@ -169,7 +172,7 @@ public final class CbColorPanel {
             int tx = x + PAD + i * (tw + GAP);
             boolean sel = i == active;
             ctx.fill(tx, cy, tx + tw, cy + 12, sel ? GOLD : 0xFF333333);
-            ctx.drawCenteredTextWithShadow(tr, Text.literal((sel ? "§0" : "§f") + targets.get(i).label()),
+            ctx.drawCenteredTextWithShadow(tr, Text.literal("§f" + targets.get(i).label()),
                     tx + tw / 2, cy + 2, 0xFFFFFFFF);
             hits.add(new Hit(K_TAB, i, tx, cy, tw, 12));
         }
@@ -191,7 +194,7 @@ public final class CbColorPanel {
 
     private int drawFavourites(DrawContext ctx, TextRenderer tr, int cy, int mx, int my) {
         if (store.favorites.isEmpty()) return cy;
-        ctx.drawTextWithShadow(tr, Text.literal("§eFav"), x + PAD, cy, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7Fav"), x + PAD, cy, 0xFFFFFFFF);
         cy += 10;
         cy = drawColorRow(ctx, tr, cy, store.favorites, K_FAV, mx, my, true);
         return cy + 2;
@@ -207,7 +210,7 @@ public final class CbColorPanel {
             int rgb = sw.get(i) & 0xFFFFFF;
             boolean hover = mx >= sx && mx < sx + SW && my >= sy && my < sy + SW;
             boolean reord = dragMode == 2 && reorderFrom == i;
-            ctx.fill(sx - 1, sy - 1, sx + SW + 1, sy + SW + 1, reord ? 0xFFFFFF55 : (hover ? 0xFFFFFFFF : 0xFF000000));
+            ctx.fill(sx - 1, sy - 1, sx + SW + 1, sy + SW + 1, reord ? GOLD : (hover ? 0xFFFFFFFF : 0xFF000000));
             ctx.fill(sx, sy, sx + SW, sy + SW, 0xFF000000 | rgb);
             if (hover) hoverHex = String.format(Locale.ROOT, "#%06X", rgb);
             hits.add(new Hit(K_SWATCH, i, sx, sy, SW, SW));
@@ -253,7 +256,7 @@ public final class CbColorPanel {
             boolean hover = mx >= bx && mx < bx + bw && my >= cy && my < cy + 12;
             boolean on = (i == BTN_DROP && dropper.isActive());
             ctx.fill(bx, cy, bx + bw, cy + 12, on ? GOLD : (hover ? 0xFF555555 : 0xFF333333));
-            ctx.drawCenteredTextWithShadow(tr, Text.literal((on ? "§0" : "§f") + labels[i]), bx + bw / 2, cy + 2, 0xFFFFFFFF);
+            ctx.drawCenteredTextWithShadow(tr, Text.literal("§f" + labels[i]), bx + bw / 2, cy + 2, 0xFFFFFFFF);
             hits.add(new Hit(K_BTN, i, bx, cy, bw, 12));
         }
         return cy + 14;
@@ -263,7 +266,7 @@ public final class CbColorPanel {
         String prompt = inputMode == 2 ? "name:" : "hex:";
         ctx.fill(x + PAD, cy, x + PW - PAD, cy + 12, 0xFF000000);
         ctx.fill(x + PAD, cy, x + PW - PAD, cy + 1, GOLD);
-        ctx.drawTextWithShadow(tr, Text.literal("§7" + prompt + " §f" + inputBuf + "§e_"), x + PAD + 2, cy + 2, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7" + prompt + " §f" + inputBuf + "§f_"), x + PAD + 2, cy + 2, 0xFFFFFFFF);
         return cy + 14;
     }
 

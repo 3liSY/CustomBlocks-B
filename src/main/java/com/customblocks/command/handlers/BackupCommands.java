@@ -7,8 +7,6 @@
  *   /cb backup load <name>     — replace live data with a backup. Requires /cb confirm. (Slice 2)
  *                                ("restore" is kept as a hidden alias for load.)
  *   /cb backup delete <name>   — remove a backup folder (never touches live data). (Slice 2)
- *   /cb backup panic           — EMERGENCY: restore the newest backup immediately, no confirm. (Slice 2)
- *   /cb recover                — restore the newest backup (with /cb confirm). (Slice 2)
  *
  * The GUI (BackupMenu / BackupConfirmMenu) calls guiCreate / guiLoad here so it reuses the exact same
  * tested save + restore orchestration as the chat commands — no backup logic is duplicated in the GUI.
@@ -23,16 +21,23 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
+import com.customblocks.cloud.CloudVaultClient;
+import com.customblocks.cloud.VaultHistory;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BackupManager;
 import com.customblocks.core.IncidentRecorder;
 import com.customblocks.core.SlotManager;
+import com.customblocks.gui.GuiMode;
 import com.customblocks.gui.chest.BackupSelection;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav.Dest;
 import com.customblocks.gui.chest.Nav.MenuKey;
 import com.customblocks.network.ResourcePackServer;
+import com.customblocks.network.payloads.BackupActionPayload;
+import com.customblocks.network.payloads.OpenGuiPayload;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
@@ -78,35 +83,27 @@ public final class BackupCommands {
                         .then(CommandManager.argument("name", StringArgumentType.word())
                                 .suggests(NAMES)
                                 .executes(ctx -> delete(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("panic")
-                        .executes(ctx -> panic(ctx.getSource()))));
+                                        StringArgumentType.getString(ctx, "name"))))));
 
-        // /cb backupgui — open the advanced backup GUI directly (matches /cb listgui, /cb bulkgui …).
+        // /cb backupgui — open the advanced backup GUI directly (matches /cb bulkgui …).
         root.then(CommandManager.literal("backupgui").executes(ctx -> openOrUsage(ctx.getSource())));
-
-        // /cb recover — restore the newest backup (with confirm). Top-level per the Group 09 spec.
-        root.then(CommandManager.literal("recover").executes(ctx -> recover(ctx.getSource())));
     }
 
-    /** Bare /cb backup: open the GUI as a player; console/command-block gets the chat usage list. */
+    /** Bare /cb backup: open the Backup Screen (G09-A4) as a player; console gets the chat usage list. */
     private static int openOrUsage(ServerCommandSource src) {
         if (src.getEntity() instanceof ServerPlayerEntity p) {
-            BackupSelection.clear(p.getUuid()); // start each GUI session with a clean selection
-            GuiRouter.openFresh(p, MenuKey.of(Dest.BACKUP_LIST));
+            openScreen(p);
             return 1;
         }
         return usage(src);
     }
 
     private static int usage(ServerCommandSource src) {
-        Chat.info(src, "Backup commands (run §e/cb backup§7 in-game for the GUI):");
-        src.sendFeedback(() -> Text.literal("  §e/cb backup save [name] §7- save a point-in-time backup"), false);
-        src.sendFeedback(() -> Text.literal("  §e/cb backup list §7- list saved backups"), false);
-        src.sendFeedback(() -> Text.literal("  §e/cb backup load <name> §7- load one back (asks to confirm)"), false);
-        src.sendFeedback(() -> Text.literal("  §e/cb backup delete <name> §7- remove a backup"), false);
-        src.sendFeedback(() -> Text.literal("  §c/cb backup panic §7- emergency: load the newest now"), false);
-        src.sendFeedback(() -> Text.literal("  §e/cb recover §7- load the newest back (asks to confirm)"), false);
+        Chat.info(src, "Backup commands (run " + CbFmt.VALUE + "/cb backup" + CbFmt.DIM + " in-game for the GUI):");
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup save [name] " + CbFmt.DIM + "- save a point-in-time backup"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup list " + CbFmt.DIM + "- list saved backups"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup load <name> " + CbFmt.DIM + "- load one back (asks to confirm)"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup delete <name> " + CbFmt.DIM + "- remove a backup"));
         return 1;
     }
 
@@ -151,14 +148,39 @@ public final class BackupCommands {
                     Chat.success(src, "Backup \"" + name + "\" saved. (" + blocks + " block(s), config, textures)");
                     if (onDone != null) onDone.run();
                 });
+                maybeCloudSync(src, server, name); // best-effort cloud push (gated); never fails the save
             } catch (Exception e) {
-                String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Backup save failed for \"" + name + "\"", null, src.getName(), e);
-                server.execute(() -> Chat.error(src, "Couldn't save the backup. " + msg));
+                String code = IncidentRecorder.record("Backup save failed for \"" + name + "\"", null, src.getName(), e);
+                server.execute(() -> Chat.incidentError(src, "Couldn't save the backup.", code));
             }
         }, "CustomBlocks-Backup");
         worker.setDaemon(true);
         worker.start();
+    }
+
+    /**
+     * Best-effort cloud sync (Group 20 §C): if cloud sharing is ON and a vaultEndpoint is set, zip the
+     * just-saved backup and push it to the vault, recording the returned code in /cb vault codes. The
+     * local backup already succeeded, so any failure here is reported but NEVER fails the save. Runs on
+     * the backup worker thread (network I/O); user-facing messages hop back to the server thread.
+     */
+    private static void maybeCloudSync(ServerCommandSource src, MinecraftServer server, String name) {
+        if (!CustomBlocksConfig.cloudShareEnabled || !CloudVaultClient.isConfigured()) return;
+        byte[] zip = BackupManager.zip(name);
+        if (zip == null || zip.length == 0) {
+            server.execute(() -> Chat.error(src, "Cloud sync skipped — couldn't package backup \"" + name + "\"."));
+            return;
+        }
+        server.execute(() -> Chat.info(src, "Syncing backup \"" + name + "\" to the cloud…"));
+        String code = CloudVaultClient.uploadBackup(name, zip);
+        server.execute(() -> {
+            if (code == null) {
+                Chat.error(src, "Cloud sync failed — the backup is saved locally. Check vaultEndpoint and the worker's /backup route.");
+            } else {
+                VaultHistory.record("backup", code, name, src);
+                Chat.success(src, "☁ Backup synced — code " + CbFmt.VALUE + code + CbFmt.OK + ". Find it again with " + CbFmt.BODY + "/cb vault codes" + CbFmt.OK + ".");
+            }
+        });
     }
 
     // ── GUI bridge (BackupMenu / BackupConfirmMenu) ───────────────────────────
@@ -189,6 +211,11 @@ public final class BackupCommands {
     }
 
     private static int list(ServerCommandSource src) {
+        // A player gets the Backup Screen (G09-A4); console/command-block keeps the chat list.
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            openScreen(p);
+            return 1;
+        }
         List<BackupManager.BackupInfo> backups = BackupManager.list();
         if (backups.isEmpty()) {
             Chat.info(src, "No backups yet. Make one with /cb backup save [name].");
@@ -196,15 +223,78 @@ public final class BackupCommands {
         }
         Chat.info(src, "Backups (" + backups.size() + ", newest first):");
         for (BackupManager.BackupInfo b : backups) {
-            String when = b.created().isEmpty() ? "?" : b.created();
+            String label = BackupManager.displayLabel(b);
             String blocks = b.blocks() >= 0 ? (b.blocks() + " block(s)") : "?";
-            String tag = b.auto() ? " §8(auto)" : "";
-            src.sendFeedback(() -> Text.literal("  §e" + b.name() + " §7- " + when + " §8· §7" + blocks + tag), false);
+            if (label.equals(b.name())) {
+                // Manual save: the name is both the label and the restore-by id; show time separately.
+                Chat.raw(src, Text.literal("  " + CbFmt.VALUE + label + " " + CbFmt.DIM + "- " + BackupManager.friendlyTime(b)
+                        + " " + CbFmt.FAINT + "· " + CbFmt.DIM + blocks));
+            } else {
+                // Auto: friendly label already carries the time; raw restore-by id shown dim in parens.
+                Chat.raw(src, Text.literal("  " + CbFmt.VALUE + label + " " + CbFmt.FAINT + "(" + b.name() + ") " + CbFmt.FAINT + "· " + CbFmt.DIM + blocks));
+            }
         }
         return 1;
     }
 
-    // ── Restore / delete / panic / recover (Slice 2) ──────────────────────────
+    // ── Backup Screen bridge (G09-A4) ─────────────────────────────────────────
+
+    /** Send the Backup Screen to a player with the current backup list (opens fresh or refreshes). */
+    public static void openScreen(ServerPlayerEntity player) {
+        ServerPlayNetworking.send(player, new OpenGuiPayload(GuiMode.BACKUP_SCREEN.id, BackupManager.screenJson()));
+    }
+
+    /**
+     * Perform a Backup Screen action server-side (authoritative), then re-push the refreshed screen.
+     * The screen's opaque confirm modal is the confirmation, so restore/delete run immediately here —
+     * the /cb confirm gate only guards the chat path. Runs on the server thread.
+     */
+    public static void handleScreenAction(ServerPlayerEntity player, String action, String name, String arg) {
+        ServerCommandSource src = player.getCommandSource();
+        switch (action == null ? "" : action) {
+            case BackupActionPayload.ACTION_CREATE -> {
+                MinecraftServer server = player.getServer();
+                if (server == null) return;
+                String n = (name == null || name.isBlank()) ? BackupManager.timestampName("backup") : name.trim();
+                if (!validateNewName(src, n)) { openScreen(player); return; }
+                startSave(src, server, n, () -> openScreen(player)); // onDone refreshes once the save lands
+            }
+            case BackupActionPayload.ACTION_RESTORE -> { doRestore(src, name); openScreen(player); }
+            case BackupActionPayload.ACTION_DELETE  -> { delete(src, name);    openScreen(player); }
+            case BackupActionPayload.ACTION_RENAME  -> { renameBackup(src, name, arg); openScreen(player); }
+            case BackupActionPayload.ACTION_PROTECT -> { toggleProtect(src, name);     openScreen(player); }
+            default -> openScreen(player);
+        }
+    }
+
+    private static void renameBackup(ServerCommandSource src, String oldName, String newName) {
+        if (newName == null || newName.isBlank()) { Chat.error(src, "Enter a new name for the backup."); return; }
+        try {
+            boolean ok = BackupManager.rename(oldName, newName.trim());
+            if (ok) Chat.success(src, "Renamed backup \"" + oldName + "\" → \"" + newName.trim() + "\".");
+            else Chat.error(src, "There's no backup named \"" + oldName + "\".");
+        } catch (Exception e) {
+            String code = IncidentRecorder.record("Backup rename failed for \"" + oldName + "\"", null, src.getName(), e);
+            Chat.incidentError(src, "Couldn't rename the backup.", code);
+        }
+    }
+
+    private static void toggleProtect(ServerCommandSource src, String name) {
+        boolean nowProtected = false;
+        boolean found = false;
+        for (BackupManager.BackupInfo b : BackupManager.list()) {
+            if (b.name().equals(name)) { nowProtected = !b.protectedFromPrune(); found = true; break; }
+        }
+        if (!found) { Chat.error(src, "There's no backup named \"" + name + "\"."); return; }
+        if (BackupManager.setProtected(name, nowProtected)) {
+            Chat.info(src, nowProtected ? "Protected \"" + name + "\" — it won't be auto-pruned."
+                                        : "Unprotected \"" + name + "\".");
+        } else {
+            Chat.error(src, "Couldn't update protection for \"" + name + "\".");
+        }
+    }
+
+    // ── Restore / delete (Slice 2) ────────────────────────────────────────────
 
     /** Arm a confirm-gated restore (the spec requires /cb confirm for restore, always). */
     private static int requestRestore(ServerCommandSource src, String name) {
@@ -214,7 +304,7 @@ public final class BackupCommands {
         }
         BulkConfirm.request(src, () -> doRestore(src, name), "restore backup " + name);
         Chat.info(src, "About to RESTORE \"" + name + "\" — this replaces your current blocks. A safety copy of "
-                + "the current state is saved first. Type §a/cb confirm§7 to proceed, or §c/cb cancel§7.");
+                + "the current state is saved first. Type " + CbFmt.OK + "/cb confirm" + CbFmt.DIM + " to proceed, or " + CbFmt.BAD + "/cb cancel" + CbFmt.DIM + ".");
         return 1;
     }
 
@@ -227,26 +317,6 @@ public final class BackupCommands {
         if (ok) Chat.success(src, "Deleted backup \"" + name + "\".");
         else Chat.error(src, "Couldn't delete backup \"" + name + "\".");
         return ok ? 1 : 0;
-    }
-
-    private static int panic(ServerCommandSource src) {
-        String latest = BackupManager.latestName();
-        if (latest == null) {
-            Chat.error(src, "No backups to roll back to. (Nothing has been saved yet.)");
-            return 0;
-        }
-        Chat.info(src, "§cPANIC §7— rolling back to the newest backup \"" + latest + "\" now…");
-        doRestore(src, latest);
-        return 1;
-    }
-
-    private static int recover(ServerCommandSource src) {
-        String latest = BackupManager.latestName();
-        if (latest == null) {
-            Chat.error(src, "No backups to recover from. (Nothing has been saved yet.)");
-            return 0;
-        }
-        return requestRestore(src, latest);
     }
 
     /**
@@ -271,9 +341,8 @@ public final class BackupCommands {
             SlotManager.reload();
         } catch (Exception e) {
             ResourcePackServer.resume();
-            String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-            IncidentRecorder.record("Backup restore failed for \"" + name + "\"", null, src.getName(), e);
-            Chat.error(src, "Restore failed — your data was left as it was. " + msg);
+            String code = IncidentRecorder.record("Backup restore failed for \"" + name + "\"", null, src.getName(), e);
+            Chat.incidentError(src, "Restore failed — your data was left as it was.", code);
             return;
         }
         ResourcePackServer.resume();    // rebuilds the pack

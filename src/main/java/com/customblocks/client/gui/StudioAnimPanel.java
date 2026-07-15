@@ -34,7 +34,7 @@ import java.util.List;
 @Environment(EnvType.CLIENT)
 public final class StudioAnimPanel {
 
-    private static final int GOLD = 0xFF_FF_AA_00;
+    private static final int GOLD = CbTheme.ACCENT; // selected/highlight accent — now theme neon-red (§G27.6.P P1)
     private static final int PANEL_W = 196;          // playback-bar width inside the section panel
     private static final double SPEED_STEP = 1.5;    // Slower/Faster multiply the current speed by this
 
@@ -48,7 +48,7 @@ public final class StudioAnimPanel {
         speedRects = loopRects = smoothRects = trimRects = null;
 
         if (!st.isAnimated()) {
-            ctx.drawTextWithShadow(tr, Text.literal("§6§lAnimation"), x, y, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(tr, Text.literal("§c§lAnimation"), x, y, 0xFFFFFFFF);
             if (st.animLoading)
                 ctx.drawTextWithShadow(tr, Text.literal("§8loading frames…"), x, y + 16, 0xFFFFFFFF);
             else {
@@ -60,30 +60,30 @@ public final class StudioAnimPanel {
         }
 
         AnimData a = st.anim;
-        ctx.drawTextWithShadow(tr, Text.literal("§6§lAnimation"), x, y, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§c§lAnimation"), x, y, 0xFFFFFFFF);
 
         // Speed — friendly, no numbers. "Normal" = the clip's own real timing.
-        ctx.drawTextWithShadow(tr, Text.literal("§eSpeed"), x, y + 18, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7Speed"), x, y + 18, 0xFFFFFFFF);
         speedRects = new int[3][4];
         int bx = btn(ctx, tr, speedRects, 0, x, y + 30, "Slower", false, mx, my);
         bx = btn(ctx, tr, speedRects, 1, bx, y + 30, "Normal", !a.isUniform(), mx, my);
         btn(ctx, tr, speedRects, 2, bx, y + 30, "Faster", false, mx, my);
 
         // Loop — play order.
-        ctx.drawTextWithShadow(tr, Text.literal("§eLoop"), x, y + 54, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7Loop"), x, y + 54, 0xFFFFFFFF);
         loopRects = new int[3][4];
         bx = btn(ctx, tr, loopRects, 0, x, y + 66, "Forward", AnimData.LOOP.equals(a.loopMode()), mx, my);
         bx = btn(ctx, tr, loopRects, 1, bx, y + 66, "Bounce", AnimData.BOUNCE.equals(a.loopMode()), mx, my);
         btn(ctx, tr, loopRects, 2, bx, y + 66, "Reverse", AnimData.REVERSE.equals(a.loopMode()), mx, my);
 
         // Smooth motion.
-        ctx.drawTextWithShadow(tr, Text.literal("§eSmooth motion"), x, y + 90, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7Smooth motion"), x, y + 90, 0xFFFFFFFF);
         smoothRects = new int[2][4];
         bx = btn(ctx, tr, smoothRects, 0, x, y + 102, "On",  a.interpolate(), mx, my);
         btn(ctx, tr, smoothRects, 1, bx, y + 102, "Off", !a.interpolate(), mx, my);
 
         // Trim — the only "advanced" control, kept compact at the bottom.
-        ctx.drawTextWithShadow(tr, Text.literal("§eTrim §8(cut start/end)"), x, y + 126, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(tr, Text.literal("§7Trim §8(cut start/end)"), x, y + 126, 0xFFFFFFFF);
         trimRects = new int[5][4];
         int ty = y + 138;
         ctx.drawTextWithShadow(tr, Text.literal("§7Start"), x, ty + 5, 0xFFFFFFFF);
@@ -137,19 +137,56 @@ public final class StudioAnimPanel {
 
     /**
      * The frame grid the live preview should show RIGHT NOW — honors the trim range, loop ordering and
-     * per-frame timing (so the preview plays exactly like the finished block). Frame-swap only (the
-     * in-world block does the real smoothing/cross-fade via the .mcmeta). Returns the static grid when
-     * not animated.
+     * per-frame timing (so the preview plays exactly like the finished block). With "Smooth motion" ON it
+     * CROSS-FADES from the current frame into the next by how far we are through the current frame's time
+     * (so the preview matches the in-world blend); with it OFF it hard-swaps frames. Returns the static
+     * grid when not animated.
      */
     public int[] currentFrame(StudioState st) {
         int[][] f = st.frames;
         if (f == null || f.length == 0) return st.grid;
         if (f.length == 1 || st.anim == null) return f[0];
-        int[] pos = playbackPos(st);
-        if (pos[1] == 0) return f[0];
-        List<int[]> pb = st.anim.playback();
-        if (pb.isEmpty() || pos[0] >= pb.size()) return f[0];
-        return frameAt(f, pb.get(pos[0])[0]);
+        List<int[]> pb = st.anim.playback(); // ordered {frameIndex, ticks}
+        if (pb.isEmpty()) return f[0];
+        long totalMs = 0;
+        for (int[] p : pb) totalMs += Math.max(1, p[1]) * 50L;
+        if (totalMs <= 0) return frameAt(f, pb.get(0)[0]);
+        long t = System.currentTimeMillis() % totalMs, acc = 0;
+        int step = pb.size() - 1; long stepStart = 0, stepMs = Math.max(1, pb.get(step)[1]) * 50L;
+        for (int i = 0; i < pb.size(); i++) {
+            long ms = Math.max(1, pb.get(i)[1]) * 50L;
+            if (t < acc + ms) { step = i; stepStart = acc; stepMs = ms; break; }
+            acc += ms;
+        }
+        int cur = pb.get(step)[0]; // frame index for this step (frameAt range-guards it)
+        if (!st.anim.interpolate()) return frameAt(f, cur); // Smooth OFF → frame-swap
+        int next = pb.get((step + 1) % pb.size())[0];       // Smooth ON → blend into the next played frame
+        double frac = stepMs <= 0 ? 0 : (double) (t - stepStart) / stepMs;
+        return blend(frameAt(f, cur), frameAt(f, next), frac);
+    }
+
+    /** Linear cross-fade between two preview grids by {@code t} in [0,1]; a new array (cube re-bakes it). */
+    private static int[] blend(int[] a, int[] b, double t) {
+        if (a == null) return b;
+        if (b == null || t <= 0) return a;
+        if (t >= 1) return b;
+        int[] out = new int[a.length];
+        int n = Math.min(a.length, b.length);
+        for (int i = 0; i < n; i++) out[i] = lerpArgb(a[i], b[i], t);
+        return out;
+    }
+
+    /** Per-channel linear interpolation of two packed 0xAARRGGBB pixels. */
+    private static int lerpArgb(int p, int q, double t) {
+        int a = lerp((p >>> 24) & 0xFF, (q >>> 24) & 0xFF, t);
+        int r = lerp((p >> 16) & 0xFF, (q >> 16) & 0xFF, t);
+        int g = lerp((p >> 8)  & 0xFF, (q >> 8)  & 0xFF, t);
+        int b = lerp(p & 0xFF,         q & 0xFF,         t);
+        return (a << 24) | (r << 16) | (g << 8) | b;
+    }
+
+    private static int lerp(int from, int to, double t) {
+        return from + (int) Math.round((to - from) * t);
     }
 
     /**
@@ -198,8 +235,8 @@ public final class StudioAnimPanel {
         rects[i] = new int[]{x, y, w, 14};
         boolean hov = mx >= x && mx < x + w && my >= y && my < y + 14;
         ctx.fill(x - 1, y - 1, x + w + 1, y + 15, active ? GOLD : (hov ? 0xFFBBBBBB : 0xFF000000));
-        ctx.fill(x, y, x + w, y + 14, active ? 0xFF3A2E00 : 0xFF1A1A1A);
-        ctx.drawTextWithShadow(tr, Text.literal((active ? "§e" : "§f") + label), x + 4, y + 3, 0xFFFFFFFF);
+        ctx.fill(x, y, x + w, y + 14, active ? CbTheme.SEL_FILL : 0xFF1A1A1A);
+        ctx.drawTextWithShadow(tr, Text.literal((active ? "§c" : "§f") + label), x + 4, y + 3, 0xFFFFFFFF);
         return x + w + 4;
     }
 

@@ -28,6 +28,7 @@
  */
 package com.customblocks.image;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.CustomBlocksMod;
 
@@ -51,24 +52,20 @@ public final class AnimationDecoder {
 
     private AnimationDecoder() {} // static-only
 
-    /** Max frames kept in a strip (locked design). Longer clips are even-sampled down to this. */
+    /** Max frames kept (locked design). Longer clips are even-sampled down to this so every frame is real. */
     public static final int MAX_FRAMES = 256;
     /**
-     * Max HEIGHT (px) one animated strip may occupy in Minecraft's block atlas. The strip is a single
-     * (size × size·frames) sprite; a sprite taller than the atlas budget forces Minecraft to downscale
-     * the WHOLE block atlas and disable mipmaps for every block — the "muffled"/aliased look. A clip with
-     * more frames than fit is even-sampled to fewer frames at FULL per-frame resolution (see {@link
-     * #atlasFrameCap}), so every frame stays crisp and every other block stays sharp. 8192 = half of
-     * MC's 16384 atlas max, leaving room for all the other block sprites. See ADR-007 + ADR-008.
+     * Per-frame cell ceiling for an animated clip. Frames are packed into a square GRID texture rendered
+     * OFF the block atlas (its own GL texture, no mipmap), so a clip keeps ALL its frames at this size —
+     * no atlas strip-height limit, no frame-dropping to fit one tall column. The real cell may be smaller
+     * (see {@link #gridCell}) so the whole grid stays within {@link #GRID_BUDGET_PX}.
      */
-    private static final int MAX_STRIP_PX = 8192;
+    public static final int OFFATLAS_MAX_SIZE = 512;
     /**
-     * Cap an ATLAS caller should apply to the per-frame size. The shared block atlas muffles (mipmaps on)
-     * above 256px (ADR-007); 512px is reserved for the own-texture renderer (ADR-008). Atlas callers pass
-     * {@code Math.min(ATLAS_MAX_SIZE, textureSize)} so a config set to 512 can't overflow the atlas (the
-     * speckled/muffled look). {@link #decode} itself does NOT force this — the own-texture path needs 512.
+     * Max side (px) of the packed grid texture — caps GPU memory for one animated block (a 4096² RGBA
+     * texture is 64 MB). Both cols·cell and rows·cell are kept ≤ this. Well under the GL 16384 hard limit.
      */
-    public static final int ATLAS_MAX_SIZE = 256;
+    private static final int GRID_BUDGET_PX = 4096;
     /** Clamp absurd source frame dimensions so one giant frame can't exhaust the heap. */
     private static final int MAX_FRAME_DIM = 4096;
     /** Hard wall-clock budget for one decode; a pathological GIF aborts cleanly past this. */
@@ -76,9 +73,9 @@ public final class AnimationDecoder {
     /** Stop collecting if free heap drops below this, rather than risk an OOM. */
     private static final long MIN_FREE_HEAP_BYTES = 64L * 1024 * 1024;
 
-    /** The decode result: the strip PNG, per-frame times (ticks), frame count, transparency, warning. */
-    public record Decoded(byte[] stripPng, List<Integer> frameTimes, int frameCount,
-                          boolean transparency, String warning) {}
+    /** The decode result: the strip PNG, per-frame times (ticks AND real ms), frame count, transparency, warning. */
+    public record Decoded(byte[] stripPng, List<Integer> frameTimes, List<Integer> frameTimesMs,
+                          int frameCount, boolean transparency, String warning) {}
 
     private record FrameMeta(int delayCsecs, int disposal, int offsetX, int offsetY) {}
 
@@ -106,12 +103,12 @@ public final class AnimationDecoder {
     }
 
     /**
-     * Decode {@code raw} into a square vertical strip at {@code size}px per frame. Returns null if the
-     * data isn't a readable multi-frame image (caller falls back to the static path). The caller runs this
-     * OFF the server thread. Frames are scaled with high-quality bicubic + antialias. A clip with more
-     * frames than fit the atlas is even-sampled to fewer frames at FULL resolution (see {@link
-     * #atlasFrameCap}) so its strip can never overflow the block atlas (which would disable mipmaps for
-     * every block — the "muffled" look). ADR-008 interim: hold resolution, drop frames — no 32px crush.
+     * Decode {@code raw} into a square-cell GRID PNG ({@code cols×rows} cells, packed left→right, top→bottom)
+     * holding EVERY frame, plus per-frame display times. Returns null if the data isn't a readable multi-frame
+     * image (caller falls back to the static path). Runs OFF the server thread. Frames are bicubic-scaled to a
+     * cell size chosen so the whole grid fits {@link #GRID_BUDGET_PX}. The grid renders off the block atlas
+     * (its own GL texture), so it keeps full speed + all frames with no atlas muffle. {@code size} is the
+     * desired per-frame size (16..512); {@link #gridCell} may shrink it for very long clips.
      */
     public static Decoded decode(byte[] raw, int size) {
         // Honor the requested size up to 512 — the own-texture renderer path (ScreenTest) wants full res.
@@ -133,24 +130,24 @@ public final class AnimationDecoder {
             int canvasH = Math.min(first.getHeight(), MAX_FRAME_DIM);
             if (canvasW <= 0 || canvasH <= 0) return null;
 
-            // How many frames fit the atlas at FULL per-frame resolution. The strip is (size × size·frames);
-            // keeping its height ≤ MAX_STRIP_PX preserves mipmaps for every block. ADR-008 interim fix: hold
-            // resolution and even-sample FRAMES down to this cap — instead of crushing per-frame size to 32px.
-            int frameCap = atlasFrameCap(size);
+            // Keep EVERY frame (the off-atlas grid has no strip-height limit), only even-sampling clips
+            // longer than the locked MAX_FRAMES so memory stays bounded. We still composite EVERY frame in
+            // order (disposal correctness) and only snapshot the kept ones.
+            int frameCap = MAX_FRAMES;
 
-            // Which source frames to KEEP. When the source has more than frameCap we even-sample, but we
-            // still composite EVERY frame in order (disposal correctness) and only snapshot the kept ones —
-            // so memory stays bounded to <= frameCap snapshots.
             Set<Integer> keep = null;
             String warning = null;
             if (total > frameCap) {
                 keep = evenSampleIndices(total, frameCap);
-                warning = "§eThat clip had " + total + " frames — kept " + frameCap
-                        + " at full resolution so it stays crisp. §7Use /cb anim to fine-tune.";
-                CustomBlocksMod.LOGGER.warn("[CustomBlocks] Animation: {} frames sampled to {} (full-res).", total, frameCap);
+                warning = CbFmt.VALUE + "That clip had " + total + " frames — kept " + frameCap
+                        + " (the max) at full speed. " + CbFmt.DIM + "Use /cb animation to fine-tune.";
+                CustomBlocksMod.LOGGER.warn("[CustomBlocks] Animation: {} frames sampled to {}.", total, frameCap);
             }
 
-            int effSize = size; // FULL per-frame resolution — no shrink (the ADR-008 invert)
+            // Per-frame cell size: as large as the requested size allows while the packed grid stays within
+            // GRID_BUDGET_PX. Short clip → big crisp cells; long clip → smaller cells, but ALL frames kept.
+            int expected = (total > 0) ? Math.min(total, MAX_FRAMES) : MAX_FRAMES;
+            int effSize = gridCell(expected, size);
 
             BufferedImage composite = new BufferedImage(canvasW, canvasH, BufferedImage.TYPE_INT_ARGB);
             Graphics2D gc = composite.createGraphics();
@@ -210,13 +207,18 @@ public final class AnimationDecoder {
             if (kept.isEmpty()) return null;
             if (kept.size() == 1) return null; // a single frame is a static block, not an animation
 
-            // centiseconds → ticks (1 tick = 50ms = 5cs), min 1. Done after the loop so a kept frame's
-            // folded-in skipped time is included → the clip plays at its true original speed.
+            // centiseconds → ticks (1 tick = 50ms = 5cs, min 1) for the legacy mcmeta + studio fps, AND
+            // centiseconds → real milliseconds (1cs = 10ms, min 10) for the off-atlas real-clock renderer.
+            // Done after the loop so a kept frame's folded-in skipped time is included → true original speed.
             List<Integer> ticks = new ArrayList<>(keptCs.size());
-            for (int cs : keptCs) ticks.add(Math.max(1, (int) Math.round(cs / 5.0)));
+            List<Integer> ms = new ArrayList<>(keptCs.size());
+            for (int cs : keptCs) {
+                ticks.add(Math.max(1, (int) Math.round(cs / 5.0)));
+                ms.add(Math.max(10, cs * 10));
+            }
 
-            byte[] strip = buildStrip(kept, effSize);
-            return new Decoded(strip, ticks, kept.size(), transparency, warning);
+            byte[] strip = buildGrid(kept, effSize);
+            return new Decoded(strip, ticks, ms, kept.size(), transparency, warning);
         } catch (OutOfMemoryError oom) {
             CustomBlocksMod.LOGGER.error("[CustomBlocks] Out of memory decoding animation.", oom);
             return null;
@@ -263,27 +265,42 @@ public final class AnimationDecoder {
     }
 
     /**
-     * The most frames a strip can hold at FULL per-frame {@code size} without overflowing the block atlas.
-     * The strip is (size × size·frames); keeping its height ≤ {@link #MAX_STRIP_PX} preserves mipmaps for
-     * every block (a taller sprite forces Minecraft to downscale the whole atlas — the "muffle"). Never more
-     * than {@link #MAX_FRAMES} (the locked design max); floored at 1. This is the ADR-008 interim invert:
-     * hold per-frame resolution and drop frames, instead of the old shrink-the-frame logic that crushed long
-     * clips to 32px. {@code size} is 16..512 (decode clamps it), so this returns 16..256 (16 frames at 512px,
-     * 32 at the atlas-safe 256px). A short clip (≤ this many frames) keeps every frame.
+     * Columns in the packed grid for {@code n} frames — a square-ish layout (⌈√n⌉ columns). SHARED by the
+     * decoder (packs the PNG), ServerPackGenerator (writes the grid sidecar), and the client AnimFrameCache
+     * (reads cells), so all three agree on the layout. Frame {@code f} lives at col {@code f % cols}, row
+     * {@code f / cols}.
      */
-    private static int atlasFrameCap(int size) {
-        int fit = MAX_STRIP_PX / Math.max(16, size);
-        return Math.max(1, Math.min(MAX_FRAMES, fit));
+    public static int gridCols(int n) {
+        if (n <= 1) return 1;
+        return (int) Math.ceil(Math.sqrt(n));
     }
 
-    /** Stack the square frames into one vertical strip (size wide, size·N tall). */
-    private static byte[] buildStrip(List<BufferedImage> frames, int size) throws Exception {
-        BufferedImage strip = new BufferedImage(size, size * frames.size(), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = strip.createGraphics();
-        for (int i = 0; i < frames.size(); i++) g.drawImage(frames.get(i), 0, i * size, null);
+    /**
+     * Per-frame cell px for {@code n} frames at the requested size, shrunk if needed so neither grid side
+     * (cols·cell, rows·cell) exceeds {@link #GRID_BUDGET_PX}. Floored at 16. A short clip keeps the full
+     * requested size; only a long clip (many cells) is scaled down to stay within the GPU-memory budget.
+     */
+    public static int gridCell(int n, int requested) {
+        int cols = gridCols(n);
+        int rows = (n + cols - 1) / cols;
+        int maxDim = Math.max(1, Math.max(cols, rows));
+        int cell = Math.min(requested, GRID_BUDGET_PX / maxDim);
+        return Math.max(16, cell);
+    }
+
+    /** Pack the square frames into one GRID PNG (cols×rows cells, left→right, top→bottom). */
+    private static byte[] buildGrid(List<BufferedImage> frames, int cell) throws Exception {
+        int n = frames.size();
+        int cols = gridCols(n);
+        int rows = (n + cols - 1) / cols;
+        BufferedImage grid = new BufferedImage(cols * cell, rows * cell, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = grid.createGraphics();
+        for (int f = 0; f < n; f++) {
+            g.drawImage(frames.get(f), (f % cols) * cell, (f / cols) * cell, null);
+        }
         g.dispose();
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        ImageIO.write(strip, "PNG", baos);
+        ImageIO.write(grid, "PNG", baos);
         return baos.toByteArray();
     }
 

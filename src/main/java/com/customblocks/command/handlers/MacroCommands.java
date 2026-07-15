@@ -9,6 +9,9 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.core.WidgetSync;
+
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.MacroManager;
 import com.mojang.brigadier.arguments.StringArgumentType;
@@ -74,8 +77,9 @@ public final class MacroCommands {
             return 0;
         }
         MacroManager.startRecording(p.getUuid(), name);
+        WidgetSync.push(p);   // G03: light the recording banner
         Chat.success(ctx.getSource(),
-                "Recording macro '§e" + name + "§r'. Add steps with /cb macro add <cmd>. Finish with /cb macro stop.");
+                "Recording macro \"" + CbFmt.VALUE + name + CbFmt.RESET + "\". Add steps with /cb macro add <cmd>. Finish with /cb macro stop.");
         return 1;
     }
 
@@ -88,15 +92,16 @@ public final class MacroCommands {
         }
         String full = cmd.startsWith("/") ? cmd : "/" + cmd;
         MacroManager.addCommand(p.getUuid(), full);
-        Chat.info(ctx.getSource(), "Added: §7" + full);
+        Chat.info(ctx.getSource(), "Added: " + CbFmt.DIM + full);
         return 1;
     }
 
     private static int stop(CommandContext<ServerCommandSource> ctx) throws CommandSyntaxException {
         ServerPlayerEntity p = ctx.getSource().getPlayerOrThrow();
         String name = MacroManager.stopRecording(p.getUuid());
+        WidgetSync.push(p);   // G03: clear the recording banner
         if (name == null) { Chat.error(ctx.getSource(), "Not recording anything."); return 0; }
-        Chat.success(ctx.getSource(), "Macro '§e" + name + "§r' saved. Play with /cb macro play " + name);
+        Chat.success(ctx.getSource(), "Macro \"" + CbFmt.VALUE + name + CbFmt.RESET + "\" saved. Play with /cb macro play " + name);
         return 1;
     }
 
@@ -110,16 +115,16 @@ public final class MacroCommands {
     private static int play(CommandContext<ServerCommandSource> ctx, String name) {
         ServerCommandSource src = ctx.getSource();
         List<String> commands = MacroManager.load(name);
-        if (commands == null) { Chat.error(src, "No macro named '§e" + name + "§r'."); return 0; }
-        if (commands.isEmpty()) { Chat.info(src, "Macro '§e" + name + "§r' is empty."); return 1; }
-        Chat.info(src, "Playing '§e" + name + "§r' (" + commands.size() + " step(s))...");
+        if (commands == null) { Chat.error(src, "No macro named \"" + CbFmt.VALUE + name + CbFmt.RESET + "\"."); return 0; }
+        if (commands.isEmpty()) { Chat.info(src, "Macro \"" + CbFmt.VALUE + name + CbFmt.RESET + "\" is empty."); return 1; }
+        Chat.info(src, "Playing \"" + CbFmt.VALUE + name + CbFmt.RESET + "\" (" + commands.size() + " step(s))...");
         int ok = 0;
         for (String c : commands) {
             String line = c.startsWith("/") ? c.substring(1) : c;
             try { src.getServer().getCommandManager().getDispatcher().execute(line, src); ok++; }
-            catch (Exception e) { Chat.error(src, "Error at step: §c" + c); }
+            catch (Exception e) { Chat.error(src, "Error at step: " + CbFmt.BAD + c); }
         }
-        Chat.success(src, "Done: §e" + ok + "/" + commands.size() + "§r succeeded.");
+        Chat.success(src, "Done: " + CbFmt.VALUE + ok + "/" + commands.size() + CbFmt.RESET + " succeeded.");
         return 1;
     }
 
@@ -130,31 +135,25 @@ public final class MacroCommands {
             Chat.info(src, "No macros saved. Create one with /cb macro record <name>.");
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + names.size() + " macro(s):"), false);
+        Chat.raw(src, CbFmt.VALUE + names.size() + " macro(s):");
         for (String n : names) {
-            MutableText line = Text.literal("§7 - §f" + n + " ")
-                    .append(btn("[play]",   "/cb macro play "   + n, "Play macro "   + n))
+            MutableText line = Text.literal(CbFmt.DIM + " - " + CbFmt.BODY + n + " ")
+                    .append(Chat.runButton("[play]",   "/cb macro play "   + n, "Play macro "   + n))
                     .append(Text.literal(" "))
-                    .append(btn("[delete]", "/cb macro delete " + n, "Delete macro " + n));
-            src.sendFeedback(() -> line, false);
+                    .append(Chat.runButton("[delete]", "/cb macro delete " + n, "Delete macro " + n));
+            Chat.raw(src, line);
         }
         return 1;
     }
 
     private static int delete(CommandContext<ServerCommandSource> ctx, String name) {
         if (!MacroManager.exists(name)) {
-            Chat.error(ctx.getSource(), "No macro named '§e" + name + "§r'.");
+            Chat.error(ctx.getSource(), "No macro named \"" + CbFmt.VALUE + name + CbFmt.RESET + "\".");
             return 0;
         }
         MacroManager.delete(name);
-        Chat.success(ctx.getSource(), "Deleted macro '§e" + name + "§r'.");
+        Chat.success(ctx.getSource(), "Deleted macro \"" + CbFmt.VALUE + name + CbFmt.RESET + "\".");
         return 1;
     }
 
-    private static MutableText btn(String label, String cmd, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withColor(Formatting.GREEN)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, cmd))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
-    }
 }

@@ -3,25 +3,21 @@
  *
  * Responsibility: Block deletion — /cb delete <id> and /cb delete # (the custom block the
  * player is looking at, ~6-block raycast). Split out of CreationCommands (Group 17 slice 3)
- * so both stay under the 400-line command-handler cap (§9.3). All deletion goes through one
- * shared rail: lock check → texture snapshot → SlotManager.delete → undo record → HUD sync.
+ * so both stay under the 400-line command-handler cap (§9.3). This handler only resolves the
+ * target + checks the lock; the actual delete (definition + placed copies → markers + undo +
+ * resync) runs through the shared {@link DeletionService} (G06-14 slice 2).
  *
- * Depends on: SlotData, SlotManager, TextureStore, UndoManager, LockManager, BlockNotesManager,
- *             ResourcePackServer, HudSync, SlotBlock, Chat, BlockSuggestions
+ * Depends on: SlotData, SlotManager, DeletionService, LockManager, SlotBlock, Chat, BlockSuggestions
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
-import com.customblocks.core.BlockNotesManager;
+import com.customblocks.core.DeletionService;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
-import com.customblocks.core.TextureStore;
-import com.customblocks.core.UndoManager;
-import com.customblocks.network.HudSync;
-import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -90,22 +86,18 @@ public final class DeleteCommands {
         return SlotManager.getBySlot(sb.getSlotKey());
     }
 
-    /** Shared deletion rail for both forms. */
+    /** Shared deletion rail for both forms — all the work runs through {@link DeletionService} (G06-14). */
     private static int deleteCore(ServerCommandSource src, SlotData before, boolean targeted) {
         String id = before.customId();
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
-        byte[] texture = TextureStore.load(before.index()); // snapshot so undo can restore pixels
-        SlotManager.delete(id);
-        BlockNotesManager.onBlockDeleted(id); // clean up orphaned note if any
-        ResourcePackServer.updatePack();      // free the slot's texture from the pack
-        UndoManager.recordDelete(actor(src), before, texture);
-        Chat.success(src, targeted
-                ? "Deleted \"" + id + "\" (targeted block). Undo with /cb undo."
-                : "Block \"" + id + "\" deleted. You can undo this with /cb undo.");
-        if (src.getEntity() instanceof ServerPlayerEntity p) HudSync.sendTo(p);
+        DeletionService.delete(src.getServer(), before, actor(src));
+        Chat.successWith(src, targeted
+                        ? "Deleted \"" + id + "\" (targeted block)."
+                        : "Block \"" + id + "\" deleted.",
+                Chat.undoButton());
         return 1;
     }
 

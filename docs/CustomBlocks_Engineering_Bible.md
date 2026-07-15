@@ -727,7 +727,7 @@ Tolerance is configurable (0–100). `tolerance <= 0` removes nothing. Manual to
 - [ ] Create `CHANGELOG.md` and this `Engineering Bible`
 - [ ] Verify mod loads in MC 1.21.1 with a "Hello World" log message
 - [ ] Set up full package structure (all packages, empty classes with header comments)
-- [ ] Set up Gradle verification tasks: `verifyMojibake`, `verifySound`
+- [ ] Set up Gradle verification tasks: `mojibakeShield`, `soundGate`
 - [ ] Add `TextSanitizer.java` with mojibake repair dictionary
 - [ ] Add `fabric.mod.json` with correct metadata (name, author, license, links)
 - [ ] Add `LICENSE` and `LICENSE-ar` files
@@ -1172,8 +1172,8 @@ These are real bugs that happened. Learn from them. Don't repeat them.
 
 | Pitfall | What Happened | Prevention |
 |---|---|---|
-| **Mojibake** | CP1252 → UTF-8 corruption broke block names | `TextSanitizer` + `verifyMojibake` Gradle task |
-| **SoundEvents.value()** | `BLOCK_NOTE_BLOCK_*` are `RegistryEntry<SoundEvent>`, not `SoundEvent` — silent crashes | `verifySound` Gradle task |
+| **Mojibake** | CP1252 → UTF-8 corruption broke block names | `TextSanitizer` + `mojibakeShield` Gradle task |
+| **SoundEvents.value()** | `BLOCK_NOTE_BLOCK_*` are `RegistryEntry<SoundEvent>`, not `SoundEvent` — silent crashes | `soundGate` Gradle task |
 | **Client-side skip** | `if (world.isClient) return PASS` in tool `useOnBlock()` caused noticeable delay | Gate via `if (!(player instanceof ServerPlayerEntity))` instead |
 | **Dirty worktree** | Uncommitted changes lost across sessions | Commit or stash before every session end |
 | **DidYouMean arg name** | Argument named `"unknown_cb_tail"` showed verbatim in action bar | Name it `"subcommand"` |
@@ -1199,7 +1199,7 @@ These are real bugs that happened. Learn from them. Don't repeat them.
 | 1028 pre-registered blocks causes slow server startup | Low | Medium | Benchmark startup time in Phase 1. If slow, lazy-register in batches. |
 | File size creep (monolith files) | High | High | Enforce §9.3 file size rules. Code review every PR for line count. |
 | Client disconnect during large pack download | Medium | High | Keep-alive mixins (Phase 5). |
-| Mojibake corruption in localization | Medium | Medium | `verifyMojibake` Gradle task runs on every build. |
+| Mojibake corruption in localization | Medium | Medium | `mojibakeShield` Gradle task runs on every build. |
 | AI features requiring API keys fail silently | Medium | Low | All AI features opt-in with clear error messages when key missing. |
 | Cloud vault worker deployment confusion | Medium | Low | Bundle `cloud-vault-worker/` with step-by-step README. |
 

@@ -15,6 +15,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BackupManager;
@@ -80,22 +81,22 @@ public final class SafetyCommands {
         int iv = CustomBlocksConfig.autoBackupInterval;
 
         Chat.info(src, "Data-safety check:");
-        src.sendFeedback(() -> Text.literal("  §7Blocks: §f" + used + "§7/§f" + max), false);
-        src.sendFeedback(() -> Text.literal("  §7Backups: §f" + backups
-                + (newest != null ? " §8(newest: " + newest + ")" : " §8(none yet)")), false);
-        src.sendFeedback(() -> Text.literal("  §7Auto-backup: " + (iv <= 0 ? "§cOFF"
-                : "§aevery " + iv + " min §7(keep " + CustomBlocksConfig.autoBackupKeepCount + ")")), false);
-        src.sendFeedback(() -> Text.literal("  §7Trash: §f" + trash + " §7deleted block(s)"), false);
+        Chat.raw(src, Text.literal("  " + CbFmt.DIM + "Blocks: " + CbFmt.BODY + used + CbFmt.DIM + "/" + CbFmt.BODY + max));
+        Chat.raw(src, Text.literal("  " + CbFmt.DIM + "Backups: " + CbFmt.BODY + backups
+                + (newest != null ? " " + CbFmt.FAINT + "(newest: " + newest + ")" : " " + CbFmt.FAINT + "(none yet)")));
+        Chat.raw(src, Text.literal("  " + CbFmt.DIM + "Auto-backup: " + (iv <= 0 ? CbFmt.BAD + "OFF"
+                : CbFmt.OK + "every " + iv + " min " + CbFmt.DIM + "(keep " + CustomBlocksConfig.autoBackupKeepCount + ")")));
+        Chat.raw(src, Text.literal("  " + CbFmt.DIM + "Trash: " + CbFmt.BODY + trash + " " + CbFmt.DIM + "deleted block(s)"));
 
         if (broken == 0) {
-            src.sendFeedback(() -> Text.literal("  §7Broken blocks: §a0 ✔"), false);
+            Chat.raw(src, Text.literal("  " + CbFmt.DIM + "Broken blocks: " + CbFmt.OK + "0 ✔"));
         } else {
-            Chat.line(src, Text.literal("  §7Broken blocks: §c" + broken + " §7— ")
-                    .append(Chat.runButton("§e[open]", "/cb showbrokenblocks", "List and fix them")));
+            Chat.line(src, Text.literal("  " + CbFmt.DIM + "Broken blocks: " + CbFmt.BAD + broken + " " + CbFmt.DIM + "— ")
+                    .append(Chat.runButton(CbFmt.VALUE + "[open]", "/cb showbrokenblocks", "List and fix them")));
         }
         if (backups == 0) {
-            Chat.line(src, Text.literal("§7Tip: make a backup — ")
-                    .append(Chat.runButton("§a[/cb backup save]", "/cb backup save", "Save a backup now")));
+            Chat.line(src, Text.literal(CbFmt.DIM + "Tip: make a backup — ")
+                    .append(Chat.runButton(CbFmt.OK + "[/cb backup save]", "/cb backup save", "Save a backup now")));
         }
         return 1;
     }
@@ -131,9 +132,8 @@ public final class SafetyCommands {
                     GuiRouter.render(player, MenuKey.of(Dest.BROKEN_LIST)); // refresh the report
                 });
             } catch (Exception e) {
-                String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Broken-block rebake failed for \"" + id + "\"", id, src.getName(), e);
-                server.execute(() -> Chat.error(src, "Couldn't rebuild that texture. " + msg));
+                String code = IncidentRecorder.record("Broken-block rebake failed for \"" + id + "\"", id, src.getName(), e);
+                server.execute(() -> Chat.incidentError(src, "Couldn't rebuild that texture.", code));
             }
         }, "CustomBlocks-RebakeFix");
         worker.setDaemon(true);
@@ -175,7 +175,7 @@ public final class SafetyCommands {
                 ResourcePackServer.updatePack(); // ONE rebuild after the whole batch (§7)
                 ResourcePackServer.syncToAll();
                 Chat.success(src, "Rebuilt " + ff + " texture(s)"
-                        + (fs > 0 ? " §7(" + fs + " had no saved image — skipped)" : "") + ".");
+                        + (fs > 0 ? " " + CbFmt.DIM + "(" + fs + " had no saved image — skipped)" : "") + ".");
                 BrokenSelection.clear(player.getUuid());
                 GuiRouter.render(player, MenuKey.of(Dest.BROKEN_LIST));
             });

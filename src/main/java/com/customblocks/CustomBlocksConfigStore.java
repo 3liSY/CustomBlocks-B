@@ -48,7 +48,7 @@ public final class CustomBlocksConfigStore {
             JsonObject root = JsonParser.parseString(json).getAsJsonObject();
             CustomBlocksConfig.maxSlots        = clamp(getInt(root, "maxSlots", CustomBlocksConfig.maxSlots), 1, 8192);
             CustomBlocksConfig.httpPort        = clamp(getInt(root, "httpPort", CustomBlocksConfig.httpPort), 1, 65535);
-            CustomBlocksConfig.textureSize     = CustomBlocksConfig.sanitizeTextureSize(getInt(root, "textureSize", CustomBlocksConfig.textureSize)); // pow2, ≤256 (atlas mipmap safety)
+            CustomBlocksConfig.textureSize     = CustomBlocksConfig.sanitizeTextureSize(getInt(root, "textureSize", CustomBlocksConfig.textureSize)); // pow2, 16..512 (off-atlas full-res; ADR-008)
             CustomBlocksConfig.httpHost        = getString(root, "httpHost", CustomBlocksConfig.httpHost);
             CustomBlocksConfig.maxUndoDepth    = clamp(getInt(root, "maxUndoDepth", CustomBlocksConfig.maxUndoDepth), 1, 1000);
             String m        = getString(root, "undoMode", CustomBlocksConfig.undoMode);
@@ -62,6 +62,8 @@ public final class CustomBlocksConfigStore {
             CustomBlocksConfig.aiTextureStyle  = getString(root, "aiTextureStyle", CustomBlocksConfig.aiTextureStyle);
             CustomBlocksConfig.vaultEndpoint   = getString(root, "vaultEndpoint", CustomBlocksConfig.vaultEndpoint);
             CustomBlocksConfig.discordWebhookUrl = getString(root, "discordWebhookUrl", CustomBlocksConfig.discordWebhookUrl);
+            CustomBlocksConfig.cloudShareEnabled = getBool(root, "cloudShareEnabled", CustomBlocksConfig.cloudShareEnabled);
+            CustomBlocksConfig.autoUpdateEnabled = getBool(root, "autoUpdateEnabled", CustomBlocksConfig.autoUpdateEnabled);
             CustomBlocksConfig.backgroundMode  = BackgroundRemover.normalize(getString(root, "backgroundMode", CustomBlocksConfig.backgroundMode));
             CustomBlocksConfig.backgroundTolerance = clamp(getInt(root, "backgroundTolerance", CustomBlocksConfig.backgroundTolerance), 0, 100);
             CustomBlocksConfig.triangleRedHex    = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleRedHex",    CustomBlocksConfig.triangleRedHex),    CustomBlocksConfig.triangleRedHex);
@@ -87,6 +89,12 @@ public final class CustomBlocksConfigStore {
                 CustomBlocksConfig.soundsEnabled.put(c,
                         getBool(root, "soundsEnabled_" + c, CustomBlocksConfig.soundsOn(c)));
             }
+            // Group 32 — Explosive Tomato blast. Power is clamped so a bad config file can't turn the tomato
+            // into a world-eater; restore seconds is clamped to a sane window (0 = crater never restores).
+            CustomBlocksConfig.tomatoBlastPower     = clampD(getDouble(root, "tomatoBlastPower", CustomBlocksConfig.tomatoBlastPower), 0.0, 32.0);
+            CustomBlocksConfig.tomatoBlastKnockback = getBool(root, "tomatoBlastKnockback", CustomBlocksConfig.tomatoBlastKnockback);
+            CustomBlocksConfig.tomatoBlastFire      = getBool(root, "tomatoBlastFire", CustomBlocksConfig.tomatoBlastFire);
+            CustomBlocksConfig.tomatoRestoreSeconds = (int) clampD(getDouble(root, "tomatoRestoreSeconds", CustomBlocksConfig.tomatoRestoreSeconds), 0, 600);
             LOGGER.info("[CustomBlocks] Config loaded: maxSlots={}, httpPort={}, textureSize={}, hudEnabled={}",
                     CustomBlocksConfig.maxSlots, CustomBlocksConfig.httpPort, CustomBlocksConfig.textureSize, CustomBlocksConfig.hudEnabled);
         } catch (Exception e) {
@@ -116,6 +124,8 @@ public final class CustomBlocksConfigStore {
             root.addProperty("aiTextureStyle",     CustomBlocksConfig.aiTextureStyle);
             root.addProperty("vaultEndpoint",      CustomBlocksConfig.vaultEndpoint);
             root.addProperty("discordWebhookUrl",  CustomBlocksConfig.discordWebhookUrl);
+            root.addProperty("cloudShareEnabled",  CustomBlocksConfig.cloudShareEnabled);
+            root.addProperty("autoUpdateEnabled",  CustomBlocksConfig.autoUpdateEnabled);
             root.addProperty("backgroundMode",     CustomBlocksConfig.backgroundMode);
             root.addProperty("backgroundTolerance", CustomBlocksConfig.backgroundTolerance);
             root.addProperty("triangleRedHex",     CustomBlocksConfig.triangleRedHex);
@@ -133,6 +143,10 @@ public final class CustomBlocksConfigStore {
             root.addProperty("arabicFormIni", CustomBlocksConfig.arabicFormIni);
             root.addProperty("arabicFormMid", CustomBlocksConfig.arabicFormMid);
             root.addProperty("arabicFormFin", CustomBlocksConfig.arabicFormFin);
+            root.addProperty("tomatoBlastPower",     CustomBlocksConfig.tomatoBlastPower);
+            root.addProperty("tomatoBlastKnockback", CustomBlocksConfig.tomatoBlastKnockback);
+            root.addProperty("tomatoBlastFire",      CustomBlocksConfig.tomatoBlastFire);
+            root.addProperty("tomatoRestoreSeconds", CustomBlocksConfig.tomatoRestoreSeconds);
             for (String c : CustomBlocksConfig.FX_CATEGORIES) {
                 root.addProperty("particlesEnabled_" + c, CustomBlocksConfig.particlesOn(c));
             }
@@ -150,5 +164,7 @@ public final class CustomBlocksConfigStore {
     private static int     getInt   (JsonObject o, String k, int     d) { return o.has(k) ? o.get(k).getAsInt()     : d; }
     private static String  getString(JsonObject o, String k, String  d) { return o.has(k) ? o.get(k).getAsString()  : d; }
     private static boolean getBool  (JsonObject o, String k, boolean d) { return o.has(k) ? o.get(k).getAsBoolean() : d; }
+    private static double  getDouble(JsonObject o, String k, double  d) { return o.has(k) ? o.get(k).getAsDouble()  : d; }
     private static int     clamp    (int v, int min, int max)           { return Math.max(min, Math.min(max, v)); }
+    private static double  clampD   (double v, double min, double max)  { return Math.max(min, Math.min(max, v)); }
 }

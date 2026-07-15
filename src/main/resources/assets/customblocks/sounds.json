@@ -1,0 +1,17 @@
+{
+  "tomato_squishsplat_impact": {
+    "category": "neutral",
+    "subtitle": "customblocks.tomato.splat",
+    "sounds": ["customblocks:tomato_squishsplat_impact"]
+  },
+  "tomato_squish_03": {
+    "category": "neutral",
+    "subtitle": "customblocks.tomato.splat",
+    "sounds": ["customblocks:tomato_squish_03"]
+  },
+  "tomato_squishpop": {
+    "category": "neutral",
+    "subtitle": "customblocks.tomato.splat",
+    "sounds": ["customblocks:tomato_squishpop"]
+  }
+}

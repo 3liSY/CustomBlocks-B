@@ -11,10 +11,12 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
+import com.customblocks.network.HudSync;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -39,7 +41,8 @@ public class ChiselItem extends CustomToolItem {
         SlotData updated = SlotManager.setHardness(d.customId(), STEPS[n]);
         if (updated == null) return;
         UndoManager.recordModify(player.getUuid(), d, updated, "hardness");
-        Chat.tool(player, d.customId() + " hardness → " + LABELS[n]);
+        HudSync.broadcast(player.getServer()); // NO-REJOIN: HUD hardness updates live for all players
+        Chat.toolSuccess(player, d.customId() + " hardness →", LABELS[n]);
     }
 
     /** Index of the preset matching the current hardness, defaulting to "stone". */
@@ -51,8 +54,8 @@ public class ChiselItem extends CustomToolItem {
     @Override
     public void appendTooltip(ItemStack stack, Item.TooltipContext context, java.util.List<Text> tooltip,
                               net.minecraft.item.tooltip.TooltipType type) {
-        tooltip.add(Text.literal("§7Sets how tough your custom blocks are to break.").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§7Right-click to harden; sneak + right-click to soften.").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§8Now folded into the Omni-Tool as Hardness mode.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "Sets how tough your custom blocks are to break.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "Right-click to harden; sneak + right-click to soften.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.FAINT + "Now folded into the Omni-Tool as Hardness mode.").styled(s -> s.withItalic(false)));
     }
 }

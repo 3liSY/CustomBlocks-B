@@ -11,7 +11,7 @@
  * {@link #mouseClicked}. It owns the Category + Animation sub-panels.
  *
  * Depends on: DrawContext / TextRenderer / TextFieldWidget, BlockShapes, StudioState,
- *             StudioCategoryPanel, StudioAnimPanel. Called by: BlockCreationStudioScreen.
+ *             StudioCategoryWorkspacePanel, StudioAnimPanel. Called by: BlockCreationStudioScreen.
  */
 package com.customblocks.client.gui;
 
@@ -28,13 +28,13 @@ import net.minecraft.text.Text;
 @Environment(EnvType.CLIENT)
 public final class StudioSections {
 
-    private static final int GOLD = 0xFF_FF_AA_00;
+    private static final int GOLD = CbTheme.ACCENT; // selected/highlight accent — now theme neon-red (§G27.6.P P1)
 
     private static final int[] PALETTE = {0xFFE53935, 0xFFFB8C00, 0xFFFDD835, 0xFF43A047, 0xFF1E88E5, 0xFF8E24AA, 0xFFFFFFFF, 0xFF212121};
     private static final String[] HARD_LABEL = {"Soft", "Wood", "Stone", "Iron", "Hard"};
     private static final float[]  HARD_VALUE = {0.5f, 2.0f, 3.0f, 5.0f, 10.0f};
 
-    private final StudioCategoryPanel catPanel = new StudioCategoryPanel();
+    private final StudioCategoryWorkspacePanel catPanel = new StudioCategoryWorkspacePanel();
     private final StudioAnimPanel animPanel = new StudioAnimPanel();
     private final StudioAiPanel aiPanel = new StudioAiPanel();
 
@@ -58,7 +58,8 @@ public final class StudioSections {
      * super.render). Returns the one-line hover hint for the control under the mouse ("" = none).
      */
     public String render(Section section, DrawContext ctx, TextRenderer tr, int x, int y,
-                         StudioState st, TextFieldWidget catField, int mx, int my, String navLabel) {
+                         StudioState st, TextFieldWidget catField, int mx, int my, String navLabel,
+                         int screenW, int screenH) {
         shapeRects = swatchRects = hardRects = null;
         hoverHint = "";
         switch (section) {
@@ -71,9 +72,9 @@ public final class StudioSections {
             case SHAPE -> renderShape(ctx, tr, x, y, st, mx, my);
             case ATTRIBUTES -> renderAttributes(ctx, tr, x, y, st, mx, my);
             case AI -> aiPanel.render(ctx, tr, x, y, st, mx, my);
-            case CATEGORY -> catPanel.render(ctx, tr, x, y, st, catField, mx, my);
+            case CATEGORY -> catPanel.render(ctx, tr, x, y, screenW - x - 12, screenH - y - 54, st, catField, mx, my);
             default -> {
-                ctx.drawTextWithShadow(tr, Text.literal("§e" + navLabel + " — coming soon"), x, y, 0xFFFFFFFF);
+                ctx.drawTextWithShadow(tr, Text.literal("§7" + navLabel + " — coming soon"), x, y, 0xFFFFFFFF);
                 ctx.drawTextWithShadow(tr, Text.literal("§8Needs new block data; its own session."), x, y + 14, 0xFFFFFFFF);
             }
         }
@@ -82,6 +83,13 @@ public final class StudioSections {
 
     private void renderTexture(DrawContext ctx, TextRenderer tr, int x, int y, StudioState st, int mx, int my) {
         ctx.drawTextWithShadow(tr, Text.literal("§7Texture URL §8(optional)"), x, y, 0xFFFFFFFF);
+        // GIFs render off-atlas over black — no background colour applies. Hide the whole picker for them
+        // (owner: "remove bg colouring entirely for gifs") so nothing is offered that the block won't honour.
+        if (st.isAnimated()) {
+            swatchRects = null;
+            ctx.drawTextWithShadow(tr, Text.literal("§8GIFs render over black — no background colour."), x, y + 54, 0xFFFFFFFF);
+            return;
+        }
         ctx.drawTextWithShadow(tr, Text.literal("§7Background colour §8(fills behind the image):"), x, y + 54, 0xFFFFFFFF);
         // PALETTE swatches + one "✖" clear swatch at the end (index == PALETTE.length).
         swatchRects = new int[PALETTE.length + 1][4];
@@ -112,8 +120,8 @@ public final class StudioSections {
             boolean sel = shapes[i].equals(st.shape);
             boolean hov = mx >= sx && mx < sx + 100 && my >= sy && my < sy + 18;
             ctx.fill(sx - 1, sy - 1, sx + 101, sy + 19, sel ? GOLD : (hov ? 0xFFBBBBBB : 0xFF000000));
-            ctx.fill(sx, sy, sx + 100, sy + 18, sel ? 0xFF3A2E00 : 0xFF1A1A1A);
-            ctx.drawTextWithShadow(tr, Text.literal((sel ? "§e" : "§f") + shapes[i]), sx + 4, sy + 5, 0xFFFFFFFF);
+            ctx.fill(sx, sy, sx + 100, sy + 18, sel ? CbTheme.SEL_FILL : 0xFF1A1A1A);
+            ctx.drawTextWithShadow(tr, Text.literal((sel ? "§c" : "§f") + shapes[i]), sx + 4, sy + 5, 0xFFFFFFFF);
         }
     }
 
@@ -131,8 +139,8 @@ public final class StudioSections {
             hardRects[i] = new int[]{sx, sy, 40, 18};
             boolean sel = st.hardnessSet && st.hardness == HARD_VALUE[i];
             ctx.fill(sx - 1, sy - 1, sx + 41, sy + 19, sel ? GOLD : 0xFF000000);
-            ctx.fill(sx, sy, sx + 40, sy + 18, sel ? 0xFF3A2E00 : 0xFF1A1A1A);
-            ctx.drawCenteredTextWithShadow(tr, Text.literal((sel ? "§e" : "§f") + HARD_LABEL[i]), sx + 20, sy + 5, 0xFFFFFFFF);
+            ctx.fill(sx, sy, sx + 40, sy + 18, sel ? CbTheme.SEL_FILL : 0xFF1A1A1A);
+            ctx.drawCenteredTextWithShadow(tr, Text.literal((sel ? "§c" : "§f") + HARD_LABEL[i]), sx + 20, sy + 5, 0xFFFFFFFF);
         }
         ctx.drawTextWithShadow(tr, Text.literal("§7Sound"), x, y + 74, 0xFFFFFFFF);
         ctx.drawCenteredTextWithShadow(tr, Text.literal("§f" + st.sound), x + 80, y + 89, 0xFFFFFFFF);
@@ -164,7 +172,7 @@ public final class StudioSections {
 
     /** One-line hover hint shown at the bottom of the panel for the labelled control under the mouse. */
     private void hint(int mx, int my, int x, int y, int w, String label, String text) {
-        if (mx >= x && mx < x + w && my >= y - 2 && my < y + 10) hoverHint = "§e" + label + " §7— " + text;
+        if (mx >= x && mx < x + w && my >= y - 2 && my < y + 10) hoverHint = "§f" + label + " §7— " + text;
     }
 
     private static boolean in(int[] r, double mx, double my) {

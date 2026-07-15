@@ -8,7 +8,7 @@
  * it. No block logic here — it only navigates.
  *
  * Actions (MenuKey.arg): "bgstudio" → Background Studio · "variants" → Colour Variants panel ·
- *                        "livecolor" → live recolour slider · "shapeeditor" → 3D Shape Editor
+ *                        "recolor" → live recolour slider · "shapeeditor" → 3D Shape Editor
  *                        (both client screens, opened via command).
  *
  * Depends on: ChestMenu, Icons, Layout, GuiRouter/Nav, SlotManager/SlotData/SlotBlock.
@@ -79,7 +79,7 @@ public final class ColorPickBlockMenu {
         }
         switch (action) {
             case "variants"    -> GuiRouter.navigate(p, MenuKey.of(Dest.COLOR_VARIANTS, id));
-            case "livecolor"   -> GuiRouter.runCommand(p, "livecolor " + id);
+            case "recolor"     -> GuiRouter.runCommand(p, "recolor " + id); // §G27.11 rename (was livecolor)
             case "shapeeditor" -> GuiRouter.runCommand(p, "shapeeditor " + id); // G27 §F2 → 3D Shape Editor
             default            -> GuiRouter.navigate(p, MenuKey.of(Dest.BGSTUDIO, id));
         }
@@ -89,7 +89,7 @@ public final class ColorPickBlockMenu {
         if (action.startsWith("caticon:")) return "Pick icon for " + action.substring(8);
         return switch (action) {
             case "variants"    -> "Colour Variants";
-            case "livecolor"   -> "Live Recolour";
+            case "recolor"     -> "Live Recolour";
             case "shapeeditor" -> "Shape Editor";
             default            -> "Background Studio";
         };
@@ -99,7 +99,7 @@ public final class ColorPickBlockMenu {
         if (action.startsWith("caticon:")) return "set as category icon";
         return switch (action) {
             case "variants"    -> "open its colour variants";
-            case "livecolor"   -> "open the live recolour slider";
+            case "recolor"     -> "open the live recolour slider";
             case "shapeeditor" -> "open the 3D shape editor";
             default            -> "open the Background Studio";
         };

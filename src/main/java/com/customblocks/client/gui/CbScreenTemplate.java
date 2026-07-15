@@ -4,13 +4,13 @@
  * THIS IS A TEMPLATE, NOT A REAL SCREEN. Copy this file, rename it, and fill in the
  * TODOs. Do not register or reference this class anywhere in the mod.
  *
- * Every CB Screen must follow this standard:
+ * Every CB Screen must follow this standard (locked red+black palette, CbTheme, 2026-07-04):
  *   - Backdrop: 0x33000000 (world always visible behind the screen)
- *   - Title bar: dark strip at top with thin §6-gold bottom border
- *   - Title format: "§6§lScreen Name §7— §fcontext" (no context = just "§6§lScreen Name")
+ *   - Title bar: dark strip at top with a thin CbTheme.ACCENT red bottom border
+ *   - Title format: CbTheme.title(name, context) — bold #FF0000 name, "§7— §f{context}"
  *   - Hint line 1: §7 screen-specific controls, · separator
  *   - Hint line 2: §8 universal shortcuts (always the same)
- *   - Bottom action bar: dark strip with thin §6-gold top border
+ *   - Bottom action bar: dark strip with a thin CbTheme.ACCENT red top border
  *   - Button order: [Undo] [Redo] [Rand] ··· [§aPrimary] ··· [Copy] [Reset] [Cancel]
  *   - Primary button: §a green text, always centered
  *   - Cancel with unsaved changes: in-screen confirmation overlay
@@ -49,13 +49,13 @@ import org.lwjgl.glfw.GLFW;
 @Environment(EnvType.CLIENT)
 public class CbScreenTemplate extends Screen {
 
-    // ── Standard colours ─────────────────────────────────────────────────────
+    // ── Standard colours (from CbTheme — the locked red+black palette) ───────
     /** World-behind dim — applied over the full screen so world stays visible. */
     private static final int BACKDROP   = 0x33000000;
     /** Title bar + bottom action bar background. */
-    private static final int BAR_BG     = 0xAA000000;
-    /** §6 gold as an ARGB int — used for the 1-pixel border lines. */
-    private static final int GOLD       = 0xFF_FF_AA_00;
+    private static final int BAR_BG     = CbTheme.BAR_BG;
+    /** Locked #FF0000 red — used for the 1-pixel border lines. */
+    private static final int GOLD       = CbTheme.ACCENT;
     /** Height of the title bar and bottom bar in pixels. */
     private static final int BAR_H      = 42;
 
@@ -127,12 +127,12 @@ public class CbScreenTemplate extends Screen {
 
         // 2. Title bar
         ctx.fill(0, 0, width, BAR_H, BAR_BG);
-        ctx.fill(0, BAR_H - 1, width, BAR_H, GOLD);   // gold bottom border
+        ctx.fill(0, BAR_H - 1, width, BAR_H, GOLD);   // red bottom border
 
-        String title = contextId.isEmpty()
-                ? "§6§l" + SCREEN_NAME
-                : "§6§l" + SCREEN_NAME + " §7— §f" + contextId;
-        ctx.drawTextWithShadow(textRenderer, Text.literal(title), 8, 10, 0xFFFFFFFF);
+        Text title = contextId.isEmpty()
+                ? CbTheme.title(SCREEN_NAME)
+                : CbTheme.title(SCREEN_NAME, contextId);
+        ctx.drawTextWithShadow(textRenderer, title, 8, 10, 0xFFFFFFFF);
         // Hint line 1 — TODO: replace with your screen's specific controls
         ctx.drawTextWithShadow(textRenderer,
                 Text.literal("§7TODO: drag to rotate · scroll = spin · R = reset"),
@@ -145,15 +145,15 @@ public class CbScreenTemplate extends Screen {
         // 3. Bottom action bar
         int barY = height - BAR_H;
         ctx.fill(0, barY, width, height, BAR_BG);
-        ctx.fill(0, barY, width, barY + 1, GOLD);      // gold top border
+        ctx.fill(0, barY, width, barY + 1, GOLD);      // red top border
 
         // 4. Main content — TODO: draw your screen's content here
         super.render(ctx, mx, my, delta);               // draws widgets
 
-        // 5. Save flash — briefly tint the primary button area green
+        // 5. Save flash — briefly tint the primary button area lime (success only)
         if (saveFlash) {
             if (System.currentTimeMillis() < saveFlashEnd) {
-                ctx.fill(width / 2 - 44, barY + 11, width / 2 + 44, barY + 31, 0x4400FF44);
+                ctx.fill(width / 2 - 44, barY + 11, width / 2 + 44, barY + 31, CbTheme.FLASH_OK);
             } else {
                 saveFlash = false;
             }
@@ -170,7 +170,7 @@ public class CbScreenTemplate extends Screen {
         int cx = width / 2, cy = height / 2;
         int pw = 200, ph = 70;
         ctx.fill(cx - pw / 2 - 1, cy - ph / 2 - 1, cx + pw / 2 + 1, cy + ph / 2 + 1, GOLD);
-        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, 0xFF1A1A1A);
+        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, CbTheme.DIALOG_BG);
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§fDiscard changes?"), cx, cy - 18, 0xFFFFFFFF);
         // Buttons are added/removed dynamically — see cancel() and discardConfirmed()
     }

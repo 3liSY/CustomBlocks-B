@@ -22,7 +22,7 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x ./gradlew
 
-      # `build` compiles AND runs every gate: verifyMojibake, verifySound, verifyFileSize.
+      # `build` compiles AND runs every gate: mojibakeShield, soundGate, monolithGate.
       - name: Build + verify gates
         run: ./gradlew build --no-daemon
 

@@ -1,0 +1,18 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "customblocks:font/led_digits.png",
+      "ascent": 7,
+      "height": 9,
+      "chars": ["0123456789"]
+    },
+    {
+      "type": "bitmap",
+      "file": "customblocks:font/led_dot.png",
+      "ascent": 7,
+      "height": 9,
+      "chars": ["."]
+    }
+  ]
+}

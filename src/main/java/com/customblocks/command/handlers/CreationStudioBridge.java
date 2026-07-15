@@ -64,13 +64,13 @@ public final class CreationStudioBridge {
     }
 
     /**
-     * /cb anim &lt;id&gt; — open the studio on an EXISTING block (edit mode, Animation tab). Sends the
+     * /cb animation &lt;id&gt; — open the studio on an EXISTING block (edit mode, Animation tab). Sends the
      * block's current state so the screen loads it; the client reads the frame-strip back from the pack.
      * Group 14 Phase 2.
      */
     public static int openStudioEdit(ServerCommandSource src, String id) {
         if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
-            Chat.error(src, "Run /cb anim " + id + " as a player to open the studio.");
+            Chat.error(src, "Run /cb animation " + id + " as a player to open the studio.");
             return 0;
         }
         SlotData d = SlotManager.getById(id);
@@ -82,7 +82,31 @@ public final class CreationStudioBridge {
             Chat.info(src, "\"" + id + "\" isn't animated yet — opened the studio on the Texture tab. "
                     + "Paste a GIF/WebP and hit Load texture to animate it.");
         }
-        ServerPlayNetworking.send(player, new StudioEditPayload(d.index(), d.customId(), d.displayName(), editAttrs(d)));
+        String link = TextureStore.loadUrl(d.index()); // the source link, shown read-only in the studio (Bucket 1)
+        ServerPlayNetworking.send(player, new StudioEditPayload(d.index(), d.customId(), d.displayName(),
+                editAttrs(d), link == null ? "" : link));
+        return 1;
+    }
+
+    /**
+     * /cb shapeeditor &lt;id&gt; — open the studio (edit mode) focused on the Shape section (§G27.11 fold:
+     * the standalone Shape Editor screen is retired; the studio's Shape section is the shape editor now).
+     * Same edit-load rail as {@link #openStudioEdit}, but the attrs carry {@code open=shape} so the screen
+     * opens on Shape (StudioEditLoad → StudioState.openSection), and there's no "isn't animated" note.
+     */
+    public static int openStudioShape(ServerCommandSource src, String id) {
+        if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
+            Chat.error(src, "Run /cb shapeeditor " + id + " as a player to open the studio.");
+            return 0;
+        }
+        SlotData d = SlotManager.getById(id);
+        if (d == null) {
+            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
+            return 0;
+        }
+        String link = TextureStore.loadUrl(d.index());
+        ServerPlayNetworking.send(player, new StudioEditPayload(d.index(), d.customId(), d.displayName(),
+                editAttrs(d) + ";open=shape", link == null ? "" : link));
         return 1;
     }
 
@@ -129,7 +153,7 @@ public final class CreationStudioBridge {
             return;
         }
         if (LockManager.isLocked(origId)) {
-            Chat.error(src, "\"" + origId + "\" is locked. Use /cb unlock " + origId + " to edit it.");
+            Chat.lockedError(src, origId);
             return;
         }
         Map<String, String> a = parse(attrs);
@@ -173,7 +197,12 @@ public final class CreationStudioBridge {
         String cleanUrl = url == null ? "" : url.trim();
         if (!cleanUrl.isEmpty()) {
             if (ImageDownloader.isHttpUrl(cleanUrl)) {
-                StudioReskin.apply(player, src, id, before.index(), cleanUrl, bgArgb);
+                // Undo: the whole save is one RETEXTURE step. `before` predates the settings applied above, so a
+                // single /cb undo reverts settings + picture together. Skip on rename (its id move owns history,
+                // same as the no-url modify path below) by passing a null snapshot.
+                byte[] beforeTex = renamed ? null : TextureStore.load(before.index());
+                StudioReskin.apply(player, src, id, before.index(), cleanUrl, bgArgb,
+                        renamed ? null : before, beforeTex);
                 return; // settings already saved above; the re-skin rebuilds the pack with them
             }
             Chat.error(src, "That image link isn't a valid http/https url — settings were saved, the picture is unchanged.");
@@ -211,7 +240,7 @@ public final class CreationStudioBridge {
         ResourcePackServer.updatePack();
         Chat.success(src, "Saved changes to \"" + id + "\""
                 + (CustomBlocksConfig.silentPack ? "." : " — accept the pack prompt to see them."));
-        HudSync.sendTo(player);
+        HudSync.broadcast(player.getServer()); // NO-REJOIN: studio edit shows live for all players (was actor-only)
     }
 
     /**
@@ -296,7 +325,7 @@ public final class CreationStudioBridge {
         Chat.success(src, "Block \"" + id + "\"" + (name == null ? "" : " (\"" + name + "\")")
                 + " created" + (CustomBlocksConfig.silentPack ? " — it'll show in a moment."
                 : " — accept the resource pack prompt to see it."));
-        HudSync.sendTo(player);
+        HudSync.broadcast(player.getServer()); // NO-REJOIN: new block shows live for all players (was actor-only)
     }
 
     /** A flat solid-colour block texture (16×16 → run through the normal block-png pipeline at {@code size}). */

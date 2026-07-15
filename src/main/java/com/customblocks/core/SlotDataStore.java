@@ -7,6 +7,7 @@
  *
  * Format: { "blocks": [ { "index", "customId", "displayName", "glow", "hardness", "sound", "noCollision", "category" }, ... ] }
  * Fields grow per-phase alongside SlotData (older files missing a field default safely).
+ * Optional objects: "anim" (Group 14, animated only) and "arabic" (G13-25, Arabic slots only).
  *
  * Depends on: SlotData
  * Called by:  SlotManager (saveAll / loadAll) only.
@@ -46,20 +47,7 @@ public final class SlotDataStore {
         try {
             Files.createDirectories(dir);
             JsonArray arr = new JsonArray();
-            for (SlotData d : all) {
-                JsonObject o = new JsonObject();
-                o.addProperty("index", d.index());
-                o.addProperty("customId", d.customId());
-                o.addProperty("displayName", d.displayName());
-                o.addProperty("glow", d.glow());
-                o.addProperty("hardness", d.hardness());
-                o.addProperty("sound", d.soundType());
-                if (d.noCollision()) o.addProperty("noCollision", true); // omit the common default
-                if (!d.category().isEmpty()) o.addProperty("category", d.category()); // omit when uncategorized
-                if (!d.shape().equals(SlotData.DEFAULT_SHAPE)) o.addProperty("shape", d.shape()); // omit "full"
-                if (d.isAnimated()) o.add("anim", animToJson(d.anim())); // Group 14 — only present for animated blocks
-                arr.add(o);
-            }
+            for (SlotData d : all) arr.add(toJsonObject(d));
             JsonObject root = new JsonObject();
             root.add("blocks", arr);
             Path tmp = dir.resolve(FILE + ".tmp");
@@ -92,12 +80,56 @@ public final class SlotDataStore {
                 String shape = o.has("shape") ? o.get("shape").getAsString() : SlotData.DEFAULT_SHAPE;
                 AnimData anim = o.has("anim") && o.get("anim").isJsonObject()
                         ? animFromJson(o.getAsJsonObject("anim")) : AnimData.NONE;
-                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape, anim));
+                ArabicMeta arabic = o.has("arabic") && o.get("arabic").isJsonObject()
+                        ? arabicFromJson(o.getAsJsonObject("arabic")) : null; // absent = normal block (G13-25)
+                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape, anim, arabic));
             }
         } catch (Exception e) {
             LOGGER.error("[CustomBlocks] Failed to load slot data (starting empty)", e);
         }
         return out;
+    }
+
+    /**
+     * Serialize ONE slot to its on-disk JSON shape (index, customId, displayName, glow, hardness,
+     * sound, optional noCollision/category/shape/anim). Shared by {@link #save} and the Group 20
+     * vault codec so the share payload is byte-for-byte the same format as slots.json. The "index"
+     * is the source slot's number — importers (vault download) allocate a fresh slot and ignore it.
+     */
+    public static JsonObject toJsonObject(SlotData d) {
+        JsonObject o = new JsonObject();
+        o.addProperty("index", d.index());
+        o.addProperty("customId", d.customId());
+        o.addProperty("displayName", d.displayName());
+        o.addProperty("glow", d.glow());
+        o.addProperty("hardness", d.hardness());
+        o.addProperty("sound", d.soundType());
+        if (d.noCollision()) o.addProperty("noCollision", true); // omit the common default
+        if (!d.category().isEmpty()) o.addProperty("category", d.category()); // omit when uncategorized
+        if (!d.shape().equals(SlotData.DEFAULT_SHAPE)) o.addProperty("shape", d.shape()); // omit "full"
+        if (d.isAnimated()) o.add("anim", animToJson(d.anim())); // Group 14 — only present for animated blocks
+        if (d.isArabic()) o.add("arabic", arabicToJson(d.arabic())); // G13-25 — only present for Arabic slots
+        return o;
+    }
+
+    // ── G13-25 — Arabic meta (de)serialization (same optional-object pattern as anim) ──
+
+    /** Serialize ArabicMeta ({glyphId, form, colorKey}) — only ever written for Arabic slots. */
+    private static JsonObject arabicToJson(ArabicMeta m) {
+        JsonObject o = new JsonObject();
+        o.addProperty("glyphId", m.glyphId());
+        o.addProperty("form", m.form());
+        o.addProperty("colorKey", m.colorKey());
+        return o;
+    }
+
+    /** Read ArabicMeta back; missing fields default safely; a blank glyphId means "not Arabic" (null). */
+    private static ArabicMeta arabicFromJson(JsonObject o) {
+        String glyphId  = o.has("glyphId")  ? o.get("glyphId").getAsString()  : "";
+        int form        = o.has("form")     ? o.get("form").getAsInt()        : 0;
+        String colorKey = o.has("colorKey") ? o.get("colorKey").getAsString() : "black";
+        ArabicMeta m = new ArabicMeta(glyphId, form, colorKey);
+        return m.isValid() ? m : null;
     }
 
     // ── Group 14 — animation (de)serialization (plain numbers only, never a baked mcmeta) ──
@@ -117,11 +149,17 @@ public final class SlotDataStore {
             for (int t : a.frameTimes()) ft.add(t);
             o.add("frameTimes", ft);
         }
+        if (!a.frameMs().isEmpty()) { // ADR-014: real per-frame ms for the off-atlas real-clock renderer
+            JsonArray fm = new JsonArray();
+            for (int t : a.frameMs()) fm.add(t);
+            o.add("frameMs", fm);
+        }
         return o;
     }
 
-    /** Read AnimData back; any missing field falls back to the AnimData defaults. */
-    private static AnimData animFromJson(JsonObject o) {
+    /** Read AnimData back; any missing field falls back to the AnimData defaults. Public so the
+     *  Group 20 vault codec can restore animation from a downloaded block's JSON. */
+    public static AnimData animFromJson(JsonObject o) {
         int frameCount = o.has("frameCount") ? o.get("frameCount").getAsInt() : 0;
         String loop    = o.has("loopMode")   ? o.get("loopMode").getAsString() : AnimData.LOOP;
         boolean interp = o.has("interpolate") ? o.get("interpolate").getAsBoolean() : AnimData.DEFAULT_INTERPOLATE;
@@ -132,6 +170,10 @@ public final class SlotDataStore {
         if (o.has("frameTimes") && o.get("frameTimes").isJsonArray()) {
             for (JsonElement e : o.getAsJsonArray("frameTimes")) frameTimes.add(e.getAsInt());
         }
+        List<Integer> frameMs = new ArrayList<>(); // absent (legacy) → renderer falls back to ticks × 50
+        if (o.has("frameMs") && o.get("frameMs").isJsonArray()) {
+            for (JsonElement e : o.getAsJsonArray("frameMs")) frameMs.add(e.getAsInt());
+        }
         // uniformTicks (new) is canonical. Back-compat with the first Group 14 build, which stored a
         // "frametime" + an empty frameTimes for a uniform clip (per-frame clips stored frameTimes):
         // old uniform → uniformTicks = that frametime; old per-frame → uniformTicks = 0 (original).
@@ -139,6 +181,6 @@ public final class SlotDataStore {
         if (o.has("uniformTicks")) uniformTicks = o.get("uniformTicks").getAsInt();
         else if (o.has("frametime")) uniformTicks = frameTimes.isEmpty() ? o.get("frametime").getAsInt() : 0;
         else uniformTicks = 0;
-        return new AnimData(frameCount, uniformTicks, loop, interp, trimStart, trimEnd, transp, frameTimes);
+        return new AnimData(frameCount, uniformTicks, loop, interp, trimStart, trimEnd, transp, frameTimes, frameMs);
     }
 }

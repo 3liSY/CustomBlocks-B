@@ -66,7 +66,7 @@ public final class HistoryMenu {
                     if (SlotManager.getById(bid) != null) {
                         GuiRouter.navigate(pl, MenuKey.of(Dest.EDITOR, bid));
                     } else {
-                        pl.sendMessage(Text.literal(Chat.PREFIX + "§7Block §f" + bid + " §7no longer exists."), true);
+                        Chat.toolError(pl, "Block \"" + bid + "\" no longer exists.");
                     }
                 });
     }

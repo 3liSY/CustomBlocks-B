@@ -10,7 +10,7 @@
  * DefaultCategoryStore) in CategoryAdminBridge, then re-syncs the player's HUD cache so the studio's
  * chips refresh. Authoritative server (CLAUDE.md §5.8).
  *
- * Registered playC2S in CustomBlocksMod, sent by client/gui/StudioCategoryPanel.
+ * Registered playC2S in CustomBlocksMod, sent by client/gui/StudioCategoryWorkspacePanel.
  */
 package com.customblocks.network.payloads;
 

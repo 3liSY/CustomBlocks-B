@@ -1,12 +1,15 @@
 /**
- * ListSelection.java — per-player "ticked blocks" set for the /cb listgui multi-select (slice B).
+ * ListSelection.java — per-player "ticked blocks" set for Group 12's Export Dashboard hand-off.
  *
- * A plain id set kept between menu clicks (LinkedHashSet → selection order preserved). Nothing
- * here mutates blocks; slice C reads {@link #joined} to seed the Bulk Hub's filter and hands the
- * actual work to the tested bulk commands. Stale ids (a block deleted after being ticked) are
- * harmless — BulkScope simply skips ids that no longer resolve.
+ * A plain id set (LinkedHashSet → selection order preserved). Nothing here mutates blocks; the dashboard's
+ * "selection" phase reads {@link #joined} as a BulkScope explicit-id list and hands the actual work to the
+ * tested bulk commands. Stale ids (a block deleted after being ticked) are harmless — BulkScope simply skips
+ * ids that no longer resolve.
  *
- * Called by: BlockListMenu (toggle / select-all / clear / bulk hand-off).
+ * The chest BlockListMenu that used to fill this is gone (Group 07 §G07-3); the Bulk Workbench Screen ticks
+ * blocks client-side and posts the chosen ids once, via BulkNet's PICK_DONE.
+ *
+ * Called by: BulkNet (PICK_DONE writes it), ExportDashboardMenu (reads it).
  */
 package com.customblocks.gui.chest;
 

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CustomBlocks Testing Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="sidebar">
+        <div class="logo">
+            <div class="cube"></div>
+            <h2>CustomBlocks</h2>
+        </div>
+        <nav>
+            <a href="#" class="active">Overview</a>
+            <a href="#bugs-panel">Active Bugs</a>
+        </nav>
+        <div class="stats-box">
+            <h3>Project Health</h3>
+            <div class="progress-container">
+                <div class="progress-bar global-progress" id="global-progress"></div>
+            </div>
+            <p id="global-stats">0% Passed</p>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <header>
+            <div class="header-text">
+                <h1>Testing Dashboard</h1>
+                <p id="last-updated" class="subtitle">Last generated: Loading...</p>
+            </div>
+            <div id="next-task" class="next-task-card hidden">
+                <div class="task-badge">🎯 NEXT TASK</div>
+                <h3 id="nt-group">Group Name</h3>
+                <p id="nt-action" class="task-action">Action goes here</p>
+                <div class="task-expect">
+                    <span class="label">EXPECT:</span> <span id="nt-expect">Result goes here</span>
+                </div>
+            </div>
+        </header>
+
+        <section class="dashboard-grid" id="dashboard-grid">
+            <!-- Cards injected via JS -->
+        </section>
+
+        <section id="bugs-panel" class="bugs-section">
+            <div class="section-header">
+                <h2>🐛 Active Bugs</h2>
+            </div>
+            <div class="bugs-container">
+                <table class="bugs-table">
+                    <thead>
+                        <tr>
+                            <th>Bug ID</th>
+                            <th>Group</th>
+                            <th>Test Row</th>
+                            <th>Issue Description</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bugs-list">
+                        <!-- Bugs injected via JS -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>

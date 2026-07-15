@@ -31,27 +31,51 @@ public final class UndoManager {
     private UndoManager() {} // static-only
 
     /** What kind of change an Op represents (drives how undo/redo reverses it). */
-    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE }
+    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG }
+
+    /**
+     * A lock / favorite flip, the one edit that lives OUTSIDE SlotData.
+     *
+     * Lock state is a flat set in LockManager and favorites are a per-player map in FavoritesManager —
+     * neither is a field on the SlotData snapshot every other Kind restores. So a flag op carries its own
+     * payload instead of a snapshot pair, and HistoryCommands flips it back through those two managers.
+     *
+     * @param id    the block id the flag applies to.
+     * @param which "lock" or "favorite".
+     * @param on    what this op SET the flag to (undo restores !on, redo re-applies on).
+     * @param owner whose favorites list — favorites are per-player, so undo must hit the ORIGINAL actor's
+     *              list, not the clicker's (they differ under undoMode=global). Null for "lock", which is
+     *              a server-wide fact.
+     */
+    public record Flag(String id, String which, boolean on, UUID owner) {}
 
     /**
      * One reversible edit.
      *
      * @param kind         CREATE (before == null), DELETE (after == null), MODIFY (both set),
      *                     TEXTURE (pixels changed; before == after == the slot, texture/textureAfter
-     *                     carry the bytes), or BATCH (children set; before/after/texture null).
-     * @param before       slot state before the edit (null for CREATE / BATCH; the slot for TEXTURE).
-     * @param after        slot state after the edit (null for DELETE / BATCH; the slot for TEXTURE).
+     *                     carry the bytes), BATCH (children set; before/after/texture null), or
+     *                     FLAG (flag set; everything else null).
+     * @param before       slot state before the edit (null for CREATE / BATCH / FLAG; the slot for TEXTURE).
+     * @param after        slot state after the edit (null for DELETE / BATCH / FLAG; the slot for TEXTURE).
      * @param texture      for DELETE: the texture that existed before deletion; for TEXTURE: the
      *                     PRE-edit bytes restored on undo (may be null).
      * @param textureAfter for TEXTURE: the POST-edit bytes re-applied on redo; null otherwise.
      * @param label        human-readable verb shown in chat ("create", "rename", "glow", "dress", …).
      * @param children     for BATCH: the child ops reverted/re-applied together as one step (null otherwise).
+     * @param flag         for FLAG: the lock/favorite payload (null otherwise).
      */
     public record Op(Kind kind, SlotData before, SlotData after,
-                     byte[] texture, byte[] textureAfter, String label, List<Op> children) {
+                     byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag) {
+        /** Pre-FLAG 7-arg shape — every existing caller still compiles unchanged. */
+        public Op(Kind kind, SlotData before, SlotData after,
+                  byte[] texture, byte[] textureAfter, String label, List<Op> children) {
+            this(kind, before, after, texture, textureAfter, label, children, null);
+        }
+
         /** Convenience constructor for a single (non-batch) op — textureAfter + children null. */
         public Op(Kind kind, SlotData before, SlotData after, byte[] texture, String label) {
-            this(kind, before, after, texture, null, label, null);
+            this(kind, before, after, texture, null, label, null, null);
         }
     }
 
@@ -107,6 +131,26 @@ public final class UndoManager {
     }
 
     /**
+     * Build a FLAG child op (for a bulk batch). Not pushed — hand it to {@link #recordBatch}.
+     *
+     * @param on what the caller SET the flag to, so undo can restore the opposite.
+     */
+    public static Op flagOp(Flag flag, String label) {
+        return new Op(Kind.FLAG, null, null, null, null, label, null, flag);
+    }
+
+    /**
+     * Record a single lock / unlock / favorite / unfavorite as one undo step (G04 §5, G07-BULK-UNDO).
+     *
+     * Before this, flag flips recorded NOTHING — /cb undo silently skipped straight past them to an
+     * older, unrelated edit. The chip on a lock line now means the same thing it means everywhere else.
+     */
+    public static void recordFlag(UUID player, Flag flag, String label) {
+        if (flag == null) return;
+        push(player, flagOp(flag, label));
+    }
+
+    /**
      * Record several edits as ONE undo step (Group 07): a whole bulk operation reverts in a
      * single /cb undo. Children are applied/reverted together, newest-batch-first like any op.
      */
@@ -127,11 +171,25 @@ public final class UndoManager {
         push(player, new Op(Kind.TEXTURE, slot, slot, before, after, label, null));
     }
 
+    /**
+     * Record a /cb retexture (Group 14 / ADR-014 Step 2). Unlike {@link #recordTexture} the metadata can
+     * change too (animated↔static), so {@code before}/{@code after} are DISTINCT slot snapshots — undo
+     * restores the whole {@code before} slot (incl. its AnimData) + the {@code beforeTex} pixels, and redo
+     * restores {@code after} + {@code afterTex}. Pixel byte arrays may be null (a slot with no prior bake);
+     * HistoryCommands then just restores the snapshot. The caller does the TextureStore.save + pack rebuild.
+     */
+    public static void recordRetexture(UUID player, SlotData before, SlotData after, byte[] beforeTex, byte[] afterTex) {
+        if (before == null || after == null) return;
+        push(player, new Op(Kind.RETEXTURE, before, after, beforeTex, afterTex, "retexture", null));
+    }
+
     private static synchronized void push(UUID player, Op op) {
         // Audit hook (Group 02): record every recorded edit to the persistent history log.
         String mlId;
         if (op.kind() == Kind.BATCH) {
             mlId = "×" + (op.children() == null ? 0 : op.children().size());
+        } else if (op.kind() == Kind.FLAG) {
+            mlId = op.flag() != null ? op.flag().id() : "?"; // FLAG carries no snapshot — the id lives on the payload
         } else {
             mlId = op.after() != null ? op.after().customId()
                     : (op.before() != null ? op.before().customId() : "?");

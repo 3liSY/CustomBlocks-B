@@ -2,11 +2,10 @@
  * BackgroundRemover.java
  *
  * Responsibility: Remove a custom block image's background, painting removed pixels an OPAQUE
- * fill — normally BLACK (old-version parity; the slot block renders solid/opaque, so a removed
- * background is a flat fill, not transparency). When the subject itself is near-black, the fill
- * flips to WHITE instead so a dark subject can't disappear into a black background (the
- * "black-on-black" failure). Recoded clean from the old project's ImageProcessor.replaceBackground;
- * the CIE-LAB ΔE math + flood-fill are recycled, the buggy old config is not.
+ * BLACK fill (old-version parity; the slot block renders solid, so a removed background is a flat
+ * fill, not transparency). The fill is always plain BLACK — content is composed on black, so the
+ * subject reads on black as-is (no white flip, no keyline; the recolour path keeps its own fill).
+ * Recoded clean from the old ImageProcessor.replaceBackground; CIE-LAB ΔE + flood-fill recycled.
  *
  * Three modes:
  *   none   — leave the image untouched.
@@ -49,22 +48,28 @@ public final class BackgroundRemover {
      * genuine subjects clear; truly low-contrast images still can't be split by colour alone.
      */
     private static final double MAX_DELTA_E = 22.0;
-    /** Extra ΔE for the 1-pixel anti-fringe dilation that catches anti-aliased edge halo. */
-    private static final double FRINGE_EXTRA = 6.0;
+    /** Anti-fringe peel ceiling: never shave a pixel whose ΔE to the background already exceeds this
+     *  — it is clearly subject, not halo. Only bounds a long gentle slope; the gradient test is the
+     *  real gate. */
+    private static final double PEEL_CAP = 45.0;
+    /** Minimum ΔE a ring must descend toward the bg (vs the pixel just inside it) to count as feather
+     *  rather than flat subject. Keeps a solid pale edge from being mistaken for a halo. */
+    private static final double PEEL_MARGIN = 1.5;
+    /** Max anti-fringe peel passes = rim depth cap in px. The gradient test self-stops at the subject
+     *  body well before this on a clean edge; the cap only bounds a wide feather (e.g. a stock photo
+     *  cut out onto white with a soft glow). */
+    private static final int FRINGE_PASSES = 8;
     /** Alpha below this counts as transparent → background. */
     private static final int OPAQUE_THRESHOLD = 128;
     private static final int BLACK = 0xFF000000;
-    private static final int WHITE = 0xFFFFFFFF;
-    /** If the subject's mean HSV "value" (max RGB channel) is below this, fill WHITE not BLACK so a
-     *  near-black subject isn't swallowed by a black background. Saturated-but-bright subjects
-     *  (e.g. pure red, value 255) stay on black; only genuinely dark subjects flip. */
-    private static final int FILL_DARK_VALUE = 64;
-    /** A silhouette pixel with HSV value below this would vanish into a black fill. */
-    private static final int EDGE_DARK_VALUE = 64;
-    /** If at least this fraction of the silhouette is dark, fill WHITE so the outline stays visible. */
-    private static final double EDGE_DARK_FRACTION = 0.45;
     /** After resize, pixels with every channel ≤ this snap to pure black (kills bicubic gray halos). */
     private static final int SNAP_MAX = 24;
+    /** Recolour only — a leftover anti-alias pixel this dark (HSV value ≤) counts as the black ring
+     *  hugging the subject, not subject art, so the new fill colour may reach through it. */
+    private static final int RING_DARK_MAX = 80;
+    /** Recolour only — max passes the dark ring may grow inward = its depth cap in px. Bounds the
+     *  absorb so it can never chase a dark subject body, and self-stops at the first non-dark ring. */
+    private static final int RING_PASSES = 4;
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
@@ -97,6 +102,7 @@ public final class BackgroundRemover {
 
     /** Shared pipeline: detect the background, then paint it {@code forcedFill} (or smart fill when null). */
     private static byte[] process(byte[] input, String mode, int tolerance, Integer forcedFill) {
+        input = CheckerboardDetector.flattenToBlack(input); // G10-6: flattened-preview checkerboard → black in EVERY mode (no-op otherwise)
         String m = normalize(mode);
         final boolean smart = SMART.equals(m);
         if (NONE.equals(m)) return input; // off
@@ -105,7 +111,6 @@ public final class BackgroundRemover {
         if (effTol <= 0) return input; // off
         // Map the player-facing 0-100 strength onto a CIE-LAB ΔE distance.
         final double tol = Math.max(0, Math.min(100, effTol)) / 100.0 * MAX_DELTA_E;
-        final double fringeTol = tol + FRINGE_EXTRA;
         try {
             BufferedImage src = ImageIO.read(new ByteArrayInputStream(input));
             if (src == null) return input; // unreadable here → let toBlockPng surface the real error
@@ -166,64 +171,93 @@ public final class BackgroundRemover {
             // a clear central subject far better than corners/flood alone.
             if (smart) BgMask.keepLargestForeground(isBg, w, h);
 
-            // Stage 2 — 1-pixel anti-fringe dilation: mark non-bg pixels adjacent to bg that are
-            // within the looser tolerance, removing the bright halo anti-aliasing leaves behind.
-            boolean[][] fringe = new boolean[w][h];
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    if (isBg[x][y]) continue;
-                    boolean adjacent = false;
-                    for (int[] d : DIRS) {
-                        int nx = x + d[0], ny = y + d[1];
-                        if (nx >= 0 && nx < w && ny >= 0 && ny < h && isBg[nx][ny]) { adjacent = true; break; }
-                    }
-                    if (adjacent && isBackground(img.getRGB(x, y), bgA, bgLab, fringeTol)) {
-                        fringe[x][y] = true;
-                    }
-                }
-            }
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    if (fringe[x][y]) isBg[x][y] = true;
-                }
-            }
-
-            // Smart fill: choose the background colour so the subject stays visible against it.
-            // Default is BLACK (old-version parity). Flip to WHITE when EITHER:
-            //   • the whole subject is near-black (black-on-black), OR
-            //   • the subject's SILHOUETTE (its outermost ring, the pixels touching the background)
-            //     is mostly dark — e.g. a logo with a black outline. A black fill there would
-            //     swallow that outline into the background (the Jordan-emblem case); a white fill
-            //     keeps it crisp. Brightness = HSV "value" (max RGB channel), so a saturated-but-
-            //     bright subject (pure red = 255) still keeps a black fill.
-            long valueSum = 0, fgCount = 0, edgeCount = 0, edgeDark = 0;
-            if (forcedFill == null) { // brightness scan only feeds the smart fill
+            // Stage 2 — anti-fringe peel: shave the soft anti-aliased halo a photo carries against a
+            // flat page (a moon feathered onto white, say) WITHOUT eating a crisp subject edge. The
+            // gate is the edge SHAPE, not colour alone: peel an edge pixel only where the image is a
+            // gradient *descending toward the background* — this pixel is closer to the bg colour than
+            // the pixel just inside it. That climbs a feather ring by ring and stops dead at the flat
+            // subject body, however pale that body is (a flat light-grey logo edge isn't a descending
+            // gradient, so it keeps its 1-px anti-alias and no more). Distances are precomputed from
+            // the ORIGINAL pixels, so every pass reads the true gradient as the outer ring is removed;
+            // FRINGE_PASSES caps the rim depth, PEEL_CAP stops a long gentle slope being chased deep
+            // into a real subject. Skipped when the bg was transparent (no colour halo to shave).
+            if (bgA >= OPAQUE_THRESHOLD) {
+                double[][] dToBg = new double[w][h];
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
-                        if (isBg[x][y]) continue;
-                        int px = img.getRGB(x, y);
-                        int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
-                        int v = Math.max(r, Math.max(g, b));
-                        valueSum += v;
-                        fgCount++;
-                        boolean onEdge = false;
-                        for (int[] d : DIRS) {
-                            int nx = x + d[0], ny = y + d[1];
-                            if (nx >= 0 && nx < w && ny >= 0 && ny < h && isBg[nx][ny]) { onEdge = true; break; }
+                        dToBg[x][y] = deltaE(rgbToLab(img.getRGB(x, y)), bgLab);
+                    }
+                }
+                for (int pass = 0; pass < FRINGE_PASSES; pass++) {
+                    boolean[][] fringe = new boolean[w][h];
+                    boolean any = false;
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            if (isBg[x][y] || dToBg[x][y] > PEEL_CAP) continue;
+                            for (int[] d : DIRS) {
+                                int nx = x + d[0], ny = y + d[1];
+                                if (nx < 0 || ny < 0 || nx >= w || ny >= h || !isBg[nx][ny]) continue;
+                                // inward neighbour = the pixel opposite the background side
+                                int ix = x - d[0], iy = y - d[1];
+                                double inward = (ix >= 0 && iy >= 0 && ix < w && iy < h)
+                                        ? dToBg[ix][iy] : Double.POSITIVE_INFINITY;
+                                if (dToBg[x][y] < inward - PEEL_MARGIN) { fringe[x][y] = true; any = true; break; }
+                            }
                         }
-                        if (onEdge) { edgeCount++; if (v < EDGE_DARK_VALUE) edgeDark++; }
+                    }
+                    if (!any) break;
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            if (fringe[x][y]) isBg[x][y] = true;
+                        }
                     }
                 }
             }
-            boolean subjectDark = fgCount > 0 && valueSum / fgCount < FILL_DARK_VALUE;
-            boolean outlineDark = edgeCount > 0 && (double) edgeDark / edgeCount >= EDGE_DARK_FRACTION;
-            int fill = forcedFill != null ? forcedFill
-                    : (subjectDark || outlineDark) ? WHITE : BLACK;
+
+            // Stage 2e (RECOLOUR only — forcedFill set, e.g. the Triangle colour-variant tool) — absorb
+            // the leftover near-black anti-alias ring that hugs the subject so the NEW fill colour
+            // reaches the subject edge. Without this a thin black outline survives between the subject
+            // and the repainted background ("the triangle leaves black edges that don't recolour"): the
+            // flood-fill (tight tolerance) + gradient peel above don't always reach that ring. Guard:
+            // only NEAR-BLACK pixels that already TOUCH the background are taken, grown a few passes
+            // inward along dark pixels only — bright subject art is never eaten (CLAUDE.md §7). Skipped
+            // for the smart-fill (retexture) path, which keeps its own black/white silhouette logic.
+            if (forcedFill != null) {
+                for (int pass = 0; pass < RING_PASSES; pass++) {
+                    boolean[][] grow = new boolean[w][h];
+                    boolean any = false;
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            if (isBg[x][y]) continue;
+                            int px = img.getRGB(x, y);
+                            if (((px >>> 24) & 0xFF) < OPAQUE_THRESHOLD) continue; // transparent → Stage 3 fills it
+                            int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
+                            if (Math.max(r, Math.max(g, b)) > RING_DARK_MAX) continue; // bright → subject, keep
+                            for (int[] d : DIRS) {
+                                int nx = x + d[0], ny = y + d[1];
+                                if (nx >= 0 && nx < w && ny >= 0 && ny < h && isBg[nx][ny]) { grow[x][y] = true; any = true; break; }
+                            }
+                        }
+                    }
+                    if (!any) break;
+                    for (int y = 0; y < h; y++) {
+                        for (int x = 0; x < w; x++) {
+                            if (grow[x][y]) isBg[x][y] = true;
+                        }
+                    }
+                }
+            }
+
+            // Background is always plain BLACK (owner: content is composed on black backgrounds, so the
+            // subject reads on black as-is). The old smart dark-subject specials — the whole-bg WHITE FLIP
+            // (Tux rectangle) and the thin WHITE KEYLINE (blobbed thin strokes / hid solid-dark subjects)
+            // — are removed: no flip, no outline. The recolour path (forcedFill) keeps its own fill.
+            int fill = forcedFill != null ? forcedFill : BLACK;
             int fillR = (fill >> 16) & 0xFF, fillG = (fill >> 8) & 0xFF, fillB = fill & 0xFF;
 
-            // Stage 3 — paint the background with the chosen fill; flatten any leftover transparency
-            // to opaque, composited against that same fill so anti-aliased edges resolve toward the
-            // background rather than washing out to gray.
+            // Stage 3 — paint the background the base fill; flatten any leftover transparency to opaque,
+            // composited against that fill so anti-aliased edges resolve toward the background rather
+            // than washing out to gray.
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
                     if (isBg[x][y]) { img.setRGB(x, y, fill); continue; }

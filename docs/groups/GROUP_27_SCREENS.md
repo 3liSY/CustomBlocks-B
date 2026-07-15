@@ -1,5 +1,10 @@
 # Group 27 — Unified Screen Design System, Upgrades & Block Creation Studio
 
+> **UI medium audit (2026-07-09):** HudEditorScreen, ShapeEditorScreen, BlockCreationStudioScreen, and
+> CategoryHubScreen are all confirmed the right medium (Screen) — no change. Owner flagged all of them
+> for a **design/UX polish pass** ("currently shit" re: HudEditorScreen specifically). Not scoped/built
+> yet, just noted so it isn't lost.
+
 > 🟣 **DRAG-DROP CREATE — logged 2026-06-29 (NO code yet).** New: drop an image/gif onto the game →
 > studio screen with a preview → name/options → Create. Scope = BOTH "drop anywhere, screen auto-opens"
 > AND "drop onto the open create screen". Catch: today the studio only sends the server a URL — there is
@@ -49,6 +54,11 @@
 4. **Screens vs. chest-menus: leave the current split alone.** Don't convert any existing chest-menu
    to a screen, or any existing screen to a chest-menu. The developer picked deliberately which
    GUI type each feature uses — only touch classes that are already `Screen` subclasses.
+   **Exception, locked 2026-07-12:** Group 09's `BackupMenu`+`BackupConfirmMenu` → **Backup Screen**,
+   `TrashMenu`+`TrashEntryMenu` → **Trash Screen** (real texture preview), `SafetyMenu` → **Safety hub
+   Screen**. `GROUP_09_TESTING_GUIDE.md`'s 2026-07-09 UI audit is newer than this correction and
+   overrides it for those three only — everything else in the "stays chest-menus" list below is still
+   untouched.
 
 ## What "Group 27" covers (plain terms)
 
@@ -77,7 +87,7 @@ Do not start a step until the previous one is confirmed working in-game.
     Studio. Needs a new client→server byte-upload channel first (today the studio only ever sends
     a URL, never raw file bytes).
 6. Studio Edit Mode (§G27.9) — load an existing block into the studio and edit it in place.
-7. Studio Paint (§G27.10) — hand-drawn pixel editor inside the studio.
+7. Studio Editing (§G27.10) — one Editing tab containing Paint and Resize modes.
 8. Unified Create+Edit / `/cb editor` (§G27.12) — replaces the old chest-based block editor. Fixes
    a confirmed live bug: `/cb editor <id>` currently still opens the old chest editor instead of
    the Studio Edit tab (`GROUP_02_CHEST_GUI.md` test G02.3 failed in-game 2026-06-21).
@@ -89,8 +99,7 @@ Do not start a step until the previous one is confirmed working in-game.
 12. Config gap fix — long-text config fields (AI keys, Discord webhook, vault endpoint) get real
     text boxes; the old anvil-paste trick (`AnvilPrompt`) goes away entirely since screens capture
     keyboard input natively.
-13. Achievements screen (gallery of unlocked achievements, title+chat `[View]`-link unlock
-    notification — not a toast) + onboarding/welcome tutorial screen (first-join popup, book item
+13. Achievements screen (gallery of unlocked achievements — not a toast) + onboarding/welcome tutorial screen (first-join popup, book item
     + screen, per the P7 decision). Needs a new `AchievementSyncPayload` first — today
     `AchievementManager.java` has no S2C payload sending unlock state to the client at all.
 14. `RecordOverlayStudioScreen` — test Build A (already implemented) in-game, red+black pass, then
@@ -150,9 +159,10 @@ classes + their now-dead command routing are deleted. No dead code left behind.
   equivalents are used. `ConfigScreen` is reachable only via the optional Mod Menu button.
   `MacroListScreen` is unreachable AND has no chest-menu backup — macros currently have zero
   working GUI, only typed commands.
-- **Everything else in `gui/chest/` stays chest-menus, untouched**: bulk ops, backup/trash,
-  categories, colors (except what folds into the Studio), diagnostics, export, notes. Not now,
-  maybe later — don't touch without asking again first.
+- **Everything else in `gui/chest/` stays chest-menus, untouched**: bulk ops, categories, colors
+  (except what folds into the Studio), diagnostics, export, notes. Not now, maybe later — don't
+  touch without asking again first. **Backup/trash are no longer in this list** — see the correction
+  #4 exception above (2026-07-12): `BackupMenu`/`TrashMenu`/`SafetyMenu` are converting to Screens.
 
 ## Explicitly out of scope (parked, not part of this build)
 
@@ -168,10 +178,10 @@ classes + their now-dead command routing are deleted. No dead code left behind.
 
 ## Notes for Fable
 
-- File size limits are enforced by the build (`verifyFileSize`): any `.java` file ≤ 500 lines,
+- File size limits are enforced by the build (`monolithGate`): any `.java` file ≤ 500 lines,
   command handlers ≤ 400, `*Config.java` ≤ 300. Split before you hit the limit, not after.
 - `SoundEvents.BLOCK_NOTE_BLOCK_*` needs `.value()`; every other `SoundEvents` constant must NOT
-  use `.value()` (build gate `verifySound` checks this).
+  use `.value()` (build gate `soundGate` checks this).
 - JDK 21 required to build (`--no-daemon`, `JAVA_HOME` set to 21 — the machine's default Java is
   different).
 - The developer cannot read code. Explain what you built in plain terms and give a short in-game
@@ -254,6 +264,7 @@ The goal is one shared design language, applied to every screen. New screens are
 | Save feedback | Save button flashes green for ~600ms + a **CB toast** (top-right), professional tone — **no chat** (see §G27.13) |
 | `[?]` button | Top-right of title bar — click = in-screen shortcut overlay listing all shortcuts |
 | Undo history | Persists per block per screen type (disk), not just in-memory |
+| Field + label | Label drawn first; field top = label Y **+14px** via `CbForm.label(...)`. Never hand-code the gap; never `new TextFieldWidget` (use `CbTextField`). Spec + build gate → §G27.20 |
 
 ### Universal keyboard shortcuts (all screens)
 
@@ -298,6 +309,10 @@ The goal is one shared design language, applied to every screen. New screens are
 | G27.12 | `BlockCreationStudioScreen` (Edit mode) | `client/gui/BlockCreationStudioScreen.java` | — | **New** — Create+Edit tabs; `/cb editor <id>` opens Edit (replaces the retired chest editor) |
 | G27.17 | `VaultConflictScreen` | `client/gui/VaultConflictScreen.java` | Group 20 §S2 | **Folded in 2026-06-22** — re-skin to family standard (red). Spec → §G27.17 |
 | G27.19 | `VariantRepaintScreen` | `client/gui/VariantRepaintScreen.java` | Group 06 (M3 hex) | **New** — self-contained batch repaint of all `_<colour>` variants after a hex change. Spec → §G27.19 |
+| G27.27 | Backup Screen | new, replaces `gui/chest/BackupMenu.java`+`BackupConfirmMenu.java` | Group 09 | **New**, locked 2026-07-12 — save/list/load/delete/panic. Spec + mockup → `GROUP_09_BACKUP_SAFETY.md` |
+| G27.28 | Trash Screen | new, replaces `gui/chest/TrashMenu.java`+`TrashEntryMenu.java` | Group 09 | **New**, locked 2026-07-12 — real deleted-block texture preview (`SlotItemRenderer`), replaces missing-texture placeholder. Spec + mockup → `GROUP_09_BACKUP_SAFETY.md` |
+| G27.29 | Safety hub Screen | new, replaces `gui/chest/SafetyMenu.java` | Group 09 | **New**, locked 2026-07-12 — hub tiles: Backup / Trash / Broken-Blocks (tile links out to G16, owns no diagnostics code). Spec + mockup → `GROUP_09_BACKUP_SAFETY.md` |
+| G27.31 | Diagnostics Screen | new, replaces the incidents chest GUI | Group 04 §C | **New**, folded 2026-07-15 — `⊙ Details` opens **one** incident (not all of them), plus a History tab. Kills TG4 bug C1. Group 16 keeps `IncidentRecorder`. Spec → §G27.31 · Tests → TG27 §R |
 
 Screen-specific upgrade specs are in §§ below. Nothing is built until you test and pass the previous screen.
 
@@ -344,6 +359,20 @@ Screen-specific upgrade specs are in §§ below. Nothing is built until you test
   - `[Reset]` = reset sliders to default (H=0 S=100% L=100%)
 - Cancel confirmation dialog if sliders changed from defaults
 - `Ctrl+C` / `Ctrl+V` / `Ctrl+R` / `Ctrl+Z` / `Ctrl+Y` / `Enter` wired
+
+---
+
+### 🔀 Folded from GROUP_10_COLOR_IMAGE.md §8/§9/UI-medium-audit (2026-07-12)
+
+> `RecolorSliderScreen` and `EyedropScreen` confirmed already-built as real Screens (not chest GUIs) —
+> G10's §8/§9 said the same thing, now redundant with this section, removed there.
+>
+> **Merge target (owner-confirmed, not built):** `RecolorSliderScreen` and `EyedropScreen` (this section
+> and §G27.3) merge into **ONE Coloring Screen**, alongside `BgStudioMenu`, `ColorVariantsMenu`,
+> `ColorsMenu` (the hub), `PaletteMenu`, `GradientPickerMenu`, and `ColorPickBlockMenu` — all currently
+> chest GUIs, all Screen-medium, none built. Not a hub that launches separate standalone screens; one
+> screen covering all of it. G10 owns the *logic* behind each (gradient generation, bgstudio modes,
+> palette persistence, color-variant algorithms) — this merge only concerns the screen/UI shell.
 
 ---
 
@@ -631,7 +660,7 @@ soft click on slider/swatch change · confirm chime on Save. Uses `SoundEvents` 
 - **Keybinds are real `KeyBinding`s** → vanilla Controls rebinding is free; the `ConfigScreen` Keybinds
   section is optional polish and must be a client `Screen`, never the chest GUI.
 - **Build env (CLAUDE.md §6 / memory):** JDK 21 only (PATH `java` is Java 8) — set `JAVA_HOME` to 21 +
-  `--no-daemon`. Gates: `verifyMojibake`, `verifySound`, `verifyFileSize`.
+  `--no-daemon`. Gates: `mojibakeShield`, `soundGate`, `monolithGate`.
 
 ---
 
@@ -1492,7 +1521,7 @@ at minimum `BlockCreationStudioScreen` (routing + state) + `StudioSidebar` (pane
 
 ## §G27.9 — Studio Edit Mode (load + edit an existing block) (design locked 2026-06-19)
 
-> **Status:** design locked with the dev on 2026-06-19. **Nothing here is built yet.** Build in small
+> **Status:** combined Editing design locked with the dev on 2026-07-15. **Nothing here is built yet.** Build in small
 > slices, dev tests each slice before the next (CLAUDE.md §2, §4). This section is the spec; per-slice
 > status lives in the testing guide, not here.
 >
@@ -1504,7 +1533,7 @@ at minimum `BlockCreationStudioScreen` (routing + state) + `StudioSidebar` (pane
 
 ### §G27.9.0 — Shared foundation: "load an existing block into the studio"
 
-Both Edit Mode and Paint-on-existing (§G27.10) need the studio to be **pre-filled from a real block**.
+Both Edit Mode and Editing-on-existing (§G27.10) need the studio to be **pre-filled from a real block**.
 Build this once:
 - **S2C settings sync** — a new payload that sends a block's full `SlotData` (id, name, glow, hardness,
   sound, collision, category, shape, anim) **plus** its current texture bytes to the client, so every
@@ -1525,14 +1554,14 @@ Build this once:
 Tiles (DECISION: all of the below):
 - **New block** — blank studio, create flow (today's behaviour).
 - **Edit existing** — picker → Edit Mode.
-- **Paint** — jumps to the Paint tab landing (§G27.10).
+- **Editing** — opens the combined Paint + Resize workspace (§G27.10).
 - **Continue last session** — reopen the last studio state (session memory already in §G27.6 spec).
 - **From template / blueprint** — load a saved blueprint/template (folds in the §G27.6.X.I *Library*
   overlay; this is the clone path — ID cleared).
 - **Duplicate a block** — picker → copy with a new id to tweak (the `dupe` rail), original untouched.
 - **Recently edited** — quick row of the last few blocks created/edited for fast re-access.
 
-> `/cb paint` skips the chooser and opens straight on the Paint tab (§G27.10).
+> `/cb paint` and `/cb resize` skip the chooser and open straight on the matching Editing mode (§G27.10).
 > **Reconcile at build time:** the chooser is the new front door; the §G27.6.X.A `[⟲ Clear] [📚 Library]`
 > quick cluster and §G27.6.X.I Library overlay are reached **from** it rather than duplicated.
 
@@ -1564,7 +1593,8 @@ DECISION: all of:
 - **Locked blocks (DECISION: refuse).** Editing a `/cb lock`ed block is blocked with "unlock first",
   matching `rename` / `retexture` / `delete`. (`LockManager.isLocked`.)
 - **Animated blocks (DECISION: settings only).** You may edit an animated block's name / shape /
-  attributes / category; the pixel pen is **disabled** for it (see §G27.10) with a clear message.
+  attributes / category; Editing Paint is **disabled** for it for now, while Editing Resize remains available
+  (see §G27.10) with a clear message.
 
 ### §G27.9.E — Server plumbing (new work)
 
@@ -1593,28 +1623,57 @@ copy]` + Draft → **4)** picker polish (thumbnails / search / filter / sort / f
 
 ---
 
-## §G27.10 — Studio Paint (in-studio pixel editor) (design locked 2026-06-19)
+## §G27.10 — Studio Editing: Paint + Resize (design locked 2026-07-15)
 
 > **Status:** design locked with the dev on 2026-06-19. **Nothing here is built yet.** Build in small
 > slices, dev tests each (CLAUDE.md §2, §4). Spec only; status → testing guide.
 >
-> **What it adds:** a real **freehand pixel editor** for block textures, usable on a **new** block or an
-> **existing** one. This is **distinct from** the §G27.6.X.C *Color / Gradient / Pattern* tools, which are
-> **procedural fills**; Paint is hand-drawing with a pen. It is the "draw your own texture" tool the
-> original spec hinted at but never specified. Depends on the §G27.9.0 load-existing foundation.
+> **What it adds:** one top-level **Editing** tab inside Block Studio. The tab contains two modes:
+> **Paint** for hand-drawn pixel edits and **Resize** for still-image/GIF dimensions. It works before a new
+> block is published and after an existing block is loaded. This replaces the old standalone Paint-tab
+> framing; the useful Paint tools below remain part of the Editing tab. Depends on the §G27.9.0
+> load-existing foundation.
+
+### §G27.10.0 — Workspace contract (DECISION)
+
+- The studio has one top-level **Editing** tab. Inside it, a clear mode rail shows **[Paint] [Resize]**.
+- The Editing tab is available from both the `/cb create` new-block flow and the existing-block Edit Mode.
+- **`/cb paint`** opens the same studio Editing tab with **Paint** selected.
+- **`/cb resize`** opens the same studio Editing tab with **Resize** selected.
+- **Animation stays separate.** Animation controls playback speed, loop mode, frame timing, and the frame
+  timeline; Editing changes image pixels or image dimensions. GIF Resize is supported here, while GIF Paint
+  is explicitly out of scope for this version.
+- The primary editing surface is a fixed **2D viewport**. The texture can be panned and zoomed inside it;
+  the player is not forced to rotate a 3D cube to draw or resize accurately. The normal live 3D block preview
+  remains visible as a secondary result preview.
+- The shared workspace owns the before/after preview, Undo, Redo, Apply, and Restore Original controls.
+  Applying a change updates the block but leaves the Editing tab open so more work can continue.
+- The visual treatment follows the Group 27 standard: pure black workspace, red active states and borders,
+  and lime only for successful Apply feedback.
 
 ### §G27.10.A — Entry (DECISION)
 
-- **`/cb paint`** opens the studio on its own **top-level Paint tab** (peer to Identity / Texture / Shape /
-  Attributes / Category), which lands on two choices: **[Paint existing block]** · **[Paint new block]**.
-- **Paint existing** → shared block picker (§G27.9.C) → loads the block's texture; **full studio**
-  available (it enters Edit Mode with the Paint tab open).
-- **Paint new** → blank canvas for a brand-new block.
-- The Paint tab is also reachable from the Landing chooser **Paint** tile.
+- `/cb create` → Landing chooser → **Editing** → starts in the new-block flow with Paint or Resize available
+  once a source texture exists.
+- `/cb editor <id>` → loads the existing block → **Editing** → opens on the selected mode.
+- `/cb paint` and `/cb resize` are shortcuts into the same screen; they do not create duplicate editor
+  screens or duplicate state.
+- The shared block picker (§G27.9.C) is used when the player chooses an existing block from the chooser.
+- A new block starts with a blank Paint canvas or the source loaded in the Texture panel. An existing block
+  starts from its stored texture and stored dimensions.
 
 ### §G27.10.B — Canvas
 
-- **Form (DECISION):** opening Paint launches a **full-screen canvas overlay** (canvas + tool palette +
+- **Mode rail:** Paint and Resize are peer modes inside Editing. Switching modes keeps the current working
+  texture and preview state; it does not silently discard unsaved work.
+- **Before/after:** the workspace can show the original source beside the current result. The comparison
+  remains available after Paint or Resize changes and updates as the working result changes.
+- **Pan and zoom:** the 2D canvas has stable zoom controls, mouse-wheel zoom, drag-to-pan, and Fit to Screen.
+  Panning never changes the texture data. Zooming never changes the requested output size.
+- **Preview:** the secondary 3D preview reflects the current working result, while the 2D viewport remains
+  the precise editing surface.
+
+- **Form (DECISION):** opening Paint launches the Editing workspace with a **full-screen 2D canvas** (canvas + tool palette +
   color picker, with a small live block preview in a corner).
 - **Resolution (DECISION):** new block = **32×32**, upscaled on save through the normal block-png
   pipeline. Existing block = the block's **real stored resolution** (no quality loss when editing
@@ -1656,29 +1715,65 @@ Sources (DECISION: all): **a URL**, **another block's texture**, or the **block'
 - **Texture-source conflict (DECISION: warn).** One working texture. If you paint and then load a URL /
   pick a color in the Texture tab, it **warns before replacing** the paint.
 
-### §G27.10.H — Save / server plumbing (new rail)
+### §G27.10.H — Resize mode (image + GIF)
 
-- Painting commits to the studio's working texture. On Create / Save → a **new C2S pixel-upload payload**
+Resize is a dedicated mode inside Editing, not a separate screen or a one-click destructive command.
+
+- **Source:** new-block Resize uses the current loaded source before publish. Existing-block Resize starts
+  from the block's stored texture and stored dimensions. The original source is retained for Restore Original.
+- **Size controls:** show current width and height, editable numeric width and height fields, quick choices
+  **64 / 128 / 256 / 512**, and a Custom size path for any valid dimensions. The screen displays the allowed
+  maximum and an output-size estimate before Apply; it never silently changes a requested size.
+- **Proportions:** dimensions are linked by default so changing one side keeps the original aspect ratio.
+  An explicit unlock control allows the player to enter width and height independently and stretch freely.
+- **Fit method:** provide three plain choices:
+  - **Keep shape** — fit the source inside the target dimensions without distortion.
+  - **Crop** — fill the target dimensions and cut off the excess edges.
+  - **Stretch** — fill the target dimensions even when that distorts the source.
+- **Still images:** the before/after preview shows the exact target dimensions and the selected fit method.
+- **GIFs:** Resize applies the same dimensions and fit method to every frame. It preserves frame count, frame
+  order, per-frame timing, and loop behavior. GIF frames are not painted in this version.
+- **Per-face scope:** whole-block texture is the default. If the existing per-face scope is enabled, Resize
+  clearly shows whether it applies to the selected face or all selected faces before Apply.
+- **Apply and history:** Apply commits the resized result, keeps the Editing tab open, and records one undoable
+  change. The on-screen Undo/Redo controls and `/cb undo` / `/cb redo` use the shared history path.
+- **Restore Original:** a clearly reachable control in the lower corner restores the original loaded texture
+  and dimensions for the current editing session. It requires deliberate confirmation when work would be lost.
+- **Validation:** invalid, empty, oversized, or unsupported results stay preview-only and show a human-readable
+  reason plus the allowed action. The exact image/media limits remain owned by Group 10 and GIF mechanics by
+  Group 14; this section owns the player-facing workflow.
+
+### §G27.10.I — Save / server plumbing (new rail)
+
+- Painting commits to the studio's working texture. Resize commits to the same working-texture pipeline. On Create / Save → a **new C2S pixel-upload payload**
   carries the painted **PNG bytes** (per-face: one PNG per painted face) → server `TextureStore.save` /
   `saveFace(index, png)` + `ResourcePackServer.updatePack()`.
-- **This rail does not exist today** — textures only ever come from a URL download or a solid-colour bake,
-  and `CreateStudioPayload` carries no pixel data. This is the single biggest new piece.
+- The resize path reuses Group 10's texture-size rules and Group 14's animated-media decode/write path; it
+  must not create a second GIF engine inside Group 27.
+- Apply sends one authoritative update for the current working result, then refreshes the local preview from
+  the server result. Existing-block Apply is recorded through `UndoManager.recordModify` so `/cb undo` works.
+- **This rail does not exist today** — textures currently come from a URL download or a solid-colour bake,
+  and `CreateStudioPayload` carries no pixel data. The Editing upload/apply path is the largest new piece.
 
-### §G27.10.I — New files & build order (small slices, ONE in-game test each)
+### §G27.10.J — New files & build order (small slices, ONE in-game test each)
 
 | File | New/changed | Purpose |
 |---|---|---|
+| `client/gui/studio/EditingPanel.java` | new | shared Editing tab shell, mode rail, before/after preview, Apply/Restore, history controls |
 | `client/gui/paint/PaintOverlayScreen.java` | new | full-screen canvas overlay (routing + layout) |
 | `client/gui/paint/PaintCanvas.java` | new | baked-texture canvas: draw, zoom/pan/grid, alpha |
 | `client/gui/paint/PaintTools.java` | new | pen/eraser/fill/eyedrop/line/rect/symmetry/brush |
 | `client/gui/paint/PaintHistory.java` | new | per-stroke undo/redo |
+| `client/gui/studio/ResizeWorkspace.java` | new | size fields, presets, aspect lock, fit modes, before/after preview |
 | `network/payloads/TexturePixelPayload.java` | new | C2S painted PNG bytes → `TextureStore.save`/`saveFace` |
+| `network/payloads/TextureResizePayload.java` | new | C2S validated resize result → shared texture update path |
 
-Build order: **5)** canvas core (overlay + baked canvas + pen/eraser + color picker + pixel-upload
-payload, **new block first**) → **6)** fill / eyedrop / line / rect / brush size / undo-redo → **7)**
-symmetry modes → **8)** transparency + checkerboard → **9)** zoom / pan / grid / fit → **10)** reference
-underlay → **11)** per-face paint → **12)** paint-on-existing (reuse §G27.9.0) + live debounced preview +
-source-conflict warn. *(Steps 1–4 are §G27.9; numbering continues here.)*
+Build order: **5)** shared Editing shell + fixed 2D viewport + mode routing → **6)** Paint canvas core
+(pen/eraser + color picker + pixel-upload, new block first) → **7)** Paint tools + shared Undo/Redo →
+**8)** transparency + zoom/pan/grid/fit + reference underlay → **9)** Paint on existing + per-face scope +
+live preview + source-conflict warning → **10)** still-image Resize (fields, presets, aspect lock, fit modes,
+before/after) → **11)** GIF Resize (all frames, timing/order/loop preservation) → **12)** Apply/Restore and
+server refresh across Create and Edit. *(Steps 1–4 are §G27.9; numbering continues here.)*
 
 **File-size discipline (§9.3):** paint splits across the files above; keep each ≤500 lines. The pixel
 upload + per-face logic is the riskiest part — build the new-block path end-to-end first, confirm a
@@ -1791,7 +1886,7 @@ Nothing here is ✅ DONE until the dev confirms in-game:
 > status → testing guide. Build in small slices, dev tests each (CLAUDE.md §2/§4).
 >
 > **Section-number note:** the Block Studio Unified Create+Edit section was **renumbered
-> §G27.10 → §G27.12** (2026-06-20) to clear a duplicate with **Studio Paint** (which keeps §G27.10).
+> §G27.10 → §G27.12** (2026-06-20) to clear a duplicate with **Studio Editing** (which keeps §G27.10).
 > `GROUP_02_CHEST_GUI.md`'s cross-refs were updated to §G27.12 in the same pass.
 >
 > **Depends on:** G27.6 `BlockCreationStudioScreen` + §G27.9 Studio Edit Mode foundation (§G27.9.0
@@ -1861,6 +1956,19 @@ re-route the command. Recolour has **no** studio home yet → it becomes a new s
   → relabel **"Recolor"** and route into the Studio Edit mode on the matching section.
 - The no-arg **chest block-picker stays** as the selector (dev confirmed "they open chest guis"); the
   picker's click target changes from the old standalone screen to the Studio.
+
+### 🔀 Folded from GROUP_08_SHAPES.md §4 (2026-07-12) — current-in-code state, not yet executed
+
+> Re-confirmed 2026-07-09, still true as of the fold: `GuiRouter.java` (`Dest.SHAPE_EDITOR`) still routes
+> `/cb shapeeditor` to the **old `ShapeEditorMenu` chest GUI** (6 fake coordinate sliders as chest slots) —
+> the migration to this section (Studio Shape, Screen-based) described above has **not** been executed in
+> code yet. A **duplicate `shapeeditor` command registration** also exists in code (this file, near the
+> §G27.6 command area) — dedupe when this slice is finally built.
+>
+> **Historical chest-GUI design being replaced:** shape selector slots (one per shape, icon), `custom` shape
+> bounding-box min/max coordinate sliders (6 slots), current shape shown via item-tooltip preview, Apply/Cancel
+> slots. G08 (`GROUP_08_SHAPES.md`) owns the shape *commands/logic* (`setshape`, `clearshape`, `bulkshape`,
+> the RP-reload fix at G08-A1) — this screen section is the only shape content that belongs here.
 
 ### Architecture notes (build-time, not built)
 - **File-size gate:** `BlockCreationStudioScreen.java` is **already at the 500-line limit** (§9.3). The
@@ -2171,8 +2279,9 @@ Nothing here is ✅ DONE until the dev confirms in-game:
 - **Sound-synced playback ("a real TV")** — attach audio that loops in sync with the picture, distance falloff.
 - **Music visualizer / audio-reactive** — block pulses / colour-shifts / swaps frames to note-block music.
 - **Ken Burns motion on stills** — pan/zoom/parallax a single image so a static picture feels alive.
-- **In-screen frame painting** — pixel-edit / draw on / erase individual frames. **Extends §G27.10 Studio
-  Paint to per-frame editing** (reuse its tools).
+- **In-screen frame painting** — pixel-edit / draw on / erase individual frames. **Future only:** the current
+  §G27.10 Editing Paint mode does not paint GIF frames; this wishlist item would extend it later (reuse its
+  tools).
 - **Layered compositing + animated text** — background clip + overlay image + scrolling/typewriter text; a
   mini motion-graphics editor (signs, news tickers, branded screens).
 - **Live web-feed screens** — a block shows an image URL that **auto-refreshes** (live webcam, weather radar,
@@ -2191,7 +2300,8 @@ Nothing here is ✅ DONE until the dev confirms in-game:
 ### Cross-references
 - **Render path** for animated blocks = off-atlas grid (G14 §7, ADR-013/ADR-014). The hub only edits the
   **plain numbers** in `AnimData`; the pack `.mcmeta`/grid sidecar is regenerated deterministically.
-- **§G27.10 Studio Paint** — frame painting builds on its pixel editor.
+- **§G27.10 Studio Editing** — future frame painting may build on its Paint mode; GIF painting is not part of
+  the current Editing release.
 - **§G27.9 Studio Edit Mode / §G27.12 `/cb editor`** — the hub's edit-load reuses this pick-and-edit path.
 - **`/cb listgui`** (`command/handlers/ChestGuiCommands.java`) — needs an animated-only filter for the
   `/cb animation` no-id entry.
@@ -2721,3 +2831,1466 @@ sound); then these two G27 slices are unblocked.
 **Related:** `HudFieldType` / `HudField` / `HudRenderer` · `HudEditorScreen` · `HudPresetStore` · `HudBgShapes` · G04-1 (visual-voice consistency) · G29-1 (cinematic preset counterpart) · G14-1 (block-preview brick synergy)
 **Touches:** `HudField` (+ new per-brick animation/style fields) · `HudField.Effect` + `HudField.BgShape` (new enum values) · `HudFieldType` (block-preview type) · `HudRenderer` (animation timing, bar/icon/model draw, world→screen projection for floating label) · `HudBgShapes` (new bg shapes) · `HudEditorScreen` + inspector (expose new axes) · new `HudTheme` + `HudThemeBrowser` · new universal settings panel overlay · `HudConfigStore` JSON (new keys, back-compat defaults)
 **Verify in-game:** each new animation plays in live HUD + editor preview; new bg shapes render; block-preview brick shows the aimed block icon; floating label appears above aimed block (and all visible in mode B); themes restyle all bricks without moving them; full preset overwrites layout; universal panel appears in all screens at its saved position.
+
+
+---
+
+## G27-3 · Category Hub (golden screen) + shared UI kit (kit-first all-screens revamp)
+
+> 🔨 **partly built + build-green, NOT yet dev-confirmed in-game.** Kit-first plan: build the shared widgets once,
+> rebuild the Category Hub on them as the "golden screen", then port every other screen onto the same kit.
+> Owner approved the plan 2026-07-05 ("kit-first" + "full style pass first"). Tests: `docs/testing/GROUP_27_TESTING_GUIDE.md` § L / Fixes.
+
+### Why this exists
+
+`CbScreenTemplate` is **copy-paste boilerplate, not a base class** — which is exactly why the same bugs
+(help-popup bleed-through, preview-unavailable, label overlaps) kept recurring per-screen. The fix is a real
+shared kit: extract the repeated widgets into their own files, fix each bug **once** at the kit level, and
+have every screen consume the kit. The Category Hub (`/cb category`) is the first screen fully rebuilt on it
+and is the reference other screens copy.
+
+### Locked palette (unchanged, applies to the whole kit)
+- `#FF0000` red — selected / active borders + titles ONLY.
+- `#000000` black — backgrounds / bars / panels.
+- `#40FF00` lime — success flash ONLY (drop pulse, "saved", "+1" bump).
+- `#39E0C8` cyan — snap / live values ONLY.
+- Roles never mix. **No gold anywhere.**
+
+### The Category Hub (`/cb category`) — replaces the old chest browser
+
+One red+black full-screen manager. **Left** = searchable, scrollable category list (colour swatch, name
+tinted by its §-tag OR custom hex, live block count, ★ default, + an `(uncategorized)` bucket row). **Right**
+= the selected category's detail, in fixed-gap sections so labels never overlap controls: RENAME · ORGANISE
+(Merge/Move) · COLOUR (16 §-swatches + custom `#RRGGBB` hex) · OPTIONS (★ default toggle / sort / lock /
+unlock) · DESCRIPTION (+ "saved: …" read-back) · BLOCKS (searchable; drag a row onto a category, or pick +
+Move). Every mutation is a `CategoryAdminPayload` to the authoritative server → server broadcasts a fresh
+`HudSync` → hub refreshes live (NO-REJOIN) for every player.
+
+### Shared kit widgets (new files, client-only)
+| File | Job | Fixes |
+|---|---|---|
+| `CbHelpOverlay` | one organised `[?]` shortcut popup; ONLY the red X / Esc closes it | K7 / F2 |
+| `CbPopupPicker` | reusable modal "pick from a list" (+ "+ Create '<name>'" row) | L6 / L10 target choice |
+| `CbImmediateFill` | opaque scrim drawn as an IMMEDIATE textured quad (not deferred `ctx.fill`) | K7 / F2 root cause |
+| `CbToast` | top-right toast feedback (replaces chat) — appearance revamp still pending (K6) | — |
+| `LocalTexturePreview` | preview cube reads the block's baked `slot_N.png` from the pack, not the source URL | F3 |
+| `CategoryHubModel` | pure client data assembly for the hub (rows, blocks, palette, name tint) | keeps screen < 500 gate |
+| `CategoryHubDragDrop` | L10 drag-drop state machine + overlay rendering (eased hover, drop pulse, "+1" bump) | keeps screen < 500 gate |
+
+### Decisions locked with owner (2026-07-05)
+- **Custom hex per category (L4b):** display-only (tints the NAME text, never block textures). Parallel
+  `colorHex` field in `CategoryMetadataStore`; a swatch pick clears the hex, hex wins over a §-swatch.
+- **Inline rename (L5):** the Name box is pre-filled with the current name; edit + Rename.
+- **Merge / Move (L6/L10):** pick a target from a `CbPopupPicker` — no blind typing.
+- **★ Default (L8):** a toggle — click the current default again to clear it.
+- **Description (L9):** a "saved: …" read-back under the field so you can see it stuck.
+- **Categories are REAL on creation (L6/L11/L12 root cause):** "+ New category" sends a `create` op to the
+  server immediately (like rename/delete already do). Server marks it `exists=true` in `CategoryMetadataStore`
+  and broadcasts, so a 0-block category shows in every list + picker right away — same as any other category.
+  Was previously a client-only `pendingNew` list that never reached the server and was lost on close.
+- **L10 revamp — both drag AND click (owner: "i want both click and drag, and more coolness"):**
+  drag a block row onto a left-list category row (valid targets ease in a lime border, drop pulses the row lime,
+  the count does a floating "+1" bump) — AND the old click-a-block → Move ▾ → pick-target path still works.
+  Animations **smooth / eased** (~150–450 ms), never snap.
+- **Block search inside a category (L11 new request):** a search box above the BLOCKS panel filters that
+  category's block list by name/id (mirrors the category-list search).
+- **L9 delete UX:** after deleting a category the blocks are NOT lost (server keeps them, now uncategorized) —
+  the hub now auto-selects the `(uncategorized)` bucket so they stay visible instead of blanking the pane.
+
+---
+
+### 🎨 v6 FULL REDESIGN — locked with owner 2026-07-05 (SUPERSEDES the layout above)
+
+> Batch 1/2 fixed bugs but the screen still read "random / scattered" to the owner. After 3 mockup
+> iterations + a 4-round design lock, the whole Category Hub is being **rebuilt on the v6 layout**.
+> **Base mockup (blessed):** `docs/mockups/category_hub_rework_v5.html` ("Red Ops"). The batch-2
+> point-fixes below (L6/L9/L10/L11/L12/F2/F3/K7) are **folded into this rebuild**, not shipped separately.
+> Palette unchanged: `#FF0000` red (selected/active) · `#000000` black (bg) · `#40FF00` lime (success only)
+> · `#39E0C8` cyan (live values). **No gold.** Web-only sugar in the mockup (blur box-shadows, scanline
+> film, CSS transitions) does **NOT** ship — MC gets the portable subset (solid+gradient fills, thin-rect
+> borders, corner brackets, colored spines, count pills, text+shadow, layered-alpha glow).
+
+**Structure**
+- **Opens on a HUB OVERVIEW — nothing selected.** Right pane = a small stats dashboard: `X categories ·
+  Y blocks total · default is Z · N loose blocks` + "click a category to begin" + a quick New-category.
+  (Replaces v5's auto-select-first.)
+- **Left rail** = searchable category list. The `(uncategorized)` bucket is **pinned at the TOP as an
+  "inbox"** (distinct greyed style), shown only when it has blocks — encourages clearing it. New-category
+  input sits at the bottom of the rail.
+- **Selecting a category** → right pane: hero header (big name in its colour + live count + ★ default
+  badge + colour underline) · ONE toolbar row · BLOCKS list · action bar.
+
+**Blocks list**
+- Each row: a **small thumbnail** (the baked `slot_N.png`; animated blocks show/animate frame 0) + the
+  friendly **name only**. The internal id is **hidden behind a tiny per-row toggle button** (owner: "name
+  only on showing, but a tiny button to click to show id").
+- **Tiny 🔍 on a row → PREVIEW POPOVER beside it**: the block shown big, **animated for GIFs** (this is the
+  F3 path — the popover must render animated frames, not a blank).
+- **Multi-select**: checkboxes to tick several blocks at once.
+- **Per-block actions** (click a block): Rename block · Delete block · Lock/unlock block · Duplicate block.
+  ⚠️ Delete + Duplicate need server ops that may not exist yet — **verify/build backend** (see New ops).
+
+**Move model — REBUILD (current drag/merge are broken in-game, owner: "they r shit and dont work at all")**
+- **Single block (PRIMARY, must be reliable):** pick a block → **"Move to…"** popup list → choose target.
+- **Bulk:** tick several → **"Move selected to…"**.
+- **Drag** a row onto a left-list category = optional bonus path (nice-to-have, not the main route).
+- **Move ALL of a category:** **"Move all blocks to…"** empties this category into another and **KEEPS this
+  one** (now empty). Deletion is always a **separate explicit action** — merge no longer silently deletes
+  (this was the L6 confusion).
+- **Quick "Empty to loose":** one tap sends all a category's blocks to the `(uncategorized)` inbox, no
+  target pick.
+
+**Category tools**
+- Always present: **Rename** (inline) · **Colour** (16 §-swatches + `#RRGGBB` hex) · **Set default** (★
+  toggle) · **Delete**.
+- **Delete = CONFIRM POPUP** (replaces the 2-click arm): "Delete X? Its N blocks move to (uncategorized).
+  [Delete] [Cancel]". Blocks kept.
+- **More menu extras (owner-picked):** Lock all · Unlock all.
+- **Power tools (owner-picked):**
+  - **Category icon** — pick one block as the category's "face"; shows as its thumbnail in the list + the
+    in-game browser.
+  - **Hide from in-game browser** — visibility toggle; stages WIP sets without deleting.
+  - **Duplicate category** — copy name + settings into a new one.
+  - *(Manual "reorder categories" was offered and declined — do NOT build.)*
+
+**Bulk / cleanup tools inside a category (all owner-picked)**
+- **Bulk rename blocks** — add a prefix / find-and-replace across all names at once.
+- **Sort blocks**: A–Z / Z–A / by colour / newest (more than just A–Z).
+- **Quick "Empty to loose"** (as above).
+- **Select-all** in the category.
+
+**Search** — two clearly-labelled searches: categories (top) + blocks-inside-a-category (above BLOCKS).
+
+**Sound (owner: subtle):** soft UI click on buttons + a lime "success" chime on move / rename / delete-done.
+Vanilla `SoundEvents`, bare `SoundEvent` (only `BLOCK_NOTE_BLOCK_*` needs `.value()`, NFR-12).
+
+**How v6 closes each finding**
+| Finding | v6 resolution |
+|---|---|
+| L6 (merge bad) | "Move all… **keeps** category"; deletion is a separate explicit step; clear target popup. |
+| L9 (delete confusing) | Confirm popup, blocks kept → move to the inbox. |
+| L10 (block move confusing) | pick→"Move to…" primary + multi-select bulk + drag as bonus. |
+| L11 / L11b (search revamp) | Two labelled searches; "+ New" stays server-real. |
+| L12 (uncategorized confusing) | Pinned-top **inbox** + one-tap "Empty to loose". |
+| F2 / K7 (help opacity) | `CbImmediateFill` opaque scrim (unchanged plan). |
+| F3 (GIF preview blank) | Preview **popover** renders the animated frame grid (sidecar crop). |
+
+**New server ops to verify or build** (current ops: `create·rename·delete·color·colorhex·default·desc·
+sort·merge·lock·unlock·assign`). v6 likely adds: `assignMany` (bulk move) · `moveAllKeep` (empty-into,
+keep source — distinct from `merge` which deletes) · `emptyToLoose` · `icon` (set category face) · `hide`
+(browser visibility) · `duplicate` (category) · `bulkRename` (prefix / find-replace) · and per-block
+`blockRename` · `blockDelete` · `blockDuplicate` · `blockLock`/`blockUnlock`. **The implementation chat
+must audit which already exist before promising the per-block/bulk actions** (some may be Group 11 / Studio
+territory).
+
+**Op audit — DONE 2026-07-05.** Every per-block/bulk op has a real engine already; nothing is missing at
+the core-logic level, only wiring:
+- `assignMany`, `moveAllKeep`, `emptyToLoose` — thin new bridge cases, loop the existing `assign` /
+  `SlotManager.setCategory`. `moveAllKeep` = same as `merge` minus the `CategoryMetadataStore.deleteCategory`
+  call (merge deletes source; this must NOT).
+- Category `icon` / `hide` / `duplicate` — **no backend yet**, need new `CategoryMetadataStore` fields
+  (icon block id, hidden bool) + a copy-settings method for duplicate.
+- `blockRename` — engine exists: `SlotManager.rename` (same as `/cb reid`'s `ReIdCommands`).
+- `blockDelete` — engine exists: `DeletionService.delete(server, SlotData, actorUuid)` (snapshots to Trash,
+  records Undo). Needs the actor UUID + `MinecraftServer` threaded through from the hub's bridge call.
+- `blockDuplicate` — engine exists: `SlotManager.dupe` (same as `BulkDuplicateCommands`, `_copy`/`_copy2`…
+  suffix scheme). Wire single-block + reuse its pack-rebuild trigger.
+- `blockLock`/`blockUnlock` — engine exists: `LockManager.lock`/`unlock`, single-id call.
+
+**Decisions locked with owner 2026-07-05** (resolves ambiguity the brief didn't spell out — do not re-ask):
+- **Sort "newest"** — add a real `createdAt` field to `SlotData`, stamped at creation. (Rejected: faking it
+  off slot number — breaks on reid/slot reuse.)
+- **Bulk actions on multi-select checkboxes** — build ALL of them for v6 (move, lock/unlock, delete), not
+  move-only.
+- **Category icon default** (before one is picked) — plain colour swatch, same as today. No silent
+  auto-pick of "first block in category" (would look like an unintended default).
+- **Hide from browser scope** — hidden category still shows in the Category Hub itself (this admin
+  screen), always. "Hide" only removes it from the Studio's block-picker (`StudioBlockSelector`) browser.
+- **Lock vs. move** — a locked block can still be reassigned to a different category. Lock only blocks
+  content edits (delete/rename/retexture/attributes), per existing `LockManager` semantics — do NOT extend
+  it to block category moves.
+- **Preview popover (🔍)** — multiple can be open at once (no auto-close-previous limit).
+- **Per-row id-toggle** — ephemeral/per-row; resets to name-only on scroll or hub reopen. Not a persisted
+  global "always show ids" setting.
+- **Bulk rename** — one combined op renames BOTH display name and internal id together (uses the same
+  `renameId()` plumbing `/cb reid` already exercises across every store: favorites, notes, tolerance,
+  locks, drafts, category metadata, display-block manager). Owner accepted the wider blast radius; no
+  separate "rename name only" vs. "reid only" split.
+- **Undo/redo for bulk ops** — reuse the existing `UndoManager` / `/cb undo` (bulk ops already record as
+  ONE batch entry, same pattern as `BulkDuplicateCommands`). Add a **Redo** on top (new — `/cb undo` today
+  has no redo) + an in-hub button that fires both, instead of building a separate undo stack.
+
+**File split (500-line gate):** `CategoryHubScreen.java` is already **493/500** — the v6 layout will not
+fit in place. Split rendering into a new `CategoryHubView.java` (draws the zones) with `CategoryHubModel`
+(data) + `CategoryHubDragDrop` (drag) as today; move-picker/bulk/preview reuse `CbPopupPicker` /
+`LocalTexturePreview`. Do the split FIRST (behavior-identical, build-green), then port zone by zone.
+
+### Root-cause notes (verified in code, 2026-07-05)
+- **K7 / F2 (help bleed-through):** MC draws solid fills and text in separate passes; an intermediate
+  `ctx.draw()` does NOT guarantee earlier text stays behind a later opaque `ctx.fill`. Fix = draw the scrim as
+  an immediate textured quad (`CbImmediateFill`), the same trick `PreviewCube` uses. **Owner confirmed the fail
+  was on a FRESH client jar** (not stale) → the immediate-fill fix is the real remedy, awaiting retest.
+- **F3 (GIF preview):** animated blocks bake as a roughly-SQUARE frame GRID (`cols = ceil(sqrt(n))`, see
+  `AnimationDecoder.gridCols`) with a `slot_N.grid.json` sidecar — NOT a tall vertical strip. The old `h > w`
+  guess never triggered, so the whole grid was downsampled as one frame. Fix = read the sidecar and crop cell 0.
+
+### Architecture (code-grounded)
+- Server-authoritative: `CategoryAdminPayload(op, cat, arg)` → `CategoryAdminBridge` → `CategoryMetadataStore`
+  / `SlotManager` / `CategoryService` → `HudSync.broadcast`. Ops: `create` · `rename` · `delete` · `color` ·
+  `colorhex` · `default` (toggle) · `desc` · `sort` · `merge` · `lock` · `unlock` · `assign` (one block).
+- `HudSync` now emits `_categories` (every known category key, incl. 0-block ones) alongside `_meta` / `_hex` /
+  `_desc` / `_sort` / `_default`. `ClientSlotCache.categories()` unions that with block-derived categories.
+- `CategoryMetadataStore` gained an `exists` flag (persisted) + `create()` + `knownCategories()`.
+- Screen stays under the 500-line gate by delegating data → `CategoryHubModel` and drag-drop → `CategoryHubDragDrop`.
+
+### Status
+| Slice | What | State |
+|---|---|---|
+| Batch 1 | Category Hub rebuild + L4b/L5/L6/L8/L9 + F2/F3/K7 first attempt | ⚠️ dev-tested 2026-07-05: L1–L5/L7/L8 pass; L6 partial; L9/F3 partial; L10–L12/F2/K7 still failing |
+| Batch 2 | categories-real-on-creation · L10 drag+click revamp · block search · F3 GIF grid fix · K7 immediate-fill · L9 delete auto-select | 🔨 built + build-green, but owner MP-retest 2026-07-05 still failed L10–L12/F2/K7 → **folded into v6 rebuild** |
+| v6 rebuild | Full redesign on the v5 "Red Ops" mockup (see 🎨 section above): overview landing · thumbnails + id-toggle · preview popover · pinned inbox · confirm-delete · move-all-keeps · bulk tools · category icon/hide/duplicate · per-block actions · subtle sound. Absorbs all open batch-2 fixes. | 📐 **design LOCKED with owner 2026-07-05, NOT built — implementation starts in a fresh chat** |
+
+| Group | Scope | Status |
+|---|---|---|
+| G27 — Screens | Both — client screens + server-authoritative category ops (dedicated-safe) | 🔨 Batch 2 built, build-green; awaiting in-game confirm (Golden Rule) |
+
+### Still pending (agreed, NOT built — need design discussion first)
+- **F5** — **design LOCKED 2026-07-12** (widget mockup, 6 iterations). See §G27.11c below. Not built.
+- **F6** — **design LOCKED 2026-07-12** (widget mockup, 5 iterations). See §G27.11d below. Not built.
+- **K5 — edithud v2:** **design LOCKED 2026-07-12** (widget mockup, 7 iterations). See §G27.11e below. Not built.
+- **K6 — CbToast revamp:** **design LOCKED 2026-07-12** (widget mockup, 7 iterations). See §G27.11f below. Not built.
+- **CbScreen base class:** extract a real base from `CbScreenTemplate` and port the other screens (recolor / shape / arabic / eyedrop / create / edithud / old chest GUIs) onto the kit.
+- **F1 discoverability:** collapse-handle still hard to find for the owner.
+
+**Related:** `CategoryHubScreen` · `CategoryHubModel` · `CategoryHubDragDrop` · `CbHelpOverlay` · `CbPopupPicker` · `CbImmediateFill` · `CbToast` · `LocalTexturePreview` · `CategoryAdminBridge` · `CategoryMetadataStore` · `CategoryService` · `HudSync` · `ClientSlotCache` · `PreviewCube` (immediate-draw pattern) · `AnimFrameCache` / `AnimationDecoder` (grid sidecar) · G27.11 (Studio Recolour/Shape fold) · G27.13 (toasts)
+**Touches:** `CategoryHubScreen` (rebuild) · `CategoryHubModel` + `CategoryHubDragDrop` (new) · `CbImmediateFill` (new) · `CbHelpOverlay` / `CbPopupPicker` (immediate-fill scrim) · `LocalTexturePreview` (grid sidecar) · `CategoryMetadataStore` (`exists` + `create` + `knownCategories`) · `CategoryAdminBridge` (`create` op) · `HudSync` (`_categories`) · `ClientSlotCache` (`_categories` union)
+**Verify in-game:** `/cb category` opens the hub; "+ New category" makes a 0-block category that shows immediately in the list + Merge/Move popups; drag a block onto a category (lime border + drop pulse + "+1") AND pick-then-Move both work; block search filters the BLOCKS list; deleting a category jumps to `(uncategorized)` with the blocks intact; `[?]` help + Merge/Move popups are fully opaque (no bleed-through); recolor/shape preview loads for normal AND GIF blocks.
+---
+
+## §G27.11c — Tone Tools panel v2 (design locked 2026-07-12, NOT built)
+
+> Replaces the plain F5 fix ("just fix the label overlap") with a full redesign. Locked after 6 rounds
+> on an interactive widget mockup with the owner. Applies inside the Studio Recolor section (§G27.11) —
+> same panel that currently shows the broken `TONE TOOLS` / `Temperature` overlap.
+
+**Card frame**
+- Panel is a real card: `#0D0D0D` bg, 1px `#2A0808` border, 3px solid `#FF0000` left accent bar, 6px radius.
+- Header row: adjustments icon + `TONE TOOLS` label (red, 13px, letter-spacing) on the left; dice
+  (randomize) + swatch (current mix) icon buttons on the right.
+- Card gets a soft red glow (`box-shadow`) for ~900ms whenever a preset/randomize animation is running —
+  tells the player something is actively changing without needing to watch the sliders.
+
+**3D live block preview**
+- Real 3-face CSS/MatrixStack cube (top/front/side, same shading rule as every other 3D-cube screen in
+  this group) sits left of the panel, tinted live by the current Temperature/Tint mix.
+- Below the cube: a **compare slider** (0–100) that blends the cube's color between the original
+  (pre-edit) tone and the current tone — drag left = more original, right = more new. Replaces the
+  earlier "hold to compare" button idea; a persistent draggable blend reads better than a momentary hold.
+
+**Sliders**
+- Track fill is a live gradient in the slider's own hue (red-shifted for Temperature, blue-shifted for
+  Tint) instead of a flat accent bar — the track itself previews the color direction.
+- Each slider's `%` value label is a **scrubber** (Blender/Figma/After Effects pattern): drag it
+  horizontally to nudge the value, click it to swap in a real text box for exact entry (Enter commits,
+  blur commits), double-click resets to 50%. Same control should be reused anywhere else a 0–100 numeric
+  value shows up (F6 fields, K5 brick size, K6 volume) — don't rebuild it per-screen.
+
+**Presets & history**
+- 3 built-in preset chips (Warm / Neutral / Cool) plus owner-savable custom chips: long-press the swatch
+  icon to snapshot the current mix as a new named chip, appended to the row.
+- Picking a chip **eases** the sliders to the target (not an instant snap) — quick lerp animation, ~250ms.
+- A row of small dots under the sliders is an **undo history strip**: every committed change pushes a
+  dot; click any dot to jump straight back to that state. Separate from the screen-wide Ctrl+Z stack —
+  this one is local to the tone panel and always visible.
+
+**Footer**
+- Hex readout of the current mixed color + a copy-icon button (flashes lime on copy, no chat spam).
+- `[Apply]` button, green-bordered, fills solid lime + black text for ~500ms on click as save feedback
+  (same flash pattern as the rest of Group 27).
+- Universal shortcut line pinned under the button: `Ctrl+Z undo · Ctrl+C copy · Enter apply · ? help`.
+
+**New/reused files**
+- `client/gui/color/CbScrubField.java` (new) — the drag/click/dblclick scrubber control; reusable widget,
+  not tone-tools-specific.
+- `client/gui/color/ToneToolsPanel.java` (new, replaces the current inline slider layout in
+  `RecolorSliderScreen`/Studio Recolor section) — card, cube-tie-in, presets, history strip, hex+apply.
+- No server/network changes — this is a pure client panel redesign; `RecolorPayload` fields (temperature,
+  tint) are unchanged.
+
+---
+
+## §G27.11d — Studio Identity tab v2 (design locked 2026-07-12, NOT built)
+
+> Replaces the plain F6 fix ("just fix the label clipping the border") with a full redesign. Locked
+> after 5 rounds on an interactive widget mockup with the owner. Applies to the Studio's Identity tab
+> (`/cb create`) — currently the screen where "Block ID" / "Display Name" labels touch the field's top
+> border (§G27.20's `CbForm.label()` +14px rule fixes the raw clipping; this section is the fuller
+> look-and-feel pass on top of that fix).
+
+**Layout — three equal peer sections, stacked, same treatment top to bottom**
+1. **Block ID** — hash icon + red label, full red-border box, live availability check (border tints
+   green/red + a ✓/✕ icon appears in the label row as you type, checked against existing block ids).
+2. **Display Name** — tag icon + red label, same box style. Typing here auto-fills Block ID via
+   slugify (`lowercase`, non-alnum → `_`, trim) **unless** the player has typed into Block ID directly —
+   first keystroke in the id box permanently hands control to the player for that session.
+3. **Original Image Link** (**new field**, not in the current screen) — world icon + red label, url
+   input with a 36px thumbnail inline, live "downloaded, texture ready" status line once a url is
+   entered, plus copy-link and open-source-in-browser icon buttons. Surfaces the original source url +
+   the locally cached texture the studio actually downloaded, side by side, so the player can always see
+   what they pointed the block at.
+- Sections separated by a single 1px hairline (`#220505`), no nested "IDENTITY / SOURCE" grouping — the
+  three fields read as one flat rhythm, not two tiers.
+- Same card frame as §G27.11c (`#0D0D0D` bg, `#2A0808` border, 3px red left accent) — the two panels
+  should feel like siblings inside the same Studio.
+
+**New / reused files**
+- Reuses `CbForm.label()` (§G27.20, +14px gap) for label-to-box spacing — no new spacing primitive needed.
+- `client/gui/create/OriginalLinkField.java` (new) — url input + thumbnail + download-status line + copy/open
+  buttons; wraps the existing texture-fetch call the Studio already makes on Create, just exposes it
+  live in the Identity tab instead of silently on submit.
+- `client/gui/create/BlockIdAvailability.java` (new, small) — debounced live-check against
+  `ClientSlotCache` id list; drives the border tint + ✓/✕ icon. Client-side only (no new packet — the
+  full id list already syncs today).
+- No server/network changes for id/name; the image-link field's download call already exists in the
+  current create flow, this only makes it visible earlier.
+
+---
+
+## §G27.11e — HUD Editor v2 (design locked 2026-07-12, NOT built)
+
+> Replaces the K5 "movable bar passes but looks plain" note with a full canvas-first rebuild. Locked
+> after 7 rounds on an interactive widget mockup with the owner. Supersedes the earlier "3-panel
+> builder" framing in favor of a Figma/Blender-style canvas tool. Applies to `/cb edithud`
+> (`HudEditorScreen`), on top of the free-floating brick/magnetic-snap engine already spec'd in
+> §G27.4 — this section is the *look and interaction shell* around that engine, not a change to the
+> brick data model.
+
+**Canvas-first layout, not a settings form**
+- The live HUD preview fills the whole main area (dot-grid backdrop, like a real design canvas), not a
+  cramped left column next to a form.
+- A slim icon dock (select / add-brick) floats top-left over the canvas — doesn't eat layout space.
+- Functional zoom controls (`-` / `%` / `+`) bottom-right actually scale canvas content; a small
+  overview thumbnail top-right (future: mini live render of the full HUD layout).
+- Cyan magnetic-snap guide lines (per §G27.4's `HudSnap`) appear live while dragging a brick near
+  another brick's edge/center — proves the snap engine visually instead of just numerically.
+
+**Selection — floating contextual toolbar, not a static side panel**
+- Clicking a brick (in canvas or in the layer list) shows a small floating toolbar right beside it:
+  visibility eye, size scrubber (`CbScrubField`, same control as §G27.11c/d), colour swatch, duplicate,
+  delete.
+- **Toolbar position must clamp** — flip below the brick instead of above when the brick sits near the
+  top-left dock, and clamp horizontally so it never renders off-canvas or behind the dock. (Caught as a
+  real bug during mockup iteration — apply this clamp rule to every future floating-toolbar mockup in
+  this group, not just HUD editor.)
+
+**Layers rail (right, 240px)**
+- **No filter/search box** — cut after owner review; typical HUD is 2-6 bricks, not worth the row.
+- Full-size rows: 36px thumbnail, 14px brick name, 11px two-line meta (anchor + size), copy + lock
+  icons per row. Click a row = same selection as clicking the brick on canvas.
+- **Collapse toggle** (chevron, top of rail) shrinks the whole rail to a 44px icon-only strip and back —
+  gives the canvas full width when the player just wants to drag bricks around.
+- **Global settings strip** between the brick list and the presets row: Master HUD on/off toggle,
+  Magnetic snap on/off toggle, Background opacity readout. Fills the space that would otherwise sit
+  empty below "+ Add brick" with real controls instead of padding.
+- Presets row (built-in + saved, per §G27.4) pinned at the rail's bottom.
+
+**Titlebar — Compact mode**
+- A `[Compact]` toggle button in the titlebar collapses the entire canvas+rail body down to just the
+  titlebar + status bar — for players who want to glance at brick count/zoom without the full editor
+  taking screen space. Toggling back restores exactly where it was.
+
+**Status bar** (full width, bottom): brick count + snap state left, zoom % right.
+
+**New / reused files**
+- `client/gui/hud/HudCanvasView.java` (new) — the full-bleed canvas, dock, zoom, overview thumbnail,
+  snap-guide rendering (wraps `HudSnap` from §G27.4).
+- `client/gui/hud/HudFloatingToolbar.java` (new) — the per-brick contextual toolbar + clamp-positioning
+  logic (reusable pattern, see clamp rule above).
+- `client/gui/hud/HudLayerRail.java` (new, replaces the flat `HudBrickRow` list from §G27.4) — rows +
+  collapse toggle + global settings strip + presets.
+- `client/gui/color/CbScrubField.java` — shared with §G27.11c/d, drives the size scrubber here too.
+- No server/network changes — pure client shell around the existing `HudConfig`/`HudField`/`HudSnap`
+  data model from §G27.4.
+
+---
+
+## §G27.11f — CbToast v2 (design locked 2026-07-12, NOT built)
+
+> Replaces "top-right rectangle + lime slide-in" (K6) with a full alert-system redesign. Locked after 7
+> rounds on an interactive widget mockup. Carries forward the clamp-toolbar discipline (§G27.11e) and
+> `CbScrubField`-style reuse discipline (§G27.11c/d): new capability goes in a settings surface, not
+> crammed into the stack.
+
+**Card look**
+- Black card body (`#1A0000`, near-black with a blood-red cast, not pure `#000`), 1.5px border in the
+  severity colour, plus a 4px left accent bar in the same severity colour for at-a-glance scanning
+  without reading text.
+- Severity colours: danger = red (`--fill-danger`), warning = amber (`--fill-warning`), success = lime
+  (`--fill-success`), info = blue (`--text-accent`). Circular icon badge (26px) per toast, icon + badge
+  tinted to severity — never a flat lime rectangle again.
+- Bottom-edge 2px countdown bar drains in the severity colour; progress-type toasts (see below) use a
+  full progress bar instead of a countdown.
+- Newest toast plays a slide-in-from-right entrance, then a 2x glow-pulse ring in its severity colour
+  (lime for success, red for danger) — draws the eye once, then settles. `Reduce motion` (below) kills
+  both animations.
+
+**Severity tiers change behaviour, not just colour**
+- **Pinned/critical** toasts (e.g. slot save failed) do not auto-dismiss — they sit until the player
+  hits **Retry** or **Dismiss**. Pinned toasts get a small `Pinned · critical` tag + relative timestamp.
+- **Progress** toasts (e.g. batch recolor running) show live `n / total · %` text + a real progress bar
+  + a **Cancel** action instead of a countdown — the toast *is* the batch's status, not a fire-and-forget
+  notice.
+- Ordinary toasts still auto-dismiss on their countdown as before.
+
+**Duplicate + spam handling**
+- Identical repeated toasts (e.g. 3x "Block placed") collapse into one card with an `x3` count badge on
+  the icon, instead of restacking three near-identical cards.
+- Related-but-distinct toasts (e.g. 5 separate recolor warnings) collapse into a single group row
+  ("+4 more recolor warnings") with an expand chevron and a **Retry all** batch action.
+- Rate-limit safety: if toasts fire faster than ~5/sec (e.g. a bad loop), they collapse into a single
+  "+N queued during rate limit" indicator rather than flooding the stack.
+
+**Per-toast actions (contextual, not global)**
+- **Undo** button on reversible actions (block placement).
+- **Retry** button on pinned/failed actions.
+- **Copy log** button on crash-style toasts (grabs the error text for a bug report).
+- Click-to-locate: clicking a placement toast jumps the camera to that slot (small map-pin icon hints
+  this is clickable).
+- Right-click any toast for a context menu (mute this message type, snooze 10s, pin/unpin).
+
+**Toast settings panel (new surface — keeps the stack itself uncluttered)**
+- A gear icon opens a compact settings card, not more toast-stack clutter. Holds: corner position picker
+  (default top-right), max-visible-toast cap, auto-dismiss duration, sound-cues toggle, do-not-disturb
+  toggle, reduce-motion toggle, colourblind-safe icon mode (icon+pattern instead of colour-only), the
+  duplicate-grouping threshold, a **Test toast** button (preview without a real trigger), and **Export
+  log** (dumps toast history to file).
+- **Toast history** button at the bottom of the stack recalls dismissed toasts instead of losing them —
+  same idea as Ctrl+Z history dots elsewhere in this group, just a flat recall list here.
+
+**Additional behaviours (spec'd, not drawn — implemented in `CbToast` logic, no extra screen space)**
+- Hover pauses the countdown/progress bar; leaving resumes it.
+- Double-click any toast to pin/unpin it manually.
+- Drag-reorder pinned toasts.
+- Per-message "don't show this again" (session-only mute).
+- Priority override — pinned/critical toasts still show even in do-not-disturb mode.
+- Sound-cue toasts show an animated 3-bar waveform + a per-toast mute-this-type icon.
+- Screen-reader announce mode for the toast queue.
+- Keyboard: `Esc` dismisses the newest toast, `Shift+Esc` dismisses all.
+- `CbToast` exposes a small registration API so other CB modules can add new toast types without
+  touching this file.
+
+**New / reused files**
+- `client/gui/toast/CbToastCard.java` (new) — the card itself: severity styling, countdown/progress
+  bar, entrance + pulse animation, per-toast action buttons.
+- `client/gui/toast/CbToastStack.java` (new, replaces the old flat rectangle renderer) — stacking,
+  duplicate/group collapsing, rate-limit collapsing, hover-pause.
+- `client/gui/toast/CbToastSettings.java` (new) — the gear-icon settings card + history recall list.
+- No server/network changes — pure client-side alert rendering over the existing toast trigger calls.
+
+---
+
+## §G27.11g — Per-Face Editor v2 / N (design locked 2026-07-12, NOT built)
+
+> Screen-layout lock for the feature list already brainstormed in **G27.18 · Advanced Per-Face
+> Customization** below (N-1..N-17) — that section stays as the feature spec; this section is the
+> *shell* those features live inside, locked after 5 rounds on an interactive widget mockup. Carries
+> forward: settings-surface-not-clutter discipline (§G27.11e/f), severity/status dots (§G27.11f),
+> `CbScrubField`-style reuse (§G27.11c/d/e).
+
+**3-column shell (icon dock · canvas · property panel), same skeleton as K5's HUD editor**
+- Left: 32px icon dock — Select, Copy (eyedropper-style face-to-face copy, N-7), Scale, Hide face,
+  divider, Colour eyedropper, Mirror-mode toggle (N-10-style sync), Light-preview toggle, Wireframe.
+- Center: the `PreviewCube` canvas — drag rotates (yaw+pitch), right-click pauses/resumes spin (N-2,
+  N-3), scroll/`+`/`-` zoom, undo/redo with a history-depth readout, a minimap thumbnail corner, and
+  (when the block has GIF faces) an animation frame strip with per-frame click-to-preview + play/pause
+  docked at the canvas bottom instead of a separate screen.
+- Right: property panel with 4 tabs — **Texture / Physics / Audio / Light** — scoped to whatever face(s)
+  are currently selected. Multi-select shows as stacked chips ("East" + "+ West (linked)", N-6/N-10).
+
+**Face-status strip (new, sits above the property panel)**
+- 6 mini face icons (or N icons for stairs/slabs, N-4) — click to select, same selection as clicking the
+  face on the canvas. A small status dot flags state: red = broken texture link (N-9, also flashes red
+  on the canvas itself), amber = unsaved edit, green = has animation. Gives an at-a-glance whole-block
+  health check without opening each face.
+
+**Selection feedback**
+- Selected face gets a glowing coloured outline on the canvas (N-5) — colour is player-configurable
+  (red/lime/blue swatches in the Texture tab) so it never blends into a similarly-coloured texture.
+  Wireframe mode (dock icon) strips all fills to outlines only, for precise clicking on cluttered
+  geometry.
+
+**Per-face actions (bottom of property panel, 2x2 grid)**
+- **Copy to all** — pushes the selected face's full config to all 6 faces in one click.
+- **Reset face** — reverts just this face to defaults.
+- **Save preset** / **Swap faces** — save current face config as a reusable preset, or swap two faces'
+  configs directly (texture, physics, audio, light all move together).
+
+**New / reused files**
+- `client/gui/studio/PreviewCubeInteractive.java` (new) — drag-rotate, pause-on-right-click, per-face
+  click hit-testing, wireframe + selection-glow rendering. Extends the existing `PreviewCube`.
+- `client/gui/studio/FaceStatusStrip.java` (new) — the 6-icon status row + broken/unsaved/animated dots.
+- `client/gui/studio/FacePropertyPanel.java` (new) — the 4-tab Texture/Physics/Audio/Light panel,
+  multi-select chip row.
+- Reuses `CbScrubField` (§G27.11c/d/e) for any numeric per-face value (crop X/Y/W/H, light strength).
+- No server/network changes beyond what N-8..N-16 already require (see G27.18) — this section is the
+  screen shell only.
+
+---
+
+## §G27.11h — Studio Shell v2 / O (design locked 2026-07-12, NOT built)
+
+> Screen-layout lock for **G27.19 · Studio UI Overhaul & 3D Design Editor** below (O-1..O-11), same
+> relationship as §G27.11g → G27.18: G27.19 stays the feature spec, this section is the *shell* those
+> features sit inside, locked after 4 rounds on an interactive widget mockup. First round mis-modeled
+> the shell as top tabs — corrected to match the real `/cb create` frame already spec'd in §G27.6.X
+> (left sidebar + 3D center stage + bottom action bar). This section does not replace §G27.6.X — it
+> shows how the O-1 4-pillar consolidation sits inside that same frame.
+
+**Sidebar (left, 250px) — 10 sections condensed to 4 rows**
+- Quick-start cluster stays on top: `[Clear] [Library] [Material]`, unchanged from §G27.6.X.A.
+- Each of the 4 pillar rows (Identity / Design / Shape / Behavior) shows: a coloured icon swatch (solid
+  for simple sections, a gradient swatch for Design since it now represents 5 merged tools), the pillar
+  name, a one-line sub-label naming what's folded inside it (e.g. Design → "Texture · Paint · FX · Anim
+  · AI"), and a right-aligned status glyph — check (complete), x (missing, required), dash (optional,
+  untouched). Matches the readiness-glyph language already used in §G27.6.X.A, just per-pillar instead
+  of per-old-section.
+- Readiness meter pinned at the sidebar bottom (unchanged from §G27.6.X.A): % bar + inline
+  check/x tags for the fields that actually gate publish (Identity, Texture, Shape).
+- Clicking a pillar still navigates into its panel the same way §G27.6.X.A's section rows already do —
+  O doesn't change that interaction, only how many rows exist.
+
+**Design pillar internals — 3-workspace icon toggle (O-5)**
+- Once inside the Design pillar, 3 icons (Image / Brush / Film) swap the active workspace without
+  leaving the panel: Image = URL mapping + crop (§G27.6.X.C source group), Brush = paint workspace
+  (Simple/Advanced modes, O-7), Film = animation timeline (only enabled if a GIF is loaded, O-8).
+- This is the same "tool-switch inside one panel" pattern as N's Texture tab and K6's severity-typed
+  toasts — new capability lives inside the existing surface, not as new top-level chrome.
+
+**Center stage — unchanged shell, same tabs as §G27.6.X.G**
+- View / Test / Variants tabs on top of the 3D cube stage.
+- View-angle strip (Iso/Front/Top) + backdrop / GIF-playback / before-after-wipe icons on the right
+  edge — all already spec'd in §G27.6.X.G, carried forward as-is.
+- Status badge floats at the stage's bottom edge (e.g. "Needs shape") — reuses the amber
+  `--bg-warning`/`--text-warning` pairing from K6's warning severity for visual consistency across the
+  group.
+
+**Bottom action bar — unchanged from §G27.6.X.H**
+- `[Undo] [Redo] [Checkpoints] ··· [Draft] [Create & publish] ··· [Share] [Cancel]`, `CbActionBar`,
+  dockable + collapsible, position remembered per player.
+
+**New / reused files**
+- `client/gui/studio/StudioPillarSidebar.java` (new, replaces the 10-row `StudioSections` sidebar list)
+  — 4 pillar rows with swatch/sub-label/status glyph, same navigate-in/breadcrumb-back interaction as
+  the existing sidebar.
+- `client/gui/studio/DesignWorkspaceSwitcher.java` (new) — the 3-icon Image/Brush/Film toggle inside the
+  Design pillar panel.
+- Reuses `PreviewCube`/center-stage code from §G27.6.X.G and `CbActionBar` from §G27.8.A unchanged — no
+  changes to those systems, only to which sidebar rows route into them.
+- No server/network changes — pure client navigation/consolidation of existing panels.
+
+---
+
+## §G27.11i — Settings Book Screen v2 / P (design locked 2026-07-12, NOT built)
+
+> Screen-layout refinement for the already owner-locked **§G27.27 Settings Book Screen** (D1-D13),
+> locked after 5 rounds on an interactive widget mockup. **§G27.21 below (the old P-1..P-15 brainstorm —
+> glassmorphism blur, 80% dynamic scaling, animated background) is superseded and stays ideas-only; it
+> was never the real spec.** The real spec is §G27.27's D12 6-tab shape. This section fills in the
+> *visual polish and per-tab content* §G27.27 described but never mocked up, staying strictly inside the
+> locked red+black+lime brand (no gold/blue/purple introduced).
+
+**Top bar (new — fills empty space above the tab strip)**
+- Live search (`Find a setting…`) that filters rows and drawers as you type, jumping straight to matches
+  — the D-power-feature "Find a setting" from §G27.27, now with a concrete look.
+- `Changed only` filter chip, `<preset> ▾` cycler (default/showcase/performance) — both already
+  spec'd under §G27.27 Power features, now placed top-right of the tab strip instead of buried in a
+  menu.
+
+**6-tab strip (per D12)** — each tab gets an icon (settings/palette/cloud/database/stack/cpu) so the
+strip reads at a glance instead of plain text labels.
+
+**Per-tab content — the full registry, not a subset**
+- **General:** max blocks (restart chip), texture quality, silent pack, typo correction, auto category.
+- **Appearance:** transparent background, background removal + strength, named texture mirror, an
+  **Edit HUD** row that opens `HudEditorScreen` directly (D3 — no stored HUD-enabled field), plus a
+  quick-access tile row (Variant colours / Effects / Arabic / Advanced) for the sub-chest openers.
+- **Network:** resource pack port (restart chip), server IP, cloud sharing + URL + secret (masked
+  `••••••`), Check-connection button, Discord webhook + Send-test button.
+- **Backups:** auto-backup interval, backups-to-keep, trash retention, undo depth, history mode, and a
+  danger-red **Purge history cache** action (irreversible, confirm-guarded per §G27.27 Power features).
+- **Content:** AI texture style, AI-textures-legacy toggle, greyed Coming-Soon rows for AI
+  variations/provider (D6), bulk-confirm threshold, greyed Coming-Soon texture-payload-rate.
+- **System:** greyed Coming-Soon Tools/hologram rows (D9), greyed Coming-Soon Permissions (D4), and a
+  **Reset everything** action (double-confirmed per §G27.27 Power features).
+
+**Row anatomy** — every row gets a 32px icon (fills the visual emptiness plain text rows had), name,
+one-line plain-English description where non-obvious (D10), and its control on the right: toggle, enum
+cycle, number readout, masked secret, or an action button. Icon background tint (`--bg-danger` vs plain
+`--surface-2`) marks "this row matters most in its tab" vs an ordinary field — not a new color, reuse of
+the existing danger tint.
+
+**Footer (sticky, bottom)** — changed-setting count + Save button, matches the confirm/footer pattern
+already used in K6's toast settings panel and O's action bar for consistency across the group.
+
+**New / reused files**
+- `client/gui/config/ConfigScreen.java` (new, replaces `ConfigMenu`) — the 6-tab shell, search/filter/
+  preset bar, footer. Reads from the `ConfigField` registry already spec'd in §G27.27.
+- `client/gui/config/ConfigTabPanel.java` (new) — per-tab row rendering (icon + label + description +
+  control), reused across all 6 tabs from one row-template rather than 6 bespoke layouts.
+- Reuses `AnvilPrompt`, `HexColorsMenu`, `ConfirmMenu`, `ChestMenu`/`Icons`/`GuiRouter` per §G27.27's
+  reuse map — no new backend, this section is the visual shell only.
+
+---
+
+## G27.20 — Screen text-overlap elimination + field-layout standard
+
+> 📝 **PLAN ONLY — logged 2026-07-08. NO code yet.** Root cause found + proven; this section is the
+> full build plan for owner review. Nothing is ✅ until built AND confirmed in-game (Golden Rule).
+> Tests: `GROUP_27_TESTING_GUIDE.md` §M (planned). Supersedes the old "Fixes · label overlaps" bullet.
+
+**Current state (the report):** on every screen with a text box, the label sits on top of the field's
+hint text, and the field's box border cuts through the label. Owner ask: find the true root cause, fix
+it on every current screen, and make it impossible for future/new screens to reintroduce it.
+
+| Shot | Screen | Symptom |
+|---|---|---|
+| 1 | HUD editor (§G27.4) | green "Example Block" preview over the title hint lines |
+| 2 | `/cb create` · Texture (§G27.6) | "Texture URL (optional)" crammed onto "https://… image url", border through it |
+| 3 | `/cb create` · AI | "Describe the block…" crammed onto its hint |
+| 4 | `/cb create` · Category | tree rows tangled with the "new category / new name" input |
+
+### Root cause — proven three ways
+
+Two independent overlap families. Family 1 is systemic (shots 2·3·4); Family 2 is a separate local
+collision (shot 1).
+
+**Family 1 — label crashes into the text field.** Three compounding causes, all in the shared widget
+`CbTextField`:
+
+- **1a — `setDrawsBackground(false)` breaks vanilla's text metrics** (`CbTextField.java:24`). Vanilla
+  `TextFieldWidget.renderWidget` only insets text **+4px** and vertically **centers** it *when
+  `drawsBackground == true`*. With it false, vanilla draws the text **and the placeholder** at the raw
+  top-left `(getX(), getY())` — no inset, no centering. Every hint renders ~4px higher and 4px lefter
+  than the screen author expects.
+- **1b — the border bleeds 3px UP** (`CbTextField.java:32`): `fill(x-3, y-3, …)`. The box's visual TOP
+  is at `fieldY-3`, reaching into the label above.
+- **1c — no shared label→field spacing.** Every screen hand-codes the Y with magic numbers. One tab got
+  a manual patch (`BlockCreationStudioScreen.java:154` — *"fields dropped 4px so labels sit above
+  boxes"*); the rest never did.
+
+Pixel proof — Texture tab, real constants:
+```
+label "§7Texture URL"  at y = 72        → spans 72–80
+urlField at y+8 = 80, height 16
+  · border bleed (1b)  → box top at 77  (clips the label's bottom 3px)
+  · placeholder (1a)   → drawn at y=80  (no gap under the label)
+```
+Label 72–80, border 77, placeholder 80 — one 4px band. Exactly shot 2. Same arithmetic reproduces the
+AI tab, the Category field, and the Hub rename/description fields. Not a vanilla bug and not documented
+anywhere online — self-inflicted by `setDrawsBackground(false)`; the fix lives in our code.
+
+**Family 2 — HUD sample over title hints** (`HudEditorScreen.java:176`): the live HUD preview (the
+"Example Block" name brick, default-anchored top-left) draws at ~the same Y as the title hint lines.
+Different mechanism (preview vs chrome). Folded in as step (f).
+
+### Sweep — every field on every screen
+
+Full inventory (grep of every `new CbTextField(` / `new TextFieldWidget(` — nothing missed).
+
+**Class A — field-overlap (systemic; `CbTextField`; pixel-verified):**
+
+| Screen | Field | label y / field y | Verdict |
+|---|---|---|---|
+| Studio · Texture | urlField | 72 / 80 (box-top 77) | ✗ clip + cram (shot 2) |
+| Studio · AI | aiField | +8 pattern | ✗ (shot 3) |
+| Studio · Identity | id / name | band-aid +4px already applied | ⚠ box bleed still kisses label |
+| Studio · Texture | hexField | short box under swatches | ⚠ tight |
+| Studio · Category | catField | fixed y vs the panel's own layout | ✗ un-coordinated (shot 4) |
+| Category Hub | nameField | `BAR_H+26` / `BAR_H+34` | ✗ clip |
+| Category Hub | descField | `BAR_H+164` / `BAR_H+172` | ✗ clip |
+| Vault Conflict (§G27.17) | idBox | label above the box | ⚠ flag — confirm in-game |
+
+**Class B — widget inconsistency (raw `TextFieldWidget` = vanilla WHITE box; off-theme, no overlap):**
+`HudColorPicker` (hex), `HudBrickInspector` (prefix, text), `HudPresetBrowser` (name). Unifying them onto
+`CbTextField` fixes the look and — after step (a) — keeps them aligned too.
+
+**Not affected:** screens with no text fields (Guess, Shape, Eyedrop, Record, Recolor, Arabic
+preview/browser, Macro, Config, BlockEditor, MainMenu). A separate value-crowding audit of those is out
+of scope here.
+
+### The standard — the field-layout contract (new, part of the Design Standard §Rules)
+
+```
+MC text line          = 9 px  (8 glyph + 1 shadow)
+CbTextField box bleed = 3 px  above the nominal field top
+
+LABEL_H  = 9      // a label line
+GAP      = 5      // clear space under the label
+FIELD_DY = 14     // = LABEL_H + GAP → field top sits 14 px below the label top
+```
+Invariant: with `FIELD_DY = 14`, the box top (`fieldY-3 = labelY+11`) sits **2px below** the label's
+bottom (`labelY+9`). No clip, ever.
+
+**New helper `client/gui/CbForm.java`:**
+```java
+public final class CbForm {
+    public static final int LABEL_H = 9, GAP = 5, FIELD_DY = LABEL_H + GAP; // 14
+    /** Draw a field label at (x, labelY); return the Y the field's top must use. */
+    public static int label(DrawContext ctx, TextRenderer tr, int x, int labelY, String text) {
+        ctx.drawTextWithShadow(tr, Text.literal(text), x, labelY, 0xFFFFFFFF);
+        return labelY + FIELD_DY;
+    }
+    public static int rowH(int fieldH) { return FIELD_DY + fieldH + 4; } // stack spacing
+}
+```
+Usage replaces the magic numbers:
+```java
+int fy = CbForm.label(ctx, tr, PX, y, "§7Texture URL §8(optional)");
+urlField.setPosition(PX, fy);   // the helper guarantees the gap — cannot collide
+```
+
+**`CbTextField` fix (cause 1a) — text inset + centered in its own box:**
+```java
+@Override
+public void renderWidget(DrawContext ctx, int mx, int my, float delta) {
+    if (this.visible) {
+        int x = getX(), y = getY(), w = getWidth(), h = getHeight();
+        int border = isFocused() ? CbTheme.ACCENT : 0xFF555555;
+        ctx.fill(x - 3, y - 3, x + w + 3, y + h + 3, border);
+        ctx.fill(x - 2, y - 2, x + w + 2, y + h + 2, 0xFF0C0C0C);
+    }
+    // drawsBackground=false makes vanilla draw text top-LEFT at (x,y). Shift it to the inset+centered
+    // spot vanilla uses WITH a background, so text/placeholder sit in the box, not on the label.
+    ctx.getMatrices().push();
+    ctx.getMatrices().translate(4.0, (getHeight() - 8) / 2.0, 0.0);
+    super.renderWidget(ctx, mx, my, delta);
+    ctx.getMatrices().pop();
+}
+@Override
+public int getInnerWidth() { return getWidth() - 8; } // match vanilla clip so text can't run past the box
+```
+This one edit corrects text alignment on **every field on every screen** at once.
+
+### Build steps (one at a time, in-game test after each — Golden Rule)
+
+| Step | What | Files | Done when (in-game) |
+|---|---|---|---|
+| **G27.20a** | Fix `CbTextField` metrics (inset + centered + inner-width clip) | `CbTextField.java` | every field's hint/text sits centered inside its box, no clip, all screens |
+| **G27.20b** | Add the `CbForm` standard (helper + constants) | `CbForm.java` (new) | (verified via the (c) screens) |
+| **G27.20c** | Convert every Class-A screen to `CbForm` (kill magic numbers) | `BlockCreationStudioScreen`, `StudioSections`, `StudioCategoryWorkspacePanel`, `CategoryHubScreen`, `CategoryHubView`, `VaultConflictScreen` | Texture/AI/Category/Identity/hex, Hub rename+desc+hex, Vault id — label clears the box, no overlap |
+| **G27.20d** | Unify widget: raw `TextFieldWidget` → `CbTextField` | `HudColorPicker`, `HudBrickInspector`, `HudPresetBrowser` | those fields show the red+black themed box, aligned |
+| **G27.20e** | Guardrail (prevention) — see below | `build.gradle`, `CbScreenTemplate.java` header | build fails if a screen uses raw `TextFieldWidget`; standard documented |
+| **G27.20f** | Family 2: HUD sample brick vs title hints | `HudEditorScreen` | the preview never overlaps the title/hint lines |
+
+Recommended order: a → (test) → b+c → (test) → d → f → e last. Step (a) alone is the biggest visible win
+for the least risk (1 file).
+
+### Prevention — new screens can't reintroduce it (step e)
+
+1. **Build gate `verifyScreenFields`** (new Gradle task, wired into `build` like `monolithGate`):
+   fails if any `.java` under `client/gui/**` or `gui/screens/**` contains `new TextFieldWidget(`
+   (must use `CbTextField`). Same pattern as `mojibakeShield` / `soundGate` / `monolithGate`.
+2. **Template doc:** a "Field + label layout" line added to the Design Standard §Rules table (done in
+   this doc) + the `CbScreenTemplate.java` header — use `CbForm.label(...)` → `setPosition`, never
+   hand-code the gap, never `new TextFieldWidget`.
+3. **New-screen checklist** entry: `[ ] every text field is a CbTextField placed via CbForm.label(...)`.
+
+### Test plan (promote to TG §M when each step ships)
+
+Written here so nothing is a speculative pass/fail table in the TG before it's built (AGENTS rule +
+"write the checklist the same pass you build it"). When a step lands, its rows move into real §M tables.
+
+- **M-a (step a — alignment):** M-a1 Texture hint sits centered in its box, not on the top edge · M-a2 typed
+  text is inset ~4px from the left border + vertically centered · M-a3 a long value clips at the right
+  border (no spill) · M-a4 focus border draws cleanly around the box, no text on the border.
+- **M-c (step c — spacing, per screen):** M-c1 Texture label clear above the box (border doesn't cut it) ·
+  M-c2 AI label clear · M-c3 Identity ID + Name labels clear · M-c4 Texture hex field + "Background colour"
+  label + swatches don't overlap · M-c5 Category "new category / new name" input clear of the tree + "New
+  category / rename" label (shot 4 fixed) · M-c6 Hub "Name (edit, then Rename)" label clear (SP+MP) · M-c7
+  Hub "Description" label clear (SP+MP) · M-c8 Vault Conflict id label clear (SP+MP).
+- **M-d (step d — themed field):** M-d1 HudColorPicker hex box is red+black themed (not white) + centered ·
+  M-d2 HudBrickInspector prefix/text boxes themed · M-d3 HudPresetBrowser name box themed.
+- **M-f (step f — HUD preview):** M-f1 open the HUD editor with no custom block aimed at → the "Example
+  Block" sample never overlaps the title/hint lines.
+- **M-e (step e — guardrail, build-time):** M-e1 add a `new TextFieldWidget(` to any screen →
+  `gradlew build` fails with a `verifyScreenFields` error (dev-machine check, not in-game).
+
+### Open questions (decide before build)
+
+- **O1 — border bleed:** keep `CbTextField`'s 3px focus glow (the 14px gap absorbs it) or shrink to 2px?
+  Default: **keep 3px**.
+- **O2 — convert the 3 HUD fields now (step d)?** Changes their look white → red/black. Default:
+  **include it** (consistency is the point).
+- **O3 — gate strictness:** ban raw `TextFieldWidget` only (default), or also lint label→field spacing?
+  Default: **ban the widget only**; spacing stays helper + checklist enforced.
+- **O4 — Family 2 flavor:** nudge the HUD sample brick's default anchor down, or reserve the title band?
+  Default: **nudge the sample default**.
+
+### Status
+📝 **Plan only.** Nothing built. Awaiting owner review of this section + §M in the testing guide, then a
+go/no-go per step. Related: `CbTextField` · `CbForm` (new) · `CbScreenTemplate` · §G27.4 (HUD) · §G27.6
+(Studio) · §G27.17 (Vault) · `CategoryHubScreen`/`View` · `StudioSections` · `StudioCategoryWorkspacePanel`.
+
+## G27.18 · Advanced Per-Face Customization
+
+> **Status:** Feature list brainstormed 2026-06-22. **Screen shell design LOCKED 2026-07-12** — see
+> §G27.11g above for the 3-column layout, face-status strip, and property-panel tabs these features
+> live inside.
+
+**Overview**
+Transform the Block Creation Studio (and other `PreviewCube` screens) from a single-state editor into a fully advanced per-face (and per-polygon) editor.
+
+**1. Interaction (UI/UX) & Selection**
+- **N-1 (Select):** Left-clicking a face on the 3D spinning block (`PreviewCube`) selects it.
+- **N-2 (Rotate):** Dragging the cursor over the cube rotates the block without selecting any faces.
+- **N-3 (Pause):** Right-clicking the cube pauses or unpauses its spinning. 
+- **N-4 (Polygon Clicker):** For complex shapes (stairs/slabs), clicking any flat exposed polygon surface selects it, bypassing the standard 6-sided limitation.
+- **N-5 (Visuals):** Selected faces get a highly distinguishable glowing overlay around their edges.
+
+**2. Multi-Select & Copying**
+- **N-6 (Multi-select):** Players can click multiple faces to select them together. Any changes made in the side panels apply instantly to all active faces.
+- **N-7 (Copy):** Select a face with the desired properties, then click another face to instantly copy all settings over.
+
+**3. State & Animation Handling**
+- **N-8 (Animations):** 6 different GIFs per block are fully supported with 0 lag. Minecraft's GPU handles the rendering natively via the resource pack.
+- **N-9 (Broken Links):** If an image URL breaks, opening the UI makes that broken face flash red and auto-selects it so the link can be fixed immediately.
+- **N-10 (Commands):** Per-face customization is GUI exclusive. Chat commands (`/cb retexture`) remain whole-block only.
+
+**4. Physics & Properties**
+- **N-11 (Hollow Physics):** Setting a face to "Passable" removes that side's collision box (like a Cauldron). Players can walk *into* the front face and stand inside the block.
+- **N-12 (Sounds):** Walking on or touching a specific face plays *that* face's sound. Breaking the block plays all the faces' sounds combined for a unique shatter effect.
+- **N-13 (Directional Light):** Glowing faces spawn invisible `minecraft:light` blocks adjacent to them to physically light up the floor in that specific direction.
+- **N-14 (Double-Sided):** Transparent faces (like Glass) allow players to look inside the block. The inside walls render the same textures as their outside counterparts, appearing as a real hollow box.
+
+**5. Rendering & Menus**
+- **N-15 (Inventory):** Blocks with customized faces will render as a standard isometric 3D view in the inventory.
+- **N-16 (Menu Lag):** To prevent lag in massive menus like `/cb hub`, we bypass our custom `PreviewCube` rendering. The Server bakes standard Minecraft "Item Models" into the Resource Pack, and the Hub menu simply uses Minecraft's highly-optimized native `drawItem()` code to show all blocks. `PreviewCube` is reserved exclusively for the interactive Studio screen.
+
+**6. Future Scope**
+- **N-17 (Image Editor):** A full, dedicated in-game editor for resizing, cropping, and panning image links is planned for a future brainstorm session to fix aspect ratios.
+
+## G27.19 · Studio UI Overhaul & 3D Design Editor
+
+> **Status:** Feature list brainstormed. **Screen shell design LOCKED 2026-07-12** — see §G27.11h above
+> for the 4-pillar sidebar layout (inside the existing §G27.6.X frame) and the Design-pillar
+> Image/Brush/Film workspace switcher these features live inside.
+
+**Overview**
+A massive UI architecture shift condensing the Studio's 10 side-tabs into 4 core pillars, and introducing a multi-workspace 3D Design Editor.
+
+**1. The 4-Pillar Architecture**
+- **O-1 (Identity):** Merges `ID`, `Name`, `Category`, and `Lore` into one tab.
+- **O-2 (Design):** Merges `Texture`, `Paint`, `Animation`, `FX`, and `AI`. The ultimate visual powerhouse.
+- **O-3 (Shape):** Stays dedicated to 3D geometry and polygons.
+- **O-4 (Behavior):** Merges `Attributes` (hardness/sounds) with redstone/click logic.
+
+**2. The Design Tab Workspaces**
+- **O-5 (Icon Toggles):** The top of the Design tab features 3 sleek, minimalistic icons (Image, Brush, Film) to instantly swap the internal workspace.
+- **O-6 (Mapping Workspace):** Selecting the Image icon smoothly "3D Zooms" the camera to face the block. Pasting a URL overlays it on the 3D block with visual grid-snapping crop handles, an aspect-ratio lock (`Shift`), and a precision `X/Y/W/H` input panel. High-quality 512px mapping is retained (no forced retro pixelation).
+- **O-7 (Paint Workspace):** Selecting the Brush icon locks the camera and turns the face into a 2D canvas. Features a "Simple Mode" (single layer, bucket/brush/eraser) and an "Advanced Mode" (Photoshop-lite multi-layer stack with opacity).
+- **O-8 (Animation Workspace):** Selecting the Film icon (only available if a GIF is loaded) opens a massive horizontal timeline across the bottom of the screen. Users can drag frames, change durations, and toggle manual/auto Onion Skinning.
+
+**3. Professional Power Tools**
+- **O-9 (Glass Eraser):** Inside the Paint Workspace, the standard Eraser returns pixels to the background color. A special "Glass Eraser" tool physically punches transparent holes into the block.
+- **O-10 (Synchronized Mirroring):** Multi-selecting faces (e.g., Top + North) and drawing a brush stroke on one perfectly mirrors the stroke onto the others in real-time.
+- **O-11 (Keyboard Shortcuts):** Full support for `[ ]` brackets to change brush size, holding `Spacebar` to pan the camera, and `Ctrl+Z` / `Ctrl+Y` for infinite undo/redo.
+
+## G27.21 · Enterprise Config GUI Redesign
+
+> **Status:** Superseded, ideas-only. **Real spec is §G27.27** (owner-locked D1-D13); **screen visual
+> design LOCKED 2026-07-12** — see §G27.11i above. This section (glassmorphism, 80% dynamic scaling,
+> animated background, P-1..P-15) was never reviewed against the owner's actual decisions and is kept
+> for reference only — do not build from it.
+
+**Overview**
+A massive architectural shift completely deleting the legacy `ConfigMenu.java` chest GUI and replacing it with a hyper-advanced, 6-tab `ConfigScreen` (extending `CbScreenTemplate`). It pushes the UI engine to the absolute limit with enterprise-grade features, dynamic scaling, and advanced security.
+
+**1. Master Layout & Aesthetics**
+- **P-1 (Dynamic Scaling & Blur):** The UI dynamically scales to exactly 80% of the screen. The Minecraft world behind the UI is heavily blurred with a "Glassmorphism" effect.
+- **P-2 (Animated Background):** The UI features a subtle, slow-moving dark red geometric animation running behind the 6 tabs.
+- **P-3 (Global Settings Integration):** "Accent Color Customization" and a dedicated "UI Volume Slider" are explicitly routed into the global `⚙ Settings` overlay (§G27.8.B) to ensure they apply to every single screen uniformly.
+- **P-4 (Audio SFX):** Features satisfying `CbUiSounds` triggers (e.g., Anvil clank for Purge History, EXP Level-Up chime for Master Apply).
+- **P-5 (Access & Quick Binds):** Opened via `/cb config`, `/cb settings`, or `/cb admin`. Admins can assign a physical hotkey (e.g., `F8`) directly in the GUI.
+- **P-6 (Help Popups & Easter Egg):** Every complex setting has a `(?)` button opening an in-game Wiki popup. Clicking the CustomBlocks logo 5 times triggers an animated developer Credits Roll.
+
+**2. Advanced Workflows & Security**
+- **P-7 (Golden Search Pulse):** Typing in the "Search Settings..." bar filters tabs instantly. The selected setting receives a glowing, pulsing golden border to catch the eye.
+- **P-8 (Smart Restart Warnings):** Altering core server settings (like `maxSlots`) turns the green "Apply & Save" button into a pulsing orange "Apply & Reload Server" button. Pressing `ESC` with pending changes triggers a red unsaved warning popup.
+- **P-9 (True Privacy Read-Only Mode):** If a non-Admin opens the GUI, they can only interact with the "Server Status" tab. All other tabs display Padlock icons, and the actual server config values are physically obscured (e.g., replaced with `Hidden` or `••••••`) so regular players cannot read them.
+
+**3. The 6-Tab Navigation System**
+- **P-10 (Server Status):** Read-only tab displaying the Environment (Singleplayer/Dedicated) and a Dynamic Capacity progress bar (Used/Max Slots) that automatically changes from Green to Yellow to Red.
+- **P-11 (General):** Toggles for Silent Pack and Block HUD. Features a streamlined Typo Correction `On/Off` switch with an "Advanced Dictionary" sub-menu to define custom synonyms.
+- **P-12 (Backups & History):** Contains a scrollable "Live Backup Manager" with in-game "Restore" buttons. Includes History Mode/Depth settings and a red "Purge History Cache" panic button.
+- **P-13 (Visuals & Processing):** Contains a full visual RGB Color Picker for Variant Colours, Background Removal radio toggles, Texture Quality limits, and Named Textures.
+- **P-14 (Integrations):** Features an interactive "Login to Vault" OAuth button. The Discord Webhook Toolkit includes a URL field, a live "Test Webhook" button, and a mini Embed Designer.
+- **P-15 (Developer Mode):** Admin-only 6th tab featuring a live chart of Mod RAM Usage, a silent error logger (flashes a red `!`), a Garbage Collection trigger, and raw JSON exports.
+
+> **Relationship to §G27.27 below:** this section (§G27.21) is an unreviewed brainstorm, not the owner-locked
+> spec. §G27.27 is the **actual locked design** (owner decisions 2026-06-22, folded from Group 21). If these
+> two ever conflict, §G27.27 wins — this section is ideas-only until the owner reviews it against that spec.
+
+---
+
+## G27.27 · Settings Book Screen (folded from Group 21 §0–§8, design locked 2026-06-22, medium locked 2026-07-09)
+
+> Source: `GROUP_21_CONFIG_GUI.md`. G21 keeps only §9, the `max_blocks` cross-client registry-sync fix —
+> that's networking/mixin backend, not screen content. Everything else (the Settings Book itself) moved
+> here 2026-07-12.
+>
+> **Medium decision locked 2026-07-09:** chest GUI → Screen. Not built yet — the chest-shell description
+> below is the current live implementation (`SettingsBookMenu`, replaced the old `ConfigMenu`), kept as
+> reference until the Screen version lands. `ConfigScreen.java` (Mod Menu's small read-only quick-view,
+> `gui/screens/`) is a **different, smaller** thing — owner wants it to migrate into pointing at this same
+> Settings Book Screen, not stay separate. `StepperMenu`, `SubChestMenu`, `ConfigWarnMenu` fold in as
+> existing sub-pieces, not separate decisions. `ConfigMenu.java` (`gui/chest/`) is dead code — never wired,
+> flag for deletion whenever cleanup happens.
+
+### Decisions locked with the owner (2026-06-22)
+
+| # | Decision | Choice |
+|---|---|---|
+| D1 | Layout | **Tabbed/foldable rebuild**, not the flat single page. |
+| D2 | Field scope | Surface **all** settings; spec fields with no working feature appear as **Coming Soon** (inert). |
+| D3 | HUD | **Remove `hudEnabled` from server config.** HUD section = one **"Edit HUD"** button that opens the on-screen `HudEditorScreen`. On/off + layout live entirely in that editor. |
+| D4 | Permissions | Show a **Coming Soon** placeholder (real work lands with Group 22). |
+| D5 | Naming | **Human-readable names everywhere** — config keys, GUI labels, chat. No code-style names. Rename + migrate old config files. |
+| D6 | Dead fields | hologram, tool-tab sort, Discord per-event notifications, payload-per-tick, AI variations/provider → **Coming Soon, inert** (no backend built). |
+| D7 | Restart fields | Max blocks + resource-pack port are **editable in-game** with a "restart required" warning. |
+| D8 | Orphan settings | Settings the original 9 tabs forgot get homes via **extra pages/drawers**. |
+| D9 | Empty tabs | Tools + Permissions shown as **Coming Soon** drawers (not hidden). |
+| D10 | Plain English | **Everywhere, by default** — every tooltip explains the setting clearly, no jargon. |
+| D11 | Test cadence | Build **phases 1–4** → owner tests once in-game → then phases 5–7 → final test. |
+| D12 | Navigation (revised 2026-06-22) | 2-page flip + fold-drawers + quick-toggle dyes were confusing. Replaced with **horizontal top tabs**: 6 named sections (General · Appearance · Network & Cloud · Backups · Content · System) across the top; clicking a tab swaps the panel below. Things with their own chest (Variant colours, Effects, Discord, AI, Arabic) appear as opener tiles. |
+| D13 | `max_blocks` cross-client sync | D7 only warns the local editor — full design in G21 §9 (stays there, not a screen concern). |
+
+### Shape — the "Settings Book" (per D12: horizontal top tabs, not page-flip)
+
+`/cb config` opens the Screen with a persistent **6-tab strip** (General · Appearance · Network & Cloud ·
+Backups · Content · System) and the active tab's settings in the panel below. **Foldable drawers** within a
+tab: click a category header → unfolds sideways within its own row, several can be open at once. **Merged
+groups → sub-chests/opener tiles:** Variant Colours, Effects, AI, Discord, Arabic, Advanced. Bottom row:
+Back · Find a setting · Filter · Reset everything · Close.
+
+*(The original 2-page-flip + fold-drawer shape, superseded by D12, is kept in `GROUP_21_CONFIG_GUI.md` §1
+history-only if ever needed — not reproduced here.)*
+
+### The settings registry (backbone — build first)
+
+Everything reads from **one** registry (`ConfigField`) so the GUI, search, presets, reset, modified-markers,
+and number-stepper all share one source of truth: `key`, `name`, `help` (tooltip text), `type`
+(`bool`/`enum`/`int`/`string`/`hex`/`action`/`group`/`coming_soon`), `category`/`page`, `getter`/`setter`,
+`default` (drives ✦ marker + shift-click reset), `restart` (shows restart warning), `item` (living-item
+representation), `sound`, `enumValues`/`min`/`max`/`step`, `confirm` (risky change asks Yes/No first). First
+cut covers ~30 live settings + Coming-Soon entries.
+
+### Full setting inventory (human labels per D5; old config.json keys migrate on load)
+
+- **General** — `max_blocks` *(restart)* · `texture_quality` · `silent_pack` · `typo_correction`
+  (smart/always/off) · `auto_category`
+- **Look & Textures** — `transparent_background` · `background_removal` (off/edges/closed) +
+  `background_strength` (0–100) · `variant_colours` → sub-chest · `named_texture_mirror`
+- **Edit HUD** — action button → `HudEditorScreen` (no stored field)
+- **Effects** → sub-chest — `success`/`error`/`gui`/`selection`/`bulk_complete`/`achievement` rows;
+  left-click = particles on/off, right-click = sound on/off; each row previews the actual particle/sound
+- **Network** — `resource_pack_port` *(restart)* · `server_ip` (override/auto) · `cloud_sharing` ·
+  `cloud_url` · `cloud_secret` · Test: check cloud connection
+- **Backup & History** — `auto_backup_interval` (off/5/15/30/60/120/360) · `auto_backup_keep` ·
+  `trash_retention_days` · `undo_depth` · `history_mode` (server-wide/per-player)
+- **AI** → sub-chest — `ai_texture_style` · `ai_textures_enabled` *(legacy)* · Coming Soon: variations, provider
+- **Discord** → sub-chest — `discord_webhook` · Test: send test message · Coming Soon: per-event notifications
+- **Arabic** → sub-chest — `arabic_default_bg`/`arabic_default_letter` (hex) · join labels ini/mid/fin
+- **Advanced** → sub-chest — `bulk_confirm_threshold` · Coming Soon: texture-payloads-per-tick
+- **Tools** — Coming Soon (tool-tab sort, offhand hologram)
+- **Permissions** — Coming Soon (3-tier use/edit/admin — Group 22)
+
+### Polish & feel
+
+Living items (slot item represents value — glowstone glows when on, barrel fills with backup count, dye
+matches hex, bigger painting = higher texture size). Shimmer/enchant-glint on every **editable** slot only
+(read-only + Coming Soon stay plain). Distinct sound per action (fold open/close · toggle on/off · sub-menu
+open · Coming-Soon soft-deny · save happy-ding), respects the `gui` sound category toggle. Branded frame +
+page indicator. Plain-English tooltips everywhere (D10) — name + current value + one-line explanation, no
+special action needed to read it.
+
+### Power features
+
+✦ marker on any setting changed from default; shift-click resets it. **Find a setting** — search jumps to
+the matching drawer/tab. **Filter view** — changed-only or one-category-only. **Config presets** — save/load
+named setups (`default`/`showcase`/`performance`) under `config/customblocks/presets/`, built last (phase 6).
+**Reset everything** — double-confirmed full reset, plus reset-per-section. **Number stepper** — number
+fields open a small −10/−1/+1/+10 control instead of an anvil; text/URL/hex fields still use the anvil.
+**Test buttons** — Discord "send test", cloud "check connection", Effects "preview". **Confirm-guard** —
+risky changes (port, max blocks, clear history, reset) ask Yes/No first.
+
+### Save & live-apply
+
+Every change → atomic write (temp+rename) of `config.json` (keys migrate to human names on load, old keys
+still read once for back-compat). Most fields apply live; `max_blocks` + `resource_pack_port` apply on
+restart with the warning (D7); live fields broadcast their existing sync on change. `max_blocks` also needs
+cross-client propagation so other players aren't kicked at join — **that's `GROUP_21_CONFIG_GUI.md` §9**,
+not a screen concern.
+
+### Build order (phases, each compiles green — reuse not rewrite)
+
+1. **Foundation** — migrate config keys to human names; build the `ConfigField` registry + `ConfigRegistry`. No GUI yet.
+2. **Screen shell** — the tabbed Settings Book reading the registry: living items, shimmer, sounds, frame, plain-English tooltips. Replaces the old `ConfigMenu`.
+3. **Editors** — boolean toggle · enum cycle · number-stepper · anvil text/hex · confirm-guard · restart warning.
+4. **Sub-chests/tiles** — Variant Colours (reuse `HexColorsMenu`) · Effects (+preview) · AI · Discord (+test) · Network cloud (+test) · Arabic · Advanced. → **owner test point (D11):** phases 1–4 deliver a complete, working config screen.
+5. **Power** — modified-marker + shift-reset · find-a-setting search · filter view · quick-toggles · reset-everything.
+6. **Presets** — save/load named config presets.
+7. **Coming-soon + docs** — Tools/Permissions/dead-field placeholders · finalise spec + testing guide · final build + deploy.
+
+**Reuse map:** `AnvilPrompt` (text/hex input) · `HexColorsMenu`/`HexCommands` (variant + Arabic colours) ·
+`ConfirmMenu` (confirm-guard + reset) · `ChestMenu`/`Icons`/`GuiRouter`/`Nav.Dest` (GUI primitives) ·
+`CustomBlocksConfig`/`CustomBlocksConfigStore` (fields + atomic save) · HUD editor open path already exists
+(`HUD_EDITOR` payload → `HudEditorScreen`). `ConfigCommands` is near the 400-line handler gate — new command
+logic goes in a new handler file, not there.
+
+**File-size discipline:** many small files — registry, each editor, each sub-chest, search, presets, filter
+each get their own class. `≤500` lines/file, `≤400` command handler, `≤300` `*Config`.
+
+### Acceptance tests
+
+`GROUP_21_TESTING_GUIDE.md` §A (core, phases 1–4), §B (power, phase 5), §C (presets, phase 6), §D (final,
+phase 7) — G21.1 through G21.15. (G21.16–G21.21 are the `max_blocks` sync tests, §E, stay under G21 — not
+screen tests.)
+
+---
+
+## G27.28 · BuzzerGame admin panel Screen (folded from Group 31, 2026-07-12)
+
+> Source: `GROUP_31_BUZZERGAME.md`. G31 keeps the trimmed `/cb buzzergame` command list, round/session
+> logic, buzzer block, physical timer display, and sound/VFX — none of that is screen chrome.
+>
+> **Status:** built 2026-07-10 (`GROUP_31_TESTING_GUIDE.md` line 6) — the source doc's "not built yet"
+> medium-decision note (2026-07-09) predates that and is stale, not a live conflict.
+
+Right-click the panel (op-only) opens a real Screen, red/black/lime CB-B branded, replacing the old
+text-wall chat readout:
+
+- **Title:** `BuzzerGame Panel — <state>` (live-updates, e.g. "Running").
+- **Round-control buttons** (also remote — same actions work as `/cb buzzergame ...` from anywhere, no
+  aiming needed): Start, Stop, Reset, Reveal (greyed until the round reaches Results).
+  - **Reset** on a live round needs confirm: click once → button flips to "click again to confirm";
+    Idle/Finished resets are instant. Same click-again pattern on the remote `/cb buzzergame reset`.
+- **Settings items — panel-only, deliberately NOT remote** (you're standing at the panel already): Mode,
+  Format (Precision/Reaction), Countdown length, False-start rule — left-click cycles forward through
+  choices. Target time: left-click cycles presets (3/5/10/15/30/60s), right-click opens a type-exact-number
+  box (anvil-style) for a custom value. Countdown cycles Off→1s→2s→3s→5s→10s→Off.
+  - All four settings apply only while Idle — greyed out mid-round, hover explains why ("Already running —
+    stop or reset first").
+- **Status item:** one readable summary of state/mode/rules, in hover text.
+- **Link count item:** "Buzzers: N (screens coming later)." Click → link-list sub-screen: each linked
+  buzzer auto-numbered (`Buzzer #1`, `#2`, ...), click → confirm (click again) → unlinks. Same click-again
+  pattern as Reset.
+- **Greyed buttons never error on click** — visual no-op, the *why* lives in hover text, not a chat message.
+
+**Test rows:** `GROUP_31_TESTING_GUIDE.md` §K (K1–K10).
+
+---
+
+## G27.29 · CategoryHubScreen (folded from Group 11, 2026-07-12)
+
+> Source: `GROUP_11_CATEGORY.md` §1. G11 keeps the give/export/display-block/import commands and logic —
+> this section is the browser screen only. Not built yet (medium decision: Screen, not chest).
+
+`/cb blockscat <name>` opens `CategoryHubScreen`. `/cb blocks` opens the same screen's category list first
+— clicking a category opens the browser for it.
+- Each row = one block in the category; row icon = the block's texture (or its display block icon if set).
+- Click a row → sub-menu: Give, Edit (opens block editor), Remove from category.
+- Top: category name, block count, "Give All" / "Export" / "Share" controls.
+- Icon slot accepts a display-block item (`/cb givedisplayblock <id>`) to set the category's visual icon.
+
+**Test rows:** `GROUP_11_TESTING_GUIDE.md` (add when built).
+
+---
+
+## G27.30 · Export Dashboard + Marketplace Screens (folded from Group 12, 2026-07-12)
+
+> Source: `GROUP_12_EXPORT_MARKETPLACE.md` §1/§5. G12 keeps the export formats, HTTP download routes,
+> Blueprint items, import-by-code, and storage logic — these sections are the two screens only. Both
+> target Screen medium, currently the Export Dashboard is still a chest GUI in code; Marketplace not built.
+
+**Export Dashboard** (`/cb export`):
+- **Top row, bulk actions:** Export All (ZIP) · Export Category (opens category selector) · Cloud Share
+  (routes to block picker, uploads one block to the Cloud Vault).
+- **Middle, block list:** every registered block gets a row/tile; click → Single Block Export sub-menu.
+- **Single Block Export sub-menu:** Download PNG / JSON / CSV / NBT · Export Full Block (ZIP) · Generate
+  Blueprint Item · Share Short-Code (uploads to vault, chat share code).
+
+**Marketplace** (`/cb market`, alias `/cb marketplace`):
+- Fetches listings from the cloud vault worker.
+- Each row/tile = one shared block from any player; hover shows id, name, uploader, texture preview.
+- Click → "Import this block" (creates locally if no id conflict).
+- Filter by category, color, or uploader name.
+
+**Test rows:** `GROUP_12_TESTING_GUIDE.md` (add when built).
+
+---
+
+## G27.31 · Diagnostics Screen (folded from Group 04 §C, 2026-07-15)
+
+> Source: `GROUP_04_CHAT.md` §C / TG4 bug **C1**, closed there and moved here whole. **Group 16 keeps
+> `IncidentRecorder`** — it records exactly as it does today, and `/cb incidents` still exists. Group 27 owns
+> the *screen* and nothing else.
+
+**The bug this exists to kill (C1):** clicking `⊙ Details` on an error line opens a chest GUI that shows
+**every incident ever recorded**, not the one you clicked, and spams chat on the way. Overwhelming and useless.
+It was never a chat bug — it was a missing screen, which is why patching the dying chest code was refused.
+
+**Entry point:** the `⊙ Details` chip on an `incidentError` line (`Chat.incidentError`, which already carries the
+short code as pasteable text). `⊙` means **Details, and only Details** — the `⊙ View` chip that used to share
+the glyph was deleted on 2026-07-15.
+
+**Detail view (default, opened by code):**
+- Shows **exactly one** incident: what broke, when, the command that triggered it, and the stack trace behind a
+  collapsed fold.
+- A copy button puts the whole report on the clipboard for a bug report.
+- **Chat stays quiet.** The chat line keeps its one plain-English sentence + the pasteable code; everything else
+  lives here. The screen IS the output (owner-locked 2026-07-15).
+
+**History tab:** every recorded incident, newest first; each row opens into the detail view above.
+
+**Frame:** the standard red+black CB frame, **tabs on the LEFT** (mod-wide `TABS_ON_LEFT` rule).
+
+**Test rows:** `Group_27_Testing_Guide.md` §R (R1–R4).
+
+---
+
+## G27.32 · Search results Screen (folded from Group 17, 2026-07-12)
+
+> Source: `GROUP_17_REGRESSIONS.md` §5. Currently still a chest GUI in code; target is Screen.
+
+`/cb search <query>` finds blocks by id/name/category:
+- 1 result → opens the block editor directly (no list screen).
+- 2–27 results → Screen, one row/tile per match; click → edit or give.
+- \>27 results → same screen, paginated.
+- 0 results → chat message only, no screen.
+
+**Test rows:** `GROUP_17_TESTING_GUIDE.md` (add when built).
+
+---
+
+## G27.33 · Lore Screen (folded from Group 18, 2026-07-12)
+
+> Source: `GROUP_18_NOTES_STAGING.md` "Menu — single screen" + slice R-S3. G18 keeps the data model
+> (`NoteData`, migration, `BlockNotesManager`), item-hover sync, and commands (`/cb lore`/`/cb note`) — this
+> section is the editor screen only. Replaces the old `NotesMenu` chest GUI and the writable `LoreBook`
+> (both deleted in this rework, per G18).
+
+`/cb lore <id>` (alias `/cb note <id>`) opens a single screen, no tabs:
+- One row per lore line: click = edit (anvil), right-click = delete.
+- "+ Add line" control.
+- Bottom row: **On/Off** toggle (hides/shows all lines on item hover without deleting them) · **Share**
+  (vault export/import) · **Done**.
+- On the item itself: lines show under the name on hover as gray italic text with `&`-colour codes applied,
+  only while On.
+
+**Test rows:** `GROUP_18_TESTING_GUIDE.md` (add when built).
+
+---
+
+## G27.34 · UndoHistoryScreen (folded from Group 28, 2026-07-12)
+
+> Source: `GROUP_28_CREATE_STUDIO.md` §5 "Undo/Redo/History GUI Rework." G28 keeps `UndoDescribe` (shared
+> label/count helper), `UndoStore` (per-player persistent JSON + FIFO cap), and the underlying
+> `UndoManager`/`MutationLog` data — this section is the screen only. Design fully locked 2026-06-25, ready
+> to build. Replaces `UndoMenu` + `HistoryMenu` (both deleted).
+
+Full screen, **3 left-side tabs**: **Undo** (revert stack, most-recent first) · **Redo** (redo stack) ·
+**Audit Log** (full immutable `MutationLog`, read-only, no revert button).
+
+- **Two-level layout** in Undo/Redo tabs: top level = one row per step (type icon — delete=red, create=lime,
+  glow=glowstone, etc. — real block icon where possible, e.g. "Bulk delete — 12 blocks"). Click a bulk row
+  → drill-in sub-view listing every child (block id + before→after change), read-only.
+- **Two actions per step:** "Undo whole step" (all N blocks, no stack-corruption risk) or, from the
+  drill-in, "Remove this one entry" (batch shrinks N→N-1, remaining children stay on the redo stack). No
+  arbitrary partial selection.
+- **Confirm dialog** (reuses the G27 modal pattern): any step affecting more than a configurable threshold
+  (default 20) shows "This will revert N blocks. Proceed?" before firing; smaller reverts fire immediately.
+- Audit tab supports filter by player, type, date.
+
+**Test rows:** `GROUP_28_TESTING_GUIDE.md` (add when built). Verify: correct labels/icons · drill-in works ·
+whole-step undo reverts all N · single-entry remove shrinks to N-1 · confirm dialog appears/cancels
+correctly · history survives restart · caps at configured max with FIFO trim.
+
+---
+
+## G27.22 · Bulk Operations Hub — Blocks List tab (full screen spec, design LOCKED 2026-07-12)
+
+> **Source:** owner MP test 2026-07-11 flagged the old list layout (dead middle space, small icons, wrong rail
+> labels). Redesigned tab-by-tab via interactive mockup (v1→v13, owner-driven 2026-07-12) and locked. This
+> section is the **complete, sole spec** for the Blocks List tab — its whole screen-spec + test intent was
+> pulled out of `GROUP_07_TESTING_GUIDE.md` §A and folded here at owner request. The 10 bulk ops /
+> undo / confirm *logic* stay in `GROUP_07_BULK_OPERATIONS.md`; the **Bulk Actions tab** is locked in §G27.22b
+> below. **There is no third tab** — the old "Extra"/Library-Health tab was cut (owner, 2026-07-12); the Hub
+> is **2 tabs only** (Blocks List + Bulk Actions). This section covers Blocks List only.
+>
+> 🟢 **BUILT to this spec 2026-07-12** (full `./gradlew build` green, **NOT yet in-game**). The earlier grid
+> revamp (right-side drawer, 2-option Select-all, static icons) was superseded and is gone. Retest the checklist
+> below in one batch. Chrome pass/fail is recorded in `GROUP_07_TESTING_GUIDE.md`, not here.
+
+**Shared Hub chrome (both tabs):**
+- Title bar: **"Bulk Operations Hub"** in bold brand-red, no subtitle. Under it: `N blocks` (grey) and a
+  separate green-bordered **`N selected`** pill — the two counts are visually distinct, not one run-on string.
+- **LEFT rail tabs** (`TABS_ON_LEFT` rule): **Blocks List · Bulk Actions** (2 tabs only — no Extra tab). Active
+  tab = red border + dark-red fill; inactive = grey.
+- Top-right: a **small search box**, then the **✖** close.
+- Always-visible **NL command bar** strip below the title bar (`ask: "delete all locked" · …`). The old
+  "press Enter to parse → preview" helper text is **removed**.
+- Footer bar (red top accent): **History** button bottom-LEFT (shows undo depth), then the tab's controls.
+
+**Blocks List tab — layout:**
+- **Full-width responsive icon grid**, tuned so **~30 blocks show at once** (≈6 columns × 5 rows at default
+  size); scroll for the rest.
+- Each tile = a **slowly rotating 3-D isometric cube** preview + the block's **display name** + its **`id:NNNN`**
+  (id in lime) clearly labelled beneath. Rotation is **phase-locked to a shared clock** so ticking/filtering/
+  sorting/scrolling never resets the spin (every tile re-enters mid-rotation, no visible jump).
+- Corner flags: **★ favorite** (gold, top-left) and a **hand-drawn pixel padlock** for locked (bottom-left —
+  NOT a 🔒 glyph in-game; MC font lacks the codepoint, draw with pixel fills per the B11 ruling).
+- **Left-click ticks/targets** a tile: **red border + red-tint fill + ✓ badge** (lime) top-right; ticked tiles
+  get a subtle red pulse. Hover brightens the tile border.
+- **Right-click a tile → info panel on the LEFT** (fills the previously-dead space under the rail): large
+  rotating hero cube, name, `id`, category, live status (selected / locked / favorite), plus **Open editor**
+  and **Target/Untarget** buttons. Right-clicking another tile swaps it in. (Replaces the old right-side
+  slide-in drawer.)
+- **Filter chips** row above the grid: **All · ★ Favorites · 🔒 Locked · Selected** (active chip = red).
+- **Sort ▾** dropdown (top-right of grid): **Name · ID · Newest · Color**.
+- **Draggable scrollbar** on the right (drag the thumb or wheel over the grid) + a **`showing X of N`** counter
+  under the grid.
+
+**Footer controls (Blocks List):**
+- **History** (bottom-left) → opens the History popup (below).
+- **Select ▾** dropdown: **All on screen · All matching search · Locked only · Favorites**.
+- **Clear selection** — greyed/disabled when nothing is selected, lit when active.
+- Right-aligned hint: `left-click targets · right-click info`.
+
+**History popup:**
+- Opens **centered, on top of everything** (z-above grid), listing this session's steps with a "jump back ↩"
+  per row; clicking a step jumps back N at once. Close via its own button.
+- The popup **box is fully opaque**; the backdrop is a **dimmed scrim** (the screen behind stays faintly
+  visible). ⚠️ **Owner override (2026-07-12):** this is a deliberate exception to the mod-wide `OPAQUE_MODALS`
+  rule for *this popup* — owner explicitly wanted the screen visible behind the box. The box occlusion still
+  holds; only the backdrop is translucent.
+
+**Supersedes:** the old Slice-2 "Dir-2" list-row design AND the 2026-07-12 build-green grid (right-drawer,
+2-option Select-all, no left info panel, static icons). Both are moot.
+
+**Test rows:** `GROUP_27_TESTING_GUIDE.md` §T-a (T1–T9) + shared chrome §T-c.
+
+---
+
+## G27.22b · Bulk Operations Hub — Bulk Actions tab (full screen spec, design LOCKED 2026-07-12)
+
+> **Source:** owner-driven mockup iteration (v1→v8, 2026-07-12) after the Blocks List tab (§G27.22) locked.
+> This is the **complete, sole spec** for the second tab. The 10 ops' *logic / routing / undo / confirm*
+> lives in `GROUP_07_BULK_OPERATIONS.md`; this section owns only the **screen** — chrome, layout, feel.
+> Shares the Hub chrome defined in §G27.22 (title bar, left rail tabs, footer). Active tab here = **Bulk Actions**.
+>
+> 🟢 **BUILT to this spec 2026-07-12** (full `./gradlew build` green, **NOT yet in-game**). Building it removed
+> three superseded Bulk-tab features outright: the 3×3 op-picker landing grid, the AND/OR/NOT **filter builder**
+> + "apply to all N" **escalation**, and the per-block **Re-ID box editor** (Re-ID is now one `{n}` pattern
+> template). Selection happens on Blocks List (chips/search) + the NL bar. **Recolor** is net-new (10th op).
+
+**Left rail (below the 2 tabs, under a red `— ACTIONS —` separator):** the op picker, stacked vertically.
+Ten ops, each = pixel icon + label: **Edit · Recolor · Rename · Move · Duplicate · Re-ID · Lock · Favorite ·
+Export · Delete**. Active op = red border + dark-red fill; **Delete** always rendered in muted red text as a
+danger cue. (Icons shown as emoji in the mockup are **hand-drawn pixel sprites in-game** — MC font lacks these
+codepoints, same B11 padlock ruling.)
+
+**Op header strip (top, right of rail):** the active op's icon + name + a one-line description, then that op's
+**controls inline**:
+- **Edit** → setting dropdown (`glow ▾`) + slider + live value + quick-preset chips (`glow 8` / `glow 15` / `off`).
+- **Recolor** → hue slider + result swatch.
+- **Rename** → mode dropdown (`prefix ▾`) + text field + live example (`→ shiny_oak`).
+- **Move** → category text field.
+- **Re-ID** → pattern field + `Fill all` + live example (`→ planet_1…`).
+- **Duplicate** → copies-per-block count.
+- **Export** → format dropdown (`.zip resource pack ▾`).
+- **Delete** → inline red warning (`⚠ removes the blocks and their placed copies — one Undo restores`).
+
+**Affects line** (under the header): `affects N of 12 · old → new · 1 locked skipped` — N updates live.
+
+**Center list — one row per targeted block:**
+- **Include checkbox** (`☑`/`☐`) far-left. Un-ticking **dims the row** (grey left-stripe, ~50% opacity) and
+  **drops it from N** and from Execute; ticking restores it. Ticked = **red left-accent stripe**.
+- **OLD** rotating 3-D cube in a **fixed-width cell** (spin corners never touch text), then a text column:
+  block **name + number** on top, **old value** (e.g. `glow 0`) beneath — both single-line with ellipsis.
+- A **red `→`** separator.
+- **NEW** rotating cube (dimmed for Delete) in its own fixed cell, then: **new value in lime** (e.g. `glow 8`)
+  with an `after` sublabel — or `will skip`/`locked` (amber) for the locked row, or `removed`/`gone` for Delete.
+- **Locked row**: greyed, pixel **padlock**, auto-excluded from every op **except Lock**, shows `will skip`.
+- All cubes **phase-locked to the shared clock** — switching op / ticking / scrolling never resets the spin.
+- **Right-click is disabled** on this tab (no context menu; that gesture belongs to Blocks List only).
+
+**Right RESULT-PREVIEW panel** (occupies the strip where per-row category tags used to be — tags were removed
+as noise): header `🔎 RESULT PREVIEW`, the first still-affected **sample block** name, a **before → after** pair
+of larger rotating cubes with `before`/`after` captions, the `old value → new value` line, then a **SUMMARY**
+block (`✓ change N` / `🔒 skip 1` / `of 12 selected`) with a **green proportion bar**. Updates live on op switch
+and on any checkbox toggle.
+
+**Footer (shared bar):** **History N** bottom-left (undo depth) → opens the History popup; **↶ Undo** / **↷ Redo**;
+**⚡ Execute on N →** bottom-right (N = affected count).
+
+**Execute flow:** Execute → an **opaque confirm dialog** (`Op N blocks?` + body: *"Applies Op to N selected
+blocks. One Undo reverts. 1 locked block skipped."* + **Confirm** / **Cancel**). Confirm → a **red sweep bar**
+wipes left→right across the list while a `applying c/N` counter counts up, ending on `✓ Op applied on N`.
+(The confirm dialog obeys `OPAQUE_MODALS` — box is solid; unlike the §G27.22 History popup it gets **no** owner
+override, so its backdrop must fully occlude.)
+
+**Test rows:** `GROUP_27_TESTING_GUIDE.md` §T-b (T10–T18) + shared chrome §T-c. Bulk-op *behaviour* → `GROUP_07_TESTING_GUIDE.md` §B.
+
+**Supersedes:** all earlier Bulk-tab list-row concepts (per-row category tags, the mid-row dead gap, the static
+icons), **and** — as of the 2026-07-12 build — the Dir-2 top toolbar, the AND/OR/NOT filter builder, the "apply
+to all N" escalation, the 3×3 op-picker landing grid, and the per-block Re-ID box editor. Bulk-op *behaviour*
+remains governed by `GROUP_07_BULK_OPERATIONS.md`.
+
+---
+
+## G27.23 · UpdateScreen (folded from Group 20 §CS3, 2026-07-12)
+
+> Source: `GROUP_20_EXTERNAL_INTEGRATIONS.md` §CS3 (Auto-Update: Version Sync + Jar Download). G20 owns the
+> whole update flow (version handshake, SHA-256 verify, jar swap, `ResourcePackServer` endpoints) — this
+> section is the screen only.
+
+Shown on version mismatch at join (client older than server, per AU2/AU9): progress bar while the jar
+downloads, then **[Restart Now]** (`MinecraftClient.getInstance().scheduleStop()`, clean quit) / **[Later]**
+(download stays staged, picked up next launch). No changelog text (AU8 parked). Newer-client-on-older-server
+case shows a plain warning toast instead of this screen (AU9) — not a screen concern.
+
+**Test rows:** `GROUP_20_TESTING_GUIDE.md` §K (K1–K4, added when §CS3 is built).
+
+---
+
+## G27.24 · MacroListScreen (folded from Group 24 §5, 2026-07-12)
+
+> Source: `GROUP_24_MACROS.md` §5. G24 owns macro record/add/stop/play/list/delete/cancel *logic* — this
+> section is the screen only. Screen medium confirmed locked mod-wide 2026-07-10: stays Screen-based, never
+> converts to a chest GUI.
+
+`/cb gui macros` opens `MacroListScreen`:
+- Each row = one saved macro.
+- Click a row → sub-menu: Play, Edit (re-record / edit steps), Delete, Info.
+- "Record New" control at top.
+- "Enable/Disable" toggle control (drives `/cb macro on`/`off`, G24 §2).
+
+**Test rows:** `GROUP_24_TESTING_GUIDE.md` §C.
+
+---
+
+## G27.25 · RecordOverlayStudioScreen chrome (folded from Group 29, 2026-07-12)
+
+> Source: `GROUP_29_CREATOR_TOOLS.md` (Build B design lock). G29 owns OBS-capture-invisibility (native
+> `WDA_EXCLUDEFROMCAPTURE` window, not a Minecraft HUD layer), push-to-everyone networking/permissions, and
+> layout JSON storage — none of that is screen chrome, stays there. This section is the Studio editor's
+> screen shape only.
+
+**Layout (Lego HUD Builder style, not a settings page):**
+- **Left rail:** layers list for all custom marks + built-in guides — visibility toggles, lock icons,
+  duplicate, delete, max-count feedback.
+- **Center canvas:** live 16:9 preview/editor — marks drag, resize, snap, reshape, select.
+- **Right inspector:** controls for the selected mark — position, size, color, opacity, fill, line style,
+  line thickness, label, visibility, lock, layer order, numeric values.
+- **Bottom strip:** global toggles — overlay on/off, OBS mode, borderless, fixed crop, moving/Smart-Reframe
+  helper, snapping, guide visibility, import/export, save/load.
+- Editor handles/labels/coordinates/snap lines/help UI show in edit mode only — never in recording mode
+  (recording mode is the native capture-excluded overlay, a G29 concern).
+
+**Custom marks (up to 10/layout):** rectangle/box, circle/ellipse, line, arrow, crosshair, freehand. Each:
+name/label + visibility, color, outline opacity, fill on/off + opacity, stroke width, solid/dashed/dotted,
+rounded/straight corners, lock/unlock, duplicate, delete, layer order, visible-in edit/record/both. Mouse
+drag **and** numeric X/Y/W/H both required. Coordinates save normalized (resolution-independent).
+
+**Snapping:** global on/off toggle. Snaps to screen center, mid-lines, 9:16 crop edges, safe margins, thirds
+grid, custom grid, other-mark edges/centers, equal-size/spacing hints. Modifier key temporarily disables
+while dragging. Arrow keys nudge (Shift/Ctrl = bigger/smaller steps). Snap guides show while editing only.
+
+**Built-in guides (all toggleable, none forced):** 9:16 center crop, fixed center crop, moving/Smart-Reframe
+zone, rule of thirds, center lines, caption safe zone, subject safe zone, platform danger zones (post-polish),
+outside-of-short dimming (off by default, 0–100% opacity when on).
+
+**Test rows:** `GROUP_29_TESTING_GUIDE.md` §B slice 1 (B6–B13 are Studio-editor rows).
+
+---
+
+## G27.26 · GuessSettingsScreen — shared slider/preset chrome (folded from Group 30, 2026-07-12)
+
+> Source: `GROUP_30_GUESS_MODE.md` §3 "Screen-level controls locked 2026-07-07." G30 owns the guess-mode
+> game logic (round state, buzzers, showcase mechanics, the mega-screen's tab lineup and per-tab content) —
+> this section is the reusable slider/preset/dummy-preview chrome, generic enough to reuse on any future
+> mega-screen with live-tunable sliders, not guess-specific.
+
+- **Number entry per slider:** click the value label → editable, decimals allowed. Scroll-wheel nudges;
+  arrow keys nudge ±1° while focused. Typed out-of-range values clamp silently (no error flash).
+  (`CbGradSlider` opt-in inline editor — `decimals` + `beginEdit/commitEdit/charTyped/keyPressed/nudge`;
+  other screens that don't opt in are unaffected.)
+- **Reset:** right-click one slider resets just that axis; one full **Reset** button resets the whole tab.
+  Reset returns to the last **"Save as Default"** value if one was ever saved, not the shipped original.
+- **"Save as Default":** overwrites the Reset baseline. Confirm dialog required (replaces the fallback).
+- **Presets dropdown** (not always-visible cards): built-ins first, divider, then custom saved presets.
+  Applying a preset over unsaved tweaks confirms first ("discard current changes?"). Custom slots capped at
+  3 — a 4th save is blocked, must delete one first (with its own confirm). Custom presets edit in place
+  (load → tweak → "Update" on the same slot, no forced save-as-new-copy). Naming uses an in-screen text
+  field, not an anvil-rename screen.
+- **Live 3D dummy:** drag orbits the camera, scroll zooms. Wears the viewing OP's own skin, holds the real
+  item. Renders over the world behind the GUI (vanilla inventory-preview style), not a studio backdrop.
+- **Unsaved mid-drag close:** Esc/Done while a slider is mid-motion shows a "Discard / Keep editing" popup
+  before closing — never discards silently.
+- **Sound:** UI click/tick on slider drag and button presses.
+- **Theme:** red/black/lime, matching the G27 brand — no separate look.
+- **Concurrency:** no lock — two admins can have the screen open at once, last Save/Done wins, no
+  "someone else is editing" message.
+- **Greyed placeholder tabs** (slice not built yet): visible but greyed, hover/click shows a "coming soon"
+  tooltip rather than doing nothing.
+
+**Test rows:** `GROUP_30_TESTING_GUIDE.md` §N/§Q (screen-chrome rows); tab-specific content stays under
+each tab's own TG section.
+
+---
+
+## G27.27 · Undo/Redo Browser & History Log (Migrated from Group 02)
+
+> **Source:** `GROUP_02_CHEST_GUI.md` (Chest GUI extinction plan, 2026-07-12). All remaining chest GUIs have been permanently deprecated. These two interfaces are now native Screens.
+
+### Undo/Redo Browser
+- `/cb undogui` and `/cb redogui` open Screen-based lists of the player's undo/redo stacks.
+- **Layout:** *(Needs Discussion)* Will be either a standard vertical scrolling list (like the Block List) or a visual timeline slider for scrubbing through edits. To be finalized.
+
+### History Log Screen
+- `/cb history` opens a Screen-based mutation log (who edited what, when).
+- **Advanced Filtering:** Dropdowns to filter entries by Player, Date, and Block type.
+- **Rollback Button:** Server OPs can click on any entry and hit a dedicated **[Rollback]** button to instantly revert that specific edit directly from the UI, without typing `/cb undo`.
+
+---
+
+## G27.32 · The "Ultimate Premium" UI Features (Transferred 2026-07-12)
+
+> **Source:** Intense 2026-07-12 Brainstorming Session. All features completely transferred out of Group 04 into Group 27.
+
+### 1. The Physics Toast Stack
+- Routine notifications now slide in from the top-right corner of the screen like modern macOS toasts, featuring glassmorphism backgrounds.
+- High-priority system alerts (like errors) are centered cinematically above the hotbar.
+- **Overload Shader & Audio:** If 15+ events fire at once, the system aggregates them into an "OVERLOAD" mega-toast, a subtle red vignette shader borders the screen for 1 second, and a single, unique bass-boosted "OVERLOAD" sound effect plays to prevent ear-destroying audio spam.
+- **Interactive Physics:** Toasts fall off the screen with gravity when they expire. Players can physically flick their mouse cursor at the toasts to "swat" them off the screen prematurely.
+
+### 2. The 3D Tome Wiki (The New `/cb help`)
+- Chat help is dead. `/cb help` opens a hyper-realistic 3D "Tome" in the middle of the screen.
+- Players drag their mouse to physically flip 3D pages.
+- **Instant Search:** Typing highlights text and instantly filters topics.
+- **Embedded Playgrounds:** Reading about a block property (like Glow) features a fully functional slider and a spinning 3D preview block injected directly into the paragraph text so players can test it live.
+- **Looping GIFs:** Every tool and feature embeds a looping mini-GIF demonstrating its use.
+
+### 3. Google-Docs Admin Editor
+- Server Admins can write their own custom manual pages into the Wiki.
+- Features **Live Multiplayer Editing**: Multiple admins can edit the same page simultaneously, seeing each other's glowing nametag cursors typing live.
+- Admins can drag-and-drop images directly from their Windows Desktop onto the Minecraft game window to embed them into the page.
+
+### 4. Cinematic Welcome Video (Group 23 Cross-Link)
+- When a new player joins the server for the very first time, a 10-second unskippable cinematic hype video plays.
+- **Invincibility:** To prevent cheap deaths, the player is 100% invincible to all damage types while the unskippable video is playing.
+- At the end of the video, a giant glowing "Claim Starter Kit" button guarantees they interact before closing it.
+
+### 5. Rethought Error Codes
+- Since chat buttons are nuked, major errors simply print a short 3-character code (e.g., `E-45`) in the read-only chat.
+- Admins can open the Group 16 Diagnostics GUI and simply type `E-45` into a search bar to instantly jump to the full Java exception stack trace in the Incidents Log.

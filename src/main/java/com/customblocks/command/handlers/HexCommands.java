@@ -18,6 +18,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.ColorLibrary;
@@ -79,6 +80,19 @@ public final class HexCommands {
         return false;
     }
 
+    /** G06-C: push the four live variant hexes to every online client so the Square/Triangle tool
+     *  names (rendered client-side from CustomBlocksConfig) update at once — no rejoin needed. */
+    private static void broadcastHexes(ServerCommandSource source) {
+        net.minecraft.server.MinecraftServer s = source.getServer();
+        if (s == null) return;
+        var payload = new com.customblocks.network.payloads.ColorHexSyncPayload(
+                CustomBlocksConfig.triangleRedHex, CustomBlocksConfig.triangleYellowHex,
+                CustomBlocksConfig.triangleGreenHex, CustomBlocksConfig.triangleBlackHex);
+        for (ServerPlayerEntity p : s.getPlayerManager().getPlayerList()) {
+            net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.send(p, payload);
+        }
+    }
+
     /** /cb customcolor — open the Color Studio chest GUI (players only). */
     private static int openStudio(CommandContext<ServerCommandSource> ctx) {
         if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity p)) {
@@ -106,16 +120,16 @@ public final class HexCommands {
         CustomColorToolItem.givePair(p, Integer.parseInt(hex.substring(1), 16));
         String name = ColorLibrary.nameForHex(hex);
         Chat.success(ctx.getSource(), "Gave you the " + (name != null ? name : hex)
-                + " Square + Triangle §7(" + hex + ")§a.");
+                + " Square + Triangle " + CbFmt.DIM + "(" + hex + ")" + CbFmt.OK + ".");
         return 1;
     }
 
     private static int hexStatus(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Variant colours: §cred " + CustomBlocksConfig.triangleRedHex
-                + " §eyellow " + CustomBlocksConfig.triangleYellowHex
-                + " §agreen " + CustomBlocksConfig.triangleGreenHex
-                + " §8black " + CustomBlocksConfig.triangleBlackHex
-                + " §8(/cb config hex <colour> <#RRGGBB>)");
+        Chat.info(ctx.getSource(), "Variant colours: " + CbFmt.BAD + "red " + CustomBlocksConfig.triangleRedHex
+                + " " + CbFmt.VALUE + "yellow " + CustomBlocksConfig.triangleYellowHex
+                + " " + CbFmt.OK + "green " + CustomBlocksConfig.triangleGreenHex
+                + " " + CbFmt.FAINT + "black " + CustomBlocksConfig.triangleBlackHex
+                + " " + CbFmt.FAINT + "(/cb config hex <colour> <#RRGGBB>)");
         return 1;
     }
 
@@ -125,8 +139,8 @@ public final class HexCommands {
             Chat.error(ctx.getSource(), "Pick a colour: red, yellow, green, or black.");
             return 0;
         }
-        Chat.info(ctx.getSource(), ColorVariantService.capitalize(key) + ": §f"
-                + ColorVariantService.hexFor(key) + " §8(/cb config hex " + key + " <#RRGGBB>)");
+        Chat.info(ctx.getSource(), ColorVariantService.capitalize(key) + ": " + CbFmt.BODY
+                + ColorVariantService.hexFor(key) + " " + CbFmt.FAINT + "(/cb config hex " + key + " <#RRGGBB>)");
         return 1;
     }
 
@@ -153,9 +167,12 @@ public final class HexCommands {
             case "black"  -> CustomBlocksConfig.triangleBlackHex = norm;
         }
         CustomBlocksConfig.save();
-        Chat.success(ctx.getSource(), ColorVariantService.capitalize(key) + " §f" + old + " §a→ §f"
-                + norm + "§a. New variants + item art use it now.");
+        broadcastHexes(ctx.getSource()); // G06-C: refresh the client-rendered tool-name hexes live
+        Chat.success(ctx.getSource(), ColorVariantService.capitalize(key) + " " + CbFmt.BODY + old + " " + CbFmt.OK + "→ " + CbFmt.BODY
+                + norm + CbFmt.OK + ". New variants + item art use it now.");
         int n = ColorVariantService.variantCount(key);
+        com.customblocks.CustomBlocksMod.LOGGER.info("[CustomBlocks] G06-C setHex: {} {} -> {} | existing _{} blocks={} | path={}",
+                key, old, norm, key, n, (n > 0 ? "confirm-GUI" : "direct-updatePack"));
         if (n > 0 && ctx.getSource().getEntity() instanceof ServerPlayerEntity p) {
             // The pack rebuild WAITS for this confirm GUI: Yes → the batch's single rebuild
             // covers the item re-tint too; No/close → the menu's onClose rebuilds (§7 —
@@ -182,6 +199,8 @@ public final class HexCommands {
             Chat.error(ctx.getSource(), "The old colour must be #RRGGBB (it's what gets replaced).");
             return 0;
         }
+        com.customblocks.CustomBlocksMod.LOGGER.info("[CustomBlocks] G06-C /cb recolorvariants INVOKED: colour={} oldRaw={} → oldHex={}",
+                colourRaw, oldRaw, oldHex);
         if (!(ctx.getSource().getEntity() instanceof ServerPlayerEntity p)) {
             Chat.error(ctx.getSource(), "Players only — progress is reported in chat.");
             return 0;

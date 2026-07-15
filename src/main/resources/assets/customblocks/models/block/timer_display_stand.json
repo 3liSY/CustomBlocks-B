@@ -1,0 +1,120 @@
+{
+  "__comment": "Group 31 item 1 — the BuzzerGame timer stand geometry (base foot + red rim + leg + tilted screen). Rendered in-world by an ItemDisplay entity (the placed block itself is invisible) and used as the inventory icon. Screen faces +Z by default; the ItemDisplay's yaw turns it to the placed facing. Vanilla textures only (no custom PNGs).",
+  "textures": {
+    "body": "minecraft:block/polished_deepslate",
+    "trim": "minecraft:block/red_concrete",
+    "accent": "minecraft:block/lime_concrete",
+    "screen": "minecraft:block/black_concrete",
+    "particle": "minecraft:block/polished_deepslate"
+  },
+  "elements": [
+    {
+      "name": "base_foot",
+      "from": [2, 0, 3],
+      "to": [14, 2, 13],
+      "faces": {
+        "down":  { "texture": "#body" },
+        "up":    { "texture": "#body" },
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west":  { "texture": "#body" },
+        "east":  { "texture": "#body" }
+      }
+    },
+    {
+      "name": "base_rim",
+      "from": [2, 2, 3],
+      "to": [14, 2.5, 13],
+      "faces": {
+        "up":    { "texture": "#trim" },
+        "north": { "texture": "#trim" },
+        "south": { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "leg",
+      "from": [6.5, 2.5, 7],
+      "to": [9.5, 9, 9.5],
+      "faces": {
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west":  { "texture": "#body" },
+        "east":  { "texture": "#body" }
+      }
+    },
+    {
+      "name": "bezel",
+      "from": [2, 8, 7.4],
+      "to": [14, 15.5, 9.1],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "down":  { "texture": "#trim" },
+        "up":    { "texture": "#trim" },
+        "north": { "texture": "#trim" },
+        "south": { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "screen_front",
+      "from": [3, 8.7, 9.1],
+      "to": [13, 14.8, 9.32],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "south": { "texture": "#screen" },
+        "north": { "texture": "#screen" },
+        "up":    { "texture": "#trim" },
+        "down":  { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "screen_back",
+      "from": [3, 8.7, 7.18],
+      "to": [13, 14.8, 7.4],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "north": { "texture": "#screen" },
+        "south": { "texture": "#screen" },
+        "up":    { "texture": "#trim" },
+        "down":  { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "top_accent",
+      "from": [2, 15.5, 7.4],
+      "to": [14, 16, 9.1],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "up":    { "texture": "#accent" },
+        "north": { "texture": "#accent" },
+        "south": { "texture": "#accent" },
+        "west":  { "texture": "#accent" },
+        "east":  { "texture": "#accent" }
+      }
+    }
+  ],
+  "display": {
+    "gui": {
+      "rotation": [30, 225, 0],
+      "translation": [0, -1, 0],
+      "scale": [0.62, 0.62, 0.62]
+    },
+    "ground": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 3, 0],
+      "scale": [0.35, 0.35, 0.35]
+    },
+    "fixed": {
+      "rotation": [0, 0, 0],
+      "translation": [0, 0, 0],
+      "scale": [1, 1, 1]
+    }
+  }
+}

@@ -11,7 +11,6 @@ package com.customblocks.command.handlers;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.chest.GuiRouter;
-import com.customblocks.gui.chest.BulkSession;
 import com.customblocks.gui.chest.Nav;
 import com.customblocks.gui.chest.Nav.Dest;
 import com.customblocks.gui.chest.Nav.MenuKey;
@@ -60,8 +59,9 @@ public final class ChestGuiCommands {
                         .executes(ctx -> openFor(ctx, Dest.FACE_EDITOR, StringArgumentType.getString(ctx, "id")))));
 
         // Direct menu entry points.
-        root.then(CommandManager.literal("listgui").executes(open(Dest.BLOCK_LIST)));
-        root.then(CommandManager.literal("blockslist").executes(open(Dest.BLOCK_LIST))); // clear alias for listgui
+        // /cb listgui and /cb blockslist were deleted with the chest BlockListMenu (§G07-3): /cb list opens
+        // the Bulk Workbench's Browse tab for a player now, so a second door to a menu that no longer exists
+        // would only be a broken command.
         root.then(CommandManager.literal("undogui").executes(open(Dest.UNDO)));
         root.then(CommandManager.literal("redogui").executes(open(Dest.REDO)));
         root.then(CommandManager.literal("history").executes(open(Dest.HISTORY)));
@@ -82,13 +82,6 @@ public final class ChestGuiCommands {
             if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
                 Chat.error(src, "Open this menu as a player");
                 return 0;
-            }
-            // A plain /cb listgui is normal browsing — clear any abandoned pick-mode flags so the
-            // confirm tile isn't stuck on "use these for bulk/export" from an earlier, closed flow.
-            if (dest == Dest.BLOCK_LIST) {
-                BulkSession s = BulkSession.get(p.getUuid());
-                s.listPickForBulk = false;
-                s.listPickForExport = false;
             }
             GuiRouter.openFresh(p, MenuKey.of(dest));
             return 1;

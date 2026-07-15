@@ -60,10 +60,15 @@ public final class SlotManager {
                     // world behind it (the G08 "x-ray" bug). Also lets cut-out (transparent-background)
                     // textures show through correctly.
                     .nonOpaque()
+                    // dynamicBounds: shape is normally CACHED at registration (="full") so SlotBlock.get*Shape
+                    // was never re-read → pillar/thin/stairs pushed the player (G08). Read shape LIVE instead.
+                    .dynamicBounds()
                     // Luminance is baked per state at construction, so read the LIGHT
                     // property — each of the 16 states bakes to its own correct value.
                     .luminance(state -> state.get(SlotBlock.LIGHT));
-            SlotBlock block = new SlotBlock(i, settings);
+            // Every index is a plain SlotBlock — G13-25 data-only design: an Arabic letter/number is
+            // a normal slot flagged by ArabicMeta on its SlotData, never a subclass (SlotPools header).
+            SlotBlock block = SlotPools.blockFor(i, settings);
             Identifier id = Identifier.of(CustomBlocksMod.MOD_ID, "slot_" + i);
             SlotBlock.SlotItem item = new SlotBlock.SlotItem(block, new Item.Settings());
             Registry.register(Registries.BLOCK, id, block);
@@ -93,10 +98,23 @@ public final class SlotManager {
         return withCat;
     }
 
+    /** G13-25: as {@link #createNoSave}, but stamping the slot's ArabicMeta so it is born a
+     *  letter/number. Caller (ArabicSlotBootstrap) calls {@link #saveAll()} once after the batch. */
+    public static synchronized SlotData createArabicNoSave(String customId, String displayName,
+                                                           String category, ArabicMeta arabic) {
+        SlotData d = createNoSave(customId, displayName, category);
+        if (d == null) return null;
+        SlotData withMeta = d.withArabic(arabic);
+        BY_ID.put(withMeta.customId(), withMeta);
+        BY_SLOT.put(withMeta.slotKey(), withMeta);
+        return withMeta;
+    }
+
     private static SlotData create(String customId, String displayName, boolean persist) {
         if (customId == null || customId.isBlank()) return null;
         if (BY_ID.containsKey(customId)) return null;
-        int idx = nextFreeSlotIndex();
+        // Allocation policy lives in SlotPools (full-pool scan; G06-2/G06-3 reuse rules).
+        int idx = SlotPools.nextFreeNormalIndex(maxSlots, i -> BY_SLOT.containsKey("slot_" + i));
         if (idx < 0) return null;
         TextureStore.delete(idx); // clear any stale texture from a previously freed slot
         String name = (displayName == null || displayName.isBlank()) ? customId : displayName;
@@ -117,6 +135,12 @@ public final class SlotManager {
             // Snapshot into the trash first, while the texture/source still exist on disk.
             TrashManager.capture(d, TextureStore.load(d.index()), TextureStore.loadSource(d.index()));
             TextureStore.delete(d.index());
+            // Permanently retire the freed index (G06-2 / G06-3 / G05-2, "improved Option 2" 2026-06-26).
+            // A placed copy of this block still wears slot_N in the world; DeletedPlacementSweeper swaps
+            // every such copy to the shared (Removed) block, and nextFreeSlotIndex NEVER reuses the index,
+            // so a leftover can never inherit an old or a future block's identity. NOT RetiredSlots — that
+            // air-cleans placements (Arabic); a deleted block's placement becomes a visible (Removed) block.
+            DeletedSlots.add(d.index());
             saveAll();
         }
         return d;
@@ -124,10 +148,10 @@ public final class SlotManager {
 
     /** Change a block's display name (immutably). Returns the new data, or null. */
     public static synchronized SlotData rename(String customId, String newDisplayName) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withDisplayName(NameCase.titleCase(newDisplayName));
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         TextureNameMirror.syncSlot(updated.index()); // Part C — name changed, no byte write: re-mirror (flag-gated)
@@ -156,21 +180,22 @@ public final class SlotManager {
         BY_ID.put(newId, updated);
         BY_SLOT.put(updated.slotKey(), updated); // same slot key, new value (drops the old-id snapshot)
         // Migrate every id-keyed reference so none points at the now-gone old id.
-        LockManager.renameId(oldId, newId);
-        FavoritesManager.renameId(oldId, newId);
+        LockManager.renameId(oldId, newId); FavoritesManager.renameId(oldId, newId);
         BlockNotesManager.renameId(oldId, newId);
         DraftManager.renameId(oldId, newId);
         BlockToleranceStore.renameId(oldId, newId);
+        GuessModeStore.renameId(oldId, newId); // Group 30 — keep a disguise reference valid across reid
+        CategoryDisplayBlockManager.renameId(oldId, newId); // G07 dangling-ref audit — a category's display block must follow its id
         saveAll();
         return updated;
     }
 
     /** Set a block's light emission (0..15, clamped). Returns the new data, or null. */
     public static synchronized SlotData setGlow(String customId, int level) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withGlow(level);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -178,10 +203,10 @@ public final class SlotManager {
 
     /** Set a block's break hardness (negative = unbreakable, 0 = instant). Returns new data or null. */
     public static synchronized SlotData setHardness(String customId, float hardness) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withHardness(hardness);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -189,10 +214,10 @@ public final class SlotManager {
 
     /** Set a block's break/step/place sound group (see SlotBlock.getSoundGroup). Returns new data or null. */
     public static synchronized SlotData setSoundType(String customId, String soundType) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withSoundType(soundType);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -200,10 +225,10 @@ public final class SlotManager {
 
     /** Toggle a block's collision (true = passable/walk-through). Returns new data or null. */
     public static synchronized SlotData setNoCollision(String customId, boolean noCollision) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withNoCollision(noCollision);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -211,10 +236,10 @@ public final class SlotManager {
 
     /** Assign a block to a category ("" = uncategorized). Returns new data or null. */
     public static synchronized SlotData setCategory(String customId, String category) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withCategory(category);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -223,10 +248,10 @@ public final class SlotManager {
     /** Set a block's shape (see BlockShapes; null/blank → full). Returns new data or null.
      *  The caller rebuilds the pack — the model changes, unlike glow/sound which are live. */
     public static synchronized SlotData setShape(String customId, String shape) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; /cb setshape works whatever case you type (G08/G25 fix)
         if (d == null) return null;
         SlotData updated = d.withShape(shape);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -235,10 +260,10 @@ public final class SlotManager {
     /** Set a block's animation state (AnimData.NONE = make it static again). Returns new data or null.
      *  The caller rebuilds the pack — the .mcmeta + model change, like setShape. */
     public static synchronized SlotData setAnim(String customId, AnimData anim) {
-        SlotData d = BY_ID.get(customId);
+        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
         if (d == null) return null;
         SlotData updated = d.withAnim(anim);
-        BY_ID.put(customId, updated);
+        BY_ID.put(d.customId(), updated);
         BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
@@ -252,7 +277,7 @@ public final class SlotManager {
      * the new id is taken/blank, or no slot is free. Caller rebuilds the pack to show the texture.
      */
     public static synchronized SlotData dupe(String customId, String newId) {
-        SlotData src = BY_ID.get(customId);
+        SlotData src = getById(customId); // case-insensitive source lookup (G25-family fix)
         if (src == null || newId == null || newId.isBlank() || BY_ID.containsKey(newId)) return null;
         SlotData created = create(newId, src.displayName());
         if (created == null) return null; // no free slot
@@ -280,18 +305,22 @@ public final class SlotManager {
         if (d == null) return;
         BY_ID.put(d.customId(), d);
         BY_SLOT.put(d.slotKey(), d);
+        // Undo of a delete brings this block back at its old index → un-retire it so nextFreeSlotIndex
+        // can use it again and the placement sweeper stops turning its (new) copies into (Removed).
+        // Copies already swapped to (Removed) before the undo do not return (positions aren't tracked).
+        DeletedSlots.remove(d.index());
         saveAll();
         TextureNameMirror.syncSlot(d.index()); // Part C — undo/redo may restore a different name (flag-gated)
     }
 
-    /** Remove a block (slot data + texture) without recording undo (undo/redo internal). */
-    public static synchronized void removeSilently(String customId) {
+    public static synchronized void removeSilently(String customId) { removeSilently(customId, false); }
+    public static synchronized void removeSilentlyKeepTexture(String customId) { removeSilently(customId, true); } // keeps PNG/source for undo-of-create → /cb redo
+    private static synchronized void removeSilently(String customId, boolean keepTexture) {
         SlotData d = BY_ID.remove(customId);
-        if (d != null) {
-            BY_SLOT.remove(d.slotKey());
-            TextureStore.delete(d.index());
-            saveAll();
-        }
+        if (d == null) return;
+        BY_SLOT.remove(d.slotKey());
+        if (!keepTexture) TextureStore.delete(d.index());
+        saveAll();
     }
 
     /**
@@ -314,26 +343,6 @@ public final class SlotManager {
             saveAll();
         }
         return freed;
-    }
-
-    private static int nextFreeSlotIndex() {
-        int retiredFallback = -1;
-        for (int i = 0; i < maxSlots; i++) {
-            if (BY_SLOT.containsKey("slot_" + i)) continue;
-            // Build B: don't reuse a retired (former static-letter) index while fresh slots remain --
-            // a placed old copy might still be uncleaned in an unloaded chunk. Only reuse one as a
-            // last resort, and drop it from the retired set so its air-clean never deletes the new block.
-            if (RetiredSlots.contains(i)) {
-                if (retiredFallback < 0) retiredFallback = i;
-                continue;
-            }
-            return i;
-        }
-        if (retiredFallback >= 0) {
-            RetiredSlots.remove(retiredFallback);
-            return retiredFallback;
-        }
-        return -1;
     }
 
     // ── Persistence (routed through SlotDataStore — design rule #4) ───────────

@@ -12,6 +12,8 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.Chat;
+
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 

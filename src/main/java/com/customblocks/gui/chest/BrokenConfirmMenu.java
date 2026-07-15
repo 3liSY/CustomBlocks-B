@@ -1,17 +1,25 @@
 /**
  * BrokenConfirmMenu.java — the Yes/No confirm for bulk-deleting ticked broken blocks (Group 09, Slice 5).
  *
- * MenuKey arg "deletesel" → "Delete N broken blocks?" The deleted blocks go through the tested
- * SlotManager.delete, so each is captured into the trash and can still be restored. Yes deletes them all,
+ * MenuKey arg "deletesel" → "Delete N broken blocks?" The deleted blocks go through the shared
+ * {@link DeletionService} rail (slice 3) — the SAME path as /cb delete — so each is captured into
+ * the trash, every placed copy becomes a "Deleted: <name>" marker (no purple blocks), the HUD
+ * clears live for everyone, and the whole batch is undoable with /cb undo. Yes deletes them all,
  * clears the selection and returns to the broken-blocks report; No backs out.
  *
- * Depends on: ChestMenu, Icons, GuiRouter, GuiFx, BrokenSelection, SlotManager, Chat.
+ * Depends on: ChestMenu, Icons, GuiRouter, GuiFx, BrokenSelection, DeletionService, SlotManager,
+ *             UndoManager, ResourcePackServer, HudSync, SlotData, Chat.
  * Called by:  GuiRouter.build (Dest.BROKEN_CONFIRM).
  */
 package com.customblocks.gui.chest;
 
 import com.customblocks.command.Chat;
+import com.customblocks.core.DeletionService;
+import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.core.UndoManager;
+import com.customblocks.network.HudSync;
+import com.customblocks.network.ResourcePackServer;
 import net.minecraft.item.Items;
 import net.minecraft.server.network.ServerPlayerEntity;
 
@@ -55,10 +63,24 @@ public final class BrokenConfirmMenu {
     private static void doDeleteSelected(ServerPlayerEntity player) {
         GuiFx.danger(player);
         List<String> ids = new ArrayList<>(BrokenSelection.ids(player.getUuid()));
-        int ok = 0;
-        for (String id : ids) if (SlotManager.delete(id) != null) ok++;
+        List<UndoManager.Op> children = new ArrayList<>();
+        for (String id : ids) {
+            SlotData before = SlotManager.getById(id);
+            if (before == null) continue;
+            // Slice 3: same rail as /cb delete — frees the slot, swaps placed copies to
+            // "Deleted: <name>" markers (no purple blocks). Returns the texture for undo.
+            byte[] texture = DeletionService.deleteCore(player.getServer(), before);
+            children.add(new UndoManager.Op(UndoManager.Kind.DELETE, before, null, texture, "delete"));
+        }
         BrokenSelection.clear(player.getUuid());
-        Chat.success(player.getCommandSource(), "Deleted " + ok + " block(s) — find them in /cb deletedblocks.");
+        int ok = children.size();
+        if (ok > 0) {
+            ResourcePackServer.updatePack(); // ONE rebuild frees the deleted slots' textures
+            UndoManager.recordBatch(player.getUuid(), children, "broken-cleanup (" + ok + ")");
+            HudSync.broadcast(player.getServer()); // clear the deleted identities live (no rejoin)
+        }
+        Chat.success(player.getCommandSource(),
+                "Deleted " + ok + " block(s) — find them in /cb deletedblocks or undo with /cb undo.");
         GuiRouter.back(player); // back to the broken-blocks report, which rebuilds without them
     }
 }

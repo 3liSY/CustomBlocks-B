@@ -25,8 +25,10 @@ import com.google.gson.JsonParser;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -34,12 +36,20 @@ import java.util.TreeSet;
 @Environment(EnvType.CLIENT)
 public final class ClientSlotCache {
 
-    /** One slot's synced data. {@code passable} = walk-through (SlotData.noCollision). */
+    /** One slot's synced data. {@code passable} = walk-through (SlotData.noCollision).
+     *  {@code lore} = the active lore lines (Group 18 REVAMP v2), empty when none/disabled.
+     *  {@code arabic} = the Arabic identity tuple "glyph/form/colour" (G13-25 CP3b join-flow
+     *  prediction on a remote session), "" for every normal block. */
     public record Entry(String id, String name, String category, int glow,
-                        float hardness, String sound, String shape, boolean passable) {}
+                        float hardness, String sound, String shape, boolean passable, List<String> lore,
+                        String arabic) {}
 
     private static volatile Map<Integer, Entry> INDEX = Collections.emptyMap();
     private static volatile Map<String, String> CAT_COLORS = Collections.emptyMap(); // category → §-colour tag
+    private static volatile Map<String, String> CAT_HEX = Collections.emptyMap();     // category → custom "#RRGGBB" tint
+    private static volatile Map<String, String> CAT_DESC = Collections.emptyMap();    // category → description
+    private static volatile Map<String, String> CAT_SORT = Collections.emptyMap();    // category → sort mode (non-alpha)
+    private static volatile Set<String> ALL_CATS = Collections.emptySet(); // every known category, incl. 0-block ones (§G27 L11)
     private static volatile String DEFAULT_CAT = ""; // studio's default category, "" = none
 
     private ClientSlotCache() {}
@@ -50,6 +60,10 @@ public final class ClientSlotCache {
             JsonObject root = JsonParser.parseString(indexJson).getAsJsonObject();
             Map<Integer, Entry> map = new HashMap<>();
             Map<String, String> colors = new HashMap<>();
+            Map<String, String> hexes = new HashMap<>();
+            Map<String, String> descs = new HashMap<>();
+            Map<String, String> sorts = new HashMap<>();
+            Set<String> allCats = new TreeSet<>();
             String defCat = "";
             for (var e : root.entrySet()) {
                 String key = e.getKey();
@@ -58,6 +72,14 @@ public final class ClientSlotCache {
                     if (key.equals("_default") && e.getValue().isJsonPrimitive()) defCat = e.getValue().getAsString();
                     else if (key.equals("_meta") && e.getValue().isJsonObject())
                         for (var m : e.getValue().getAsJsonObject().entrySet()) colors.put(m.getKey(), m.getValue().getAsString());
+                    else if (key.equals("_hex") && e.getValue().isJsonObject())
+                        for (var m : e.getValue().getAsJsonObject().entrySet()) hexes.put(m.getKey(), m.getValue().getAsString());
+                    else if (key.equals("_desc") && e.getValue().isJsonObject())
+                        for (var m : e.getValue().getAsJsonObject().entrySet()) descs.put(m.getKey(), m.getValue().getAsString());
+                    else if (key.equals("_sort") && e.getValue().isJsonObject())
+                        for (var m : e.getValue().getAsJsonObject().entrySet()) sorts.put(m.getKey(), m.getValue().getAsString());
+                    else if (key.equals("_categories") && e.getValue().isJsonArray())
+                        for (JsonElement el : e.getValue().getAsJsonArray()) if (el.isJsonPrimitive()) allCats.add(el.getAsString());
                     continue;
                 }
                 int idx;
@@ -68,7 +90,8 @@ public final class ClientSlotCache {
                     map.put(idx, new Entry(
                             str(o, "id", ""), str(o, "name", ""), str(o, "cat", ""),
                             num(o, "glow", 0), (float) dbl(o, "hard", 1.5),
-                            str(o, "sound", "stone"), str(o, "shape", "full"), bool(o, "pass", false)));
+                            str(o, "sound", "stone"), str(o, "shape", "full"), bool(o, "pass", false),
+                            lore(o), str(o, "ar", "")));
                 } else if (v.isJsonPrimitive()) {
                     // Legacy delimited string fallback (id + NUL-or-space + name).
                     String val = v.getAsString();
@@ -76,20 +99,24 @@ public final class ClientSlotCache {
                     if (sep < 0) sep = val.indexOf(' ');
                     if (sep >= 0)
                         map.put(idx, new Entry(val.substring(0, sep), val.substring(sep + 1),
-                                "", 0, 1.5f, "stone", "full", false));
+                                "", 0, 1.5f, "stone", "full", false, List.of(), ""));
                 }
             }
             INDEX = Collections.unmodifiableMap(map);
             CAT_COLORS = Collections.unmodifiableMap(colors);
+            CAT_HEX = Collections.unmodifiableMap(hexes);
+            CAT_DESC = Collections.unmodifiableMap(descs);
+            CAT_SORT = Collections.unmodifiableMap(sorts);
+            ALL_CATS = Collections.unmodifiableSet(allCats);
             DEFAULT_CAT = defCat;
         } catch (Exception ignored) {
             INDEX = Collections.emptyMap();
         }
     }
 
-    /** All distinct categories currently in use (from the synced blocks), sorted A→Z. */
+    /** Every known category — synced blocks' categories UNION explicitly-created 0-block ones (§G27 L11), sorted A→Z. */
     public static Set<String> categories() {
-        Set<String> out = new TreeSet<>();
+        Set<String> out = new TreeSet<>(ALL_CATS);
         for (Entry e : INDEX.values()) if (e.category() != null && !e.category().isEmpty()) out.add(e.category());
         return out;
     }
@@ -98,6 +125,44 @@ public final class ClientSlotCache {
     public static String colorTag(String category) {
         String t = CAT_COLORS.get(category);
         return t == null ? "" : t;
+    }
+
+    /** The custom "#RRGGBB" name tint for a category, or "" if none set (Group 27 Category Hub). */
+    public static String colorHex(String category) {
+        String h = CAT_HEX.get(category);
+        return h == null ? "" : h;
+    }
+
+    /** The description for a category, or "" if none set (Group 27 Category Hub). */
+    public static String description(String category) {
+        String d = CAT_DESC.get(category);
+        return d == null ? "" : d;
+    }
+
+    /** The sort mode for a category ("alpha" default, or "custom"), Group 27 Category Hub. */
+    public static String sortOrder(String category) {
+        String s = CAT_SORT.get(category);
+        return s == null || s.isEmpty() ? "alpha" : s;
+    }
+
+    /** Every synced slot entry (read-only). Group 27 Category Hub counts/lists blocks from this. */
+    public static java.util.Collection<Entry> entries() { return INDEX.values(); }
+
+    /** Number of blocks currently in a category. */
+    public static int countInCategory(String category) {
+        if (category == null) return 0;
+        int n = 0;
+        for (Entry e : INDEX.values()) if (category.equalsIgnoreCase(e.category())) n++;
+        return n;
+    }
+
+    /** Block entries in a category, sorted by display name (Group 27 Category Hub block list). */
+    public static List<Entry> blocksInCategory(String category) {
+        List<Entry> out = new ArrayList<>();
+        if (category == null) return out;
+        for (Entry e : INDEX.values()) if (category.equalsIgnoreCase(e.category())) out.add(e);
+        out.sort((a, b) -> a.name().compareToIgnoreCase(b.name()));
+        return out;
     }
 
     /** The studio's default category, or "" if none set. */
@@ -121,7 +186,20 @@ public final class ClientSlotCache {
         return e == null ? null : new String[]{ e.id(), e.name() };
     }
 
-    public static void clear() { INDEX = Collections.emptyMap(); CAT_COLORS = Collections.emptyMap(); DEFAULT_CAT = ""; }
+    public static void clear() {
+        INDEX = Collections.emptyMap(); CAT_COLORS = Collections.emptyMap();
+        CAT_DESC = Collections.emptyMap(); CAT_SORT = Collections.emptyMap();
+        ALL_CATS = Collections.emptySet(); DEFAULT_CAT = "";
+    }
+
+    /** Read the synced lore lines for a slot ("lore" JSON array), or an empty list when absent. */
+    private static List<String> lore(JsonObject o) {
+        if (!o.has("lore") || !o.get("lore").isJsonArray()) return List.of();
+        List<String> out = new ArrayList<>();
+        for (JsonElement e : o.getAsJsonArray("lore"))
+            if (e.isJsonPrimitive()) { String s = e.getAsString(); if (!s.isEmpty()) out.add(s); }
+        return out;
+    }
 
     private static String  str (JsonObject o, String k, String def)  { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsString()  : def; }
     private static int     num (JsonObject o, String k, int def)     { return o.has(k) && !o.get(k).isJsonNull() ? o.get(k).getAsInt()     : def; }

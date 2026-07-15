@@ -20,7 +20,7 @@ import net.minecraft.text.Text;
 @Environment(EnvType.CLIENT)
 public final class HudBrickPalette {
 
-    private static final int GOLD = 0xFFFFAA00;
+    private static final int GOLD = com.customblocks.client.gui.CbTheme.ACCENT; // locked red (2026-07-04)
     private static final int PW = 150, ROW = 14;
 
     private boolean open = false;
@@ -40,13 +40,13 @@ public final class HudBrickPalette {
         int[] b = box(screenW, panelW, barH);
         int x = b[0], y = b[1];
         ctx.fill(x - 1, y - 1, x + PW + 1, y + b[3] + 1, GOLD);
-        ctx.fill(x, y, x + PW, y + b[3], 0xF0101010);
+        ctx.fill(x, y, x + PW, y + b[3], com.customblocks.client.gui.CbTheme.PANEL_BG);
         for (int i = 0; i < types.length; i++) {
             int ry = y + 4 + i * ROW;
             boolean hover = mx >= x && mx <= x + PW && my >= ry && my < ry + ROW;
             if (hover) ctx.fill(x, ry, x + PW, ry + ROW, 0x44FFFFFF);
-            // §G27.14 — Template brick stands out in gold (the "Templates" entry).
-            String col = types[i] == HudFieldType.TEMPLATE ? (hover ? "§6§l" : "§6") : (hover ? "§f" : "§7");
+            // §G27.14 — Template brick stands out in brand red (the "Templates" entry).
+            String col = types[i] == HudFieldType.TEMPLATE ? (hover ? "§c§l" : "§c") : (hover ? "§f" : "§7");
             ctx.drawText(tr, Text.literal(col + types[i].label()), x + 6, ry + 3, 0xFFFFFFFF, false);
         }
     }

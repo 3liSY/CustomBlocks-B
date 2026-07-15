@@ -31,25 +31,35 @@ public final class LockManager {
 
     private LockManager() {}
 
+    /**
+     * Canonical lock key. Block ids resolve case-insensitively everywhere (SlotManager.getById,
+     * the "G25-family fix"), so the lock set must too — otherwise `/cb lock baldiii` stores
+     * "baldiii" while a tool holding the stored id "Baldiii" checks isLocked("Baldiii") and the
+     * lock silently bypasses. Normalising to lowercase keeps every lock check case-agnostic.
+     */
+    private static String key(String id) {
+        return id == null ? null : id.toLowerCase(java.util.Locale.ROOT);
+    }
+
     public static synchronized boolean isLocked(String id) {
-        return LOCKED.contains(id);
+        return LOCKED.contains(key(id));
     }
 
     /** Lock a block. Returns false if it was already locked. */
     public static synchronized boolean lock(String id) {
-        if (LOCKED.add(id)) { save(); return true; }
+        if (LOCKED.add(key(id))) { save(); return true; }
         return false;
     }
 
     /** Unlock a block. Returns false if it was not locked. */
     public static synchronized boolean unlock(String id) {
-        if (LOCKED.remove(id)) { save(); return true; }
+        if (LOCKED.remove(key(id))) { save(); return true; }
         return false;
     }
 
     /** Move lock state from {@code oldId} to {@code newId} (for /cb reid). No-op if oldId wasn't locked. */
     public static synchronized void renameId(String oldId, String newId) {
-        if (LOCKED.remove(oldId)) { LOCKED.add(newId); save(); }
+        if (LOCKED.remove(key(oldId))) { LOCKED.add(key(newId)); save(); }
     }
 
     /** All currently locked IDs, sorted alphabetically. */
@@ -67,7 +77,7 @@ public final class LockManager {
             if (!Files.exists(p)) return;
             JsonObject o = GSON.fromJson(Files.readString(p, StandardCharsets.UTF_8), JsonObject.class);
             if (o == null || !o.has("locked")) return;
-            for (var e : o.getAsJsonArray("locked")) LOCKED.add(e.getAsString());
+            for (var e : o.getAsJsonArray("locked")) LOCKED.add(key(e.getAsString())); // normalise legacy mixed-case entries
         } catch (Exception ignored) {}
     }
 

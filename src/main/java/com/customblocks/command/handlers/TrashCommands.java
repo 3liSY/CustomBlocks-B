@@ -13,6 +13,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -90,7 +91,7 @@ public final class TrashCommands {
         ResourcePackServer.updatePack();
         ResourcePackServer.syncToAll();
         Chat.success(src, "Restored \"" + e.customId() + "\" from the trash"
-                + (tex == null ? " §7(no saved texture — it'll look untextured until retextured)." : "."));
+                + (tex == null ? " " + CbFmt.DIM + "(no saved texture — it'll look untextured until retextured)." : "."));
         GuiRouter.back(player); // pop the entry screen → refreshed trash list
     }
 }

@@ -20,6 +20,7 @@ package com.customblocks.core;
 import com.customblocks.CustomBlocksMod;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
 import java.io.IOException;
@@ -28,11 +29,14 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -50,10 +54,40 @@ public final class BackupManager {
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_-]{1,48}");
     private static final DateTimeFormatter STAMP  = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final DateTimeFormatter HUMAN  = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    /** Friendly wall-clock label for lists, e.g. "Jul 12, 2:30 PM". */
+    private static final DateTimeFormatter FRIENDLY = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH);
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /** One backup's metadata as shown by /cb backup list. blocks == -1 means "unknown". */
-    public record BackupInfo(String name, long createdEpochMs, String created, int blocks, boolean auto) {}
+    /**
+     * One backup's metadata as shown by /cb backup list and the Backup Screen. blocks == -1 means
+     * "unknown". {@code protectedFromPrune} backups are kept even past autoBackupKeepCount (G09-A4).
+     * {@code sizeBytes} is the on-disk folder size (-1 if it couldn't be measured).
+     */
+    public record BackupInfo(String name, long createdEpochMs, String created, int blocks, boolean auto,
+                             boolean protectedFromPrune, long sizeBytes) {}
+
+    /**
+     * Friendly wall-clock time for a backup, e.g. "Jul 12, 2:30 PM". Derived from the creation epoch;
+     * falls back to the stored human string (or "?") when the epoch is unknown.
+     */
+    public static String friendlyTime(BackupInfo b) {
+        if (b.createdEpochMs() > 0L) {
+            return LocalDateTime.ofInstant(Instant.ofEpochMilli(b.createdEpochMs()), ZoneId.systemDefault())
+                    .format(FRIENDLY);
+        }
+        return b.created().isEmpty() ? "?" : b.created();
+    }
+
+    /**
+     * Primary display label for lists (owner scheme, 2026-07-12): a timed auto-backup shows
+     * "auto · Jul 12, 2:30 PM" instead of its raw "auto-YYYYMMDD-HHMMSS" folder name; a manual save
+     * shows its own name. The raw {@link BackupInfo#name()} is still the restore-by id and should be
+     * shown alongside (dim) so it stays copy-pasteable.
+     */
+    public static String displayLabel(BackupInfo b) {
+        if (b.name().startsWith("auto-")) return "auto · " + friendlyTime(b);
+        return b.name();
+    }
 
     public static boolean isValidName(String name) {
         return name != null && NAME.matcher(name).matches();
@@ -129,13 +163,14 @@ public final class BackupManager {
                 long created = o.has("created") ? o.get("created").getAsLong() : 0L;
                 int blocks   = o.has("blocks") ? o.get("blocks").getAsInt() : -1;
                 boolean auto = o.has("auto") && o.get("auto").getAsBoolean();
+                boolean prot = o.has("protected") && o.get("protected").getAsBoolean();
                 String when  = o.has("createdHuman") ? o.get("createdHuman").getAsString() : "";
-                return new BackupInfo(name, created, when, blocks, auto);
+                return new BackupInfo(name, created, when, blocks, auto, prot, folderSize(dir));
             } catch (Exception ignored) { /* fall through to folder-derived */ }
         }
         long mtime = 0L;
         try { mtime = Files.getLastModifiedTime(dir).toMillis(); } catch (IOException ignored) {}
-        return new BackupInfo(name, mtime, "", -1, name.startsWith("auto-"));
+        return new BackupInfo(name, mtime, "", -1, name.startsWith("auto-"), false, folderSize(dir));
     }
 
     /** True if {@code name} is a usable backup: the folder exists and its slots.json parses. */
@@ -148,6 +183,31 @@ public final class BackupManager {
             return true;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    /**
+     * Zip an existing backup folder into memory (for cloud sync — Group 20 §C). Returns the ZIP bytes,
+     * or null if the backup is missing or unreadable. READ-ONLY: never touches live data. Heavy I/O —
+     * call OFF the server thread.
+     */
+    public static synchronized byte[] zip(String name) {
+        if (!exists(name)) return null;
+        Path dir = BACKUPS_DIR.resolve(name);
+        try (java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
+             java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(bos);
+             Stream<Path> walk = Files.walk(dir)) {
+            for (Path p : walk.filter(Files::isRegularFile).toList()) {
+                String entry = dir.relativize(p).toString().replace('\\', '/');
+                zos.putNextEntry(new java.util.zip.ZipEntry(entry));
+                Files.copy(p, zos);
+                zos.closeEntry();
+            }
+            zos.finish();
+            return bos.toByteArray();
+        } catch (IOException e) {
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to zip backup \"{}\"", name, e);
+            return null;
         }
     }
 
@@ -173,7 +233,8 @@ public final class BackupManager {
         int k = Math.max(0, keep);
         List<BackupInfo> autos = new ArrayList<>();
         for (BackupInfo b : list()) { // list() is already newest-first
-            if (b.name().startsWith("auto-")) autos.add(b);
+            // Protected auto-backups are kept out of the prune candidate set entirely (G09-A4).
+            if (b.name().startsWith("auto-") && !b.protectedFromPrune()) autos.add(b);
         }
         int removed = 0;
         for (int i = k; i < autos.size(); i++) {
@@ -254,7 +315,108 @@ public final class BackupManager {
         o.addProperty("createdHuman", LocalDateTime.now().format(HUMAN));
         o.addProperty("blocks", blocks);
         o.addProperty("auto", auto);
+        o.addProperty("protected", false); // new backups are prunable until the player pins them (G09-A4)
         Files.writeString(dir.resolve("manifest.json"), GSON.toJson(o), StandardCharsets.UTF_8);
+    }
+
+    // ── G09-A4 Backup Screen support: protect flag, rename, size, screen JSON ──────
+
+    /**
+     * Flip a backup's protect-from-prune flag by rewriting its manifest. Protected backups are kept
+     * even past autoBackupKeepCount (see {@link #pruneAuto}). Returns false if the backup is missing.
+     */
+    public static synchronized boolean setProtected(String name, boolean value) {
+        if (!exists(name)) return false;
+        Path manifest = BACKUPS_DIR.resolve(name).resolve("manifest.json");
+        JsonObject o = null;
+        try {
+            if (Files.isRegularFile(manifest)) {
+                o = GSON.fromJson(Files.readString(manifest, StandardCharsets.UTF_8), JsonObject.class);
+            }
+        } catch (Exception ignored) { /* rebuild a minimal manifest below */ }
+        if (o == null) o = new JsonObject();
+        o.addProperty("protected", value);
+        try {
+            Files.writeString(manifest, GSON.toJson(o), StandardCharsets.UTF_8);
+            return true;
+        } catch (IOException e) {
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to set protected on backup \"{}\"", name, e);
+            return false;
+        }
+    }
+
+    /**
+     * Rename a backup folder (and its stored manifest name). Throws if {@code newName} is invalid or
+     * already taken; returns false only if {@code oldName} doesn't exist. Never touches live data.
+     */
+    public static synchronized boolean rename(String oldName, String newName) throws IOException {
+        if (!exists(oldName)) return false;
+        if (!isValidName(newName)) throw new IOException("Invalid backup name: " + newName);
+        if (oldName.equals(newName)) return true;
+        if (exists(newName)) throw new IOException("A backup named \"" + newName + "\" already exists.");
+        Path from = BACKUPS_DIR.resolve(oldName);
+        Path to   = BACKUPS_DIR.resolve(newName);
+        try {
+            Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
+        } catch (AtomicMoveNotSupportedException e) {
+            Files.move(from, to);
+        }
+        Path manifest = to.resolve("manifest.json");
+        if (Files.isRegularFile(manifest)) {
+            try {
+                JsonObject o = GSON.fromJson(Files.readString(manifest, StandardCharsets.UTF_8), JsonObject.class);
+                if (o != null) {
+                    o.addProperty("name", newName);
+                    Files.writeString(manifest, GSON.toJson(o), StandardCharsets.UTF_8);
+                }
+            } catch (Exception ignored) { /* folder rename already succeeded; name field is cosmetic */ }
+        }
+        return true;
+    }
+
+    /** Total on-disk size of a backup folder in bytes, or -1 if it couldn't be walked. */
+    private static long folderSize(Path dir) {
+        try (Stream<Path> walk = Files.walk(dir)) {
+            return walk.filter(Files::isRegularFile).mapToLong(p -> {
+                try { return Files.size(p); } catch (IOException e) { return 0L; }
+            }).sum();
+        } catch (IOException e) {
+            return -1L;
+        }
+    }
+
+    /** Human-readable byte size, e.g. "12.3 KB". "?" when unknown (negative). */
+    public static String humanSize(long bytes) {
+        if (bytes < 0) return "?";
+        if (bytes < 1024) return bytes + " B";
+        double kb = bytes / 1024.0;
+        if (kb < 1024) return String.format(Locale.ENGLISH, "%.1f KB", kb);
+        double mb = kb / 1024.0;
+        if (mb < 1024) return String.format(Locale.ENGLISH, "%.1f MB", mb);
+        return String.format(Locale.ENGLISH, "%.1f GB", mb / 1024.0);
+    }
+
+    /**
+     * The backup list serialized for the Backup Screen (G09-A4). One object per backup, newest first:
+     * {@code name} (raw restore-by id), {@code label} (friendly primary), {@code when}, {@code blocks},
+     * {@code size} (human string), {@code auto} (auto-YYYYMMDD-HHMMSS timed backup → Auto tab), {@code prot}.
+     */
+    public static String screenJson() {
+        JsonArray arr = new JsonArray();
+        for (BackupInfo b : list()) {
+            JsonObject o = new JsonObject();
+            o.addProperty("name", b.name());
+            o.addProperty("label", displayLabel(b));
+            o.addProperty("when", friendlyTime(b));
+            o.addProperty("blocks", b.blocks());
+            o.addProperty("size", humanSize(b.sizeBytes()));
+            o.addProperty("auto", b.name().startsWith("auto-"));
+            o.addProperty("prot", b.protectedFromPrune());
+            arr.add(o);
+        }
+        JsonObject root = new JsonObject();
+        root.add("backups", arr);
+        return GSON.toJson(root);
     }
 
     /** Recursively copy src/* into dest (dest created if absent). */

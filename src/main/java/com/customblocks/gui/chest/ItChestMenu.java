@@ -10,6 +10,8 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.command.CbFmt;
+
 import com.customblocks.command.Chat;
 import com.customblocks.core.DiagnosticsHelper;
 import com.customblocks.core.DiagnosticsHelper.Gauge;
@@ -122,10 +124,10 @@ public final class ItChestMenu {
                     } else if (exists) {
                         GuiRouter.navigate(p, MenuKey.of(Dest.EDITOR, block));
                     } else {
-                        p.sendMessage(Text.literal(Chat.PREFIX + col + in.context()), false);
-                        p.sendMessage(Text.literal("§7" + time + " §8· §7" + in.player()
-                                + (in.block() == null ? "" : " §8· §7" + in.block())
-                                + (in.error() == null ? "" : " §8· §c" + in.error())), false);
+                        Chat.toPlayer(p, col + in.context());
+                        Chat.toPlayer(p, CbFmt.DIM + time + CbFmt.FAINT + " · " + CbFmt.DIM + in.player()
+                                + (in.block() == null ? "" : CbFmt.FAINT + " · " + CbFmt.DIM + in.block())
+                                + (in.error() == null ? "" : CbFmt.FAINT + " · " + CbFmt.BAD + in.error()));
                     }
                 });
     }

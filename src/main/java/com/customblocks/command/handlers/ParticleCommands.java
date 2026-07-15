@@ -11,6 +11,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.ParticleFx;
@@ -54,10 +55,10 @@ public final class ParticleCommands {
             GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.PARTICLES));
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§eParticle FX:"), false);
+        Chat.raw(src, CbFmt.VALUE + "Particle FX:");
         for (String c : CustomBlocksConfig.FX_CATEGORIES) {
             boolean on = CustomBlocksConfig.particlesOn(c);
-            src.sendFeedback(() -> Text.literal("§7" + c + ": " + (on ? "§aon" : "§7off")), false);
+            Chat.raw(src, Text.literal(CbFmt.DIM + c + ": " + (on ? CbFmt.OK + "on" : CbFmt.DIM + "off")));
         }
         return 1;
     }
@@ -68,17 +69,17 @@ public final class ParticleCommands {
         String cat = StringArgumentType.getString(ctx, "category").toLowerCase(Locale.ROOT);
         String state = StringArgumentType.getString(ctx, "state").toLowerCase(Locale.ROOT);
         if (!CustomBlocksConfig.isFxCategory(cat)) {
-            Chat.error(src, "Unknown category '" + cat + "'. Options: "
+            Chat.error(src, "Unknown category \"" + cat + "\". Options: "
                     + String.join(", ", CustomBlocksConfig.FX_CATEGORIES));
             return 0;
         }
         boolean on;
         if (state.equals("on")) on = true;
         else if (state.equals("off")) on = false;
-        else { Chat.error(src, "Use §fon §cor §foff§c."); return 0; }
+        else { Chat.error(src, "Use " + CbFmt.BODY + "on " + CbFmt.BAD + "or " + CbFmt.BODY + "off" + CbFmt.BAD + "."); return 0; }
         CustomBlocksConfig.particlesEnabled.put(cat, on);
         CustomBlocksConfig.save();
-        Chat.success(src, "Particles for §f" + cat + " §fare now " + (on ? "§aON" : "§7OFF") + "§f.");
+        Chat.success(src, "Particles for " + CbFmt.BODY + cat + " " + CbFmt.BODY + "are now " + (on ? CbFmt.OK + "ON" : CbFmt.DIM + "OFF") + CbFmt.BODY + ".");
         if (on && src.getEntity() instanceof ServerPlayerEntity p) ParticleFx.preview(p, cat);
         return 1;
     }

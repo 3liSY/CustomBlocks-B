@@ -11,6 +11,7 @@
  */
 package com.customblocks.image;
 
+import com.customblocks.command.CbFmt;
 public final class CbColorTools {
 
     private CbColorTools() {} // static-only
@@ -82,9 +83,9 @@ public final class CbColorTools {
      */
     public static String contrastLabel(double ratio) {
         String n = String.format(java.util.Locale.ROOT, "%.1f:1", ratio);
-        if (ratio < 3.0)  return "§ccontrast LOW §7(" + n + ")";
-        if (ratio < 4.5)  return "§econtrast okay §7(" + n + ")";
-        return "§acontrast good §7(" + n + ")";
+        if (ratio < 3.0)  return CbFmt.BAD + "contrast LOW " + CbFmt.DIM + "(" + n + ")";
+        if (ratio < 4.5)  return CbFmt.VALUE + "contrast okay " + CbFmt.DIM + "(" + n + ")";
+        return CbFmt.OK + "contrast good " + CbFmt.DIM + "(" + n + ")";
     }
 
     /** True when the pair is too low-contrast to read comfortably (drives the guard warning). */

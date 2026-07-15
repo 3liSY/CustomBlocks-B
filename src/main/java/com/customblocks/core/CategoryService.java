@@ -14,11 +14,13 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.Chat;
+
+import com.customblocks.command.CbFmt;
+
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
 
 public final class CategoryService {
 
@@ -30,19 +32,10 @@ public final class CategoryService {
     private static Outcome ok(String m)  { return new Outcome(true, m); }
     private static Outcome err(String m) { return new Outcome(false, m); }
 
-    /** Colour words the player can use with /cb category color, mapped to their §-codes. */
-    private static final Map<String, String> COLOR_CODES = new LinkedHashMap<>();
-    static {
-        COLOR_CODES.put("none", "");   COLOR_CODES.put("default", "");  COLOR_CODES.put("white", "§f");
-        COLOR_CODES.put("green", "§a"); COLOR_CODES.put("aqua", "§b");  COLOR_CODES.put("red", "§c");
-        COLOR_CODES.put("pink", "§d");  COLOR_CODES.put("yellow", "§e"); COLOR_CODES.put("gold", "§6");
-        COLOR_CODES.put("blue", "§9");  COLOR_CODES.put("darkaqua", "§3"); COLOR_CODES.put("purple", "§5");
-        COLOR_CODES.put("darkgreen", "§2"); COLOR_CODES.put("darkred", "§4");
-        COLOR_CODES.put("gray", "§8");  COLOR_CODES.put("grey", "§8");
-    }
+    // The colour-word palette moved to CbFmt (G04-3) — no §-code is defined outside that file now.
 
     /** Colour words for command suggestions. */
-    public static java.util.Set<String> colorWords() { return COLOR_CODES.keySet(); }
+    public static java.util.Set<String> colorWords() { return CbFmt.categoryColorWords(); }
 
     private static String norm(String cat) {
         return cat == null ? "" : cat.trim().toLowerCase(Locale.ROOT);
@@ -91,12 +84,12 @@ public final class CategoryService {
     public static Outcome setColor(String category, String colorWord) {
         String cat = norm(category);
         String word = colorWord == null ? "" : colorWord.trim().toLowerCase(Locale.ROOT);
-        if (!COLOR_CODES.containsKey(word)) {
-            return err("Unknown colour \"" + word + "\". Try: " + String.join(", ", COLOR_CODES.keySet()) + ".");
+        if (!CbFmt.isCategoryColor(word)) {
+            return err("Unknown colour \"" + word + "\". Try: " + String.join(", ", CbFmt.categoryColorWords()) + ".");
         }
-        CategoryMetadataStore.setColorTag(cat, COLOR_CODES.get(word));
+        CategoryMetadataStore.setColorTag(cat, CbFmt.categoryColor(word));
         String shown = word.isEmpty() ? "default" : word;
-        return ok("Colour tag for \"" + cat + "\" set to " + COLOR_CODES.get(word) + shown + "§r.");
+        return ok("Colour tag for \"" + cat + "\" set to " + CbFmt.categoryColor(word) + shown + CbFmt.RESET + ".");
     }
 
     // ── description ────────────────────────────────────────────────────────────
@@ -107,7 +100,7 @@ public final class CategoryService {
         CategoryMetadataStore.setDescription(cat, desc);
         return desc.isEmpty()
                 ? ok("Cleared the description for \"" + cat + "\".")
-                : ok("Description for \"" + cat + "\" set to: §7" + desc);
+                : ok("Description for \"" + cat + "\" set to: " + CbFmt.DIM + desc);
     }
 
     // ── icon (display block) ───────────────────────────────────────────────────
@@ -122,7 +115,7 @@ public final class CategoryService {
             return err("There's no block called \"" + blockId + "\". Check /cb list.");
         }
         CategoryMetadataStore.setDisplayBlock(cat, blockId);
-        return ok("Icon for \"" + cat + "\" set to block §f" + blockId + "§r.");
+        return ok("Icon for \"" + cat + "\" set to block " + CbFmt.BODY + blockId + CbFmt.RESET + ".");
     }
 
     // ── sort order ─────────────────────────────────────────────────────────────
@@ -159,7 +152,7 @@ public final class CategoryService {
         List<SlotData> blocks = SlotManager.byCategory(cat);
         List<String> lines = new ArrayList<>();
         if (blocks.isEmpty()) {
-            lines.add("§7Category \"§f" + cat + "§7\" has no blocks. See /cb categories.");
+            lines.add(CbFmt.DIM + "Category \"" + CbFmt.BODY + cat + CbFmt.DIM + "\" has no blocks. See /cb categories.");
             return lines;
         }
         int locked = 0;
@@ -173,13 +166,13 @@ public final class CategoryService {
         String desc = CategoryMetadataStore.getDescription(cat);
         String icon = CategoryMetadataStore.getDisplayBlock(cat);
         String sort = CategoryMetadataStore.getSortOrder(cat);
-        lines.add("§6Category: " + (color.isEmpty() ? "§f" : color) + cat);
-        lines.add("§7Blocks: §f" + blocks.size() + "  §7Locked: §f" + locked
-                + "§7/§f" + (blocks.size() - locked) + " unlocked");
-        lines.add("§7Texture total: §f" + humanSize(texBytes));
-        lines.add("§7Sort: §f" + ("custom".equals(sort) ? "Custom" : "Alphabetical"));
-        lines.add("§7Icon: §f" + (icon == null ? "default" : icon));
-        lines.add("§7Description: " + (desc.isEmpty() ? "§8(none)" : "§f" + desc));
+        lines.add(CbFmt.HEAD + "Category: " + (color.isEmpty() ? CbFmt.BODY : color) + cat);
+        lines.add(CbFmt.DIM + "Blocks: " + CbFmt.BODY + blocks.size() + "  " + CbFmt.DIM + "Locked: " + CbFmt.BODY + locked
+                + CbFmt.DIM + "/" + CbFmt.BODY + (blocks.size() - locked) + " unlocked");
+        lines.add(CbFmt.DIM + "Texture total: " + CbFmt.BODY + humanSize(texBytes));
+        lines.add(CbFmt.DIM + "Sort: " + CbFmt.BODY + ("custom".equals(sort) ? "Custom" : "Alphabetical"));
+        lines.add(CbFmt.DIM + "Icon: " + CbFmt.BODY + (icon == null ? "default" : icon));
+        lines.add(CbFmt.DIM + "Description: " + (desc.isEmpty() ? CbFmt.FAINT + "(none)" : CbFmt.BODY + desc));
         return lines;
     }
 

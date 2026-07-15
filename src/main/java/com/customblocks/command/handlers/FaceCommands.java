@@ -18,6 +18,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.IncidentRecorder;
@@ -101,7 +102,7 @@ public final class FaceCommands {
             return 0;
         }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
         applyFaceTexture(src, id, d.index(), face, url);
@@ -126,14 +127,13 @@ public final class FaceCommands {
                 TextureStore.saveFace(index, face, png);
                 server.execute(() -> {
                     ResourcePackServer.updatePack();
-                    Chat.success(src, "Painted the §f" + face + "§a face of \"" + id + "\". "
-                            + "§7(/cb clearface " + id + " " + face + " undoes it.)");
+                    Chat.success(src, "Painted the " + CbFmt.BODY + face + CbFmt.OK + " face of \"" + id + "\". "
+                            + CbFmt.DIM + "(/cb clearface " + id + " " + face + " undoes it.)");
                 });
             } catch (Exception e) {
-                String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Face paint failed for \"" + id + "\" " + face
+                String code = IncidentRecorder.record("Face paint failed for \"" + id + "\" " + face
                         + " (url: " + url + ")", id, src.getName(), e);
-                server.execute(() -> Chat.error(src, "Couldn't get a texture from that URL. " + msg));
+                server.execute(() -> Chat.incidentError(src, "Couldn't get a texture from that URL.", code));
             }
         }, "CustomBlocks-FacePaint");
         worker.setDaemon(true);
@@ -149,7 +149,7 @@ public final class FaceCommands {
             return 0;
         }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
         int removed = 0;

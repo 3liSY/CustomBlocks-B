@@ -64,9 +64,9 @@ public final class StudioTextureLoader {
             if (AnimationDecoder.isAnimated(raw)) {
                 AnimationDecoder.Decoded dec = AnimationDecoder.decode(raw, PREVIEW_SIZE);
                 if (dec != null && dec.frameCount() > 1) {
-                    int[][] frames = splitStrip(read(dec.stripPng()), dec.frameCount());
+                    int[][] frames = splitFrames(read(dec.stripPng()), dec.frameCount());
                     if (frames != null) {
-                        AnimData anim = AnimData.ofDecoded(dec.frameCount(), dec.frameTimes(), dec.transparency());
+                        AnimData anim = AnimData.ofDecoded(dec.frameCount(), dec.frameTimes(), dec.frameTimesMs(), dec.transparency());
                         return new Result(frames, anim, true);
                     }
                 }
@@ -83,9 +83,10 @@ public final class StudioTextureLoader {
     }
 
     /**
-     * Read an existing block's frame grids back from the active resource pack (edit mode). For an
-     * animated block this is the stored vertical strip split into {@code frameCount} squares; for a
-     * static block it's the single texture. Returns null if the pack texture isn't available.
+     * Read an existing block's frame grids back from the active resource pack (edit mode). For an animated
+     * block this is the stored frame image (packed grid, or a legacy vertical strip) split into {@code
+     * frameCount} squares; for a static block it's the single texture. Returns null if the pack texture
+     * isn't available.
      */
     public static int[][] loadFromPack(int index, int frameCount) {
         try {
@@ -96,22 +97,46 @@ public final class StudioTextureLoader {
                 BufferedImage img = ImageIO.read(in);
                 if (img == null) return null;
                 int n = Math.max(1, frameCount);
-                return n <= 1 ? new int[][]{PreviewCube.downsample(img)} : splitStrip(img, n);
+                return n <= 1 ? new int[][]{PreviewCube.downsample(img)} : splitFrames(img, n);
             }
         } catch (Exception e) {
             return null;
         }
     }
 
-    /** Split a vertical frame-strip (w wide, w·N tall) into N downsampled cube grids. */
-    private static int[][] splitStrip(BufferedImage strip, int frameCount) {
-        if (strip == null || frameCount <= 0) return null;
-        int w = strip.getWidth();
-        int fh = strip.getHeight() / frameCount;
-        if (w <= 0 || fh <= 0) return null;
+    /**
+     * Slice a downloaded preview PNG into cube grids — the client side of {@code VaultBlockCodec.buildPreview}
+     * (Group 20 §S2 conflict screen). The preview is a vertical {@code frameCount}-tall strip (or a single
+     * square frame), auto-detected by {@link #splitFrames}. Returns null on any failure (→ grey cube).
+     */
+    public static int[][] framesFromPng(byte[] png, int frameCount) {
+        try {
+            BufferedImage img = read(png);
+            if (img == null) return null;
+            return splitFrames(img, Math.max(1, frameCount));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Split a decoded animation image into N downsampled cube grids, auto-detecting the layout: a packed cell
+     * GRID (⌈√N⌉ columns, the current format) or a legacy vertical strip (w wide, w·N tall). The discriminator
+     * is exact — a vertical strip is precisely {@code frameCount}× as tall as it is wide.
+     */
+    private static int[][] splitFrames(BufferedImage img, int frameCount) {
+        if (img == null || frameCount <= 0) return null;
+        int w = img.getWidth(), h = img.getHeight();
+        if (w <= 0 || h <= 0) return null;
+        boolean vertical = (long) w * frameCount == h;
+        int cols = vertical ? 1 : AnimationDecoder.gridCols(frameCount);
+        int cell = w / cols;
+        if (cell <= 0) return null;
         int[][] grids = new int[frameCount][];
-        for (int i = 0; i < frameCount; i++)
-            grids[i] = PreviewCube.downsample(strip.getSubimage(0, i * fh, w, fh));
+        for (int i = 0; i < frameCount; i++) {
+            int cx = (i % cols) * cell, cy = (i / cols) * cell;
+            grids[i] = PreviewCube.downsample(img.getSubimage(cx, cy, cell, cell));
+        }
         return grids;
     }
 

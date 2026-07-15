@@ -39,26 +39,42 @@ public final class SlotItemRenderer implements BuiltinItemRendererRegistry.Dynam
     public void render(ItemStack stack, ModelTransformationMode mode, MatrixStack matrices,
                        VertexConsumerProvider vcp, int light, int overlay) {
         if (!(stack.getItem() instanceof BlockItem bi) || !(bi.getBlock() instanceof SlotBlock sb)) return;
-        int slot = sb.getSlotIndex();
 
-        // Static off-atlas slot → its full crisp texture on all six faces.
-        Identifier tex = StaticFrameCache.get(slot);
-        if (tex != null) {
-            VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(tex));
-            // The builtin/entity item model's display transforms already posed the matrices; draw into that space.
-            AnimSlotBER.drawCube(matrices, vc, light, overlay, 0f, 1f);
+        // Group 30 (Guess Mode) — the flagged holder's OWN client shows the "?" mystery cube instead of the
+        // real icon/hand for a flagged block, in EVERY mode (hotbar, inventory, own hand, other players'
+        // hands, F5). A WATCHER isn't flagged, so GuessDisguise returns false and they see the real block.
+        if (GuessDisguise.disguiseItem(stack)) {
+            GuessDisguise.drawLook(matrices, vcp, light, overlay, GuessDisguise.lookSlotForStack(stack));
             return;
         }
 
-        // Animated off-atlas slot (Step 3) → current frame band from its strip (kills the atlas icon muffle).
+        int slot = sb.getSlotIndex();
+
+        // Animated off-atlas slot → current frame's grid cell (kills the atlas icon muffle). Checked first so
+        // an animated grid (which is roughly square) is never mistaken for a static texture below.
         AnimFrameCache.Slot s = AnimFrameCache.get(slot);
-        if (s == null) return; // not off-atlas (shaped / per-face) — its normal atlas item model drew it
-        MinecraftClient mc = MinecraftClient.getInstance();
-        long worldTime = (mc != null && mc.world != null) ? mc.world.getTime() : 0L;
-        int frame = s.currentStripIndex(worldTime, 0f);
-        float vTop = (float) frame / s.frameCount;
-        float vBot = (float) (frame + 1) / s.frameCount;
-        VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(s.textureId));
-        AnimSlotBER.drawCube(matrices, vc, light, overlay, vTop, vBot);
+        if (s != null) {
+            // ADR-014 Step 3 slice 1: one-cell per-frame texture, drawn whole (UV 0..1). Same millisecond
+            // wall-clock as the placed block so the icon plays at true speed (Step 2).
+            Identifier tex = s.prepare(AnimClock.nowMs());
+            VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(tex));
+            // The builtin/entity item model's display transforms already posed the matrices; draw into that space.
+            AnimSlotBER.drawCube(matrices, vc, light, overlay, 0f, 1f, 0f, 1f);
+            return;
+        }
+
+        // Static off-atlas slot → its full crisp texture on all six faces.
+        Identifier tex = StaticFrameCache.get(slot);
+        if (tex == null) {
+            // Group 30 (Guess Mode): a plain static full-cube slot now also gets a builtin/entity item
+            // model (see ServerPackGenerator) so its item icon can be disguised — its WORLD block model is
+            // still the ordinary atlas cube_all, so StaticFrameCache.get above returns null for it. Draw the
+            // real slot_N.png cube ourselves (same look as the atlas icon it replaces). Returns null here for
+            // shape/per-face slots (still their own atlas item model, never reach this renderer at all).
+            tex = StaticFrameCache.getIconFallback(slot);
+            if (tex == null) return;
+        }
+        VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(tex));
+        AnimSlotBER.drawCube(matrices, vc, light, overlay, 0f, 1f, 0f, 1f);
     }
 }

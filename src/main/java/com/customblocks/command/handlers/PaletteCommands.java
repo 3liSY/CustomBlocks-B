@@ -17,6 +17,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.ColorLibrary;
 import com.customblocks.core.PlayerPaletteManager;
@@ -74,10 +75,10 @@ public final class PaletteCommands {
             return 0;
         }
         if (PlayerPaletteManager.workingAdd(p.getUuid(), hex)) {
-            Chat.success(ctx.getSource(), "Added §f" + hex + "§r to your working palette ("
+            Chat.success(ctx.getSource(), "Added " + CbFmt.BODY + hex + CbFmt.RESET + " to your working palette ("
                     + PlayerPaletteManager.working(p.getUuid()).size() + "/" + PlayerPaletteManager.WORKING_MAX + ").");
         } else {
-            Chat.info(ctx.getSource(), "§f" + hex + "§r is already in your working palette (or it's full).");
+            Chat.info(ctx.getSource(), CbFmt.BODY + hex + CbFmt.RESET + " is already in your working palette (or it's full).");
         }
         return 1;
     }
@@ -95,12 +96,12 @@ public final class PaletteCommands {
         if (p == null) { Chat.error(ctx.getSource(), "Only a player has a palette."); return 0; }
         List<String> work = PlayerPaletteManager.working(p.getUuid());
         List<String> names = PlayerPaletteManager.names(p.getUuid());
-        Chat.info(ctx.getSource(), "§6Working palette §7(" + work.size() + "): §f"
-                + (work.isEmpty() ? "§8empty" : String.join(" ", work)));
+        Chat.info(ctx.getSource(), CbFmt.HEAD + "Working palette " + CbFmt.DIM + "(" + work.size() + "): " + CbFmt.BODY
+                + (work.isEmpty() ? CbFmt.FAINT + "empty" : String.join(" ", work)));
         if (names.isEmpty()) {
-            Chat.info(ctx.getSource(), "§7No saved palettes yet — §f/cb palette save <name>§7.");
+            Chat.info(ctx.getSource(), CbFmt.DIM + "No saved palettes yet — " + CbFmt.BODY + "/cb palette save <name>" + CbFmt.DIM + ".");
         } else {
-            Chat.info(ctx.getSource(), "§6Saved palettes §7(" + names.size() + "): §f" + String.join(", ", names));
+            Chat.info(ctx.getSource(), CbFmt.HEAD + "Saved palettes " + CbFmt.DIM + "(" + names.size() + "): " + CbFmt.BODY + String.join(", ", names));
         }
         return 1;
     }
@@ -111,7 +112,7 @@ public final class PaletteCommands {
         String n = name.trim();
         if (n.isEmpty()) { Chat.error(ctx.getSource(), "Give the palette a name."); return 0; }
         if (PlayerPaletteManager.save(p.getUuid(), n)) {
-            Chat.success(ctx.getSource(), "Saved palette §f" + n + "§r ("
+            Chat.success(ctx.getSource(), "Saved palette " + CbFmt.BODY + n + CbFmt.RESET + " ("
                     + PlayerPaletteManager.working(p.getUuid()).size() + " colours).");
         } else {
             Chat.error(ctx.getSource(), "Your working palette is empty — add colours first (/cb palette add <colour>).");
@@ -124,7 +125,7 @@ public final class PaletteCommands {
         if (p == null) { Chat.error(ctx.getSource(), "Only a player has a palette."); return 0; }
         String n = name.trim();
         if (PlayerPaletteManager.load(p.getUuid(), n)) {
-            Chat.success(ctx.getSource(), "Loaded palette §f" + n + "§r ("
+            Chat.success(ctx.getSource(), "Loaded palette " + CbFmt.BODY + n + CbFmt.RESET + " ("
                     + PlayerPaletteManager.working(p.getUuid()).size() + " colours) into your working set.");
         } else {
             Chat.error(ctx.getSource(), "No palette called \"" + n + "\". See /cb palette list.");
@@ -137,7 +138,7 @@ public final class PaletteCommands {
         if (p == null) { Chat.error(ctx.getSource(), "Only a player has a palette."); return 0; }
         String n = name.trim();
         if (PlayerPaletteManager.delete(p.getUuid(), n)) {
-            Chat.success(ctx.getSource(), "Deleted palette §f" + n + "§r.");
+            Chat.success(ctx.getSource(), "Deleted palette " + CbFmt.BODY + n + CbFmt.RESET + ".");
         } else {
             Chat.error(ctx.getSource(), "No palette called \"" + n + "\". See /cb palette list.");
         }

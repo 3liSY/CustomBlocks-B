@@ -1,0 +1,1690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CustomBlocks Category Forge Prototype</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --panel: #14171c;
+    --panel-2: #1b2027;
+    --panel-3: #222832;
+    --line: #313946;
+    --line-soft: #242b35;
+    --text: #eef2f6;
+    --muted: #a6b0bc;
+    --dim: #717d8a;
+    --gold: #f5c451;
+    --teal: #42d7bf;
+    --rose: #f06b8b;
+    --green: #73d66d;
+    --amber: #ef9853;
+    --red: #ef6363;
+    --blue: #7ea7ff;
+    --shadow: rgba(0, 0, 0, .45);
+    --radius: 8px;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    background:
+      linear-gradient(180deg, rgba(245, 196, 81, .08), transparent 26%),
+      linear-gradient(135deg, #0b0d10 0%, #10151a 45%, #0c0d12 100%);
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    letter-spacing: 0;
+    overflow: hidden;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+    letter-spacing: 0;
+  }
+
+  button {
+    border: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--panel-2), #151920);
+    color: var(--text);
+    border-radius: var(--radius);
+    cursor: pointer;
+    min-height: 34px;
+  }
+
+  button:hover {
+    border-color: rgba(245, 196, 81, .65);
+    transform: translateY(-1px);
+  }
+
+  button:active { transform: translateY(0); }
+  button.icon { width: 34px; padding: 0; display: inline-grid; place-items: center; }
+  button.primary {
+    color: #15110a;
+    border-color: #f5c451;
+    background: linear-gradient(180deg, #ffe28b, var(--gold));
+    font-weight: 800;
+  }
+
+  button.danger {
+    border-color: rgba(239, 99, 99, .55);
+    background: linear-gradient(180deg, #302027, #20171b);
+    color: #ffc9d0;
+  }
+
+  .app {
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 58px 1fr;
+  }
+
+  .topbar {
+    display: grid;
+    grid-template-columns: 300px 1fr auto;
+    align-items: center;
+    gap: 14px;
+    padding: 10px 14px;
+    border-bottom: 1px solid rgba(245, 196, 81, .34);
+    background: rgba(10, 12, 15, .96);
+    box-shadow: 0 10px 30px var(--shadow);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+
+  .brand-mark {
+    width: 34px;
+    height: 34px;
+    border-radius: 7px;
+    border: 1px solid rgba(245, 196, 81, .6);
+    background:
+      linear-gradient(135deg, transparent 0 48%, rgba(0,0,0,.35) 48% 52%, transparent 52%),
+      linear-gradient(45deg, #f5c451, #42d7bf 52%, #f06b8b);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.08);
+  }
+
+  .brand h1 {
+    margin: 0;
+    font-size: 17px;
+    color: var(--gold);
+    white-space: nowrap;
+  }
+
+  .brand small {
+    display: block;
+    color: var(--dim);
+    font-size: 11px;
+    margin-top: 1px;
+  }
+
+  .search {
+    display: grid;
+    grid-template-columns: 34px 1fr 120px;
+    align-items: center;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #090b0f;
+    overflow: hidden;
+    min-width: 280px;
+  }
+
+  .search .mag {
+    display: grid;
+    place-items: center;
+    color: var(--teal);
+    height: 36px;
+    border-right: 1px solid var(--line-soft);
+  }
+
+  .search input {
+    height: 36px;
+    border: 0;
+    outline: 0;
+    color: var(--text);
+    background: transparent;
+    padding: 0 10px;
+  }
+
+  .search select {
+    height: 36px;
+    border: 0;
+    border-left: 1px solid var(--line-soft);
+    outline: 0;
+    color: var(--muted);
+    background: #101319;
+    padding: 0 8px;
+  }
+
+  .top-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .workspace {
+    display: grid;
+    grid-template-columns: 300px minmax(440px, 1fr) 372px;
+    min-height: 0;
+  }
+
+  .rail, .editor, .inspector {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .rail {
+    border-right: 1px solid var(--line-soft);
+    background: rgba(13, 16, 20, .88);
+    padding: 12px;
+  }
+
+  .editor {
+    padding: 14px;
+    background:
+      linear-gradient(90deg, rgba(66, 215, 191, .05), transparent 34%),
+      linear-gradient(180deg, rgba(255,255,255,.025), transparent 160px);
+  }
+
+  .inspector {
+    border-left: 1px solid var(--line-soft);
+    background: rgba(13, 16, 20, .88);
+    padding: 12px;
+  }
+
+  .section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: 2px 0 10px;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+  }
+
+  .section-title strong {
+    color: var(--gold);
+    font-size: 12px;
+  }
+
+  .mini-actions {
+    display: flex;
+    gap: 6px;
+  }
+
+  .tree {
+    display: grid;
+    gap: 7px;
+  }
+
+  .cat-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 27px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    min-height: 50px;
+    padding: 7px 8px;
+    border: 1px solid var(--line);
+    border-left-width: 4px;
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel), #11151a);
+    cursor: pointer;
+  }
+
+  .cat-row.active {
+    border-color: rgba(245, 196, 81, .85);
+    box-shadow: 0 0 0 1px rgba(245, 196, 81, .2), 0 12px 26px rgba(0,0,0,.25);
+  }
+
+  .cat-row.depth-1 { margin-left: 18px; }
+  .cat-row.depth-2 { margin-left: 36px; }
+  .cat-row.depth-3 { margin-left: 54px; }
+
+  .cat-icon {
+    width: 27px;
+    height: 27px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,.18);
+    display: grid;
+    place-items: center;
+    color: #0b0d10;
+    font-weight: 900;
+    font-size: 12px;
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.08);
+  }
+
+  .cat-name {
+    min-width: 0;
+  }
+
+  .cat-name b {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+
+  .cat-name span {
+    display: block;
+    color: var(--dim);
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+  }
+
+  .badges {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: end;
+  }
+
+  .badge {
+    border: 1px solid rgba(255,255,255,.14);
+    background: rgba(0,0,0,.25);
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 2px 6px;
+    font-size: 10px;
+    min-width: 22px;
+    text-align: center;
+  }
+
+  .badge.main {
+    color: #111;
+    background: var(--gold);
+    border-color: var(--gold);
+    font-weight: 800;
+  }
+
+  .canvas {
+    display: grid;
+    grid-template-rows: auto auto minmax(260px, 1fr);
+    gap: 12px;
+    min-height: 100%;
+  }
+
+  .mode-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    background: rgba(12, 15, 19, .82);
+  }
+
+  .tabs, .seg {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .tabs button, .seg button {
+    min-height: 32px;
+    padding: 0 11px;
+    color: var(--muted);
+  }
+
+  .tabs button.active, .seg button.active {
+    color: #111;
+    border-color: var(--teal);
+    background: linear-gradient(180deg, #78f4df, var(--teal));
+    font-weight: 800;
+  }
+
+  .hero-preview {
+    display: grid;
+    grid-template-columns: minmax(250px, 1fr) 260px;
+    gap: 12px;
+  }
+
+  .widget {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.04), transparent),
+      linear-gradient(135deg, rgba(245,196,81,.12), rgba(66,215,191,.08) 58%, rgba(240,107,139,.1));
+    padding: 14px;
+    min-height: 168px;
+    display: grid;
+    grid-template-columns: 84px 1fr;
+    gap: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .widget:before {
+    content: "";
+    position: absolute;
+    inset: auto 0 0 0;
+    height: 5px;
+    background: var(--active-color, var(--gold));
+  }
+
+  .big-icon {
+    width: 84px;
+    height: 84px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,.22);
+    background:
+      linear-gradient(135deg, rgba(0,0,0,.18) 0 20%, transparent 20% 80%, rgba(255,255,255,.16) 80%),
+      var(--active-color, var(--gold));
+    display: grid;
+    place-items: center;
+    font-size: 38px;
+    font-weight: 900;
+    color: rgba(8, 10, 12, .82);
+    box-shadow: inset 0 0 0 4px rgba(255,255,255,.08);
+  }
+
+  .widget h2 {
+    margin: 0;
+    font-size: 24px;
+    color: var(--text);
+  }
+
+  .widget .path {
+    color: var(--teal);
+    font-size: 12px;
+    margin: 3px 0 10px;
+  }
+
+  .widget .desc {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.38;
+  }
+
+  .widget-footer {
+    display: flex;
+    gap: 7px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+  }
+
+  .tag {
+    border: 1px solid rgba(255,255,255,.16);
+    border-radius: 999px;
+    padding: 4px 8px;
+    font-size: 11px;
+    background: rgba(0,0,0,.25);
+  }
+
+  .tag.gold { color: #111; background: var(--gold); border-color: var(--gold); font-weight: 800; }
+  .tag.teal { color: #071412; background: var(--teal); border-color: var(--teal); font-weight: 800; }
+  .tag.rose { color: #1a080d; background: var(--rose); border-color: var(--rose); font-weight: 800; }
+
+  .shortcut-lore {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(9, 11, 15, .94);
+    padding: 12px;
+  }
+
+  .shortcut-lore h3 {
+    margin: 0 0 9px;
+    color: var(--gold);
+    font-size: 13px;
+  }
+
+  .shortcut-lore p {
+    margin: 6px 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .shortcut-lore b {
+    color: var(--text);
+    font-weight: 800;
+  }
+
+  .panel-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) minmax(280px, 1fr);
+    gap: 12px;
+    min-height: 0;
+  }
+
+  .panel {
+    border: 1px solid var(--line-soft);
+    border-radius: var(--radius);
+    background: rgba(13, 16, 20, .82);
+    padding: 12px;
+    min-height: 270px;
+  }
+
+  .panel h3 {
+    margin: 0 0 10px;
+    color: var(--gold);
+    font-size: 14px;
+  }
+
+  .field {
+    display: grid;
+    gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  .field label {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+
+  .field input, .field select, .field textarea {
+    width: 100%;
+    min-height: 34px;
+    color: var(--text);
+    background: #090b0f;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    outline: 0;
+    padding: 7px 9px;
+  }
+
+  .field textarea {
+    resize: vertical;
+    min-height: 76px;
+  }
+
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--teal);
+    box-shadow: 0 0 0 2px rgba(66, 215, 191, .18);
+  }
+
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 6px;
+  }
+
+  .swatch {
+    height: 28px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,255,255,.2);
+    cursor: pointer;
+  }
+
+  .swatch.active {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+  }
+
+  .template-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .template {
+    min-height: 82px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--panel);
+    padding: 9px;
+    cursor: pointer;
+  }
+
+  .template.active {
+    border-color: var(--gold);
+    box-shadow: 0 0 0 1px rgba(245, 196, 81, .2);
+  }
+
+  .template b {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 5px;
+  }
+
+  .template span {
+    display: block;
+    color: var(--dim);
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .template .stripe {
+    height: 5px;
+    border-radius: 3px;
+    margin-top: 8px;
+    background: var(--stripe, var(--gold));
+  }
+
+  .blocks {
+    display: grid;
+    gap: 8px;
+  }
+
+  .block-tile {
+    position: relative;
+    display: grid;
+    grid-template-columns: 42px 1fr auto;
+    gap: 9px;
+    align-items: center;
+    min-height: 62px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--panel-2), #12161c);
+    padding: 8px;
+    cursor: pointer;
+  }
+
+  .block-tile.main {
+    border-color: rgba(245, 196, 81, .85);
+  }
+
+  .block-art {
+    width: 42px;
+    height: 42px;
+    border-radius: 7px;
+    border: 1px solid rgba(255,255,255,.2);
+    background:
+      linear-gradient(45deg, rgba(255,255,255,.14) 0 24%, transparent 24% 76%, rgba(0,0,0,.25) 76%),
+      var(--block-color, #777);
+  }
+
+  .block-copy b {
+    display: block;
+    font-size: 13px;
+  }
+
+  .block-copy span {
+    display: block;
+    color: var(--dim);
+    font-size: 11px;
+    margin-top: 2px;
+  }
+
+  .tooltip {
+    position: fixed;
+    z-index: 20;
+    max-width: 290px;
+    padding: 10px;
+    border: 1px solid rgba(245,196,81,.55);
+    border-radius: var(--radius);
+    background: rgba(7, 8, 10, .96);
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.4;
+    box-shadow: 0 18px 40px rgba(0,0,0,.55);
+    display: none;
+    pointer-events: none;
+  }
+
+  .tooltip b { color: var(--text); }
+
+  .callout {
+    border: 1px solid rgba(239, 152, 83, .42);
+    background: rgba(239, 152, 83, .09);
+    border-radius: var(--radius);
+    padding: 9px;
+    color: #ffd4b5;
+    font-size: 12px;
+    line-height: 1.35;
+    margin-bottom: 10px;
+  }
+
+  .delete-modes {
+    display: grid;
+    gap: 8px;
+  }
+
+  .delete-mode {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(9,11,15,.7);
+    padding: 9px;
+    cursor: pointer;
+  }
+
+  .delete-mode.active {
+    border-color: var(--red);
+    box-shadow: 0 0 0 1px rgba(239,99,99,.18);
+  }
+
+  .delete-mode b {
+    display: block;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .delete-mode span {
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+    display: block;
+    margin-top: 4px;
+  }
+
+  .wizard-steps {
+    display: grid;
+    gap: 8px;
+  }
+
+  .step {
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 8px;
+    align-items: start;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 9px;
+    background: rgba(9,11,15,.55);
+  }
+
+  .step-num {
+    width: 28px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    background: var(--teal);
+    color: #071412;
+    font-weight: 900;
+  }
+
+  .step b {
+    display: block;
+    font-size: 13px;
+    margin-bottom: 3px;
+  }
+
+  .step span {
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .footer-note {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: var(--dim);
+    font-size: 11px;
+  }
+
+  .context-menu {
+    position: fixed;
+    z-index: 30;
+    width: 230px;
+    border: 1px solid rgba(245,196,81,.55);
+    border-radius: var(--radius);
+    background: rgba(8,10,13,.98);
+    box-shadow: 0 18px 40px rgba(0,0,0,.58);
+    display: none;
+    padding: 6px;
+  }
+
+  .context-menu button {
+    width: 100%;
+    justify-content: flex-start;
+    text-align: left;
+    border-color: transparent;
+    background: transparent;
+    min-height: 31px;
+    color: var(--muted);
+  }
+
+  .context-menu button:hover {
+    border-color: var(--line);
+    color: var(--text);
+    background: var(--panel-2);
+  }
+
+  .toast {
+    position: fixed;
+    z-index: 40;
+    left: 50%;
+    bottom: 18px;
+    transform: translateX(-50%) translateY(20px);
+    opacity: 0;
+    border: 1px solid rgba(66,215,191,.5);
+    border-radius: var(--radius);
+    background: rgba(7,9,12,.96);
+    color: var(--text);
+    padding: 9px 12px;
+    box-shadow: 0 14px 35px rgba(0,0,0,.5);
+    transition: .18s ease;
+    font-size: 13px;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 1100px) {
+    body { overflow: auto; }
+    .app { height: auto; min-height: 100vh; }
+    .topbar { grid-template-columns: 1fr; }
+    .workspace { grid-template-columns: 1fr; }
+    .rail, .inspector { border: 0; }
+    .hero-preview, .panel-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div>
+        <h1>Category Forge</h1>
+        <small>Prototype for the full replacement screen</small>
+      </div>
+    </div>
+    <div class="search">
+      <div class="mag">/</div>
+      <input id="searchInput" type="search" placeholder="Search category, block, badge, parent...">
+      <select id="viewFilter" aria-label="Filter">
+        <option value="all">All</option>
+        <option value="roots">Roots</option>
+        <option value="deep">Deep</option>
+        <option value="empty">Empty</option>
+      </select>
+    </div>
+    <div class="top-actions">
+      <button id="cmdCreate">/create</button>
+      <button id="cmdExport">/export</button>
+      <button class="primary" id="saveDraft">Save Draft</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <aside class="rail">
+      <div class="section-title">
+        <strong>Tree</strong>
+        <div class="mini-actions">
+          <button class="icon" id="collapseAll" title="Collapse all">-</button>
+          <button class="icon" id="expandAll" title="Expand all">+</button>
+        </div>
+      </div>
+      <div id="tree" class="tree"></div>
+      <div class="footer-note">
+        <span id="treeStats">0 categories</span>
+        <span>2+ depth gets a warning</span>
+      </div>
+    </aside>
+
+    <section class="editor">
+      <div class="canvas">
+        <div class="mode-strip">
+          <div class="tabs" id="mainTabs">
+            <button data-tab="overview" class="active">Overview</button>
+            <button data-tab="wizard">Wizard</button>
+            <button data-tab="advanced">Advanced Editor</button>
+            <button data-tab="blocks">Block Shortcuts</button>
+            <button data-tab="danger">Delete Lab</button>
+          </div>
+          <div class="seg" id="flowMode">
+            <button data-flow="screen" class="active">Screen</button>
+            <button data-flow="wizard">Step Flow</button>
+          </div>
+        </div>
+
+        <div class="hero-preview">
+          <article class="widget" id="liveWidget">
+            <div class="big-icon" id="bigIcon">B</div>
+            <div>
+              <h2 id="previewName">Building</h2>
+              <div class="path" id="previewPath">Root category</div>
+              <p class="desc" id="previewDesc">High-level building set for walls, floors, trims, pillars, and structure pieces.</p>
+              <div class="widget-footer">
+                <span class="tag gold" id="previewBadge">BUILD</span>
+                <span class="tag teal" id="previewCount">8 direct / 15 tree blocks</span>
+                <span class="tag rose" id="previewMode">Main category enabled</span>
+              </div>
+            </div>
+          </article>
+
+          <aside class="shortcut-lore">
+            <h3>Block Lore Shortcuts</h3>
+            <p><b>Left click</b> opens category or block details.</p>
+            <p><b>Right click</b> opens quick actions.</p>
+            <p><b>Shift click</b> sets the main category.</p>
+            <p><b>Ctrl click</b> adds or removes the active category.</p>
+            <p><b>Alt click</b> jumps to parent category tools.</p>
+          </aside>
+        </div>
+
+        <div class="panel-grid" id="tab-overview">
+          <section class="panel">
+            <h3>Category Snapshot</h3>
+            <div class="field">
+              <label>Name</label>
+              <input id="nameInput" value="Building">
+            </div>
+            <div class="field">
+              <label>Description</label>
+              <textarea id="descInput">High-level building set for walls, floors, trims, pillars, and structure pieces.</textarea>
+            </div>
+            <div class="field">
+              <label>Main badge</label>
+              <input id="badgeInput" value="BUILD">
+            </div>
+            <div class="field">
+              <label>Parent</label>
+              <select id="parentInput"></select>
+            </div>
+            <div class="callout" id="depthWarning">This category is easy to browse. Deep trees are supported, but more than 2 sub-levels can become harder to manage.</div>
+          </section>
+
+          <section class="panel">
+            <h3>Live Style</h3>
+            <div class="field">
+              <label>Accent color</label>
+              <div class="swatches" id="swatches"></div>
+            </div>
+            <div class="field">
+              <label>Category icon letter</label>
+              <input id="iconInput" value="B" maxlength="2">
+            </div>
+            <div class="field">
+              <label>Template</label>
+              <div class="template-grid" id="templates"></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="panel-grid hidden" id="tab-wizard">
+          <section class="panel">
+            <h3>Creation Wizard</h3>
+            <div class="wizard-steps">
+              <div class="step">
+                <div class="step-num">1</div>
+                <div><b>Pick start</b><span>Empty category, category with selected block, or subcategory under current.</span></div>
+              </div>
+              <div class="step">
+                <div class="step-num">2</div>
+                <div><b>Name and path</b><span>Choose display name, key, parent, and main-category behavior.</span></div>
+              </div>
+              <div class="step">
+                <div class="step-num">3</div>
+                <div><b>Style</b><span>Pick icon, colors, badge, tile shape, sound, particle, and template.</span></div>
+              </div>
+              <div class="step">
+                <div class="step-num">4</div>
+                <div><b>Review</b><span>Preview the category widget, shortcuts, block count, and export data.</span></div>
+              </div>
+            </div>
+          </section>
+          <section class="panel">
+            <h3>Wizard Choices</h3>
+            <div class="field">
+              <label>Start mode</label>
+              <select id="startMode">
+                <option>Empty category</option>
+                <option>With current block</option>
+                <option>Subcategory under selected</option>
+                <option>From template</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Player sees</label>
+              <select>
+                <option>Wizard first, advanced button available</option>
+                <option>Advanced editor first, wizard button available</option>
+                <option>Ask every time</option>
+              </select>
+            </div>
+            <button class="primary" id="simulateWizard">Simulate Wizard Create</button>
+          </section>
+        </div>
+
+        <div class="panel-grid hidden" id="tab-advanced">
+          <section class="panel">
+            <h3>Advanced Controls</h3>
+            <div class="field">
+              <label>Badge color</label>
+              <select>
+                <option>Use accent color</option>
+                <option>Gold badge</option>
+                <option>Teal badge</option>
+                <option>Rose badge</option>
+                <option>Custom hex</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Tile background</label>
+              <select>
+                <option>Soft material band</option>
+                <option>Pixel block face</option>
+                <option>Royal framed</option>
+                <option>Minimal flat</option>
+                <option>Animated pulse</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Sound</label>
+              <select>
+                <option>Amethyst chime</option>
+                <option>Experience pickup</option>
+                <option>Smithing table</option>
+                <option>Silent</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Particles</label>
+              <select>
+                <option>Composter burst</option>
+                <option>Enchant sparkle</option>
+                <option>Dust color</option>
+                <option>Off</option>
+              </select>
+            </div>
+          </section>
+          <section class="panel">
+            <h3>Rules</h3>
+            <div class="field">
+              <label>Auto add when block name contains</label>
+              <input value="wall, pillar, floor, roof">
+            </div>
+            <div class="field">
+              <label>Permissions</label>
+              <select>
+                <option>Admins manage, players browse</option>
+                <option>Owner only</option>
+                <option>Team editable</option>
+                <option>Public editable</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Visibility</label>
+              <select>
+                <option>Visible everywhere</option>
+                <option>Hidden from normal browser</option>
+                <option>Only in search</option>
+                <option>Archived</option>
+              </select>
+            </div>
+            <button id="makeSub">Create sample subcategory</button>
+          </section>
+        </div>
+
+        <div class="panel-grid hidden" id="tab-blocks">
+          <section class="panel">
+            <h3>Shortcut Playtest</h3>
+            <div class="blocks" id="blockList"></div>
+          </section>
+          <section class="panel">
+            <h3>Selection Result</h3>
+            <div class="field">
+              <label>Active block</label>
+              <input id="activeBlock" value="stone_trim" readonly>
+            </div>
+            <div class="field">
+              <label>Categories on block</label>
+              <textarea id="blockCats" readonly></textarea>
+            </div>
+            <div class="field">
+              <label>Main category</label>
+              <input id="mainCat" readonly>
+            </div>
+            <button id="createFromBlock" class="primary">Create Category From Block</button>
+          </section>
+        </div>
+
+        <div class="panel-grid hidden" id="tab-danger">
+          <section class="panel">
+            <h3>Delete Modes</h3>
+            <div class="callout">The confusing part is split into separate choices so the player knows exactly what will happen before confirm.</div>
+            <div class="delete-modes" id="deleteModes"></div>
+          </section>
+          <section class="panel">
+            <h3>Delete Preview</h3>
+            <div class="field">
+              <label>Chosen mode</label>
+              <input id="deleteChoice" readonly>
+            </div>
+            <div class="field">
+              <label>Preview</label>
+              <textarea id="deletePreview" readonly></textarea>
+            </div>
+            <div class="field">
+              <label>Move target</label>
+              <select id="moveTarget"></select>
+            </div>
+            <button class="danger" id="fakeDelete">Preview Confirm</button>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <aside class="inspector">
+      <div class="section-title">
+        <strong>Replace Plan</strong>
+        <span>Prototype only</span>
+      </div>
+      <section class="panel" style="min-height:auto">
+        <h3>What This Tests</h3>
+        <div class="shortcut-lore" style="border-color:var(--line-soft)">
+          <p><b>Multiple categories:</b> blocks can keep several category tags.</p>
+          <p><b>Main category:</b> one category controls the badge/icon shown first.</p>
+          <p><b>Parent view:</b> parent categories include child blocks.</p>
+          <p><b>Full style:</b> icons, badge, color, templates, sounds, particles, rules.</p>
+          <p><b>Replace path:</b> this becomes the new `/cb categories` screen after approval.</p>
+        </div>
+      </section>
+      <section class="panel" style="min-height:auto; margin-top:12px">
+        <h3>Category Order</h3>
+        <div id="orderList" class="blocks"></div>
+      </section>
+    </aside>
+  </main>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+<div class="context-menu" id="contextMenu">
+  <button data-action="assign">Add/remove active category</button>
+  <button data-action="main">Set as main category</button>
+  <button data-action="new">Create category from block</button>
+  <button data-action="parent">Open parent category</button>
+</div>
+<div class="toast" id="toast">Saved</div>
+
+<script>
+(() => {
+  const colors = ["#f5c451", "#42d7bf", "#f06b8b", "#73d66d", "#ef9853", "#7ea7ff", "#c681ff", "#f0f3f6"];
+  const templates = [
+    { id: "royal", name: "Royal Gold", desc: "Framed tile, gold badge, chime, soft glow.", color: "#f5c451", badge: "ROYAL" },
+    { id: "forge", name: "Industrial", desc: "Iron trim, ember accent, smithing sound.", color: "#ef9853", badge: "FORGE" },
+    { id: "garden", name: "Nature", desc: "Leaf color, quiet particles, clean lore.", color: "#73d66d", badge: "NAT" },
+    { id: "neon", name: "Neon", desc: "Bright edge, sparkle, stronger badge.", color: "#42d7bf", badge: "NEON" }
+  ];
+
+  let categories = [
+    { id: "building", name: "Building", parent: "", color: "#f5c451", icon: "B", badge: "BUILD", desc: "High-level building set for walls, floors, trims, pillars, and structure pieces.", sort: 1 },
+    { id: "walls", name: "Walls", parent: "building", color: "#ef9853", icon: "W", badge: "WALL", desc: "All wall families and wall variants.", sort: 2 },
+    { id: "stone_walls", name: "Stone Walls", parent: "walls", color: "#a9b1ba", icon: "S", badge: "STONE", desc: "Stone wall set. This is already two levels deep.", sort: 3 },
+    { id: "decor", name: "Decor", parent: "", color: "#f06b8b", icon: "D", badge: "DECOR", desc: "Props, trim, lights, and decorative pieces.", sort: 4 },
+    { id: "neon_signs", name: "Neon Signs", parent: "decor", color: "#42d7bf", icon: "N", badge: "NEON", desc: "Light signs and emissive display pieces.", sort: 5 },
+    { id: "empty_ideas", name: "Empty Ideas", parent: "", color: "#7ea7ff", icon: "I", badge: "IDEA", desc: "An empty category kept for later blocks.", sort: 6 }
+  ];
+
+  let blocks = [
+    { id: "stone_trim", name: "Stone Trim", color: "#a9b1ba", cats: ["building", "walls", "stone_walls"], main: "stone_walls" },
+    { id: "oak_wall", name: "Oak Wall", color: "#a97642", cats: ["building", "walls"], main: "walls" },
+    { id: "gold_pillar", name: "Gold Pillar", color: "#f5c451", cats: ["building", "decor"], main: "building" },
+    { id: "cyan_neon", name: "Cyan Neon Sign", color: "#42d7bf", cats: ["decor", "neon_signs"], main: "neon_signs" },
+    { id: "rose_lamp", name: "Rose Lamp", color: "#f06b8b", cats: ["decor"], main: "decor" },
+    { id: "roof_cap", name: "Roof Cap", color: "#7ea7ff", cats: ["building"], main: "building" }
+  ];
+
+  let selectedCat = "building";
+  let selectedBlock = "stone_trim";
+  let activeTab = "overview";
+  let activeTemplate = "royal";
+  let deleteMode = "category_only";
+  let collapsed = new Set();
+
+  const $ = (id) => document.getElementById(id);
+
+  function cat(id) {
+    return categories.find(c => c.id === id);
+  }
+
+  function childrenOf(id) {
+    return categories.filter(c => c.parent === id).sort((a, b) => a.sort - b.sort);
+  }
+
+  function depthOf(id) {
+    let d = 0;
+    let current = cat(id);
+    while (current && current.parent) {
+      d++;
+      current = cat(current.parent);
+    }
+    return d;
+  }
+
+  function pathOf(id) {
+    let out = [];
+    let current = cat(id);
+    while (current) {
+      out.unshift(current.name);
+      current = cat(current.parent);
+    }
+    return out.join(" > ") || "Root category";
+  }
+
+  function descendantsOf(id) {
+    const out = [];
+    const walk = (parent) => {
+      childrenOf(parent).forEach(child => {
+        out.push(child.id);
+        walk(child.id);
+      });
+    };
+    walk(id);
+    return out;
+  }
+
+  function directBlockCount(id) {
+    return blocks.filter(b => b.cats.includes(id)).length;
+  }
+
+  function treeBlockCount(id) {
+    const ids = [id, ...descendantsOf(id)];
+    return blocks.filter(b => b.cats.some(c => ids.includes(c))).length;
+  }
+
+  function visibleCats() {
+    const query = $("searchInput").value.trim().toLowerCase();
+    const filter = $("viewFilter").value;
+    return categories.filter(c => {
+      const d = depthOf(c.id);
+      const empty = treeBlockCount(c.id) === 0;
+      const hay = [c.id, c.name, c.badge, c.desc, pathOf(c.id)].join(" ").toLowerCase();
+      if (query && !hay.includes(query)) return false;
+      if (filter === "roots" && c.parent) return false;
+      if (filter === "deep" && d < 2) return false;
+      if (filter === "empty" && !empty) return false;
+      return true;
+    });
+  }
+
+  function orderedTree() {
+    const out = [];
+    const allowed = new Set(visibleCats().map(c => c.id));
+    const walk = (parent, depth) => {
+      childrenOf(parent).forEach(c => {
+        if (allowed.has(c.id)) out.push({ c, depth });
+        if (!collapsed.has(c.id)) walk(c.id, depth + 1);
+      });
+    };
+    walk("", 0);
+    return out;
+  }
+
+  function renderTree() {
+    const tree = $("tree");
+    tree.innerHTML = "";
+    const rows = orderedTree();
+    rows.forEach(({ c, depth }) => {
+      const row = document.createElement("div");
+      row.className = `cat-row depth-${Math.min(depth, 3)} ${c.id === selectedCat ? "active" : ""}`;
+      row.style.borderLeftColor = c.color;
+      row.dataset.id = c.id;
+      row.innerHTML = `
+        <div class="cat-icon" style="background:${c.color}">${escapeHtml(c.icon)}</div>
+        <div class="cat-name">
+          <b>${escapeHtml(c.name)}</b>
+          <span>${escapeHtml(pathOf(c.id))}</span>
+        </div>
+        <div class="badges">
+          ${depth > 2 ? '<span class="badge">deep</span>' : ''}
+          <span class="badge">${directBlockCount(c.id)}</span>
+          <span class="badge main">${escapeHtml(c.badge)}</span>
+        </div>
+      `;
+      row.addEventListener("click", () => {
+        selectedCat = c.id;
+        loadSelectedIntoFields();
+        renderAll();
+      });
+      row.addEventListener("dblclick", () => {
+        if (collapsed.has(c.id)) collapsed.delete(c.id);
+        else collapsed.add(c.id);
+        renderTree();
+      });
+      tree.appendChild(row);
+    });
+    $("treeStats").textContent = `${categories.length} categories / ${blocks.length} blocks`;
+  }
+
+  function renderParentOptions() {
+    const parent = $("parentInput");
+    const moveTarget = $("moveTarget");
+    parent.innerHTML = `<option value="">Root category</option>`;
+    moveTarget.innerHTML = "";
+    categories.forEach(c => {
+      if (c.id !== selectedCat && !descendantsOf(selectedCat).includes(c.id)) {
+        parent.innerHTML += `<option value="${c.id}">${escapeHtml(pathOf(c.id))}</option>`;
+      }
+      if (c.id !== selectedCat) {
+        moveTarget.innerHTML += `<option value="${c.id}">${escapeHtml(pathOf(c.id))}</option>`;
+      }
+    });
+  }
+
+  function loadSelectedIntoFields() {
+    const c = cat(selectedCat);
+    if (!c) return;
+    renderParentOptions();
+    $("nameInput").value = c.name;
+    $("descInput").value = c.desc;
+    $("badgeInput").value = c.badge;
+    $("parentInput").value = c.parent;
+    $("iconInput").value = c.icon;
+  }
+
+  function saveFieldsToSelected() {
+    const c = cat(selectedCat);
+    if (!c) return;
+    c.name = $("nameInput").value || c.name;
+    c.desc = $("descInput").value;
+    c.badge = ($("badgeInput").value || "CAT").toUpperCase().slice(0, 8);
+    c.parent = $("parentInput").value;
+    c.icon = ($("iconInput").value || c.name[0] || "C").slice(0, 2).toUpperCase();
+  }
+
+  function renderPreview() {
+    const c = cat(selectedCat);
+    if (!c) return;
+    document.documentElement.style.setProperty("--active-color", c.color);
+    $("bigIcon").textContent = c.icon;
+    $("previewName").textContent = c.name;
+    $("previewPath").textContent = pathOf(c.id);
+    $("previewDesc").textContent = c.desc || "No description yet.";
+    $("previewBadge").textContent = c.badge || "CAT";
+    $("previewCount").textContent = `${directBlockCount(c.id)} direct / ${treeBlockCount(c.id)} tree blocks`;
+    $("previewMode").textContent = "Main category enabled";
+    $("liveWidget").style.setProperty("--active-color", c.color);
+    $("depthWarning").classList.toggle("hidden", depthOf(c.id) <= 2);
+  }
+
+  function renderSwatches() {
+    const c = cat(selectedCat);
+    $("swatches").innerHTML = "";
+    colors.forEach(color => {
+      const s = document.createElement("button");
+      s.className = "swatch" + (c.color === color ? " active" : "");
+      s.style.background = color;
+      s.title = color;
+      s.addEventListener("click", () => {
+        c.color = color;
+        renderAll();
+      });
+      $("swatches").appendChild(s);
+    });
+  }
+
+  function renderTemplates() {
+    const box = $("templates");
+    box.innerHTML = "";
+    templates.forEach(t => {
+      const item = document.createElement("div");
+      item.className = "template" + (activeTemplate === t.id ? " active" : "");
+      item.innerHTML = `<b>${escapeHtml(t.name)}</b><span>${escapeHtml(t.desc)}</span><div class="stripe" style="--stripe:${t.color}"></div>`;
+      item.addEventListener("click", () => {
+        activeTemplate = t.id;
+        const c = cat(selectedCat);
+        c.color = t.color;
+        c.badge = t.badge;
+        $("badgeInput").value = c.badge;
+        toast(`Applied ${t.name} template`);
+        renderAll();
+      });
+      box.appendChild(item);
+    });
+  }
+
+  function renderBlocks() {
+    const box = $("blockList");
+    box.innerHTML = "";
+    blocks.forEach(b => {
+      const isAssigned = b.cats.includes(selectedCat);
+      const isMain = b.main === selectedCat;
+      const row = document.createElement("div");
+      row.className = "block-tile" + (isMain ? " main" : "");
+      row.dataset.id = b.id;
+      row.innerHTML = `
+        <div class="block-art" style="--block-color:${b.color}"></div>
+        <div class="block-copy">
+          <b>${escapeHtml(b.name)}</b>
+          <span>${escapeHtml(b.id)} | ${b.cats.length} categories</span>
+        </div>
+        <div class="badges">
+          ${isAssigned ? '<span class="badge main">in</span>' : '<span class="badge">out</span>'}
+          ${isMain ? '<span class="badge main">main</span>' : ''}
+        </div>
+      `;
+      row.addEventListener("click", (ev) => handleBlockClick(ev, b.id));
+      row.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        selectedBlock = b.id;
+        renderBlockDetails();
+        openContext(ev.clientX, ev.clientY);
+      });
+      row.addEventListener("mousemove", (ev) => showTip(ev, b));
+      row.addEventListener("mouseleave", hideTip);
+      box.appendChild(row);
+    });
+    renderBlockDetails();
+  }
+
+  function handleBlockClick(ev, blockId) {
+    selectedBlock = blockId;
+    const b = blocks.find(x => x.id === blockId);
+    if (!b) return;
+    if (ev.shiftKey) {
+      if (!b.cats.includes(selectedCat)) b.cats.push(selectedCat);
+      b.main = selectedCat;
+      toast(`${b.name}: main category set`);
+    } else if (ev.ctrlKey || ev.metaKey) {
+      toggleAssign(b);
+    } else if (ev.altKey) {
+      const c = cat(selectedCat);
+      if (c && c.parent) selectedCat = c.parent;
+      toast("Jumped to parent tools");
+      loadSelectedIntoFields();
+    } else {
+      toast(`${b.name} selected`);
+    }
+    renderAll();
+  }
+
+  function toggleAssign(b) {
+    if (b.cats.includes(selectedCat)) {
+      b.cats = b.cats.filter(id => id !== selectedCat);
+      if (b.main === selectedCat) b.main = b.cats[0] || "";
+      toast(`${b.name}: removed from active category`);
+    } else {
+      b.cats.push(selectedCat);
+      toast(`${b.name}: added to active category`);
+    }
+  }
+
+  function renderBlockDetails() {
+    const b = blocks.find(x => x.id === selectedBlock) || blocks[0];
+    if (!b) return;
+    $("activeBlock").value = b.id;
+    $("blockCats").value = b.cats.map(id => pathOf(id)).join("\n") || "Uncategorized";
+    $("mainCat").value = b.main ? pathOf(b.main) : "None";
+  }
+
+  function renderDeleteModes() {
+    const modes = [
+      {
+        id: "category_only",
+        name: "Delete category only",
+        desc: "Blocks stay alive. They keep other categories. Blocks with no other category become uncategorized."
+      },
+      {
+        id: "exclusive_blocks",
+        name: "Delete category + only exclusive blocks",
+        desc: "Deletes blocks only when this is their only category. Shared blocks survive."
+      },
+      {
+        id: "all_tree_blocks",
+        name: "Delete category + all blocks shown here",
+        desc: "Deletes every block inside this category tree, even if it also appears elsewhere."
+      },
+      {
+        id: "move_then_delete",
+        name: "Move blocks elsewhere, then delete",
+        desc: "Moves direct and child blocks into a chosen category before removing this category."
+      }
+    ];
+    const box = $("deleteModes");
+    box.innerHTML = "";
+    modes.forEach(m => {
+      const item = document.createElement("div");
+      item.className = "delete-mode" + (deleteMode === m.id ? " active" : "");
+      item.innerHTML = `<b>${escapeHtml(m.name)}</b><span>${escapeHtml(m.desc)}</span>`;
+      item.addEventListener("click", () => {
+        deleteMode = m.id;
+        renderDeleteModes();
+      });
+      box.appendChild(item);
+    });
+    const chosen = modes.find(m => m.id === deleteMode);
+    $("deleteChoice").value = chosen.name;
+    $("deletePreview").value = deletePreviewText();
+  }
+
+  function deletePreviewText() {
+    const c = cat(selectedCat);
+    const ids = [selectedCat, ...descendantsOf(selectedCat)];
+    const visibleBlocks = blocks.filter(b => b.cats.some(id => ids.includes(id)));
+    const exclusive = visibleBlocks.filter(b => b.cats.every(id => ids.includes(id)));
+    if (!c) return "";
+    if (deleteMode === "category_only") {
+      return `${c.name} will be removed.\n${visibleBlocks.length} blocks survive.\nBlocks with no remaining category become uncategorized.`;
+    }
+    if (deleteMode === "exclusive_blocks") {
+      return `${c.name} will be removed.\n${exclusive.length} exclusive blocks would be deleted.\n${visibleBlocks.length - exclusive.length} shared blocks survive.`;
+    }
+    if (deleteMode === "all_tree_blocks") {
+      return `${c.name} and its child category block view will be removed.\n${visibleBlocks.length} blocks would be deleted, even shared ones.`;
+    }
+    return `${visibleBlocks.length} blocks move to ${pathOf($("moveTarget").value || categories[0].id)}.\nThen ${c.name} is removed.`;
+  }
+
+  function renderOrderList() {
+    const box = $("orderList");
+    box.innerHTML = "";
+    categories.slice().sort((a, b) => a.sort - b.sort).forEach((c, index) => {
+      const row = document.createElement("div");
+      row.className = "block-tile";
+      row.innerHTML = `
+        <div class="cat-icon" style="background:${c.color}">${escapeHtml(c.icon)}</div>
+        <div class="block-copy"><b>${escapeHtml(c.name)}</b><span>Order ${index + 1}</span></div>
+        <div class="mini-actions">
+          <button class="icon" data-dir="-1">^</button>
+          <button class="icon" data-dir="1">v</button>
+        </div>
+      `;
+      row.querySelectorAll("button").forEach(btn => {
+        btn.addEventListener("click", () => moveCategory(c.id, Number(btn.dataset.dir)));
+      });
+      box.appendChild(row);
+    });
+  }
+
+  function moveCategory(id, dir) {
+    const sorted = categories.slice().sort((a, b) => a.sort - b.sort);
+    const i = sorted.findIndex(c => c.id === id);
+    const j = i + dir;
+    if (j < 0 || j >= sorted.length) return;
+    const temp = sorted[i].sort;
+    sorted[i].sort = sorted[j].sort;
+    sorted[j].sort = temp;
+    toast("Order changed");
+    renderAll();
+  }
+
+  function renderTabs() {
+    ["overview", "wizard", "advanced", "blocks", "danger"].forEach(id => {
+      $(`tab-${id}`).classList.toggle("hidden", activeTab !== id);
+    });
+    document.querySelectorAll("#mainTabs button").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.tab === activeTab);
+    });
+  }
+
+  function renderAll() {
+    renderParentOptions();
+    renderTree();
+    renderPreview();
+    renderSwatches();
+    renderTemplates();
+    renderBlocks();
+    renderDeleteModes();
+    renderOrderList();
+    renderTabs();
+  }
+
+  function openContext(x, y) {
+    const menu = $("contextMenu");
+    menu.style.left = `${Math.min(x, window.innerWidth - 250)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - 170)}px`;
+    menu.style.display = "block";
+  }
+
+  function closeContext() {
+    $("contextMenu").style.display = "none";
+  }
+
+  function showTip(ev, b) {
+    const tip = $("tooltip");
+    const main = b.main ? pathOf(b.main) : "None";
+    tip.innerHTML = `
+      <b>${escapeHtml(b.name)}</b><br>
+      ID: ${escapeHtml(b.id)}<br>
+      Categories: ${b.cats.length}<br>
+      Main: ${escapeHtml(main)}<br><br>
+      Left: select<br>
+      Right: quick actions<br>
+      Shift: set active as main<br>
+      Ctrl: add/remove active<br>
+      Alt: parent tools
+    `;
+    tip.style.left = `${Math.min(ev.clientX + 14, window.innerWidth - 310)}px`;
+    tip.style.top = `${Math.min(ev.clientY + 14, window.innerHeight - 220)}px`;
+    tip.style.display = "block";
+  }
+
+  function hideTip() {
+    $("tooltip").style.display = "none";
+  }
+
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => t.classList.remove("show"), 1400);
+  }
+
+  function createCategoryFromBlock() {
+    const b = blocks.find(x => x.id === selectedBlock);
+    if (!b) return;
+    const id = `${b.id}_set_${Date.now().toString().slice(-4)}`;
+    categories.push({
+      id,
+      name: `${b.name} Set`,
+      parent: selectedCat,
+      color: b.color,
+      icon: b.name[0].toUpperCase(),
+      badge: "NEW",
+      desc: `Category created from ${b.name}.`,
+      sort: Math.max(...categories.map(c => c.sort)) + 1
+    });
+    b.cats.push(id);
+    b.main = id;
+    selectedCat = id;
+    loadSelectedIntoFields();
+    toast("Created category and added block");
+    renderAll();
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
+
+  $("mainTabs").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-tab]");
+    if (!btn) return;
+    activeTab = btn.dataset.tab;
+    renderTabs();
+  });
+
+  $("flowMode").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-flow]");
+    if (!btn) return;
+    document.querySelectorAll("#flowMode button").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    activeTab = btn.dataset.flow === "wizard" ? "wizard" : "advanced";
+    renderTabs();
+    toast(btn.dataset.flow === "wizard" ? "Step flow selected" : "Full screen editor selected");
+  });
+
+  ["nameInput", "descInput", "badgeInput", "parentInput", "iconInput"].forEach(id => {
+    $(id).addEventListener("input", () => {
+      saveFieldsToSelected();
+      renderAll();
+    });
+    $(id).addEventListener("change", () => {
+      saveFieldsToSelected();
+      renderAll();
+    });
+  });
+
+  $("searchInput").addEventListener("input", renderTree);
+  $("viewFilter").addEventListener("change", renderTree);
+  $("expandAll").addEventListener("click", () => { collapsed.clear(); renderTree(); });
+  $("collapseAll").addEventListener("click", () => {
+    collapsed = new Set(categories.map(c => c.id));
+    renderTree();
+  });
+  $("cmdCreate").addEventListener("click", () => { activeTab = "wizard"; renderTabs(); toast("Create flow opened"); });
+  $("cmdExport").addEventListener("click", () => toast("Export would include categories, style, blocks, and tree data"));
+  $("saveDraft").addEventListener("click", () => toast("Prototype draft saved"));
+  $("simulateWizard").addEventListener("click", () => {
+    const mode = $("startMode").value;
+    toast(`Wizard simulated: ${mode}`);
+  });
+  $("makeSub").addEventListener("click", () => {
+    const parent = selectedCat;
+    const id = `child_${Date.now().toString().slice(-4)}`;
+    categories.push({
+      id,
+      name: "New Subcategory",
+      parent,
+      color: "#c681ff",
+      icon: "S",
+      badge: "SUB",
+      desc: "Sample child category created in the prototype.",
+      sort: Math.max(...categories.map(c => c.sort)) + 1
+    });
+    selectedCat = id;
+    loadSelectedIntoFields();
+    toast("Subcategory created");
+    renderAll();
+  });
+  $("createFromBlock").addEventListener("click", createCategoryFromBlock);
+  $("fakeDelete").addEventListener("click", () => toast("Preview only: no data deleted"));
+  $("moveTarget").addEventListener("change", renderDeleteModes);
+
+  $("contextMenu").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-action]");
+    if (!btn) return;
+    const b = blocks.find(x => x.id === selectedBlock);
+    if (!b) return;
+    if (btn.dataset.action === "assign") toggleAssign(b);
+    if (btn.dataset.action === "main") {
+      if (!b.cats.includes(selectedCat)) b.cats.push(selectedCat);
+      b.main = selectedCat;
+      toast("Main category set");
+    }
+    if (btn.dataset.action === "new") createCategoryFromBlock();
+    if (btn.dataset.action === "parent") {
+      const c = cat(selectedCat);
+      if (c && c.parent) selectedCat = c.parent;
+      loadSelectedIntoFields();
+      toast("Parent opened");
+    }
+    closeContext();
+    renderAll();
+  });
+
+  document.addEventListener("click", (ev) => {
+    if (!ev.target.closest("#contextMenu")) closeContext();
+  });
+
+  loadSelectedIntoFields();
+  renderAll();
+})();
+</script>
+</body>
+</html>

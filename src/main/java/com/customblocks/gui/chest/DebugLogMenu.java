@@ -15,6 +15,8 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.command.CbFmt;
+
 import com.customblocks.command.Chat;
 import com.customblocks.core.DebugLog;
 import com.customblocks.core.DebugLog.Counts;
@@ -135,24 +137,22 @@ public final class DebugLogMenu {
 
     /** Post a single line to chat with a one-click [Copy] (chest clicks can't reach the clipboard). */
     private static void postCopyLine(ServerPlayerEntity pl, Line line) {
-        MutableText msg = Text.literal(Chat.PREFIX + colorOf(line.level()) + clip(line.message(), 50) + "  ")
-                .append(Chat.copyButton("§b§l[Copy]", line.raw(),
-                        "§7Click to copy the full raw line:\n§f" + line.raw()));
-        pl.sendMessage(msg, false);
+        MutableText msg = Text.literal(colorOf(line.level()) + clip(line.message(), 50) + "  ")
+                .append(Chat.copyButton("[Copy]", line.raw()));
+        Chat.toPlayer(pl, msg);
     }
 
     /** Post a [Copy N lines] button that copies the whole shown set, newest first, one per row. */
     private static void postCopyAll(ServerPlayerEntity pl, List<Line> lines) {
         StringBuilder sb = new StringBuilder();
         for (Line l : lines) sb.append(l.raw()).append('\n');
-        MutableText msg = Text.literal(Chat.PREFIX + "§7Debug log (" + lines.size() + " line(s)): ")
-                .append(Chat.copyButton("§b§l[Copy " + lines.size() + " lines]", sb.toString(),
-                        "§7Click to copy all " + lines.size() + " shown line(s)."));
-        pl.sendMessage(msg, false);
+        MutableText msg = Text.literal(CbFmt.DIM + "Debug log (" + lines.size() + " line(s)): ")
+                .append(Chat.copyButton("[Copy " + lines.size() + " lines]", sb.toString()));
+        Chat.toPlayer(pl, msg);
     }
 
     private static String colorOf(Level lv) {
-        return switch (lv) { case ERROR -> "§c"; case WARN -> "§e"; case INFO -> "§7"; };
+        return switch (lv) { case ERROR -> CbFmt.BAD; case WARN -> CbFmt.VALUE; case INFO -> CbFmt.DIM; };
     }
 
     private static Item iconFor(Level lv) {

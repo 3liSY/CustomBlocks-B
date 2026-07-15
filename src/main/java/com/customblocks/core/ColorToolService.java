@@ -24,12 +24,14 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.image.BackgroundRemover;
 import com.customblocks.image.CbToneMath;
 import com.customblocks.image.ColorMath;
 import com.customblocks.image.ImageProcessor;
+import com.customblocks.network.HudSync;
 import com.customblocks.network.ResourcePackServer;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.MinecraftServer;
@@ -77,14 +79,14 @@ public final class ColorToolService {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.tool(player, "§cThere's no block called \"" + id + "\"."); return; }
+        if (d == null) { Chat.toolError(player, "There's no block called \"" + id + "\"."); return; }
         if (LockManager.isLocked(id)) {
-            Chat.tool(player, "§c\"" + id + "\" is locked. /cb unlock " + id + " to edit it."); return;
+            Chat.lockedTool(player, id); return;
         }
         final byte[] before = TextureStore.load(d.index());
         final byte[] source = TextureStore.loadSource(d.index());
         if ((before == null || before.length == 0) && (source == null || source.length == 0)) {
-            Chat.tool(player, "§c\"" + id + "\" has no texture yet — give it one with /cb retexture " + id + " <url>.");
+            Chat.toolError(player, "\"" + id + "\" has no texture yet — give it one with /cb retexture " + id + " <url>.");
             return;
         }
         final int index = d.index();
@@ -93,7 +95,7 @@ public final class ColorToolService {
         final String m = BackgroundRemover.normalize(mode);
         final int t = Math.max(0, Math.min(100, tol));
         final int fill = fillRgb;
-        Chat.tool(player, "§7Applying §f" + BackgroundRemover.displayName(m) + " §7(" + t + "%) to \"" + id + "\"…");
+        Chat.tool(player, "Applying " + BackgroundRemover.displayName(m) + " (" + t + "%) to \"" + id + "\"…");
         Thread worker = new Thread(() -> {
             try {
                 byte[] png;
@@ -117,13 +119,13 @@ public final class ColorToolService {
                     ResourcePackServer.updatePack();
                     ResourcePackServer.syncToAll();
                     UndoManager.recordTexture(who, slot, before, after, "background");
-                    Chat.tool(player, "§a\"" + id + "\" background updated §7(" + BackgroundRemover.displayName(m)
+                    Chat.toolSuccess(player, "\"" + id + "\" background updated (" + BackgroundRemover.displayName(m)
                             + "). /cb undo to revert.");
                 });
             } catch (Exception e) {
                 IncidentRecorder.record("bgstudio apply failed for \"" + id + "\" (" + m + " @ " + t + ")",
                         id, player.getName().getString(), e);
-                server.execute(() -> Chat.tool(player, "§cCouldn't update that background — texture left unchanged."));
+                server.execute(() -> Chat.toolError(player, "Couldn't update that background — texture left unchanged."));
             }
         }, "CustomBlocks-BgStudio");
         worker.setDaemon(true);
@@ -142,13 +144,14 @@ public final class ColorToolService {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         Variant v = variant(variantKey);
-        if (v == null) { Chat.tool(player, "§cUnknown variant \"" + variantKey + "\"."); return; }
+        if (v == null) { Chat.toolError(player, "Unknown variant \"" + variantKey + "\"."); return; }
         SlotData src = SlotManager.getById(srcId);
-        if (src == null) { Chat.tool(player, "§cThere's no block called \"" + srcId + "\"."); return; }
+        if (src == null) { Chat.toolError(player, "There's no block called \"" + srcId + "\"."); return; }
+        if (LockManager.isLocked(srcId)) { Chat.lockedTool(player, srcId); return; }
         byte[] source = TextureStore.loadSource(src.index());
         final byte[] input = (source != null && source.length > 0) ? source : TextureStore.load(src.index());
         if (input == null || input.length == 0) {
-            Chat.tool(player, "§c\"" + srcId + "\" has no texture to make a variant from.");
+            Chat.toolError(player, "\"" + srcId + "\" has no texture to make a variant from.");
             return;
         }
         // Pick a free id: "<src>_<key>", then "_2", "_3"… so repeated clicks don't collide.
@@ -160,14 +163,14 @@ public final class ColorToolService {
         final String finalVid = vid;
         final int size = CustomBlocksConfig.textureSize;
         final UUID who = player.getUuid();
-        Chat.tool(player, "§7Creating §f" + finalVid + " §7(" + v.label() + ")…");
+        Chat.tool(player, "Creating " + finalVid + " (" + v.label() + ")…");
         Thread worker = new Thread(() -> {
             try {
                 byte[] shifted = ColorMath.hslShift(input, v.hueDeg(), v.satFactor(), v.lightFactor());
                 byte[] png = ImageProcessor.toBlockPng(shifted, size);
                 server.execute(() -> {
                     SlotData created = SlotManager.create(finalVid, src.displayName() + " (" + v.label() + ")");
-                    if (created == null) { Chat.tool(player, "§cCouldn't create \"" + finalVid + "\" — every slot is in use."); return; }
+                    if (created == null) { Chat.toolError(player, "Couldn't create \"" + finalVid + "\" — every slot is in use."); return; }
                     SlotData copied = new SlotData(created.index(), created.customId(), created.displayName(),
                             src.glow(), src.hardness(), src.soundType(), src.noCollision(), src.category());
                     SlotManager.restoreSnapshot(copied);
@@ -176,14 +179,15 @@ public final class ColorToolService {
                     UndoManager.recordCreate(who, copied);
                     ResourcePackServer.updatePack();
                     ResourcePackServer.syncToAll();
+                    HudSync.broadcast(server); // resync slot cache to all → new variant shows its HUD live (G05-1)
                     var item = SlotManager.itemAt(copied.index());
                     if (item != null) player.giveItemStack(new ItemStack(item));
-                    Chat.tool(player, "§a\"" + finalVid + "\" created §7(" + v.label() + "). /cb undo removes it.");
+                    Chat.toolSuccess(player, "\"" + finalVid + "\" created (" + v.label() + "). /cb undo removes it.");
                 });
             } catch (Exception e) {
                 IncidentRecorder.record("Colour variant failed for \"" + srcId + "\" (" + v.key() + ")",
                         srcId, player.getName().getString(), e);
-                server.execute(() -> Chat.tool(player, "§cCouldn't make that variant."));
+                server.execute(() -> Chat.toolError(player, "Couldn't make that variant."));
             }
         }, "CustomBlocks-ColorVariantImg");
         worker.setDaemon(true);
@@ -199,13 +203,13 @@ public final class ColorToolService {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         SlotData d = SlotManager.getById(id);
-        if (d == null) { Chat.tool(player, "§cThere's no block called \"" + id + "\"."); return; }
+        if (d == null) { Chat.toolError(player, "There's no block called \"" + id + "\"."); return; }
         if (LockManager.isLocked(id)) {
-            Chat.tool(player, "§c\"" + id + "\" is locked. /cb unlock " + id + " to edit it."); return;
+            Chat.lockedTool(player, id); return;
         }
         final byte[] before = TextureStore.load(d.index());
         if (before == null || before.length == 0) {
-            Chat.tool(player, "§c\"" + id + "\" has no texture to recolour yet."); return;
+            Chat.toolError(player, "\"" + id + "\" has no texture to recolour yet."); return;
         }
         final int index = d.index();
         final SlotData slot = d;
@@ -219,12 +223,12 @@ public final class ColorToolService {
                     ResourcePackServer.updatePack();
                     ResourcePackServer.syncToAll();
                     UndoManager.recordTexture(who, slot, before, after, "recolour");
-                    Chat.tool(player, "§aRecoloured \"" + id + "\". §7/cb undo to revert.");
+                    Chat.toolSuccess(player, "Recoloured \"" + id + "\". /cb undo to revert.");
                 });
             } catch (Exception e) {
                 IncidentRecorder.record("Live recolour failed for \"" + id + "\"",
                         id, player.getName().getString(), e);
-                server.execute(() -> Chat.tool(player, "§cCouldn't recolour that texture."));
+                server.execute(() -> Chat.toolError(player, "Couldn't recolour that texture."));
             }
         }, "CustomBlocks-Recolor");
         worker.setDaemon(true);

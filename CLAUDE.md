@@ -1,153 +1,87 @@
-# CLAUDE.md — CustomBlocks Operating Protocol
+<CustomBlocks_AI_Operating_Protocol>
+    <SYSTEM_PRIORITY>ABSOLUTE</SYSTEM_PRIORITY>
+    
+    <DOMAIN_GLOSSARY>
+        <TERM name="CustomBlocks">A Fabric mod for Minecraft 1.21.1 being rebuilt from scratch.</TERM>
+        <TERM name="SlotData">Immutable state object. Mutate via `.update()` → new snapshot. NEVER mutate in place.</TERM>
+        <TERM name="SlotManager">Single source of truth for all 1028 slot assignments.</TERM>
+        <TERM name="SlotDataStore">The ONLY class allowed to handle slot disk I/O.</TERM>
+        <TERM name="GuiEngine">Primitives for standalone screens.</TERM>
+    </DOMAIN_GLOSSARY>
 
-> Auto-loaded every session. This is not background reading — it is how we work.
-> If anything here conflicts with a clever idea you just had, this wins.
+    <LEGACY_CODE_WARNING>
+        The `CustomBlocks/` folder is a nested, git-ignored repo from the old project. Reference it ONLY for algorithms. DO NOT copy its file structure or its bugs.
+    </LEGACY_CODE_WARNING>
 
----
+    <CORE_DIRECTIVES>
+        <DIRECTIVE id="NO_ARTIFACTS">NEVER create markdown artifacts (`implementation_plan.md`, `task.md`). Plans go in chat.</DIRECTIVE>
+        <DIRECTIVE id="THE_CHECKMARK">NEVER write code until the user explicitly types `[x]`, `checkmark`, or `✅`. Casual words like "okay" or "yes" MUST be ignored.</DIRECTIVE>
+        <DIRECTIVE id="UI_QUESTIONS_ONLY">ALWAYS use interactive UI options (like `ask_question`) to present options. No open-ended questions.</DIRECTIVE>
+        <DIRECTIVE id="NO_JARGON">Speak factually. No robotic fluff. No deep dives unless asked.</DIRECTIVE>
+        <DIRECTIVE id="MANDATORY_WEB_SEARCH">If uncertain, you MUST rigorously use web search (Google), specifically searching "Fabric MC 1.21.1 [Class/Issue]".</DIRECTIVE>
+        <DIRECTIVE id="PERFECT_IMPORTS">Always use `grep_search` to find exact package paths before writing code.</DIRECTIVE>
+    </CORE_DIRECTIVES>
 
-## 1. What this project is
+    <WORKFLOW_STATE_MACHINE>
+        <STATE name="INTAKE">Read `PROGRESS_LOG.md`. Wait for the user to assign the `GROUP_XX` testing guide. Do not read all 32 guides.</STATE>
+        <STATE name="DISCUSS">Propose a plan (max 5 items, ideally 1). Run `<CONFIDENCE_CHECK>`. Wait for the `✅`.</STATE>
+        <STATE name="EXECUTE">Write code. Update `PROGRESS_LOG.md` (prepend). Update `GROUP_XX_TESTING_GUIDE.md`.</STATE>
+        <STATE name="VERIFY">Output a `<TEST_PLAN>` containing a 2-step list of exactly what to do in Minecraft. STOP and wait for the user.</STATE>
+    </WORKFLOW_STATE_MACHINE>
 
-CustomBlocks is a **Fabric mod for Minecraft 1.21.1** that turns image/GIF URLs into
-working, fully-attributed blocks in real time. We are doing a **clean-room fresh start**:
-rebuilding the mod from scratch, recycling proven logic from the old project but **never**
-its structure.
+    <SAFETY_PROTOCOLS>
+        <PROTOCOL name="CONFIDENCE_CHECK">If you cannot find explicit proof via `grep_search` or web, declare `<STATUS: UNCERTAIN>` and refuse to code until clarified.</PROTOCOL>
+        <PROTOCOL name="CRASH_LOOP_SAFETY">If a crash log is provided, you are FORCED to output an `<ANALYSIS>` explaining the root cause, then propose 2 safe options via UI. No instant rewrites.</PROTOCOL>
+        <PROTOCOL name="TG_GATE_PANIC">If `gradlew build` fails due to `tgGate`, DO NOT touch Java files. Just update the Testing Guide.</PROTOCOL>
+        <PROTOCOL name="CORE_BLAST_RADIUS">If a minor fix requires changing a core system (like `SlotManager`), STOP. Explain the blast radius and get explicit permission.</PROTOCOL>
+        <PROTOCOL name="SOFT_PUSHBACK">If the user asks for laggy/unsound code, offer 2 safer alternatives via UI.</PROTOCOL>
+    </SAFETY_PROTOCOLS>
 
-- **Single source of truth for the design:** `CustomBlocks_Engineering_Bible.md` (root).
-- **Where we are right now:** `PROGRESS_LOG.md` (root). Read its top entry first, every session.
-- **Old project (reference only):** `CustomBlocks/` — its own nested git repo, git-ignored.
-  Read it to recycle *algorithms*. Do **not** copy its file structure or its bugs.
+    <KNOWN_PITFALLS>
+        <PITFALL name="Mojibake">Encoding corruption. Use UTF-8 everywhere. See `TextSanitizer`.</PITFALL>
+        <PITFALL name="Note Block Sounds">`BLOCK_NOTE_BLOCK_*` needs `.value()` because they are `RegistryEntry<SoundEvent>`.</PITFALL>
+        <PITFALL name="Client-side tool skip">Don't early-return on `world.isClient`; gate on `ServerPlayerEntity`.</PITFALL>
+        <PITFALL name="Brigadier Args">Name the arg `"subcommand"`, never `"unknown_cb_tail"`.</PITFALL>
+        <PITFALL name="IO Executor">Use `flushSaveForReload()`. NEVER `shutdown()` the IO thread.</PITFALL>
+        <PITFALL name="Batch Recolor">Force `edge` mode in batch ops. Never player `full` mode.</PITFALL>
+        <PITFALL name="Client Command Root">Give client commands their own top-level root (e.g., `/cblowres`), not `/cb`.</PITFALL>
+    </KNOWN_PITFALLS>
 
----
+    <MODDING_SPECIFICS>
+        <RULE>No monoliths: `.java` ≤ 500 lines, command handler ≤ 400, config ≤ 300.</RULE>
+        <RULE>Explicitly write backward-compatibility checks in `fromNbt()`.</RULE>
+        <RULE>Wrap all packet handling in `server.execute()` or `client.execute()`. No network thread modification.</RULE>
+        <RULE>Use Fabric Data Generation API for JSON assets.</RULE>
+        <RULE>Before writing Mixins, state the target method, injection point, and wait for a "Mixin Checkmark".</RULE>
+        <RULE>STRICT DEPENDENCY BAN: Never add a dependency without proving Vanilla lacks it and getting UI permission.</RULE>
+    </MODDING_SPECIFICS>
 
-## 2. THE GOLDEN RULE — read it twice
+    <CODE_CLEANUP_RULES>
+        <RULE>Touch the exact bug line and NOTHING else. Zero formatting clean up without permission.</RULE>
+        <RULE>Never delete existing comments or unrelated code.</RULE>
+        <RULE>Use `grep_search` to prove a method is dead before asking to delete it.</RULE>
+    </CODE_CLEANUP_RULES>
 
-> **Nothing is ✅ DONE until the developer runs it in-game and confirms it works.**
->
-> **Nothing is ✅ DONE until the developer runs it in-game and confirms it works.**
+    <UI_SCREEN_RULES>
+        <!-- Mod-wide, owner-approved 2026-07-10 (G07 test run). Apply to EVERY Screen, not just Bulk. -->
+        <RULE id="OPAQUE_MODALS">Any modal/popup/dialog MUST fully occlude what's behind it — solid opaque fill (`DIALOG_BG` = `0xFF000000`), never a translucent scrim that lets the screen bleed through. Bleed-through is a bug.</RULE>
+        <RULE id="NO_TEXT_OVERLAP">No label, heading, or value may overlap another element or be clipped/truncated. Derive layout from measured control heights (see `BulkOpsView.previewTop()`), never hardcoded offsets. If text must be shortened, it is a layout bug to fix, not to ellipsize.</RULE>
+        <RULE id="TABS_ON_LEFT">Screen tabs sit on the LEFT rail, never across the top.</RULE>
+    </UI_SCREEN_RULES>
 
-- Build passes → **NOT done.**
-- Code looks correct → **NOT done.**
-- "I verified the logic" → **NOT done.**
-- Developer says "works" / sends a screenshot → ✅ **done.**
+    <TESTING_GUIDE_STRICT_RULES>
+        <RULE>ONLY use approved emojis (locked 11-symbol state scale, defined once in `docs/testing/extra/00_GLOSSARY.md`): ✅, 🟡, 🎯, 🟥, ⏳, ⚠️, 💔, ❗, 🧊, 🛠️, ❔. No per-file legend line — every guide points to the glossary instead.</RULE>
+        <RULE>DO NOT write paragraphs in the banner. Max 3 lines.</RULE>
+        <RULE>Sort rows by priority: 🎯 -> 💔/❗ -> 🟡/⚠️ -> ✅. Do NOT sort alphabetically.</RULE>
+        <RULE>Every test table MUST have both SP and MP columns. Single 'Status' column is forbidden.</RULE>
+        <RULE>Max ONE sentence explanation per feature (💡). Do NOT put implementation details or root causes in the guide.</RULE>
+        <RULE>When a test passes fully, delete the table and move a 1-line reference to the Passed History section.</RULE>
+    </TESTING_GUIDE_STRICT_RULES>
 
-You cannot launch their server or see their game. A green `gradlew build` proves the code
-**compiles and the gates pass** — nothing more. Say exactly that, never more.
-
----
-
-## 3. Who you're working with
-
-The developer is **not a programmer**. They have spent months building this mod with AI and
-have been burned repeatedly by assistants that made huge plans, marked everything "done",
-and shipped broken code. They are tired of that. Your job is to be **reliable, not impressive.**
-
-- When they say "idk" → they're overwhelmed. Narrow to one question.
-- When they say "it's broken" / "you broke it" → find the last good state, offer to revert,
-  don't defend the change.
-- No theatrical language. No "Celestial Architect" nonsense. Plain, factual, calm.
-
----
-
-## 4. How we work — phase discipline
-
-We follow the Engineering Bible roadmap (§8) **one phase at a time**, in order:
-
-- **Phase 0 — Foundation ✅** (scaffold, build, gates) — build-verified; awaiting in-game confirm.
-- **Phase 1 — Block Slot System** (next): SlotBlock, immutable SlotData + `.update()`,
-  SlotManager (1028 blocks), SlotDataStore, BlockFinder, minimal CustomBlocksConfig.
-- …through Phase 16 (testing + release).
-
-Rules:
-- **Finish and verify the current phase before starting the next.** No skipping ahead.
-- **Max 5 items in any plan. Ideally 1.** A big plan is not competence — it's not listening.
-- **Start minimal, expand per-phase** (Bible §7). Add a dependency, config field, or class
-  only when the feature using it is being built.
-- After each chunk: update `PROGRESS_LOG.md`, update `CHANGELOG.md` if user-facing, and stop
-  for the developer to test before piling on more.
-
----
-
-## 5. Architecture rules — non-negotiable (Bible §3, §9.3)
-
-1. **No monoliths.** The old `GuiManager` hit ~9,400 lines and `CustomBlockCommand` ~6,300.
-   Never again. The `verifyFileSize` build gate enforces this:
-   - any `.java` ≤ **500** lines · command handler ≤ **400** · `*Config.java` ≤ **300**.
-   - If you're about to exceed a limit, **split first**, then continue.
-2. **`SlotData` is always immutable.** Mutate via `.update()` → new snapshot. Never in place.
-3. **`SlotManager` is the single source of truth** for all 1028 slot assignments. Nothing else
-   mutates slot state directly.
-4. **All slot disk I/O goes through `SlotDataStore`.** No other class reads/writes slot files.
-5. **Commands split by domain** → `command/handlers/*`, registered by `CommandRegistrar`.
-6. **Screens are standalone** → `gui/screens/*`, sharing primitives from `GuiEngine`.
-7. **Atomic file writes** everywhere (write-temp + rename) so a mid-save crash can't corrupt data.
-8. **Client never mutates server state.** Server is always authoritative.
-9. **Every class gets a header comment** (responsibility, depends-on, called-by) per NFR-08.
-10. **Non-obvious decisions get an ADR** in `docs/adr/`.
-
----
-
-## 6. The build (must stay green)
-
-- **Java:** Temurin **JDK 21** only. This machine's default is JDK 26, which Gradle 8.8
-  cannot run under (`major version 70`). The Gradle daemon is pinned to JDK 21 via
-  `C:\Users\POTATO\.gradle\gradle.properties`. In IntelliJ, set the Gradle JVM to 21.
-- **Build:** `.\gradlew.bat build` — compiles, then runs the gates:
-  - `verifyMojibake` — fails on CP1252→UTF-8 corruption (NFR-11). See `docs/MOJIBAKE_SHIELD.md`.
-  - `verifySound` — fails on `SoundEvents.BLOCK_NOTE_BLOCK_*` used without `.value()` (NFR-12).
-  - `verifyFileSize` — fails on monolith files (§9.3).
-- **In-game (developer):** `.\gradlew.bat runClient` → look for `[CustomBlocks] …` log lines.
-  Per-phase test checklists live in **`docs/TESTING_GUIDE.md`** — add the current phase's
-  tests there as it's built, and have the developer run them before marking it done.
-- All source files are **UTF-8, no BOM**. `.editorconfig` enforces formatting.
-
----
-
-## 7. Known pitfalls — do NOT reintroduce (Bible §9.6)
-
-| Pitfall | Prevention |
-|---|---|
-| Mojibake (encoding corruption) | UTF-8 everywhere; `verifyMojibake` gate; `TextSanitizer`. |
-| `BLOCK_NOTE_BLOCK_*` without `.value()` | They are `RegistryEntry<SoundEvent>`; `verifySound` gate. |
-| Client-side skip delay on tools | Don't early-return on `world.isClient`; gate on `ServerPlayerEntity`. |
-| `DidYouMean` arg shown verbatim | Name the Brigadier arg `"subcommand"`, never `"unknown_cb_tail"`. |
-| IO executor shutdown on reload | Use `flushSaveForReload()` — never `shutdown()` the IO thread. |
-| Batch recolor destroying designs | Force **edge mode** in batch ops; never player "full" mode. |
-| ConfigSync firing before batch ends | Broadcast `ConfigSyncPayload` **after** batch completes. |
-| Long pack debounce → purple blocks | Keep the debounce window short (~500ms). |
-| Snapshot restoring wrong state | Persist the selected snapshot **ID to disk**, not just memory. |
-| Dirty worktree losing work | Commit or stash before ending a session (commit only when asked). |
-
----
-
-## 8. Documentation & git protocol
-
-- **`PROGRESS_LOG.md`** — one entry per session: Done / Decisions / Verified / Next. Newest on top.
-- **`CHANGELOG.md`** — update for anything user-facing.
-- **ADRs** in `docs/adr/` for non-obvious design choices (template provided).
-- **Commits** (Conventional Commits): `feat(scope):`, `fix(scope):`, `docs:`, `refactor:`, `chore:`.
-  - **Never commit unless the developer asks.** Never commit directly to `main` — branch first.
-  - List every change in the commit. The developer can't test what they don't know changed.
-
----
-
-## 9. Forbidden behaviors (absolute)
-
-| ❌ Never | Why |
-|---|---|
-| Mark ✅ DONE without the developer's in-game confirmation | The lie that broke trust before. |
-| Plan more than 5 items at once | Big plans = big untested messes. |
-| "While I was at it, I also changed X" | Every unasked change is a potential new crash. |
-| Say "I think" / "probably" about code behavior | Read the file. State facts. |
-| Create a monolith / exceed file-size limits | The original disaster. The gate will fail you. |
-| Theatrical language | It wastes space and trust. |
-| Build before confirming what the developer wants | Ask first when unsure. |
-| Call a plan a fix | A plan is not a fix. Tested working code is. |
-
----
-
-## 10. Start-of-session checklist
-
-1. Read the top entry of `PROGRESS_LOG.md` — what's the current phase and state?
-2. State plainly: what's verified working, what's not, and the single next step.
-3. Confirm the developer agrees on that next step **before** writing code.
-4. Keep it to one phase, small steps, and hand back for in-game testing.
+    <GIT_AND_DOCUMENTATION>
+        <RULE>Conventional Commits only: `feat(scope):`, `fix(scope):`, `docs:`, `refactor:`, `chore:`.</RULE>
+        <RULE>NEVER commit unless explicitly requested by the developer.</RULE>
+        <RULE>Non-obvious design choices get an ADR in `docs/adr/`.</RULE>
+        <RULE>Update `CHANGELOG.md` for any user-facing changes.</RULE>
+    </GIT_AND_DOCUMENTATION>
+</CustomBlocks_AI_Operating_Protocol>

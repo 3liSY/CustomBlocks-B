@@ -11,6 +11,7 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksMod;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -33,9 +34,9 @@ public final class OmniToolState {
      * (Hardness) and the Rainbow Rectangle (Area selection).
      */
     public enum Mode {
-        GLOW("Glow", "§e"),
-        HARDNESS("Hardness", "§7"),
-        AREA("Area", "§6");
+        GLOW("Glow", CbFmt.VALUE),
+        HARDNESS("Hardness", CbFmt.DIM),
+        AREA("Area", CbFmt.HEAD);
 
         public final String label;
         public final String color;

@@ -10,6 +10,11 @@
  */
 package com.customblocks.command.handlers;
 
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
+
+import com.customblocks.network.payloads.ClearLogsPayload;
+
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.DiagReport;
 import com.customblocks.core.DiagnosticsHelper;
@@ -54,7 +59,11 @@ public final class DiagnosticsCommands {
         root.then(CommandManager.literal("incidents")
                 .executes(DiagnosticsCommands::incidents)
                 .then(CommandManager.literal("clear")
-                        .executes(DiagnosticsCommands::clearIncidents)));
+                        .executes(DiagnosticsCommands::clearIncidents))
+                // G04-4: the jump target behind every error line's [⊙ Details] chip, and behind the
+                // G03 incidents-ping widget. Both reuse this ONE path — /cb incidents <code>.
+                .then(CommandManager.argument("code", StringArgumentType.word())
+                        .executes(ctx -> incidentByCode(ctx, StringArgumentType.getString(ctx, "code")))));
 
         root.then(CommandManager.literal("audit")
                 .executes(ctx -> audit(ctx, null))
@@ -73,6 +82,31 @@ public final class DiagnosticsCommands {
                         .executes(DiagnosticsCommands::reportGenerate))
                 .then(CommandManager.literal("link")
                         .executes(DiagnosticsCommands::reportLink)));
+
+        // G04-4 — /cb clearlogs: tidy away YOUR OWN [CB] spam, leaving real player chat alone.
+        root.then(CommandManager.literal("clearlogs")
+                .executes(DiagnosticsCommands::clearLogs));
+    }
+
+    /**
+     * Clear this player's [CB] chat lines — and only those.
+     *
+     * Chat history lives on the client, so the server genuinely cannot do this itself; all it can do is
+     * ask. The client's CbChatMirror keeps a shadow copy of incoming chat and rebuilds the chat box
+     * without our lines. That is also why this is a per-player command: it tidies the screen of whoever
+     * ran it, and nobody else's.
+     */
+    private static int clearLogs(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
+            Chat.error(src, "Run /cb clearlogs as a player — it clears your own chat box.");
+            return 0;
+        }
+        ServerPlayNetworking.send(p, new ClearLogsPayload());
+        // Sent AFTER the payload would be pointless — the client clears, then this arrives and is the
+        // only [CB] line left standing. That is intentional: it confirms the command worked.
+        Chat.success(src, "Cleared the [CB] lines from your chat. Player chat is untouched.");
+        return 1;
     }
 
     /** Tab-complete currently-online player names (for /cb audit <player>). */
@@ -91,7 +125,7 @@ public final class DiagnosticsCommands {
             return 1;
         }
         List<String> lines = DiagnosticsHelper.collect(src.getServer());
-        for (String line : lines) src.sendFeedback(() -> Text.literal(line), false);
+        for (String line : lines) Chat.raw(src, Text.literal(line));
         return 1;
     }
 
@@ -103,8 +137,44 @@ public final class DiagnosticsCommands {
             return 1;
         }
         List<String> lines = IncidentRecorder.list();
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§eIncident log:"), false);
-        for (String line : lines) src.sendFeedback(() -> Text.literal(line), false);
+        Chat.raw(src, CbFmt.VALUE + "Incident log:");
+        for (String line : lines) Chat.raw(src, Text.literal(line));
+        return 1;
+    }
+
+    /**
+     * G04-4 — open ONE incident by its short code (e.g. {@code /cb incidents E-45}).
+     *
+     * This is what the [⊙ Details] chip on every major-error line runs, which is what lets chat show a
+     * plain-English sentence instead of a raw Java exception and still stay diagnosable. Codes are
+     * pasteable into a bug report, and this turns one back into the full record.
+     */
+    private static int incidentByCode(CommandContext<ServerCommandSource> ctx, String code) {
+        ServerCommandSource src = ctx.getSource();
+        IncidentRecorder.Incident in = IncidentRecorder.byCode(code);
+
+        if (in == null) {
+            // Honest, not mysterious: only the last 100 incidents are kept, so an old code CAN vanish.
+            Chat.error(src, "No incident with code \"" + code.toUpperCase(java.util.Locale.ROOT)
+                    + "\". It may have aged out of the log — /cb incidents shows what's left.");
+            return 0;
+        }
+
+        String time = in.time().length() >= 19 ? in.time().substring(0, 19).replace('T', ' ') : in.time();
+        Chat.raw(src, CbFmt.HEAD + CbFmt.BOLD + "Incident " + in.code() + CbFmt.RESET + " " + CbFmt.DIM + "(" + time + ")");
+        Chat.raw(src, CbFmt.DIM + "What happened: " + CbFmt.BODY + in.context());
+        Chat.raw(src, CbFmt.DIM + "Severity: " + CbFmt.BODY + in.severity().name().toLowerCase(java.util.Locale.ROOT)
+                + CbFmt.DIM + " · Player: " + CbFmt.BODY + in.player()
+                + (in.block() == null ? "" : CbFmt.DIM + " · Block: " + CbFmt.BODY + in.block()));
+        // The raw exception belongs HERE — in the diagnostics view an admin asked for — never in the
+        // chat line the player saw when it broke (G04-3).
+        if (in.error() != null) Chat.raw(src, CbFmt.DIM + "Technical detail: " + CbFmt.FAINT + in.error());
+
+        // Players also get the Diagnostics GUI, so the chip lands somewhere useful rather than
+        // just printing. Console keeps the text-only view above.
+        if (src.getEntity() instanceof ServerPlayerEntity p) {
+            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.DIAG));
+        }
         return 1;
     }
 
@@ -123,40 +193,40 @@ public final class DiagnosticsCommands {
         }
         MinecraftServer server = src.getServer();
         List<MutationLog.Entry> all = MutationLog.recent();
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§eMutation log"
-                + (filter == null ? "" : " §7for §f" + filter) + "§e:"), false);
+        Chat.raw(src, CbFmt.VALUE + "Mutation log"
+                + (filter == null ? "" : " " + CbFmt.DIM + "for " + CbFmt.BODY + filter) + CbFmt.VALUE + ":");
         int shown = 0;
         for (MutationLog.Entry e : all) {
             String who = name(server, e.actor());
             if (filter != null && !who.equalsIgnoreCase(filter)) continue;
-            String line = "§7[" + FMT.format(new Date(e.time())) + "] §f" + e.action()
-                    + " §7" + e.blockId() + " §8by " + who;
-            src.sendFeedback(() -> Text.literal(line), false);
+            String line = CbFmt.DIM + "[" + FMT.format(new Date(e.time())) + "] " + CbFmt.BODY + e.action()
+                    + " " + CbFmt.DIM + e.blockId() + " " + CbFmt.FAINT + "by " + who;
+            Chat.raw(src, Text.literal(line));
             if (++shown >= 50) break; // cap chat spam; full history lives in the GUI
         }
-        if (shown == 0) src.sendFeedback(() -> Text.literal("§7No matching entries."), false);
+        if (shown == 0) Chat.raw(src, Text.literal(CbFmt.DIM + "No matching entries."));
         return 1;
     }
 
     // ── /cb cache — read-only cache + pack readout (no clearing here) ─────────────────────────
     private static int cache(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§eCache & pack:"), false);
+        Chat.raw(src, CbFmt.VALUE + "Cache & pack:");
 
         long[] tex  = dirStats(Path.of("config/customblocks/textures"));
         long[] srcF = dirStats(Path.of("config/customblocks/sources"));
         long[] exp  = dirStats(Path.of("config/customblocks/cloud_exports"));
-        line(src, "§fLive textures: §e" + tex[0] + " file(s), " + bytes(tex[1]) + " §8(never cleared)");
-        line(src, "§fSaved sources: §e" + srcF[0] + " file(s), " + bytes(srcF[1]));
-        line(src, "§fExports/temp: §e" + exp[0] + " file(s), " + bytes(exp[1]) + " §8(cleared by /cb cache clear)");
+        line(src, CbFmt.BODY + "Live textures: " + CbFmt.VALUE + tex[0] + " file(s), " + bytes(tex[1]) + " " + CbFmt.FAINT + "(never cleared)");
+        line(src, CbFmt.BODY + "Saved sources: " + CbFmt.VALUE + srcF[0] + " file(s), " + bytes(srcF[1]));
+        line(src, CbFmt.BODY + "Exports/temp: " + CbFmt.VALUE + exp[0] + " file(s), " + bytes(exp[1]) + " " + CbFmt.FAINT + "(cleared by /cb cache clear)");
 
         File pack = ResourcePackServer.getPackFile();
         if (pack != null && pack.exists()) {
-            line(src, "§fResource pack: §e" + bytes(pack.length()) + " §7· built " + FMT.format(new Date(pack.lastModified())));
+            line(src, CbFmt.BODY + "Resource pack: " + CbFmt.VALUE + bytes(pack.length()) + " " + CbFmt.DIM + "· built " + FMT.format(new Date(pack.lastModified())));
         } else {
-            line(src, "§fResource pack: §cnot built yet");
+            line(src, CbFmt.BODY + "Resource pack: " + CbFmt.BAD + "not built yet");
         }
-        line(src, "§fPending rebuild: " + (ResourcePackServer.isRebuilding() ? "§eyes" : "§ano"));
+        line(src, CbFmt.BODY + "Pending rebuild: " + (ResourcePackServer.isRebuilding() ? CbFmt.VALUE + "yes" : CbFmt.OK + "no"));
         return 1;
     }
 
@@ -188,10 +258,11 @@ public final class DiagnosticsCommands {
         ServerCommandSource src = ctx.getSource();
         try {
             Path p = DiagReport.write(src.getServer());
-            Chat.success(src, "Report written: §f" + p.toAbsolutePath());
+            Chat.success(src, "Report written: " + CbFmt.BODY + p.toAbsolutePath());
             sendDownloadLink(src);
         } catch (Exception e) {
-            Chat.error(src, "Couldn't write the report: " + e.getMessage());
+            String code = IncidentRecorder.record("Diagnostics report write failed", null, src.getName(), e);
+            Chat.incidentError(src, "Couldn't write the report — check that the config folder is writable.", code);
             IncidentRecorder.record("Diag report write failed", null, src.getName(), e);
         }
         return 1;
@@ -202,10 +273,10 @@ public final class DiagnosticsCommands {
         ServerCommandSource src = ctx.getSource();
         Path f = Path.of("config/customblocks/data", "diag_report.txt");
         if (!Files.exists(f)) {
-            Chat.error(src, "No report yet — run §f/cb report generate §cfirst.");
+            Chat.error(src, "No report yet — run " + CbFmt.BODY + "/cb report generate " + CbFmt.BAD + "first.");
             return 1;
         }
-        Chat.success(src, "Report: §f" + f.toAbsolutePath());
+        Chat.success(src, "Report: " + CbFmt.BODY + f.toAbsolutePath());
         sendDownloadLink(src);
         return 1;
     }
@@ -213,10 +284,10 @@ public final class DiagnosticsCommands {
     /** Post the clickable [download] link for the diagnostic report. */
     private static void sendDownloadLink(ServerCommandSource src) {
         String url = ResourcePackServer.getReportUrl();
-        src.sendFeedback(() -> Text.literal("  ")
-                .append(Text.literal("§b[download]").styled(st -> st
+        Chat.raw(src, Text.literal("  ")
+                .append(Text.literal(CbFmt.VALUE + "[download]").styled(st -> st
                         .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, url))
-                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(url))))), false);
+                        .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(url))))));
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────
@@ -235,7 +306,7 @@ public final class DiagnosticsCommands {
     }
 
     private static void line(ServerCommandSource src, String s) {
-        src.sendFeedback(() -> Text.literal(s), false);
+        Chat.raw(src, Text.literal(s));
     }
 
     /** [fileCount, totalBytes] for a directory tree, or [0,0] if it doesn't exist. */

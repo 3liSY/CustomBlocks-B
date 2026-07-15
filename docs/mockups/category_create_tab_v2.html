@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>/cb create - Category Tab V2</title>
+<style>
+  :root {
+    --bg: #090b0d;
+    --stone: #11161b;
+    --stone-2: #171d23;
+    --stone-3: #202832;
+    --line: #2d3743;
+    --line-2: #3a4655;
+    --text: #f1f5f8;
+    --muted: #aab5c1;
+    --soft: #748291;
+    --gold: #f2c65a;
+    --mint: #50dfc9;
+    --blue: #77a7ff;
+    --rose: #ef6a8c;
+    --green: #77d66d;
+    --amber: #ee9950;
+    --red: #ee6464;
+    --purple: #b987ff;
+    --shadow: rgba(0, 0, 0, .46);
+    --radius: 8px;
+    --active: #50dfc9;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { min-height: 100%; }
+  body {
+    margin: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background:
+      linear-gradient(180deg, rgba(242, 198, 90, .08), transparent 210px),
+      radial-gradient(circle at 74% 18%, rgba(80, 223, 201, .13), transparent 340px),
+      linear-gradient(135deg, #090b0d, #101419 48%, #0b0d11);
+    letter-spacing: 0;
+  }
+
+  button, input, select, textarea {
+    font: inherit;
+    letter-spacing: 0;
+  }
+
+  button {
+    min-height: 36px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--stone-2), #11161c);
+    color: var(--text);
+    cursor: pointer;
+  }
+
+  button:hover {
+    border-color: color-mix(in srgb, var(--active) 60%, white 0%);
+    transform: translateY(-1px);
+  }
+
+  button:active { transform: translateY(0); }
+  button.primary {
+    color: #09100f;
+    background: linear-gradient(180deg, #83f5e5, var(--mint));
+    border-color: var(--mint);
+    font-weight: 900;
+  }
+
+  button.gold {
+    color: #171108;
+    background: linear-gradient(180deg, #ffe492, var(--gold));
+    border-color: var(--gold);
+    font-weight: 900;
+  }
+
+  button.ghost {
+    background: rgba(10, 13, 17, .65);
+  }
+
+  button.icon {
+    width: 36px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .app {
+    height: 100vh;
+    display: grid;
+    grid-template-columns: 86px 1fr;
+  }
+
+  .create-tabs {
+    display: grid;
+    grid-template-rows: 82px repeat(7, 76px) 1fr;
+    gap: 7px;
+    padding: 10px;
+    border-right: 1px solid rgba(242, 198, 90, .28);
+    background:
+      linear-gradient(180deg, rgba(242,198,90,.08), transparent 42%),
+      rgba(7, 9, 12, .95);
+  }
+
+  .cb-mark {
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(242, 198, 90, .45);
+    border-radius: var(--radius);
+    background:
+      linear-gradient(135deg, transparent 0 48%, rgba(255,255,255,.25) 48% 52%, transparent 52%),
+      linear-gradient(45deg, var(--gold), var(--mint) 55%, var(--rose));
+    color: rgba(0,0,0,.75);
+    font-weight: 1000;
+    font-size: 20px;
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.1);
+  }
+
+  .tab {
+    display: grid;
+    place-items: center;
+    gap: 4px;
+    padding: 7px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--soft);
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .tab:hover {
+    color: var(--text);
+    background: rgba(255,255,255,.04);
+  }
+
+  .tab.active {
+    color: #09100f;
+    border-color: var(--mint);
+    background: linear-gradient(180deg, #82f1e4, var(--mint));
+    box-shadow: 0 12px 28px rgba(0,0,0,.25);
+  }
+
+  .tab .ico {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    background: rgba(255,255,255,.08);
+    font-weight: 1000;
+  }
+
+  .tab.active .ico {
+    background: rgba(0,0,0,.14);
+  }
+
+  .tab span {
+    font-size: 10.5px;
+    font-weight: 800;
+  }
+
+  .main {
+    min-width: 0;
+    display: grid;
+    grid-template-rows: 64px 1fr;
+  }
+
+  .topbar {
+    display: grid;
+    grid-template-columns: minmax(280px, 1fr) auto;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(10, 13, 17, .88);
+  }
+
+  .title h1 {
+    margin: 0;
+    color: var(--gold);
+    font-size: 18px;
+  }
+
+  .title p {
+    margin: 2px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 30px;
+    padding: 4px 9px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(7,9,12,.6);
+    font-size: 12px;
+  }
+
+  .work {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(560px, 1fr) 384px;
+    gap: 14px;
+    padding: 14px;
+    overflow: hidden;
+  }
+
+  .stage, .side {
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .stage {
+    display: grid;
+    grid-template-rows: auto auto minmax(290px, 1fr);
+    gap: 14px;
+  }
+
+  .side {
+    display: grid;
+    grid-template-rows: auto minmax(240px, 1fr);
+    gap: 14px;
+  }
+
+  .hero {
+    position: relative;
+    min-height: 238px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    overflow: hidden;
+    background:
+      linear-gradient(90deg, rgba(80, 223, 201, .12), transparent 52%),
+      linear-gradient(180deg, rgba(255,255,255,.045), transparent),
+      var(--stone);
+    box-shadow: 0 18px 45px rgba(0,0,0,.24);
+  }
+
+  .hero-grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 270px 1fr;
+    gap: 16px;
+    padding: 18px;
+    min-height: 238px;
+  }
+
+  .minecraft-preview {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 10px;
+  }
+
+  .slot-title {
+    color: var(--gold);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+
+  .item-stage {
+    min-height: 132px;
+    display: grid;
+    place-items: center;
+    border: 1px solid rgba(255,255,255,.09);
+    border-radius: var(--radius);
+    background:
+      linear-gradient(45deg, rgba(255,255,255,.04) 25%, transparent 25% 50%, rgba(255,255,255,.04) 50% 75%, transparent 75%),
+      rgba(0,0,0,.22);
+    background-size: 22px 22px;
+  }
+
+  .block-cube {
+    width: 86px;
+    height: 86px;
+    position: relative;
+    transform: rotateX(54deg) rotateZ(45deg);
+    transform-style: preserve-3d;
+  }
+
+  .block-cube span {
+    position: absolute;
+    inset: 0;
+    border: 2px solid rgba(0,0,0,.34);
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.2), transparent 40%),
+      var(--cube, var(--active));
+    box-shadow: inset 0 0 0 4px rgba(255,255,255,.08);
+  }
+
+  .block-cube .top { transform: translateZ(43px); }
+  .block-cube .left { transform: rotateY(90deg) translateZ(43px); filter: brightness(.72); }
+  .block-cube .right { transform: rotateX(90deg) translateZ(-43px); filter: brightness(.86); }
+
+  .hotbar {
+    display: grid;
+    grid-template-columns: repeat(5, 38px);
+    gap: 6px;
+  }
+
+  .hot-slot {
+    height: 38px;
+    border: 2px solid #394554;
+    border-bottom-color: #14191f;
+    border-right-color: #14191f;
+    background: #1a2028;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+  }
+
+  .mini-block {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    background: var(--c);
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.1);
+  }
+
+  .hero-copy {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+  }
+
+  .breadcrumb {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 9px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .breadcrumb b { color: var(--mint); }
+
+  .hero-copy h2 {
+    margin: 0;
+    font-size: 36px;
+    line-height: 1.02;
+  }
+
+  .hero-copy .lead {
+    margin: 10px 0 16px;
+    max-width: 680px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.45;
+  }
+
+  .main-badge {
+    display: inline-flex;
+    width: fit-content;
+    align-items: center;
+    gap: 8px;
+    border-radius: 999px;
+    background: var(--active);
+    color: #06100f;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 1000;
+  }
+
+  .summary-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .metric {
+    min-height: 72px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(15, 19, 24, .82);
+    padding: 11px;
+  }
+
+  .metric b {
+    display: block;
+    font-size: 22px;
+    line-height: 1;
+    color: var(--text);
+  }
+
+  .metric span {
+    display: block;
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+
+  .builder {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(300px, 430px) minmax(360px, 1fr);
+    gap: 14px;
+  }
+
+  .panel {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(13, 16, 20, .86);
+    overflow: hidden;
+  }
+
+  .panel-head {
+    min-height: 52px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .panel-head h3 {
+    margin: 0;
+    color: var(--gold);
+    font-size: 14px;
+  }
+
+  .panel-head p {
+    margin: 2px 0 0;
+    color: var(--soft);
+    font-size: 11.5px;
+  }
+
+  .panel-body {
+    padding: 12px;
+  }
+
+  .tree {
+    display: grid;
+    gap: 8px;
+  }
+
+  .cat-row {
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: 40px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-left: 5px solid var(--cat);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--stone-2), #12171d);
+    cursor: pointer;
+  }
+
+  .cat-row.active {
+    border-color: var(--active);
+    border-left-color: var(--active);
+    box-shadow: 0 0 0 1px rgba(80,223,201,.18), 0 12px 28px rgba(0,0,0,.24);
+  }
+
+  .cat-row.depth-1 { margin-left: 20px; }
+  .cat-row.depth-2 { margin-left: 40px; }
+  .cat-row.depth-3 { margin-left: 60px; }
+
+  .cat-icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    color: #07100f;
+    background: var(--cat);
+    font-weight: 1000;
+    box-shadow: inset 0 0 0 2px rgba(255,255,255,.14);
+  }
+
+  .cat-copy {
+    min-width: 0;
+  }
+
+  .cat-copy b {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 14px;
+  }
+
+  .cat-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--soft);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  .count {
+    min-width: 32px;
+    height: 25px;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--muted);
+    background: rgba(0,0,0,.25);
+    font-size: 12px;
+  }
+
+  .editor-card {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    gap: 12px;
+  }
+
+  .flow-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .flow-tabs button {
+    padding: 0 12px;
+    color: var(--muted);
+  }
+
+  .flow-tabs button.active {
+    color: #07100f;
+    background: linear-gradient(180deg, #83f5e5, var(--mint));
+    border-color: var(--mint);
+    font-weight: 900;
+  }
+
+  .form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .field {
+    display: grid;
+    gap: 5px;
+  }
+
+  .field.full { grid-column: 1 / -1; }
+  .field label {
+    color: var(--muted);
+    font-size: 11px;
+    text-transform: uppercase;
+  }
+
+  .field input,
+  .field select,
+  .field textarea {
+    min-height: 38px;
+    width: 100%;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: #090c10;
+    color: var(--text);
+    outline: 0;
+    padding: 8px 10px;
+  }
+
+  .field textarea {
+    min-height: 92px;
+    resize: vertical;
+  }
+
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    border-color: var(--mint);
+    box-shadow: 0 0 0 2px rgba(80,223,201,.15);
+  }
+
+  .swatches {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 7px;
+  }
+
+  .swatch {
+    height: 34px;
+    border-radius: 8px;
+    background: var(--sw);
+    border: 1px solid rgba(255,255,255,.18);
+  }
+
+  .swatch.active {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+  }
+
+  .template-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .template {
+    min-height: 92px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(10, 13, 17, .72);
+    padding: 10px;
+    cursor: pointer;
+  }
+
+  .template.active {
+    border-color: var(--active);
+    box-shadow: 0 0 0 1px rgba(80,223,201,.18);
+  }
+
+  .template b {
+    display: block;
+    font-size: 13px;
+  }
+
+  .template span {
+    display: block;
+    color: var(--soft);
+    font-size: 11.5px;
+    line-height: 1.3;
+    margin-top: 5px;
+  }
+
+  .template:after {
+    content: "";
+    display: block;
+    height: 5px;
+    border-radius: 999px;
+    background: var(--stripe);
+    margin-top: 10px;
+  }
+
+  .side-card {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(13, 16, 20, .86);
+    overflow: hidden;
+  }
+
+  .side-card .panel-body {
+    display: grid;
+    gap: 10px;
+  }
+
+  .block-card {
+    display: grid;
+    grid-template-columns: 46px 1fr auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 64px;
+    padding: 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--stone-2), #11171d);
+    cursor: pointer;
+  }
+
+  .block-card.active {
+    border-color: var(--active);
+  }
+
+  .block-art {
+    width: 46px;
+    height: 46px;
+    border-radius: 7px;
+    background:
+      linear-gradient(135deg, rgba(255,255,255,.18), transparent 48%, rgba(0,0,0,.22)),
+      var(--block);
+    border: 1px solid rgba(255,255,255,.16);
+  }
+
+  .block-card b {
+    display: block;
+    font-size: 14px;
+  }
+
+  .block-card span {
+    display: block;
+    color: var(--soft);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+
+  .one-badge {
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: var(--active);
+    color: #07100f;
+    font-size: 11px;
+    font-weight: 1000;
+  }
+
+  .shortcut-map {
+    display: grid;
+    gap: 8px;
+  }
+
+  .shortcut {
+    display: grid;
+    grid-template-columns: 76px 1fr;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .shortcut kbd {
+    align-self: start;
+    display: inline-flex;
+    justify-content: center;
+    border: 1px solid var(--line);
+    border-bottom-color: #101419;
+    border-radius: 6px;
+    background: #1d252e;
+    color: var(--text);
+    padding: 3px 6px;
+    font: inherit;
+    font-size: 11px;
+    font-weight: 900;
+  }
+
+  .delete-choice {
+    display: grid;
+    gap: 8px;
+  }
+
+  .delete-option {
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: rgba(9,12,16,.74);
+    padding: 10px;
+    cursor: pointer;
+  }
+
+  .delete-option.active {
+    border-color: var(--red);
+    box-shadow: 0 0 0 1px rgba(238,100,100,.18);
+  }
+
+  .delete-option b {
+    display: block;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .delete-option span {
+    display: block;
+    margin-top: 4px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .notice {
+    border: 1px solid rgba(238,153,80,.45);
+    border-radius: var(--radius);
+    background: rgba(238,153,80,.1);
+    color: #ffd7bb;
+    padding: 10px;
+    font-size: 12px;
+    line-height: 1.38;
+  }
+
+  .context {
+    position: fixed;
+    z-index: 20;
+    width: 252px;
+    padding: 7px;
+    border: 1px solid rgba(242,198,90,.6);
+    border-radius: var(--radius);
+    background: rgba(8, 10, 13, .98);
+    box-shadow: 0 22px 48px rgba(0,0,0,.55);
+    display: none;
+  }
+
+  .context button {
+    width: 100%;
+    min-height: 34px;
+    border-color: transparent;
+    background: transparent;
+    text-align: left;
+    color: var(--muted);
+    padding: 0 9px;
+  }
+
+  .context button:hover {
+    border-color: var(--line);
+    color: var(--text);
+    background: var(--stone-2);
+  }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: 18px;
+    z-index: 30;
+    transform: translateX(-50%) translateY(18px);
+    opacity: 0;
+    transition: .18s ease;
+    border: 1px solid rgba(80,223,201,.55);
+    border-radius: var(--radius);
+    background: rgba(7,9,12,.96);
+    padding: 10px 13px;
+    color: var(--text);
+    box-shadow: 0 18px 42px rgba(0,0,0,.5);
+    font-size: 13px;
+  }
+
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .hidden { display: none !important; }
+
+  @media (max-width: 1180px) {
+    body { overflow: auto; }
+    .app { height: auto; min-height: 100vh; grid-template-columns: 72px 1fr; }
+    .work { grid-template-columns: 1fr; overflow: visible; }
+    .stage, .side { overflow: visible; }
+    .builder, .hero-grid { grid-template-columns: 1fr; }
+    .summary-row { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="create-tabs" aria-label="/cb create tabs">
+    <div class="cb-mark">CB</div>
+    <div class="tab"><div class="ico">1</div><span>Start</span></div>
+    <div class="tab"><div class="ico">2</div><span>Texture</span></div>
+    <div class="tab"><div class="ico">3</div><span>Shape</span></div>
+    <div class="tab"><div class="ico">4</div><span>Rules</span></div>
+    <div class="tab active"><div class="ico">5</div><span>Category</span></div>
+    <div class="tab"><div class="ico">6</div><span>Preview</span></div>
+    <div class="tab"><div class="ico">7</div><span>Finish</span></div>
+  </nav>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="title">
+        <h1>/cb create - Category</h1>
+        <p>Pick how this block lives in your category tree. One main badge, many memberships.</p>
+      </div>
+      <div class="top-actions">
+        <span class="pill">Current block: stone_trim</span>
+        <button class="ghost">Back</button>
+        <button class="gold">Save Category Setup</button>
+      </div>
+    </header>
+
+    <section class="work">
+      <div class="stage">
+        <article class="hero">
+          <div class="hero-grid">
+            <div class="minecraft-preview">
+              <div class="slot-title">Minecraft Preview</div>
+              <div class="item-stage">
+                <div class="block-cube" id="cube">
+                  <span class="top"></span>
+                  <span class="left"></span>
+                  <span class="right"></span>
+                </div>
+              </div>
+              <div class="hotbar">
+                <div class="hot-slot"><div class="mini-block" style="--c:#9ea8b3"></div></div>
+                <div class="hot-slot"><div class="mini-block" style="--c:#a06a38"></div></div>
+                <div class="hot-slot"><div class="mini-block" style="--c:#f2c65a"></div></div>
+                <div class="hot-slot"><div class="mini-block" style="--c:#50dfc9"></div></div>
+                <div class="hot-slot"><div class="mini-block" style="--c:#ef6a8c"></div></div>
+              </div>
+            </div>
+
+            <div class="hero-copy">
+              <div class="breadcrumb" id="crumb">Category path: <b>Building > Walls > Stone Walls</b></div>
+              <h2 id="heroTitle">Stone Walls</h2>
+              <p class="lead" id="heroDesc">Stone-based wall blocks. Child categories still appear under parent views, so browsing Building or Walls includes this set.</p>
+              <span class="main-badge" id="heroBadge">STONE</span>
+            </div>
+          </div>
+        </article>
+
+        <div class="summary-row">
+          <div class="metric"><b id="metricDirect">3</b><span>direct blocks</span></div>
+          <div class="metric"><b id="metricTree">8</b><span>shown through parents</span></div>
+          <div class="metric"><b>1</b><span>main badge shown</span></div>
+          <div class="metric"><b id="metricDepth">2</b><span>tree depth</span></div>
+        </div>
+
+        <div class="builder">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <h3>Category Tree</h3>
+                <p>Click to select. Parents include child blocks.</p>
+              </div>
+              <button class="icon" id="addCategory">+</button>
+            </div>
+            <div class="panel-body">
+              <div class="tree" id="tree"></div>
+            </div>
+          </section>
+
+          <section class="panel editor-card">
+            <div class="panel-head">
+              <div>
+                <h3 id="editorTitle">Edit Category</h3>
+                <p>Start simple, then open focused advanced tools when needed.</p>
+              </div>
+              <button class="primary" id="makeMain">Set Main</button>
+            </div>
+            <div class="panel-body">
+              <div class="flow-tabs" id="flowTabs">
+                <button data-flow="basic" class="active">Basic</button>
+                <button data-flow="style">Style</button>
+                <button data-flow="rules">Rules</button>
+                <button data-flow="shortcuts">Shortcuts</button>
+                <button data-flow="delete">Delete</button>
+              </div>
+            </div>
+
+            <div class="panel-body" id="flow-basic">
+              <div class="form-grid">
+                <div class="field">
+                  <label>Name</label>
+                  <input id="nameInput">
+                </div>
+                <div class="field">
+                  <label>Badge</label>
+                  <input id="badgeInput" maxlength="10">
+                </div>
+                <div class="field full">
+                  <label>Description</label>
+                  <textarea id="descInput"></textarea>
+                </div>
+                <div class="field">
+                  <label>Parent category</label>
+                  <select id="parentInput"></select>
+                </div>
+                <div class="field">
+                  <label>Create mode</label>
+                  <select>
+                    <option>Use full screen editor</option>
+                    <option>Use step-by-step wizard</option>
+                    <option>Ask me each time</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-body hidden" id="flow-style">
+              <div class="form-grid">
+                <div class="field full">
+                  <label>Accent color</label>
+                  <div class="swatches" id="swatches"></div>
+                </div>
+                <div class="field full">
+                  <label>Templates</label>
+                  <div class="template-row" id="templates"></div>
+                </div>
+                <div class="field">
+                  <label>Icon source</label>
+                  <select>
+                    <option>Use current block texture</option>
+                    <option>Use category color tile</option>
+                    <option>Use custom block</option>
+                    <option>Use vanilla item</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Feedback</label>
+                  <select>
+                    <option>Chime + soft particles</option>
+                    <option>Strong sound + sparkle</option>
+                    <option>Quiet admin mode</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-body hidden" id="flow-rules">
+              <div class="form-grid">
+                <div class="field full">
+                  <label>Auto-add words</label>
+                  <input value="stone, wall, brick, trim">
+                </div>
+                <div class="field">
+                  <label>Visibility</label>
+                  <select>
+                    <option>Visible in browser and create</option>
+                    <option>Only in create</option>
+                    <option>Hidden until searched</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label>Permissions</label>
+                  <select>
+                    <option>Admins edit, players browse</option>
+                    <option>Owner only</option>
+                    <option>Team editable</option>
+                  </select>
+                </div>
+                <div class="field full">
+                  <label>Subcategory note</label>
+                  <input value="Unlimited depth works, but UI recommends no more than two sub-levels.">
+                </div>
+              </div>
+            </div>
+
+            <div class="panel-body hidden" id="flow-shortcuts">
+              <div class="shortcut-map">
+                <div class="shortcut"><kbd>Left</kbd><span>Open category details or choose a block.</span></div>
+                <div class="shortcut"><kbd>Right</kbd><span>Open quick action menu for add, remove, create, or inspect.</span></div>
+                <div class="shortcut"><kbd>Shift</kbd><span>Set selected category as the block's only visible main badge.</span></div>
+                <div class="shortcut"><kbd>Ctrl</kbd><span>Add or remove this category while keeping the current screen open.</span></div>
+              </div>
+            </div>
+
+            <div class="panel-body hidden" id="flow-delete">
+              <div class="notice">Delete is intentionally separated from normal editing. The real screen should show one plain preview before final confirm.</div>
+              <div class="delete-choice" id="deleteChoices"></div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <aside class="side">
+        <section class="side-card">
+          <div class="panel-head">
+            <div>
+              <h3>Current Block</h3>
+              <p>Right click cards to test shortcut behavior.</p>
+            </div>
+            <button class="ghost" id="fromBlock">Create From Block</button>
+          </div>
+          <div class="panel-body" id="blocks"></div>
+        </section>
+
+        <section class="side-card">
+          <div class="panel-head">
+            <div>
+              <h3>Clean Review</h3>
+              <p>Only the decision that matters before finish.</p>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="notice" id="reviewText">stone_trim will show STONE as its only visible category badge. It can still belong to Building and Walls for browsing.</div>
+            <button class="primary">Approve Category Tab</button>
+            <button class="ghost">Open Full Category Manager</button>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+</div>
+
+<div class="context" id="context">
+  <button data-act="toggle">Add/remove selected category</button>
+  <button data-act="main">Set selected category as main</button>
+  <button data-act="new">Create new category from this block</button>
+  <button data-act="parent">Jump to parent category</button>
+</div>
+<div class="toast" id="toast">Saved</div>
+
+<script>
+(() => {
+  const colors = ["#f2c65a", "#50dfc9", "#ef6a8c", "#77d66d", "#ee9950", "#77a7ff", "#b987ff", "#f1f5f8"];
+  const templates = [
+    { id: "blockbench", name: "Blockbench Clean", desc: "Modern screen feel with Minecraft item slots.", color: "#50dfc9", badge: "STONE" },
+    { id: "royal", name: "Royal Builder", desc: "Gold accent, framed preview, warm chime.", color: "#f2c65a", badge: "BUILD" },
+    { id: "neon", name: "Neon Studio", desc: "Bright accent for signs and glowing sets.", color: "#ef6a8c", badge: "NEON" }
+  ];
+  let categories = [
+    { id: "building", name: "Building", parent: "", color: "#f2c65a", icon: "B", badge: "BUILD", desc: "Top-level building collection.", sort: 1 },
+    { id: "walls", name: "Walls", parent: "building", color: "#ee9950", icon: "W", badge: "WALL", desc: "Wall blocks and wall variants.", sort: 2 },
+    { id: "stone_walls", name: "Stone Walls", parent: "walls", color: "#aab5c1", icon: "S", badge: "STONE", desc: "Stone-based wall blocks. Child categories still appear under parent views, so browsing Building or Walls includes this set.", sort: 3 },
+    { id: "decor", name: "Decor", parent: "", color: "#ef6a8c", icon: "D", badge: "DECOR", desc: "Decorative pieces, props, and lights.", sort: 4 },
+    { id: "neon_signs", name: "Neon Signs", parent: "decor", color: "#50dfc9", icon: "N", badge: "NEON", desc: "Light signs and emissive display pieces.", sort: 5 },
+    { id: "empty_ideas", name: "Empty Ideas", parent: "", color: "#77a7ff", icon: "I", badge: "IDEA", desc: "A category that starts empty.", sort: 6 }
+  ];
+  let blocks = [
+    { id: "stone_trim", name: "Stone Trim", color: "#aab5c1", cats: ["building", "walls", "stone_walls"], main: "stone_walls" },
+    { id: "oak_wall", name: "Oak Wall", color: "#a06a38", cats: ["building", "walls"], main: "walls" },
+    { id: "gold_pillar", name: "Gold Pillar", color: "#f2c65a", cats: ["building", "decor"], main: "building" },
+    { id: "cyan_neon", name: "Cyan Neon Sign", color: "#50dfc9", cats: ["decor", "neon_signs"], main: "neon_signs" }
+  ];
+  let selectedCat = "stone_walls";
+  let selectedBlock = "stone_trim";
+  let flow = "basic";
+  let template = "blockbench";
+  let deleteMode = "keep";
+
+  const $ = (id) => document.getElementById(id);
+  const esc = (value) => String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
+  const cat = (id) => categories.find(c => c.id === id);
+  const block = (id) => blocks.find(b => b.id === id);
+  const children = (id) => categories.filter(c => c.parent === id).sort((a, b) => a.sort - b.sort);
+
+  function depth(id) {
+    let d = 0;
+    let c = cat(id);
+    while (c && c.parent) {
+      d++;
+      c = cat(c.parent);
+    }
+    return d;
+  }
+
+  function path(id) {
+    const parts = [];
+    let c = cat(id);
+    while (c) {
+      parts.unshift(c.name);
+      c = cat(c.parent);
+    }
+    return parts.join(" > ") || "Root";
+  }
+
+  function descendants(id) {
+    const out = [];
+    const walk = (parent) => {
+      children(parent).forEach(child => {
+        out.push(child.id);
+        walk(child.id);
+      });
+    };
+    walk(id);
+    return out;
+  }
+
+  function directCount(id) {
+    return blocks.filter(b => b.cats.includes(id)).length;
+  }
+
+  function treeCount(id) {
+    const ids = [id, ...descendants(id)];
+    return blocks.filter(b => b.cats.some(c => ids.includes(c))).length;
+  }
+
+  function orderedTree() {
+    const out = [];
+    const walk = (parent, d) => {
+      children(parent).forEach(c => {
+        out.push({ c, d });
+        walk(c.id, d + 1);
+      });
+    };
+    walk("", 0);
+    return out;
+  }
+
+  function renderTree() {
+    $("tree").innerHTML = "";
+    orderedTree().forEach(({ c, d }) => {
+      const row = document.createElement("div");
+      row.className = `cat-row depth-${Math.min(d, 3)} ${c.id === selectedCat ? "active" : ""}`;
+      row.style.setProperty("--cat", c.color);
+      row.innerHTML = `
+        <div class="cat-icon">${esc(c.icon)}</div>
+        <div class="cat-copy">
+          <b>${esc(c.name)}</b>
+          <span>${esc(path(c.id))}</span>
+        </div>
+        <div class="count">${treeCount(c.id)}</div>
+      `;
+      row.addEventListener("click", () => {
+        saveForm();
+        selectedCat = c.id;
+        loadForm();
+        render();
+      });
+      $("tree").appendChild(row);
+    });
+  }
+
+  function loadForm() {
+    const c = cat(selectedCat);
+    if (!c) return;
+    $("nameInput").value = c.name;
+    $("badgeInput").value = c.badge;
+    $("descInput").value = c.desc;
+    renderParents();
+    $("parentInput").value = c.parent;
+  }
+
+  function saveForm() {
+    const c = cat(selectedCat);
+    if (!c) return;
+    c.name = $("nameInput").value || c.name;
+    c.badge = ($("badgeInput").value || "CAT").toUpperCase().slice(0, 10);
+    c.desc = $("descInput").value;
+    c.parent = $("parentInput").value;
+    c.icon = c.name.trim().slice(0, 1).toUpperCase() || c.icon;
+  }
+
+  function renderParents() {
+    const select = $("parentInput");
+    const invalid = new Set([selectedCat, ...descendants(selectedCat)]);
+    select.innerHTML = `<option value="">Root category</option>`;
+    categories.forEach(c => {
+      if (!invalid.has(c.id)) select.innerHTML += `<option value="${c.id}">${esc(path(c.id))}</option>`;
+    });
+  }
+
+  function renderHero() {
+    const c = cat(selectedCat);
+    const b = block(selectedBlock);
+    if (!c || !b) return;
+    document.documentElement.style.setProperty("--active", c.color);
+    $("cube").style.setProperty("--cube", b.color);
+    $("crumb").innerHTML = `Category path: <b>${esc(path(c.id))}</b>`;
+    $("heroTitle").textContent = c.name;
+    $("heroDesc").textContent = c.desc || "No description yet.";
+    $("heroBadge").textContent = c.badge;
+    $("metricDirect").textContent = directCount(c.id);
+    $("metricTree").textContent = treeCount(c.id);
+    $("metricDepth").textContent = depth(c.id);
+    $("editorTitle").textContent = `Edit ${c.name}`;
+    const main = cat(b.main);
+    $("reviewText").textContent = `${b.id} will show ${main ? main.badge : "NONE"} as its only visible category badge. It can still belong to ${b.cats.map(path).join(", ")} for browsing.`;
+  }
+
+  function renderSwatches() {
+    const c = cat(selectedCat);
+    $("swatches").innerHTML = "";
+    colors.forEach(color => {
+      const btn = document.createElement("button");
+      btn.className = `swatch ${c.color === color ? "active" : ""}`;
+      btn.style.setProperty("--sw", color);
+      btn.addEventListener("click", () => {
+        c.color = color;
+        render();
+      });
+      $("swatches").appendChild(btn);
+    });
+  }
+
+  function renderTemplates() {
+    const c = cat(selectedCat);
+    $("templates").innerHTML = "";
+    templates.forEach(t => {
+      const item = document.createElement("div");
+      item.className = `template ${template === t.id ? "active" : ""}`;
+      item.style.setProperty("--stripe", t.color);
+      item.innerHTML = `<b>${esc(t.name)}</b><span>${esc(t.desc)}</span>`;
+      item.addEventListener("click", () => {
+        template = t.id;
+        c.color = t.color;
+        c.badge = t.badge;
+        loadForm();
+        toast(`${t.name} applied`);
+        render();
+      });
+      $("templates").appendChild(item);
+    });
+  }
+
+  function renderBlocks() {
+    $("blocks").innerHTML = "";
+    blocks.forEach(b => {
+      const main = cat(b.main);
+      const row = document.createElement("div");
+      row.className = `block-card ${b.id === selectedBlock ? "active" : ""}`;
+      row.style.setProperty("--block", b.color);
+      row.innerHTML = `
+        <div class="block-art"></div>
+        <div>
+          <b>${esc(b.name)}</b>
+          <span>${esc(b.id)} - ${b.cats.length} categories</span>
+        </div>
+        <div class="one-badge">${main ? esc(main.badge) : "NONE"}</div>
+      `;
+      row.addEventListener("click", (ev) => blockClick(ev, b.id));
+      row.addEventListener("contextmenu", (ev) => {
+        ev.preventDefault();
+        selectedBlock = b.id;
+        openContext(ev.clientX, ev.clientY);
+        render();
+      });
+      $("blocks").appendChild(row);
+    });
+  }
+
+  function blockClick(ev, id) {
+    selectedBlock = id;
+    const b = block(id);
+    if (!b) return;
+    if (ev.shiftKey) {
+      if (!b.cats.includes(selectedCat)) b.cats.push(selectedCat);
+      b.main = selectedCat;
+      toast("Main category set");
+    } else if (ev.ctrlKey || ev.metaKey) {
+      toggleCategory(b);
+    } else {
+      toast(`${b.name} selected`);
+    }
+    render();
+  }
+
+  function toggleCategory(b) {
+    if (b.cats.includes(selectedCat)) {
+      b.cats = b.cats.filter(id => id !== selectedCat);
+      if (b.main === selectedCat) b.main = b.cats[0] || "";
+      toast("Removed from selected category");
+    } else {
+      b.cats.push(selectedCat);
+      toast("Added to selected category");
+    }
+  }
+
+  function renderFlows() {
+    ["basic", "style", "rules", "shortcuts", "delete"].forEach(id => {
+      $(`flow-${id}`).classList.toggle("hidden", flow !== id);
+    });
+    document.querySelectorAll("#flowTabs button").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.flow === flow);
+    });
+  }
+
+  function renderDelete() {
+    const choices = [
+      { id: "keep", name: "Delete category only", desc: "Blocks stay. If a block has no other category, it becomes uncategorized." },
+      { id: "exclusive", name: "Delete only exclusive blocks", desc: "Blocks are deleted only if this is their only category." },
+      { id: "all", name: "Delete all shown blocks", desc: "Deletes every block shown in this category tree. This is the strongest option." },
+      { id: "move", name: "Move blocks first", desc: "Move blocks into another category, then remove this one." }
+    ];
+    $("deleteChoices").innerHTML = "";
+    choices.forEach(choice => {
+      const item = document.createElement("div");
+      item.className = `delete-option ${deleteMode === choice.id ? "active" : ""}`;
+      item.innerHTML = `<b>${esc(choice.name)}</b><span>${esc(choice.desc)}</span>`;
+      item.addEventListener("click", () => {
+        deleteMode = choice.id;
+        renderDelete();
+      });
+      $("deleteChoices").appendChild(item);
+    });
+  }
+
+  function openContext(x, y) {
+    const menu = $("context");
+    menu.style.left = `${Math.min(x, window.innerWidth - 270)}px`;
+    menu.style.top = `${Math.min(y, window.innerHeight - 180)}px`;
+    menu.style.display = "block";
+  }
+
+  function closeContext() {
+    $("context").style.display = "none";
+  }
+
+  function createFromBlock() {
+    const b = block(selectedBlock);
+    if (!b) return;
+    const id = `${b.id}_set_${Date.now().toString().slice(-4)}`;
+    categories.push({
+      id,
+      name: `${b.name} Set`,
+      parent: selectedCat,
+      color: b.color,
+      icon: b.name.slice(0, 1).toUpperCase(),
+      badge: "NEW",
+      desc: `Created from ${b.name}.`,
+      sort: Math.max(...categories.map(c => c.sort)) + 1
+    });
+    b.cats.push(id);
+    b.main = id;
+    selectedCat = id;
+    loadForm();
+    toast("Category created from block");
+    render();
+  }
+
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg;
+    t.classList.add("show");
+    clearTimeout(toast.timer);
+    toast.timer = setTimeout(() => t.classList.remove("show"), 1300);
+  }
+
+  function render() {
+    renderParents();
+    renderTree();
+    renderHero();
+    renderSwatches();
+    renderTemplates();
+    renderBlocks();
+    renderFlows();
+    renderDelete();
+  }
+
+  $("flowTabs").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-flow]");
+    if (!btn) return;
+    saveForm();
+    flow = btn.dataset.flow;
+    render();
+  });
+  ["nameInput", "badgeInput", "descInput", "parentInput"].forEach(id => {
+    $(id).addEventListener("input", () => { saveForm(); render(); });
+    $(id).addEventListener("change", () => { saveForm(); render(); });
+  });
+  $("makeMain").addEventListener("click", () => {
+    const b = block(selectedBlock);
+    if (!b) return;
+    if (!b.cats.includes(selectedCat)) b.cats.push(selectedCat);
+    b.main = selectedCat;
+    toast("This is now the visible badge");
+    render();
+  });
+  $("addCategory").addEventListener("click", () => {
+    const id = `new_category_${Date.now().toString().slice(-4)}`;
+    categories.push({ id, name: "New Category", parent: "", color: "#77a7ff", icon: "N", badge: "NEW", desc: "Empty category ready for blocks.", sort: Math.max(...categories.map(c => c.sort)) + 1 });
+    selectedCat = id;
+    loadForm();
+    toast("Empty category created");
+    render();
+  });
+  $("fromBlock").addEventListener("click", createFromBlock);
+  $("context").addEventListener("click", (ev) => {
+    const btn = ev.target.closest("button[data-act]");
+    if (!btn) return;
+    const b = block(selectedBlock);
+    if (!b) return;
+    if (btn.dataset.act === "toggle") toggleCategory(b);
+    if (btn.dataset.act === "main") {
+      if (!b.cats.includes(selectedCat)) b.cats.push(selectedCat);
+      b.main = selectedCat;
+      toast("Main badge changed");
+    }
+    if (btn.dataset.act === "new") createFromBlock();
+    if (btn.dataset.act === "parent") {
+      const c = cat(selectedCat);
+      if (c && c.parent) selectedCat = c.parent;
+      loadForm();
+      toast("Parent opened");
+    }
+    closeContext();
+    render();
+  });
+  document.addEventListener("click", (ev) => {
+    if (!ev.target.closest("#context")) closeContext();
+  });
+
+  loadForm();
+  render();
+})();
+</script>
+</body>
+</html>

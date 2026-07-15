@@ -28,7 +28,7 @@ import java.util.function.IntConsumer;
 @Environment(EnvType.CLIENT)
 public class HudColorPicker extends Screen {
 
-    private static final int GOLD   = 0xFFFFAA00;
+    private static final int GOLD   = com.customblocks.client.gui.CbTheme.ACCENT; // locked red (2026-07-04)
     private static final int PANEL_W = 270, PANEL_H = 210;
     private static final int SQ = 120, HUE_W = 14;
 
@@ -90,8 +90,8 @@ public class HudColorPicker extends Screen {
         ctx.fill(0, 0, width, height, 0x66000000);
 
         ctx.fill(px - 1, py - 1, px + PANEL_W + 1, py + PANEL_H + 1, GOLD);
-        ctx.fill(px, py, px + PANEL_W, py + PANEL_H, 0xF0101010);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lColour Picker"), px + 12, py + 10, 0xFFFFFFFF);
+        ctx.fill(px, py, px + PANEL_W, py + PANEL_H, com.customblocks.client.gui.CbTheme.PANEL_BG);
+        ctx.drawTextWithShadow(textRenderer, com.customblocks.client.gui.CbTheme.red("Colour Picker"), px + 12, py + 10, 0xFFFFFFFF);
 
         drawSvSquare(ctx);
         drawHueBar(ctx);

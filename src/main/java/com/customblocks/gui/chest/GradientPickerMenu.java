@@ -19,6 +19,8 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.command.Chat;
+
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.core.ColorLibrary;
 import com.customblocks.core.PlayerPaletteManager;

@@ -40,17 +40,21 @@ public final class CategoryMetadataStore {
     public static final class Meta {
         String displayBlock = "";   // block id, "" = none
         String colorTag     = "";   // §-code like "§a", "" = default white
+        String colorHex     = "";   // Group 27 Category Hub custom hex "#RRGGBB", "" = use colorTag/default
         String description  = "";   // free text
         String sortOrder    = "alpha";  // "alpha" or "custom"
         List<String> customOrder = new ArrayList<>(); // block ids in custom order (only used when sortOrder="custom")
+        boolean exists = false; // §G27 L11: true once explicitly created — keeps the category listed at 0 blocks
 
         private Meta() {}
 
         public String displayBlock()  { return displayBlock; }
         public String colorTag()      { return colorTag; }
+        public String colorHex()      { return colorHex; }
         public String description()   { return description; }
         public String sortOrder()     { return sortOrder; }
         public List<String> customOrder() { return customOrder; }
+        public boolean exists()       { return exists; }
     }
 
     private static final Map<String, Meta> DATA = new HashMap<>(); // category → metadata
@@ -101,6 +105,26 @@ public final class CategoryMetadataStore {
         save();
     }
 
+    /** The custom "#RRGGBB" hex tint for the category name (Group 27 Category Hub), or "" for none. */
+    public static synchronized String getColorHex(String category) {
+        Meta m = DATA.get(key(category));
+        return m != null ? m.colorHex : "";
+    }
+
+    /** Set (or clear, with "") the custom hex tint. Normalised to "#RRGGBB"; invalid input clears it. */
+    public static synchronized void setColorHex(String category, String hex) {
+        getOrCreate(category).colorHex = normalizeHex(hex);
+        save();
+    }
+
+    /** "#RRGGBB" (upper-case) if {@code hex} is a valid 6-digit hex (with/without #), else "". */
+    public static String normalizeHex(String hex) {
+        if (hex == null) return "";
+        String h = hex.trim().replace("#", "");
+        if (!h.matches("(?i)[0-9a-f]{6}")) return "";
+        return "#" + h.toUpperCase(Locale.ROOT);
+    }
+
     // ── Description ──────────────────────────────────────────────────────────
 
     public static synchronized String getDescription(String category) {
@@ -135,6 +159,19 @@ public final class CategoryMetadataStore {
         meta.customOrder = ids == null ? new ArrayList<>() : new ArrayList<>(ids);
         meta.sortOrder = "custom";
         save();
+    }
+
+    // ── Existence (Group 27 L11: categories are real the moment you create them) ─────
+
+    /** Register {@code category} as an existing category, even with 0 blocks and no other metadata. */
+    public static synchronized void create(String category) {
+        getOrCreate(category).exists = true;
+        save();
+    }
+
+    /** Every category key that has metadata OR was explicitly {@link #create}d — NOT block-membership. */
+    public static synchronized java.util.Set<String> knownCategories() {
+        return new java.util.HashSet<>(DATA.keySet());
     }
 
     // ── Rename support ───────────────────────────────────────────────────────
@@ -182,8 +219,10 @@ public final class CategoryMetadataStore {
                     JsonObject o = e.getValue().getAsJsonObject();
                     if (o.has("displayBlock"))  m.displayBlock  = o.get("displayBlock").getAsString();
                     if (o.has("colorTag"))      m.colorTag      = o.get("colorTag").getAsString();
+                    if (o.has("colorHex"))      m.colorHex      = o.get("colorHex").getAsString();
                     if (o.has("description"))   m.description   = o.get("description").getAsString();
                     if (o.has("sortOrder"))     m.sortOrder     = o.get("sortOrder").getAsString();
+                    if (o.has("exists"))        m.exists        = o.get("exists").getAsBoolean();
                     if (o.has("customOrder")) {
                         JsonArray arr = o.getAsJsonArray("customOrder");
                         for (JsonElement el : arr) m.customOrder.add(el.getAsString());
@@ -219,12 +258,14 @@ public final class CategoryMetadataStore {
             JsonObject root = new JsonObject();
             for (var e : DATA.entrySet()) {
                 Meta m = e.getValue();
-                // Skip empty entries
-                if (m.displayBlock.isEmpty() && m.colorTag.isEmpty()
+                // Skip empty entries (unless explicitly created — L11: an empty category must still persist)
+                if (!m.exists && m.displayBlock.isEmpty() && m.colorTag.isEmpty() && m.colorHex.isEmpty()
                         && m.description.isEmpty() && "alpha".equals(m.sortOrder)) continue;
                 JsonObject o = new JsonObject();
+                if (m.exists) o.addProperty("exists", true);
                 if (!m.displayBlock.isEmpty()) o.addProperty("displayBlock", m.displayBlock);
                 if (!m.colorTag.isEmpty())     o.addProperty("colorTag", m.colorTag);
+                if (!m.colorHex.isEmpty())     o.addProperty("colorHex", m.colorHex);
                 if (!m.description.isEmpty())  o.addProperty("description", m.description);
                 if (!"alpha".equals(m.sortOrder)) {
                     o.addProperty("sortOrder", m.sortOrder);

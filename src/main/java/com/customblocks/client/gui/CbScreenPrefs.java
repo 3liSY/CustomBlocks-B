@@ -40,6 +40,19 @@ public final class CbScreenPrefs {
     /** §D1: whether the eyedrop first-time intro popup has been dismissed (never shows again after). */
     public boolean eyedropIntroSeen = false;
 
+    // ── §G27.8.B global Settings (gear popup) ─────────────────────────────────
+    /** Solid dark backdrop instead of the live world. */
+    public boolean hideWorld = false;
+    /** Master CB UI sounds on/off + volume 0..100. */
+    public boolean soundOn = true;
+    public int soundVolume = 60;
+    /** Default cube auto-spin speed applied when a cube screen opens (0 = still, max 2.5). */
+    public double spinDefault = 0.45;
+    /** Kill the subtle animations (save-flash pulse etc.). */
+    public boolean reducedMotion = false;
+    /** Ask "Discard changes?" when cancelling with unsaved changes. */
+    public boolean confirmDiscard = true;
+
     /** Dock side + hidden state of one screen's action bar. dock: 0 = bottom, 1 = left, 2 = right. */
     public static final class Bar {
         public int dock = 0;
@@ -51,8 +64,8 @@ public final class CbScreenPrefs {
         return INSTANCE;
     }
 
-    /** 0xAARRGGBB backdrop fill using the chosen dim over black. */
-    public int backdrop() { return clampAlpha() << 24; }
+    /** 0xAARRGGBB backdrop fill using the chosen dim over black (solid when Hide-world is on). */
+    public int backdrop() { return hideWorld ? 0xFF000000 : clampAlpha() << 24; }
 
     public double dim01() { return clampAlpha() / 255.0; }
 
@@ -71,6 +84,19 @@ public final class CbScreenPrefs {
     }
 
     public void markEyedropIntroSeen() { eyedropIntroSeen = true; save(); }
+
+    /** Persist after a settings-popup change (one write per interaction end). */
+    public void saveSettings() { save(); }
+
+    /** §G27.8.B "Reset panel positions" — forget every screen's bar dock/hidden state. */
+    public void resetBars() { bars.clear(); save(); }
+
+    /** §G27.8.B "Reset settings to defaults" — settings only; bar positions are a separate reset. */
+    public void resetSettings() {
+        dimAlpha = 0x99; hideWorld = false; soundOn = true; soundVolume = 60;
+        spinDefault = 0.45; reducedMotion = false; confirmDiscard = true;
+        save();
+    }
 
     private int clampAlpha() { return Math.max(0, Math.min(255, dimAlpha)); }
 

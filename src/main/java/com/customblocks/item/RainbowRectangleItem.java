@@ -11,6 +11,7 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.core.AreaSelection;
@@ -52,8 +53,8 @@ public class RainbowRectangleItem extends Item {
             return ActionResult.SUCCESS; // unassigned slot block; nothing to paint
         }
         String face = ctx.getSide().getName(); // down/up/north/south/west/east
-        Chat.tool(player, "§7Painting the §f" + face + "§7 face of §f" + d.customId()
-                + "§7 — paste the image URL and press Enter.");
+        Chat.tool(player, "Painting the " + face + " face of " + d.customId()
+                + " — paste the image URL and press Enter.");
         ServerPlayNetworking.send(player, new ChatPrefillPayload(
                 "/cb paintface " + d.customId() + " " + face + " "));
         return ActionResult.SUCCESS;
@@ -63,10 +64,10 @@ public class RainbowRectangleItem extends Item {
     public static void markArea(ServerPlayerEntity player, BlockPos pos) {
         AreaSelection.Result r = AreaSelection.mark(player.getUuid(), pos);
         if (r.firstCorner()) {
-            Chat.tool(player, "§6Corner 1 set §7at " + fmt(pos) + " §8— right-click another block for corner 2");
+            Chat.tool(player, "Corner 1 set at " + fmt(pos) + " — right-click another block for corner 2");
         } else {
-            Chat.tool(player, "§6Area selected §7" + fmt(r.a()) + " → " + fmt(r.b())
-                    + " §8(" + r.volume() + " blocks)");
+            Chat.tool(player, "Area selected " + fmt(r.a()) + " → " + fmt(r.b())
+                    + " (" + r.volume() + " blocks)");
         }
     }
 
@@ -77,9 +78,9 @@ public class RainbowRectangleItem extends Item {
     @Override
     public void appendTooltip(ItemStack stack, Item.TooltipContext context, List<Text> tooltip,
                               net.minecraft.item.tooltip.TooltipType type) {
-        tooltip.add(Text.literal("§7Paints ONE face of a custom block.").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§7Right-click a face → paste an image URL in chat;").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§7only that face changes (§f/cb clearface §7undoes it).").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§8Sneak + right-click marks area corners (Omni Area mode).").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "Paints ONE face of a custom block.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "Right-click a face → paste an image URL in chat;").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "only that face changes (" + CbFmt.BODY + "/cb clearface " + CbFmt.DIM + "undoes it).").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.FAINT + "Sneak + right-click marks area corners (Omni Area mode).").styled(s -> s.withItalic(false)));
     }
 }

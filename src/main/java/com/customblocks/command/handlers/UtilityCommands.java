@@ -9,6 +9,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.DraftManager;
@@ -85,25 +86,37 @@ public final class UtilityCommands {
                         .executes(ctx -> importFolderCmd(ctx, StringArgumentType.getString(ctx, "path")))));
     }
 
+    /**
+     * /cb list — a player gets the Bulk Workbench on its Browse tab (§G07-3); the server console, which has
+     * no screen to open, still gets the chat list it always got. Scripts driving /cb list from console are
+     * unaffected.
+     */
     private static int list(CommandContext<ServerCommandSource> ctx) {
+        if (ctx.getSource().getEntity() instanceof ServerPlayerEntity) {
+            return BulkSnapshot.openFor(ctx.getSource(), BulkSnapshot.TAB_BROWSE);
+        }
+        return chatList(ctx);
+    }
+
+    private static int chatList(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
         if (all.isEmpty()) {
             Chat.info(src, "No custom blocks yet. Make one with /cb create <id>");
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + all.size() + " custom block(s):"), false);
+        Chat.raw(src, CbFmt.VALUE + all.size() + " custom block(s):");
         for (SlotData d : all) {
-            src.sendFeedback(() -> Text.literal(
-                    "§7 - §f" + d.customId() + categoryTag(d) + statusTags(d.customId())
-                            + " §7(slot " + d.index() + ", \"" + d.displayName() + "\")"), false);
+            Chat.raw(src, Text.literal(
+                    CbFmt.DIM + " - " + CbFmt.BODY + d.customId() + categoryTag(d) + statusTags(d.customId())
+                            + " " + CbFmt.DIM + "(slot " + d.index() + ", \"" + d.displayName() + "\")"));
         }
         // Clickable export options.
-        MutableText exportLine = Text.literal("§7Export list: ")
-                .append(runButton("[.json]", "/cb export json", "Export all blocks to a .json file"))
+        MutableText exportLine = Text.literal(CbFmt.DIM + "Export list: ")
+                .append(Chat.runButton("[.json]", "/cb export json", "Export all blocks to a .json file"))
                 .append(Text.literal(" "))
-                .append(runButton("[.txt]", "/cb export txt", "Export all blocks to a .txt file"));
-        src.sendFeedback(() -> exportLine, false);
+                .append(Chat.runButton("[.txt]", "/cb export txt", "Export all blocks to a .txt file"));
+        Chat.raw(src, exportLine);
         return 1;
     }
 
@@ -131,14 +144,14 @@ public final class UtilityCommands {
         }
         List<SlotData> hits = SlotManager.search(query);
         if (hits.isEmpty()) {
-            Chat.info(src, "No blocks match '" + query + "'");
+            Chat.info(src, "No blocks match \"" + query + "\"");
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + hits.size() + " match(es) for \"" + query + "\":"), false);
+        Chat.raw(src, CbFmt.VALUE + hits.size() + " match(es) for \"" + query + "\":");
         for (SlotData d : hits) {
-            MutableText line = Text.literal("§7 - §f" + d.customId() + categoryTag(d) + statusTags(d.customId()) + " ")
-                    .append(runButton("[give]", "/cb give " + d.customId(), "Give " + d.customId()));
-            src.sendFeedback(() -> line, false);
+            MutableText line = Text.literal(CbFmt.DIM + " - " + CbFmt.BODY + d.customId() + categoryTag(d) + statusTags(d.customId()) + " ")
+                    .append(Chat.runButton("[give]", "/cb give " + d.customId(), "Give " + d.customId()));
+            Chat.raw(src, line);
         }
         return 1;
     }
@@ -155,26 +168,26 @@ public final class UtilityCommands {
             Chat.info(src, "No categories yet. Set one with /cb setcategory <id> <name>");
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + cats.size() + " categor(ies):"), false);
+        Chat.raw(src, CbFmt.VALUE + cats.size() + " categor(ies):");
         for (String c : cats) {
             int count = SlotManager.byCategory(c).size();
-            MutableText line = Text.literal("§7 - §f" + c + " §7(" + count + ") ")
-                    .append(runButton("[list]", "/cb search " + c, "Show blocks in " + c));
-            src.sendFeedback(() -> line, false);
+            MutableText line = Text.literal(CbFmt.DIM + " - " + CbFmt.BODY + c + " " + CbFmt.DIM + "(" + count + ") ")
+                    .append(Chat.runButton("[list]", "/cb search " + c, "Show blocks in " + c));
+            Chat.raw(src, line);
         }
         return 1;
     }
 
     /** A small grey "[category]" tag for list output, or "" when uncategorized. */
     private static String categoryTag(SlotData d) {
-        return d.category().isEmpty() ? "" : " §8[" + d.category() + "]";
+        return d.category().isEmpty() ? "" : " " + CbFmt.FAINT + "[" + d.category() + "]";
     }
 
     /** Lock/draft status tags for list output — e.g. " §c[locked] §8[draft]". */
     private static String statusTags(String id) {
         StringBuilder sb = new StringBuilder();
-        if (LockManager.isLocked(id)) sb.append(" §c[locked]");
-        if (DraftManager.isDraft(id))  sb.append(" §8[draft]");
+        if (LockManager.isLocked(id)) sb.append(" " + CbFmt.BAD + "[locked]");
+        if (DraftManager.isDraft(id))  sb.append(" " + CbFmt.FAINT + "[draft]");
         return sb.toString();
     }
 
@@ -192,22 +205,22 @@ public final class UtilityCommands {
             return 1;
         }
         // Console gets text output (same as before)
-        MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + all.size() + "§f block(s): ")
-                .append(runButton("[.json]", "/cb export json", "Bulk export all blocks to JSON"))
+        MutableText msg = Text.literal(CbFmt.BODY + "Export " + CbFmt.VALUE + all.size() + CbFmt.BODY + " block(s): ")
+                .append(Chat.runButton("[.json]", "/cb export json", "Bulk export all blocks to JSON"))
                 .append(Text.literal(" "))
-                .append(runButton("[.txt]", "/cb export txt", "Bulk export all blocks to TXT"))
+                .append(Chat.runButton("[.txt]", "/cb export txt", "Bulk export all blocks to TXT"))
                 .append(Text.literal(" "))
-                .append(runButton("[.csv]", "/cb export csv", "Bulk export to CSV (open in a spreadsheet)"))
+                .append(Chat.runButton("[.csv]", "/cb export csv", "Bulk export to CSV (open in a spreadsheet)"))
                 .append(Text.literal(" "))
-                .append(runButton("[.md]", "/cb export md", "Bulk export to a Markdown table"))
+                .append(Chat.runButton("[.md]", "/cb export md", "Bulk export to a Markdown table"))
                 .append(Text.literal(" "))
-                .append(runButton("[.html]", "/cb export html", "Bulk export to a viewable HTML table"))
+                .append(Chat.runButton("[.html]", "/cb export html", "Bulk export to a viewable HTML table"))
                 .append(Text.literal(" "))
-                .append(runButton("[.png]", "/cb export png", "Save every block's texture as a .png image"))
+                .append(Chat.runButton("[.png]", "/cb export png", "Save every block's texture as a .png image"))
                 .append(Text.literal(" "))
-                .append(runButton("[to Vault]", "/cb export vault", "Upload all blocks to the Vault"))
-                .append(Text.literal("  §7Per-block: §f/cb export <id>"));
-        src.sendFeedback(() -> msg, false);
+                .append(Chat.runButton("[Vault share]", "/cb export vault", "Share one block with /cb export <id> vault"))
+                .append(Text.literal("  " + CbFmt.DIM + "Per-block: " + CbFmt.BODY + "/cb export <id>"));
+        Chat.line(src, msg);
         return 1;
     }
 
@@ -225,9 +238,9 @@ public final class UtilityCommands {
             return 0;
         }
         String name = file.getFileName().toString();
-        MutableText msg = Text.literal(Chat.PREFIX + "§fExported §e" + all.size() + "§f block(s) → §7" + name + " ")
-                .append(runButton("[to Vault]", "/cb export vault", "Upload all blocks to the Vault"));
-        src.sendFeedback(() -> msg, false);
+        MutableText msg = Text.literal(CbFmt.BODY + "Exported " + CbFmt.VALUE + all.size() + CbFmt.BODY + " block(s) → " + CbFmt.DIM + name + " ")
+                .append(Chat.runButton("[Vault share]", "/cb export vault", "Share one block with /cb export <id> vault"));
+        Chat.line(src, msg);
         return 1;
     }
 
@@ -238,8 +251,8 @@ public final class UtilityCommands {
         if (all.isEmpty()) { Chat.info(src, "Nothing to export yet — make a block with /cb create <id>"); return 1; }
         BlockExporter.PngBatch r = BlockExporter.exportAllPng(all);
         if (r == null) { Chat.error(src, "Export failed — write error"); return 0; }
-        Chat.success(src, "Exported §e" + r.written() + "§r texture PNG(s) → §7exports/" + r.dir().getFileName()
-                + (r.skipped() > 0 ? " §8(" + r.skipped() + " had no texture)" : ""));
+        Chat.success(src, "Exported " + CbFmt.VALUE + r.written() + CbFmt.RESET + " texture PNG(s) → " + CbFmt.DIM + "exports/" + r.dir().getFileName()
+                + (r.skipped() > 0 ? " " + CbFmt.FAINT + "(" + r.skipped() + " had no texture)" : ""));
         return 1;
     }
 
@@ -251,9 +264,9 @@ public final class UtilityCommands {
         Path file = BlockExporter.exportPng(d);
         if (file == null) { Chat.error(src, "No texture to export for \"" + id + "\"."); return 0; }
         String url = ResourcePackServer.getPngUrl(id);
-        MutableText msg = Text.literal(Chat.PREFIX + "§fSaved §e" + id + "§f texture → §7cloud_exports/" + id + ".png  ")
+        MutableText msg = Text.literal(CbFmt.BODY + "Saved " + CbFmt.VALUE + id + CbFmt.BODY + " texture → " + CbFmt.DIM + "cloud_exports/" + id + ".png  ")
                 .append(openUrlButton("[download]", url, url));
-        src.sendFeedback(() -> msg, false);
+        Chat.line(src, msg);
         return 1;
     }
 
@@ -266,15 +279,15 @@ public final class UtilityCommands {
         if (zip == null) { Chat.error(src, "Export failed — couldn't write the ZIP."); return 0; }
         String name = zip.getFileName().toString();
         String url = ResourcePackServer.getZipUrl(name);
-        MutableText msg = Text.literal(Chat.PREFIX + "§fExported §e" + all.size() + "§f block(s) → §7cloud_exports/" + name + "  ")
+        MutableText msg = Text.literal(CbFmt.BODY + "Exported " + CbFmt.VALUE + all.size() + CbFmt.BODY + " block(s) → " + CbFmt.DIM + "cloud_exports/" + name + "  ")
                 .append(openUrlButton("[download]", url, url));
-        src.sendFeedback(() -> msg, false);
+        Chat.line(src, msg);
         return 1;
     }
 
-    /** /cb export vault — bulk vault upload (Phase 14 stub) */
+    /** /cb export vault — bulk vault upload is not built; point players to the one-block share path. */
     private static int exportVaultAll(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Vault sync is coming in Phase 14. Stay tuned!");
+        Chat.info(ctx.getSource(), "Bulk Vault upload is not built yet. Share one block with /cb export <id> vault or /cb vault upload <id>.");
         return 1;
     }
 
@@ -283,15 +296,15 @@ public final class UtilityCommands {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        MutableText msg = Text.literal(Chat.PREFIX + "§fExport §e" + id + "§f: ")
-                .append(runButton("[to Config]", "/cb export " + id + " config", "Save " + id + ".json to exports folder"))
+        MutableText msg = Text.literal(CbFmt.BODY + "Export " + CbFmt.VALUE + id + CbFmt.BODY + ": ")
+                .append(Chat.runButton("[to Config]", "/cb export " + id + " config", "Save " + id + ".json to exports folder"))
                 .append(Text.literal(" "))
-                .append(runButton("[.png]", "/cb export " + id + " png", "Save " + id + ".png (the block texture image)"))
+                .append(Chat.runButton("[.png]", "/cb export " + id + " png", "Save " + id + ".png (the block texture image)"))
                 .append(Text.literal(" "))
-                .append(runButton("[to Vault]", "/cb export " + id + " vault", "Upload to Block Vault"))
+                .append(Chat.runButton("[to Vault]", "/cb export " + id + " vault", "Upload to Block Vault"))
                 .append(Text.literal(" "))
-                .append(runButton("[Download]", "/cb export " + id + " download", "Get a download link for this block"));
-        src.sendFeedback(() -> msg, false);
+                .append(Chat.runButton("[Download]", "/cb export " + id + " download", "Get a download link for this block"));
+        Chat.line(src, msg);
         return 1;
     }
 
@@ -302,15 +315,13 @@ public final class UtilityCommands {
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Path file = BlockExporter.exportOne(d);
         if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
-        Chat.success(src, "Saved §e" + id + "§r → §7exports/" + id + ".json");
+        Chat.success(src, "Saved " + CbFmt.VALUE + id + CbFmt.RESET + " → " + CbFmt.DIM + "exports/" + id + ".json");
         return 1;
     }
 
-    /** /cb export <id> vault — upload to vault (Phase 14 stub) */
+    /** /cb export <id> vault — upload one block to the cloud vault. */
     private static int exportOneVault(CommandContext<ServerCommandSource> ctx, String id) {
-        if (SlotManager.getById(id) == null) { Chat.error(ctx.getSource(), "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        Chat.info(ctx.getSource(), "Vault sync is coming in Phase 14. Stay tuned!");
-        return 1;
+        return CloudCommands.uploadBlock(ctx.getSource(), id);
     }
 
     /** /cb export <id> download — saves to config then serves a link via the HTTP server */
@@ -321,9 +332,9 @@ public final class UtilityCommands {
         Path file = BlockExporter.exportOne(d);
         if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
         String url = ResourcePackServer.getExportUrl(id);
-        MutableText msg = Text.literal(Chat.PREFIX + "§fDownload §e" + id + "§f: ")
+        MutableText msg = Text.literal(CbFmt.BODY + "Download " + CbFmt.VALUE + id + CbFmt.BODY + ": ")
                 .append(openUrlButton("[open link]", url, url));
-        src.sendFeedback(() -> msg, false);
+        Chat.line(src, msg);
         return 1;
     }
 
@@ -355,12 +366,6 @@ public final class UtilityCommands {
 
     // ── Clickable chat helpers ───────────────────────────────────────────────
 
-    private static MutableText runButton(String label, String command, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withColor(Formatting.GREEN)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(hover))));
-    }
 
     private static MutableText openUrlButton(String label, String url, String hover) {
         return Text.literal(label).styled(s -> s

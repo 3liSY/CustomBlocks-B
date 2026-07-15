@@ -16,12 +16,16 @@
  * The whole batch records ONE undo entry (REID children), so a single /cb undo re-ids them all back.
  * Big/"all" batches are held for /cb confirm, like the other bulk ops.
  *
+ * No-arg /cb bulkreid opens the Bulk Workbench on its Re-ID op (§G07-3) — the first GUI front-end this
+ * handler has ever had. The Screen's preview reproduces the skip rules above before Apply.
+ *
  * Depends on: BulkScope, SlotManager (reId/hasId), LockManager, UndoManager, BulkConfirm, BulkChat,
  *             HudSync, Chat
- * Called by:  CommandRegistrar, BulkActionMenu (applyReidFromGui — once the reid GUI lands)
+ * Called by:  CommandRegistrar, BulkApply (the Screen calls applyReid directly)
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BulkScope;
@@ -34,7 +38,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
@@ -55,44 +58,33 @@ public final class BulkReidCommands {
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
         root.then(CommandManager.literal("bulkreid")
-                .executes(ctx -> { usage(ctx.getSource()); return 0; })
+                .executes(ctx -> BulkCommands.openOp(ctx.getSource(), "reid"))
                 .then(CommandManager.argument("args", StringArgumentType.greedyString())
                         .suggests(BulkSuggestions.RENAME_ARGS)
                         .executes(ctx -> bulkReid(ctx.getSource(), StringArgumentType.getString(ctx, "args")))));
     }
 
-    /** Run a bulk re-id assembled in the GUI (prefix/suffix use text A; replace uses A → B). */
-    public static void applyReidFromGui(ServerPlayerEntity player, String filter, String mode, String a, String b) {
-        net.minecraft.server.MinecraftServer s = player.getServer();
-        if (s == null) return;
-        String args = "replace".equals(mode)
-                ? filter + " replace " + a + " " + b
-                : filter + " " + mode + " " + a;
-        s.execute(() -> {
-            player.closeHandledScreen();
-            bulkReid(player.getCommandSource(), args.trim());
-        });
-    }
-
     private static int bulkReid(ServerCommandSource src, String args) {
         String[] t = args.trim().split("\\s+");
-        if (t.length < 3) { usage(src); return 0; }
-        String filter = t[0];
-        String mode = t[1].toLowerCase(Locale.ROOT);
-        String a;
+        // Same grammar as /cb bulkrename: the id list runs until the mode keyword (Group 04 §A7).
+        int m = BulkCommands.modeIndex(t);
+        if (m < 1 || t.length < m + 2) { usage(src); return 0; }
+        String filter = String.join(" ", Arrays.copyOf(t, m));
+        String mode = t[m].toLowerCase(Locale.ROOT);
+        String a = "";
         String b = "";
         switch (mode) {
-            case "prefix", "suffix" -> a = String.join(" ", Arrays.copyOfRange(t, 2, t.length));
+            case "prefix", "suffix" -> a = String.join(" ", Arrays.copyOfRange(t, m + 1, t.length));
             case "replace" -> {
-                if (t.length < 4) { usage(src); return 0; }
-                a = t[2];
-                b = t[3];
+                if (t.length < m + 3) { usage(src); return 0; }
+                a = t[m + 1];
+                b = t[m + 2];
             }
             default -> { usage(src); return 0; }
         }
 
         List<SlotData> blocks = BulkScope.resolve(filter, BulkConfirm.actor(src));
-        if (blocks.isEmpty()) { Chat.error(src, "No blocks matched filter: " + filter); return 0; }
+        if (blocks.isEmpty()) { Chat.error(src, "No blocks matched: " + filter); return 0; }
 
         int threshold = Math.max(1, CustomBlocksConfig.bulkConfirmThreshold);
         boolean needConfirm = BulkScope.isAll(filter) || blocks.size() > threshold;
@@ -101,9 +93,9 @@ public final class BulkReidCommands {
         Runnable action = () -> applyReid(src, blocks, fmode, fa, fb);
         if (needConfirm) {
             BulkConfirm.request(src, action, "re-id " + blocks.size() + " block(s)");
-            String hoverList = "§7" + reidWhat(mode, a, b) + " on:\n§f" + BulkChat.columns(BulkChat.ids(blocks));
-            BulkChat.confirm(src, "§fRe-id ", "§f (" + reidWhat(mode, a, b) + ")?  ", blocks.size(), hoverList,
-                    "§a§l[✔ Confirm]", "§c§l[✖ Cancel]");
+            String hoverList = CbFmt.DIM + reidWhat(mode, a, b) + " on:\n" + CbFmt.BODY + BulkChat.columns(BulkChat.ids(blocks));
+            BulkChat.confirm(src, CbFmt.BODY + "Re-id ", CbFmt.BODY + " (" + reidWhat(mode, a, b) + ")?  ", blocks.size(), hoverList,
+                    CbFmt.OK + CbFmt.BOLD + "[✔ Confirm]", CbFmt.BAD + CbFmt.BOLD + "[✖ Cancel]");
             return 1;
         }
         action.run();
@@ -111,7 +103,7 @@ public final class BulkReidCommands {
     }
 
     /** Apply the id transform to every eligible matched block, as one undo batch. */
-    private static void applyReid(ServerCommandSource src, List<SlotData> blocks, String mode, String a, String b) {
+    static void applyReid(ServerCommandSource src, List<SlotData> blocks, String mode, String a, String b) {
         // Start from every currently-assigned id; a newId is a collision if it's taken by anything
         // other than the block being moved (this also blocks swaps within the batch).
         Set<String> taken = new HashSet<>();
@@ -139,28 +131,81 @@ public final class BulkReidCommands {
             SlotData after = SlotManager.reId(oldId, newId);
             if (after == null) continue;
             children.add(new UndoManager.Op(UndoManager.Kind.REID, before, after, null, "bulk reid"));
-            changed.add(oldId + " §7→§f " + newId);
+            changed.add(oldId + " " + CbFmt.DIM + "→" + CbFmt.BODY + " " + newId);
             taken.remove(oldId);
             taken.add(newId);
         }
 
         if (changed.isEmpty()) {
+            BulkResult.record(src, "No ids changed" + skipSuffix(locked, collided, invalid, unchanged) + "."); // X3
             Chat.error(src, "No ids changed" + skipSuffix(locked, collided, invalid, unchanged) + ".");
             return;
         }
         UndoManager.recordBatch(BulkConfirm.actor(src), children, "bulk-reid (" + changed.size() + ")");
 
-        String hoverList = "§7Re-id'd " + changed.size() + " block(s):\n§f" + BulkChat.columns(changed)
+        String hoverList = CbFmt.DIM + "Re-id'd " + changed.size() + " block(s):\n" + CbFmt.BODY + BulkChat.columns(changed)
                 + skipHover(locked, collided, invalid, unchanged);
-        MutableText msg = Text.literal("§aRe-id'd ")
-                .append(Chat.hover("§e§n" + changed.size() + " block" + (changed.size() == 1 ? "" : "s") + "§r", hoverList))
+        MutableText msg = Text.literal(CbFmt.OK + "Re-id'd ")
+                .append(Chat.hover(CbFmt.VALUE + CbFmt.UNDER + changed.size() + " block" + (changed.size() == 1 ? "" : "s") + CbFmt.RESET, hoverList))
                 .append(Text.literal("  "))
-                .append(Chat.runButton("§e[↩ Undo]", "/cb undo", "§7Revert this whole batch §8(/cb undo)"))
-                .append(Text.literal(" §a✔"));
+                // G04-UNDO-DIALECT: runButton prepends its own ▶, so a "[↩ Undo]" label rendered "▶ [↩ Undo]".
+                .append(Chat.undoButton())
+                .append(Text.literal(" " + CbFmt.OK + "✔"));
         int skipped = locked + collided + invalid + unchanged;
-        if (skipped > 0) msg.append(Text.literal("  §8" + skipped + " skipped"));
+        BulkResult.record(src, "Re-id'd " + changed.size() + " block(s)" + (skipped > 0 ? " · " + skipped + " skipped" : "")); // X3
+        if (skipped > 0) msg.append(Text.literal("  " + CbFmt.FAINT + skipped + " skipped"));
         Chat.line(src, msg);
-        if (src.getEntity() instanceof ServerPlayerEntity p) HudSync.sendTo(p);
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: bulk id change shows live for ALL players (was actor-only)
+    }
+
+    /**
+     * Apply an EXPLICIT per-block re-id map from the Hub's B9 editor. Each pair is {oldId, newId}; the same
+     * skip rules as {@link #applyReid} apply, re-checked here at apply time: locked, unchanged (new == old),
+     * invalid id, a new id already taken by another block, and a batch-clash (two pairs to the same new id).
+     * One undo entry for the whole batch.
+     */
+    public static void applyReidExplicit(ServerCommandSource src, List<String[]> pairs) {
+        List<UndoManager.Op> children = new ArrayList<>();
+        List<String> changed = new ArrayList<>();
+        int locked = 0, collided = 0, invalid = 0, unchanged = 0, missing = 0;
+        Set<String> seenNew = new HashSet<>();
+
+        for (String[] pair : pairs) {
+            String oldId = pair[0], newId = pair[1];
+            SlotData before = SlotManager.getById(oldId);
+            if (before == null) { missing++; continue; }
+            if (LockManager.isLocked(oldId)) { locked++; continue; }
+            if (newId.equals(oldId)) { unchanged++; continue; }
+            if (!VALID_ID.matcher(newId).matches()) { invalid++; continue; }
+            if (!seenNew.add(newId)) { collided++; continue; }        // same new id twice in this batch (clash)
+            SlotData after = SlotManager.reId(oldId, newId);
+            if (after == null) { collided++; continue; }              // new id already taken by an existing block
+            children.add(new UndoManager.Op(UndoManager.Kind.REID, before, after, null, "bulk reid"));
+            changed.add(oldId + " " + CbFmt.DIM + "→" + CbFmt.BODY + " " + newId);
+        }
+
+        if (changed.isEmpty()) {
+            BulkResult.record(src, "No ids changed" + skipSuffix(locked, collided, invalid, unchanged)
+                    + (missing > 0 ? ", " + missing + " gone" : "") + "."); // X3
+            Chat.error(src, "No ids changed" + skipSuffix(locked, collided, invalid, unchanged)
+                    + (missing > 0 ? (skipSuffix(locked, collided, invalid, unchanged).isEmpty() ? " — " : ", ") + missing + " gone" : "") + ".");
+            return;
+        }
+        UndoManager.recordBatch(BulkConfirm.actor(src), children, "bulk-reid (" + changed.size() + ")");
+
+        String hoverList = CbFmt.DIM + "Re-id'd " + changed.size() + " block(s):\n" + CbFmt.BODY + BulkChat.columns(changed)
+                + skipHover(locked, collided, invalid, unchanged);
+        MutableText msg = Text.literal(CbFmt.OK + "Re-id'd ")
+                .append(Chat.hover(CbFmt.VALUE + CbFmt.UNDER + changed.size() + " block" + (changed.size() == 1 ? "" : "s") + CbFmt.RESET, hoverList))
+                .append(Text.literal("  "))
+                // G04-UNDO-DIALECT: runButton prepends its own ▶, so a "[↩ Undo]" label rendered "▶ [↩ Undo]".
+                .append(Chat.undoButton())
+                .append(Text.literal(" " + CbFmt.OK + "✔"));
+        int skipped = locked + collided + invalid + unchanged + missing;
+        BulkResult.record(src, "Re-id'd " + changed.size() + " block(s)" + (skipped > 0 ? " · " + skipped + " skipped" : "")); // X3
+        if (skipped > 0) msg.append(Text.literal("  " + CbFmt.FAINT + skipped + " skipped"));
+        Chat.line(src, msg);
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: live for ALL players
     }
 
     private static String reidWhat(String mode, String a, String b) {
@@ -184,11 +229,12 @@ public final class BulkReidCommands {
     /** Hover footnote listing what was skipped, when at least one block did change. */
     private static String skipHover(int locked, int collided, int invalid, int unchanged) {
         String tail = skipSuffix(locked, collided, invalid, unchanged);
-        return tail.isEmpty() ? "" : "\n\n§c" + tail.substring(3) + " — skipped";
+        return tail.isEmpty() ? "" : "\n\n" + CbFmt.BAD + tail.substring(3) + " — skipped";
     }
 
-    private static void usage(ServerCommandSource src) {
-        Chat.error(src, "Usage: /cb bulkreid <filter> prefix <text> | suffix <text> | replace <old> <new>");
-        Chat.info(src, "Changes many block IDs by a pattern (keeps slots). Filters: all · category:<name> · id:<prefix> · name:<text> · favorite:yes|no · locked:yes|no");
+    static void usage(ServerCommandSource src) {
+        Chat.error(src, "Usage: /cb bulkreid <ids...> prefix <text> | suffix <text> | replace <old> <new>");
+        Chat.info(src, "Changes many block IDs by a pattern (keeps slots).");
+        Chat.info(src, BulkChat.SCOPE_HELP);
     }
 }

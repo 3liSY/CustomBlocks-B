@@ -133,4 +133,31 @@ final class BgMask {
         }
         for (int[] p : largest) isBg[p[0]][p[1]] = false;                   // …then carve back the subject
     }
+
+    /**
+     * Disk-dilate the {@code seed} mask by {@code radius} px, marking only pixels that are background
+     * ({@code isBg[x][y]}). Returns a fresh mask. Used to grow the thin white keyline outward from the
+     * subject's dark silhouette edge: stamping a Euclidean disk per seed gives an even, rounded width
+     * that reads as a clean anti-aliased outline once the texture is downscaled. Pure mask op — the
+     * caller decides which seeds are "dark edges"; this only grows them into the background.
+     */
+    static boolean[][] dilateInto(boolean[][] seed, boolean[][] isBg, int w, int h, int radius) {
+        boolean[][] out = new boolean[w][h];
+        int r2 = radius * radius;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (!seed[x][y]) continue;
+                for (int dy = -radius; dy <= radius; dy++) {
+                    int ny = y + dy;
+                    if (ny < 0 || ny >= h) continue;
+                    for (int dx = -radius; dx <= radius; dx++) {
+                        int nx = x + dx;
+                        if (nx < 0 || nx >= w || dx * dx + dy * dy > r2) continue;
+                        if (isBg[nx][ny]) out[nx][ny] = true;
+                    }
+                }
+            }
+        }
+        return out;
+    }
 }

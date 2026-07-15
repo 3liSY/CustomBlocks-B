@@ -8,6 +8,8 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.command.CbFmt;
+
 import com.customblocks.command.Chat;
 import com.customblocks.gui.chest.Nav.Dest;
 import com.customblocks.gui.chest.Nav.MenuKey;
@@ -113,17 +115,27 @@ public final class GuiRouter {
         });
     }
 
+    /** Run a /cb subcommand, then rebuild whatever menu is currently on top of the nav stack. */
+    public static void runAndReopenCurrent(ServerPlayerEntity player, String sub) {
+        MenuKey cur = Nav.current(player.getUuid());
+        if (cur == null) { runCommand(player, sub); return; }
+        runAndReopen(player, sub, cur);
+    }
+
+    /** Rebuild + reshow the current top menu in place (used after a live edit changed its contents). */
+    public static void refresh(ServerPlayerEntity player) {
+        MenuKey cur = Nav.current(player.getUuid());
+        if (cur != null) render(player, cur);
+    }
+
     /** Close the chest and post a one-click chat line that fills the player's chat box with a command. */
     public static void typeInChat(ServerPlayerEntity player, String command) {
         MinecraftServer s = player.getServer();
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            player.sendMessage(Text.literal(Chat.PREFIX + "§7Click to type: ")
-                    .append(Text.literal("§e" + command).styled(st -> st
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command))
-                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                                    Text.literal("§7Puts it in your chat box — edit or press Enter to run"))))), false);
+            Chat.toPlayer(player, Text.literal(CbFmt.DIM + "Click to type: ")
+                    .append(Chat.suggestButton(command, command)));
         });
     }
 
@@ -133,10 +145,8 @@ public final class GuiRouter {
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            player.sendMessage(Text.literal(Chat.PREFIX + "§fClick to continue: ")
-                    .append(Text.literal("§e[" + label + "]").styled(st -> st
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, suggest))
-                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(suggest))))), false);
+            Chat.toPlayer(player, Text.literal(CbFmt.BODY + "Click to continue: ")
+                    .append(Chat.suggestButton("[" + label + "]", suggest)));
         });
     }
 
@@ -146,17 +156,14 @@ public final class GuiRouter {
         if (s == null) return;
         s.execute(() -> {
             player.closeHandledScreen();
-            player.sendMessage(Text.literal(Chat.PREFIX + "§fConfirm: ")
-                    .append(Text.literal(label).styled(st -> st
-                            .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, run))
-                            .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(run))))), false);
+            Chat.toPlayer(player, Text.literal(CbFmt.BODY + "Confirm: ")
+                    .append(Chat.runButton(label, run)));
         });
     }
 
     private static ChestMenu build(ServerPlayerEntity player, MenuKey key) {
         return switch (key.dest()) {
             case MAIN -> MainMenu.build(player);
-            case BLOCK_LIST -> BlockListMenu.build(player, key.arg(), key.page());
             case EDITOR -> EditorMenu.build(player, key.arg());
             case REID -> ReIdMenu.build(player, key.page());
             case UNDO -> UndoMenu.build(player, false, key.page());
@@ -164,7 +171,7 @@ public final class GuiRouter {
             case HISTORY -> HistoryMenu.build(player, key.page());
             case MAGIC -> MagicMenu.build(player, false, key.page());
             case MAGIC_EDIT -> MagicMenu.build(player, true, key.page());
-            case CONFIG -> ConfigMenu.build(player);
+            case CONFIG -> SettingsBookMenu.build(player, key.arg());
             case TEXTURE_SIZE -> TextureSizeMenu.build(player);
             case RETEXTURE_CONFIRM -> RetextureConfirmMenu.build(player, key.arg());
             case RECOLOR_CONFIRM -> RecolorConfirmMenu.build(player, key.arg());
@@ -175,10 +182,6 @@ public final class GuiRouter {
             case SEARCH -> SearchMenu.build(player, key.arg(), key.page());
             case HELP -> HelpMenu.build(player, key.arg(), key.page());
             case OMNI -> OmniMenu.build(player);
-            case BULK_HUB -> BulkHubMenu.build(player);
-            case BULK_CONFIRM -> BulkConfirmMenu.build(player);
-            case BULK_SELECT -> BulkSelectMenu.build(player);
-            case BULK_ACTION -> BulkActionMenu.build(player);
             case SHAPE_EDITOR -> ShapeEditorMenu.build(player, key.arg());
             case FACE_EDITOR -> FaceEditorMenu.build(player, key.arg());
             case BACKUP_LIST -> BackupMenu.build(player, key.page());
@@ -211,6 +214,9 @@ public final class GuiRouter {
             case REPORT -> ReportMenu.build(player);
             case PARTICLES -> FeedbackMenu.build(player, key.arg());
             case DEBUG_LOG -> DebugLogMenu.build(player, key.arg(), key.page());
+            case NOTES -> NotesMenu.build(player, key.arg());
+            case STEPPER -> StepperMenu.build(player, key.arg());
+            case SUBCFG -> SubChestMenu.build(player, key.arg());
         };
     }
 }

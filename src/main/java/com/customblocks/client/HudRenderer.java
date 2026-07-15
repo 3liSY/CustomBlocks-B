@@ -75,27 +75,30 @@ public final class HudRenderer {
         BlockState state = client.world.getBlockState(pos);
         if (state.getBlock() instanceof SlotBlock slot) {
             int idx = slot.getSlotIndex();
+            // Group 30 — a guess-mode holder can't read a looked-at FLAGGED block's name/id either
+            // (anti-cheat); substitute "???" on their client only. Covers both a specific flagged id and
+            // all-mode (localDisguisesSlot handles both).
+            boolean blind = ClientGuessState.localDisguisesSlot(idx);
+            String blank = blind ? ClientGuessState.BLANK_NAME : null;
             ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
             if (e != null) {
-                return new HudFieldType.Ctx(true, e.id(), e.name(), idx,
+                return new HudFieldType.Ctx(true, blind ? blank : e.id(), blind ? blank : e.name(), idx,
                         e.category(), e.glow(), e.hardness(), e.sound(), e.shape(), e.passable(),
                         true, pos.getX(), pos.getY(), pos.getZ(), light, dist, facing);
             }
             // Custom block we have no sync data for yet — show id/name blank, defaults elsewhere.
-            return new HudFieldType.Ctx(true, "", "", idx,
+            return new HudFieldType.Ctx(true, blind ? blank : "", blind ? blank : "", idx,
                     "", 0, com.customblocks.core.SlotData.DEFAULT_HARDNESS, "stone", "full", false,
                     true, pos.getX(), pos.getY(), pos.getZ(), light, dist, facing);
         }
-        // Group 13 / O6 — a placed joinable Arabic letter: show its LIVE name + virtual id (computed
-        // from the synced BlockEntity, so it tracks neighbours and form-label edits with no reload).
-        if (state.getBlock() instanceof com.customblocks.block.ArabicLetterBlock
-                && client.world.getBlockEntity(pos) instanceof com.customblocks.block.ArabicLetterBlockEntity be
-                && be.letter() != 0) {
-            int form = be.effectiveForm();
-            String name = com.customblocks.arabic.ArabicNaming.displayName(be.letter(), be.color(), form);
-            String vid  = com.customblocks.arabic.ArabicNaming.virtualId(be.letter(), be.color(), form);
-            return new HudFieldType.Ctx(true, vid, name, -1,
-                    "Arabic", 0, 1.0f, "stone", "full", false,
+        // G13-25 CP5: the old customblocks:arabic_letter NBT block is gone — a placed Arabic letter
+        // IS a SlotBlock now, so the SlotBlock branch above already covers it (name/id from the cache).
+        // G06-14 slice 1 — a Deleted marker: show "Deleted: <name>" on the look-HUD (read from its
+        // synced BlockEntity). Not a SlotBlock, so it carries no slot index (-1).
+        if (state.getBlock() instanceof com.customblocks.block.DeletedMarkerBlock
+                && client.world.getBlockEntity(pos) instanceof com.customblocks.block.DeletedMarkerBlockEntity be) {
+            return new HudFieldType.Ctx(true, be.customId(), be.label(), -1,
+                    "Deleted", 0, 0f, "stone", "full", false,
                     true, pos.getX(), pos.getY(), pos.getZ(), light, dist, facing);
         }
         // Aiming at a non-custom block: world bricks still resolve, block-info bricks do not.

@@ -1,11 +1,12 @@
 /**
  * ArabicLetterRetirement.java
  *
- * Responsibility: Group 13 / Build B. Permanently retire the 144 OLD static Arabic letter
- * blocks (36 letters x 4 colours) now that auto-join is the only letter system. Numbers
- * (Eastern A0-A9 + Western E0-E9, 80 blocks) are NEVER matched, so they survive untouched.
+ * Responsibility: Group 13 / Build B (+ G13-25 CP5). Permanently retire ALL the OLD static
+ * Arabic art blocks — originally the 144 letters (36 x 4 colours, Build B), and since CP5 the
+ * 80 numbers too (Eastern A0-A9 + Western E0-E9 x 4 colours): the real Arabic slot blocks
+ * (ArabicSlotBootstrap) are the only letter/number system now.
  *
- *   - Boot migration (idempotent): delete every existing arabic_<letter>_<colour> slot, free its
+ *   - Boot migration (idempotent): delete every existing arabic_<glyph>_<colour> slot, free its
  *     index, delete its texture, and record the index in RetiredSlots. A no-op once they're gone.
  *   - World cleanup: as chunks load we SCAN the freshly-loaded chunk's sections (a direct,
  *     non-blocking read) and queue any placed copy of a retired letter (a slot_N block whose
@@ -64,11 +65,11 @@ public final class ArabicLetterRetirement {
 
     private ArabicLetterRetirement() {}
 
-    /** Run once on boot: retire the static letters, then arm the placed-copy air cleanup. */
+    /** Run once on boot: retire the static art blocks, then arm the placed-copy air cleanup. */
     public static void init() {
-        int removed = retireStaticLetters();
+        int removed = retireStaticArt();
         if (removed > 0) {
-            LOG.info("[CustomBlocks/Arabic] Build B: retired {} static letter block(s); {} slot(s) reclaimed.",
+            LOG.info("[CustomBlocks/Arabic] CP5: retired {} static Arabic art block(s); {} slot(s) reclaimed.",
                     removed, removed);
         }
         // Scan loaded chunks for placed copies (cheap, non-blocking) ...
@@ -77,18 +78,19 @@ public final class ArabicLetterRetirement {
         ServerTickEvents.END_WORLD_TICK.register(ArabicLetterRetirement::onWorldTick);
     }
 
-    /** Delete every existing static letter slot in one batch. Idempotent: a no-op once all gone. */
-    private static int retireStaticLetters() {
-        List<String> letterIds = new ArrayList<>();
+    /** Delete every existing static art slot (letters AND numbers, G13-25 CP5) in one batch.
+     *  Idempotent: a no-op once all gone. The real Arabic slots use different ids
+     *  (arabic_<glyph>_<form-token>[_<colour>]) so they can never be matched here. */
+    private static int retireStaticArt() {
+        List<String> artIds = new ArrayList<>();
         for (ArabicArt.Glyph g : ArabicArt.ALL) {
-            if (g.group() != ArabicArt.Group.LETTER) continue; // numbers stay
             for (String color : ArabicArt.COLORS) {
                 String id = ArabicArt.blockId(g, color);
-                if (SlotManager.getById(id) != null) letterIds.add(id);
+                if (SlotManager.getById(id) != null) artIds.add(id);
             }
         }
-        if (letterIds.isEmpty()) return 0;
-        return SlotManager.retireSlots(letterIds).size();
+        if (artIds.isEmpty()) return 0;
+        return SlotManager.retireSlots(artIds).size();
     }
 
     /** On chunk load, find placed copies of retired letters and queue them for a tick-time air-swap. */

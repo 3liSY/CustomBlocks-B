@@ -32,7 +32,7 @@ public final class EditorMenu {
         for (int i = 46; i < 53; i++) m.set(i, Icons.accent());
 
         if (d == null) {
-            m.set(22, Icons.of(Items.BARRIER, "§cNo block '" + id + "'"));
+            m.set(22, Icons.of(Items.BARRIER, "§cNo block \"" + id + "\""));
             m.set(45, Icons.back(), (p, b, a) -> GuiRouter.back(p));
             m.set(53, Icons.close(), (p, b, a) -> p.closeHandledScreen());
             return m;
@@ -103,8 +103,8 @@ public final class EditorMenu {
         m.set(30, Icons.of(Items.PAINTING, "§eRetexture", "§7Set a texture from a URL"),
                 (p, b, a) -> GuiRouter.promptCommand(p, "/cb retexture " + id + " ", "retexture " + id));
 
-        m.set(31, Icons.of(Items.WRITABLE_BOOK, "§eNote", "§7Attach a note to this block"),
-                (p, b, a) -> GuiRouter.promptCommand(p, "/cb note " + id + " ", "note " + id));
+        m.set(31, Icons.of(Items.WRITABLE_BOOK, "§eLore", "§7Hover lines shown on the block item"),
+                (p, b, a) -> GuiRouter.navigate(p, MenuKey.of(Dest.NOTES, id)));
 
         m.set(32, Icons.of(Items.LIME_DYE, "§eColour Variants", "§7Lighter / darker / complementary…",
                         "§7Spin off new colour-shifted blocks"),
@@ -119,7 +119,7 @@ public final class EditorMenu {
 
         m.set(35, Icons.of(Items.SPYGLASS, "§eLive Recolour", "§7Drag hue/sat/bright with a live preview",
                         "§8Opens a screen — needs the mod client-side"),
-                (p, b, a) -> GuiRouter.runCommand(p, "livecolor " + id));
+                (p, b, a) -> GuiRouter.runCommand(p, "recolor " + id)); // §G27.11 rename
 
         m.set(45, Icons.back(), (p, b, a) -> GuiRouter.back(p));
         m.set(53, Icons.close(), (p, b, a) -> p.closeHandledScreen());

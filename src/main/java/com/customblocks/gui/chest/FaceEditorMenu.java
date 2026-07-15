@@ -39,7 +39,7 @@ public final class FaceEditorMenu {
         for (int i = 46; i < 53; i++) m.set(i, Icons.accent());
 
         if (d == null) {
-            m.set(22, Icons.of(Items.BARRIER, "§cNo block '" + id + "'"));
+            m.set(22, Icons.of(Items.BARRIER, "§cNo block \"" + id + "\""));
             m.set(45, Icons.back(), (p, b, a) -> GuiRouter.back(p));
             m.set(53, Icons.close(), (p, b, a) -> p.closeHandledScreen());
             return m;

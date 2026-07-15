@@ -45,7 +45,7 @@ public final class BgStudioMenu {
 
         SlotData d = SlotManager.getById(id);
         if (d == null) {
-            m.set(22, Icons.of(Items.BARRIER, "§cNo block '" + id + "'"));
+            m.set(22, Icons.of(Items.BARRIER, "§cNo block \"" + id + "\""));
             m.set(36, Icons.back(), (p, b, a) -> GuiRouter.back(p));
             m.set(44, Icons.close(), (p, b, a) -> p.closeHandledScreen());
             return m;

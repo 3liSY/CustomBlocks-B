@@ -1,0 +1,5 @@
+{
+  "variants": {
+    "": { "model": "customblocks:block/guess_showcase" }
+  }
+}

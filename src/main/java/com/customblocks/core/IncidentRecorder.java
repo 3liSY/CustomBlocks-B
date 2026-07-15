@@ -13,6 +13,7 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.CbFmt;
 import com.google.gson.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -40,24 +41,39 @@ public final class IncidentRecorder {
      * One structured incident, newest-first when returned from {@link #recent()}.
      * {@code url} is the source URL when the incident is a re-downloadable texture failure
      * (slice 2 auto-fix), else null.
+     * {@code code} is the short, pasteable handle shown in chat (G04-4) — e.g. {@code E-45}.
+     * Incidents written before the code registry existed have {@code code == null}.
      */
     public record Incident(String time, String context, String error,
-                           String block, String player, Severity severity, String url) {}
+                           String block, String player, Severity severity, String url, String code) {}
 
     private IncidentRecorder() {}
 
     /**
-     * Record an incident. blockId / actor / url may be null (→ "—" / "System" / no auto-fix).
-     * Severity is derived from the throwable + context, never passed in. Thread-safe.
+     * Record an incident and return its short code (e.g. {@code "E-45"}).
+     *
+     * G04-4: the code is the whole point of the code→incident registry. A player sees a plain-English
+     * sentence plus this code, and a clickable link that runs {@code /cb incidents <code>} to jump
+     * straight to the entry — so the raw exception NEVER has to be shown in chat to stay diagnosable.
+     * The full throwable is still captured here, silently.
+     *
+     * blockId / actor / url may be null (→ "—" / "System" / no auto-fix). Severity is derived from the
+     * throwable + context, never passed in. Thread-safe. Returns null only if the write itself failed.
      */
-    public static synchronized void record(String context, String blockId, String actor,
-                                           String url, Throwable ex) {
+    public static synchronized String record(String context, String blockId, String actor,
+                                             String url, Throwable ex) {
         try {
             String error = ex == null ? null : ex.getClass().getSimpleName() + ": " + ex.getMessage();
             Severity sev = deriveSeverity(context, error);
-            JsonArray arr = loadArray();
+            JsonObject root = loadRoot();
+            JsonArray arr = root.has("incidents") ? root.getAsJsonArray("incidents") : new JsonArray();
+
+            int next = root.has("nextCode") ? root.get("nextCode").getAsInt() : 1;
+            String code = codePrefix(sev) + "-" + next;
+
             JsonObject entry = new JsonObject();
             entry.addProperty("time",    Instant.now().toString());
+            entry.addProperty("code",    code);
             entry.addProperty("context", context);
             if (error != null)               entry.addProperty("error",    error);
             if (blockId != null && !blockId.isBlank()) entry.addProperty("block", blockId);
@@ -66,27 +82,49 @@ public final class IncidentRecorder {
             if (url != null && !url.isBlank()) entry.addProperty("url", url);
             arr.add(entry);
             while (arr.size() > MAX_INCIDENTS) arr.remove(0);
-            JsonObject root = new JsonObject();
+
+            root = new JsonObject();
             root.add("incidents", arr);
+            root.addProperty("nextCode", next + 1);
             Files.createDirectories(DIR);
             Path tmp = DIR.resolve("incidents.json.tmp");
             Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
             Files.move(tmp, FILE, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            return code;
         } catch (Exception e) {
             LOG.error("[CustomBlocks] Failed to write incident", e);
+            return null;
         }
     }
 
-    /** Record with block + actor in scope, but no re-download URL. */
-    public static void record(String context, String blockId, String actor, Throwable ex) {
-        record(context, blockId, actor, null, ex);
+    /** Record with block + actor in scope, but no re-download URL. Returns the short code. */
+    public static String record(String context, String blockId, String actor, Throwable ex) {
+        return record(context, blockId, actor, null, ex);
     }
 
     /** Record an incident with context + throwable (no block / player in scope → "—" / "System"). */
-    public static void record(String context, Throwable ex) { record(context, null, null, null, ex); }
+    public static String record(String context, Throwable ex) { return record(context, null, null, null, ex); }
 
     /** Convenience: incident without a throwable. */
-    public static void record(String context) { record(context, null, null, null, null); }
+    public static String record(String context) { return record(context, null, null, null, null); }
+
+    /**
+     * The code→incident registry lookup (G04-4). Case-insensitive so a player can paste "e-45".
+     * Returns null if the code is unknown — it may simply have aged out of the last {@value #MAX_INCIDENTS}.
+     */
+    public static Incident byCode(String code) {
+        if (code == null || code.isBlank()) return null;
+        String want = code.trim().toUpperCase();
+        for (Incident in : recent()) {
+            if (in.code() != null && in.code().equalsIgnoreCase(want)) return in;
+        }
+        return null;
+    }
+
+    /** E- for an error, W- for a warning, I- for info. Keeps the code short and self-describing. */
+    private static String codePrefix(Severity sev) {
+        return switch (sev) { case ERROR -> "E"; case WARN -> "W"; case INFO -> "I"; };
+    }
 
     /** Newest-first structured snapshot of all recorded incidents (for the IT Chest dashboard). */
     public static synchronized List<Incident> recent() {
@@ -104,7 +142,9 @@ public final class IncidentRecorder {
                         ? parseSeverity(e.get("severity").getAsString())
                         : deriveSeverity(ctx, error);   // old entries: derive on read
                 String url = e.has("url") ? e.get("url").getAsString() : null;
-                out.add(new Incident(time, ctx, error, block, pl, sev, url));
+                // Written before the G04-4 code registry existed → no code. Degrade, don't crash.
+                String code = e.has("code") ? e.get("code").getAsString() : null;
+                out.add(new Incident(time, ctx, error, block, pl, sev, url, code));
             }
         } catch (Exception e) {
             LOG.error("[CustomBlocks] Failed to read incidents", e);
@@ -115,14 +155,14 @@ public final class IncidentRecorder {
     /** Return all incidents as formatted display lines (newest first) — console / text fallback. */
     public static List<String> list() {
         List<Incident> all = recent();
-        if (all.isEmpty()) return List.of("§7No incidents recorded.");
+        if (all.isEmpty()) return List.of(CbFmt.DIM + "No incidents recorded.");
         List<String> lines = new ArrayList<>();
         for (Incident in : all) {
             String time = in.time().length() >= 19 ? in.time().substring(0, 19).replace('T', ' ') : in.time();
-            String col  = switch (in.severity()) { case ERROR -> "§c"; case WARN -> "§e"; default -> "§a"; };
-            String err  = in.error() == null ? "" : " §c" + in.error();
-            lines.add("§7[" + time + "] " + col + in.context()
-                    + " §8(" + in.player() + (in.block() == null ? "" : " · " + in.block()) + ")" + err);
+            String col  = switch (in.severity()) { case ERROR -> CbFmt.BAD; case WARN -> CbFmt.VALUE; default -> CbFmt.OK; };
+            String err  = in.error() == null ? "" : " " + CbFmt.BAD + in.error();
+            lines.add(CbFmt.DIM + "[" + time + "] " + col + in.context()
+                    + " " + CbFmt.FAINT + "(" + in.player() + (in.block() == null ? "" : " · " + in.block()) + ")" + err);
         }
         return lines;
     }
@@ -147,13 +187,18 @@ public final class IncidentRecorder {
     }
 
     private static JsonArray loadArray() {
+        JsonObject root = loadRoot();
+        return root.has("incidents") ? root.getAsJsonArray("incidents") : new JsonArray();
+    }
+
+    /** The whole file — incidents array plus the {@code nextCode} counter that backs the code registry. */
+    private static JsonObject loadRoot() {
         try {
-            if (!Files.exists(FILE)) return new JsonArray();
+            if (!Files.exists(FILE)) return new JsonObject();
             String json = Files.readString(FILE, StandardCharsets.UTF_8);
-            JsonObject root = JsonParser.parseString(json).getAsJsonObject();
-            return root.has("incidents") ? root.getAsJsonArray("incidents") : new JsonArray();
+            return JsonParser.parseString(json).getAsJsonObject();
         } catch (Exception e) {
-            return new JsonArray();
+            return new JsonObject();
         }
     }
 }

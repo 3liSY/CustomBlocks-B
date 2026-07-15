@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Category Hub — rework v3 (red+black pixel, interactive)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── Palette: locked red+black+lime (CbTheme) ───────────────────────────── */
+  :root{
+    --red:#FF0000;         /* ACCENT — borders/titles */
+    --red-dim:#7A0000;     /* ACCENT_DIM */
+    --sel:#2A0000;         /* SEL_FILL — dark-red behind selected */
+    --lime:#40FF00;        /* success / valid-drop only */
+    --black:#000000;
+    --panel:#0C0C0C;       /* list/blocks panel bg */
+    --card:#141414;        /* row card */
+    --card-hov:#1E1E1E;
+    --btn:#2A2A2A; --btn-hov:#444444; --btn-off:#181818;
+    --line:#2A2A2A;
+    --txt:#FFFFFF; --mut:#B0B0B0; --dim:#6A6A72;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html,body{height:100%}
+  body{
+    background:#101012;
+    font-family:"Pixelify Sans","Segoe UI",monospace;
+    color:var(--txt);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden; letter-spacing:.3px;
+    -webkit-font-smoothing:none; font-smooth:never;
+  }
+  /* faint minecraft world behind, like the real screen */
+  .world{position:fixed; inset:0; z-index:0; opacity:.30;
+    background:linear-gradient(transparent 0 58%, #4a7a3a 58% 61%, #6b4a2a 61% 100%),
+      repeating-linear-gradient(90deg,#2a3a44 0 46px,#243139 46px 92px);
+    filter:saturate(.6) brightness(.7);}
+
+  /* ── App frame (scaled to fit window) ───────────────────────────────────── */
+  .app{position:relative; z-index:2; width:1536px; height:800px;
+    transform:scale(var(--ui,.92)); transform-origin:center;
+    background:var(--black); border:1px solid var(--red);
+    box-shadow:0 0 0 4px #000, 0 24px 90px rgba(0,0,0,.85);
+    display:flex; flex-direction:column; overflow:hidden;}
+
+  /* Top bar */
+  .top{height:82px; border-bottom:2px solid var(--red);
+    display:flex; align-items:center; gap:18px; padding:0 22px; flex:0 0 auto;}
+  .top .title{font-size:30px; font-weight:700; color:var(--red);
+    text-shadow:0 2px 0 #000; line-height:1;}
+  .top .sub{font-size:19px; color:var(--mut);}
+  .top .sub b{color:#fff}
+  .top .spacer{flex:1}
+  .search{width:360px; height:44px; background:#0a0a0a; border:2px solid var(--line);
+    color:#fff; padding:0 14px; font-family:inherit; font-size:18px;}
+  .search::placeholder{color:#555}
+  .search:focus{outline:none; border-color:var(--red)}
+  .help-btn{width:44px; height:44px; background:var(--btn); border:2px solid #000;
+    color:#fff; font-size:22px; cursor:pointer; font-family:inherit;}
+  .help-btn:hover{background:var(--btn-hov)}
+
+  /* Main split */
+  .main{flex:1; display:flex; min-height:0;}
+  .left{width:340px; flex:0 0 auto; border-right:2px solid #1a1a1a;
+    display:flex; flex-direction:column; padding:14px;}
+  .sechead{color:var(--red); font-size:20px; font-weight:700; margin-bottom:8px;}
+  .catlist{flex:1; background:var(--panel); border:1px solid var(--line);
+    overflow-y:auto; padding:0;}
+  .catrow{display:flex; align-items:center; gap:10px; padding:9px 10px; cursor:pointer;
+    background:var(--card); border-bottom:1px solid #000; position:relative;}
+  .catrow:hover{background:var(--card-hov)}
+  .catrow.sel{background:var(--sel);}
+  .catrow.sel::before{content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--red);}
+  .catrow.drop-ok{outline:2px solid var(--lime); outline-offset:-2px; background:#0d1a00;}
+  .swatch{width:22px; height:22px; flex:0 0 auto; border:2px solid #000;}
+  .catrow .nm{flex:1; min-width:0; font-size:19px; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .catrow .ct{font-size:14px; color:#888; line-height:1;}
+  .catrow .star{color:var(--lime); font-size:18px;}
+  .catrow .bump{position:absolute; right:8px; top:6px; color:var(--lime); font-size:16px;
+    opacity:0; transform:translateY(6px);}
+  .catrow .bump.go{animation:bump 1s ease-out;}
+  @keyframes bump{0%{opacity:0;transform:translateY(6px)}20%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-10px)}}
+  .newcat{margin-top:12px; display:flex; gap:8px;}
+  .newcat input{flex:1; height:40px; background:#0a0a0a; border:2px solid var(--line);
+    color:#fff; padding:0 10px; font-family:inherit; font-size:17px;}
+  .newcat input:focus{outline:none;border-color:var(--red)}
+  .newcat button{height:40px; padding:0 14px;}
+
+  /* Right detail */
+  .right{flex:1; min-width:0; padding:16px 20px; overflow-y:auto;}
+  .empty{color:var(--mut); font-size:20px; margin-top:40px;}
+  .empty span{color:#555; display:block; margin-top:8px; font-size:17px;}
+
+  .dhead{display:flex; align-items:baseline; gap:14px; margin-bottom:14px;}
+  .dhead .dname{font-size:30px; font-weight:700; line-height:1;}
+  .dhead .dstar{color:var(--lime); font-size:22px;}
+  .dhead .dcount{font-size:18px; color:var(--mut); margin-left:auto;}
+
+  /* section card */
+  .card{border:1px solid #1c1c1c; background:#0a0a0a; padding:12px 14px; margin-bottom:12px;}
+  .card .lbl{color:#8a8a8a; font-size:15px; text-transform:uppercase; letter-spacing:.6px; margin-bottom:9px;}
+  .row{display:flex; gap:8px; align-items:center;}
+  .grow{flex:1}
+  input.tf{height:40px; background:#0a0a0a; border:2px solid var(--line); color:#fff;
+    padding:0 12px; font-family:inherit; font-size:18px;}
+  input.tf:focus{outline:none; border-color:var(--red)}
+
+  button.b{height:40px; padding:0 16px; background:var(--btn); border:1px solid #000;
+    color:#fff; cursor:pointer; font-family:inherit; font-size:17px; white-space:nowrap;}
+  button.b:hover{background:var(--btn-hov)}
+  button.b.on{background:var(--sel); border-color:var(--red);}
+  button.b.danger{color:#ff9a9a}
+  button.b.danger.armed{background:var(--sel); border-color:var(--red); color:#fff;}
+  button.b.primary{border-color:var(--red);}
+  button.b[disabled]{background:var(--btn-off); color:#555; cursor:default;}
+  button.b.big{flex:1; height:46px; font-size:19px;}
+
+  /* swatches */
+  .swatches{display:flex; flex-wrap:wrap; gap:5px;}
+  .sw{width:30px; height:30px; border:2px solid #000; cursor:pointer;}
+  .sw:hover{border-color:#aaa}
+  .sw.on{border-color:#fff; box-shadow:0 0 0 2px #fff;}
+  .sw.clear{background:var(--btn); color:#fff; display:grid; place-items:center; font-size:18px; border-color:#000;}
+  .hexrow{display:flex; gap:8px; align-items:center; margin-top:9px;}
+  .hexrow input{width:130px; height:36px; background:#0a0a0a; border:2px solid var(--line); color:#fff; padding:0 10px; font-family:inherit; font-size:17px;}
+  .hexprev{width:30px; height:30px; border:2px solid #000;}
+
+  /* blocks */
+  .blkhead{display:flex; align-items:center; gap:12px; margin:2px 0 8px;}
+  .blkhead .h{color:var(--red); font-size:20px; font-weight:700;}
+  .blkhead input{margin-left:auto; width:230px; height:36px; background:#0a0a0a; border:2px solid var(--line); color:#fff; padding:0 10px; font-family:inherit; font-size:16px;}
+  .blkhead input:focus{outline:none;border-color:var(--red)}
+  .blklist{border:1px solid var(--line); background:var(--panel); max-height:250px; overflow-y:auto;}
+  .blk{display:flex; align-items:center; gap:10px; padding:8px 10px; cursor:grab;
+    background:#111; border-bottom:1px solid #000;}
+  .blk:hover{background:var(--card-hov)}
+  .blk.picked{background:var(--sel);}
+  .blk.picked::before{content:""; position:absolute; left:0; width:3px;}
+  .blk .grip{color:#555; font-size:16px; cursor:grab;}
+  .blk .bn{flex:1; font-size:18px; color:#cfcfcf; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .blk.picked .bn{color:#fff}
+  .blk .bid{font-size:14px; color:#666;}
+  .blk.dragging{opacity:.35}
+  .blkempty{padding:14px; color:#666; font-size:17px;}
+
+  /* Move bar (appears when a block is picked) */
+  .movebar{position:sticky; bottom:0; margin-top:10px; display:flex; align-items:center; gap:10px;
+    background:#160000; border:2px solid var(--red); padding:10px 12px;}
+  .movebar .mt{font-size:17px; color:#fff}
+  .movebar .mt b{color:var(--red)}
+  .movebar .hintdrag{color:var(--lime); font-size:15px; margin-left:auto;}
+
+  /* footer */
+  .foot{height:34px; flex:0 0 auto; border-top:1px solid #1a1a1a; display:flex; align-items:center;
+    padding:0 16px; color:#555; font-size:15px;}
+  .foot .close{margin-left:auto; height:26px; padding:0 16px; background:var(--btn); border:1px solid #000; color:#fff; cursor:pointer; font-family:inherit; font-size:15px;}
+  .foot .close:hover{background:var(--btn-hov)}
+
+  /* ── Popup picker (opaque) ──────────────────────────────────────────────── */
+  .scrim{position:absolute; inset:0; z-index:20; background:rgba(0,0,0,.55); display:none;}
+  .scrim.show{display:block}
+  .popup{position:absolute; z-index:21; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:420px; max-height:520px; background:#000; border:2px solid var(--red);
+    display:none; flex-direction:column; box-shadow:0 0 0 4px #000;}
+  .popup.show{display:flex}
+  .popup .ph{padding:10px 14px; border-bottom:1px solid var(--red); color:var(--red); font-size:20px; font-weight:700; display:flex; align-items:center;}
+  .popup .ph .x{margin-left:auto; width:26px; height:26px; background:var(--red); color:#000; display:grid; place-items:center; cursor:pointer; font-weight:700;}
+  .popup .pbody{overflow-y:auto; padding:6px;}
+  .popup .pi{display:flex; align-items:center; gap:10px; padding:9px 10px; cursor:pointer; background:#0d0d0d; border:1px solid #000; margin-bottom:4px;}
+  .popup .pi:hover{background:var(--sel); border-color:var(--red)}
+  .popup .pi .sw{width:18px;height:18px}
+  .popup .pi .pn{flex:1; font-size:18px}
+  .popup .pi .pc{font-size:14px; color:#777}
+  .popup .pi.create{color:var(--lime)}
+
+  /* ── Help overlay — FULLY OPAQUE (F2/K7 fix demo) ───────────────────────── */
+  .helpwrap{position:absolute; inset:0; z-index:30; background:rgba(0,0,0,.72); display:none;}
+  .helpwrap.show{display:block}
+  .helpbox{position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    width:660px; background:#000; border:3px solid var(--red); box-shadow:0 0 0 5px #000;}
+  .helpbox .hh{display:flex; align-items:center; padding:12px 16px; border-bottom:2px solid var(--red);}
+  .helpbox .hh .t{color:var(--red); font-size:24px; font-weight:700;}
+  .helpbox .hh .x{margin-left:auto; width:30px; height:30px; background:var(--red); color:#000; display:grid; place-items:center; cursor:pointer; font-weight:700; font-size:18px;}
+  .helpbox .hbody{padding:16px 20px;}
+  .helpbox .grp{color:var(--red); font-size:19px; font-weight:700; margin:14px 0 6px;}
+  .helpbox .grp:first-child{margin-top:0}
+  .helpbox .hr{display:flex; gap:16px; padding:3px 0; font-size:18px;}
+  .helpbox .hr .k{width:150px; color:#fff;}
+  .helpbox .hr .d{color:var(--mut); flex:1;}
+  .helpbox .hf{text-align:center; color:#555; font-size:16px; padding:10px 0 14px;}
+
+  /* toast */
+  .toast{position:absolute; z-index:40; right:20px; top:96px; background:#000; border:2px solid var(--lime);
+    color:#fff; padding:10px 16px; font-size:17px; max-width:420px; opacity:0; transform:translateY(-8px);
+    transition:.18s; pointer-events:none;}
+  .toast.show{opacity:1; transform:translateY(0)}
+
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#2a2a2a} ::-webkit-scrollbar-track{background:#000}
+</style>
+</head>
+<body>
+<div class="world"></div>
+
+<div class="app" id="app">
+  <!-- top bar -->
+  <div class="top">
+    <div>
+      <div class="title">Category Hub</div>
+      <div class="sub"><span id="shownCount">5</span> shown · <b id="totalBlocks">1633</b> blocks</div>
+    </div>
+    <div class="spacer"></div>
+    <input class="search" id="catSearch" placeholder="search categories…">
+    <button class="help-btn" id="helpBtn">?</button>
+  </div>
+
+  <!-- main -->
+  <div class="main">
+    <!-- left: category list -->
+    <div class="left">
+      <div class="sechead">CATEGORIES</div>
+      <div class="catlist" id="catList"></div>
+      <div class="newcat">
+        <input id="newCatName" placeholder="new category name…">
+        <button class="b primary" id="newCatBtn">+ New</button>
+      </div>
+    </div>
+
+    <!-- right: detail -->
+    <div class="right" id="detail">
+      <div class="empty">Select a category on the left to manage it.
+        <span>Or type a name below and press <b>+ New</b> to start one.</span></div>
+    </div>
+  </div>
+
+  <!-- footer -->
+  <div class="foot">
+    <span>click a category · drag a block onto one, or pick it and press Move · ? for help</span>
+    <button class="close" id="closeBtn">Close</button>
+  </div>
+
+  <!-- popup picker -->
+  <div class="scrim" id="scrim"></div>
+  <div class="popup" id="popup">
+    <div class="ph"><span id="popTitle">Move to…</span><span class="x" id="popX">✕</span></div>
+    <div class="pbody" id="popBody"></div>
+  </div>
+
+  <!-- help overlay -->
+  <div class="helpwrap" id="helpWrap">
+    <div class="helpbox">
+      <div class="hh"><span class="t">Category Hub — Shortcuts</span><span class="x" id="helpX">✕</span></div>
+      <div class="hbody">
+        <div class="grp">BROWSE</div>
+        <div class="hr"><span class="k">Click</span><span class="d">Select a category</span></div>
+        <div class="hr"><span class="k">Search</span><span class="d">Filter the list (or the blocks inside one)</span></div>
+        <div class="hr"><span class="k">Scroll</span><span class="d">Scroll the list / blocks</span></div>
+        <div class="grp">EDIT</div>
+        <div class="hr"><span class="k">Rename</span><span class="d">Edit the name box, press Rename</span></div>
+        <div class="hr"><span class="k">Drag a block</span><span class="d">Drop it on a category to move it there</span></div>
+        <div class="hr"><span class="k">Pick + Move</span><span class="d">Click a block, then Move to… (pick a target)</span></div>
+        <div class="hr"><span class="k">Move ALL</span><span class="d">Empty this category's blocks into another</span></div>
+        <div class="hr"><span class="k">Swatch / #hex</span><span class="d">Set the name colour</span></div>
+        <div class="hr"><span class="k">★ Default</span><span class="d">Toggle (click again clears)</span></div>
+        <div class="hf">press the red ✕ or Esc to close</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* ── Fake data mirroring the real ClientSlotCache ────────────────────────── */
+const COLORS = { r0:'#000000', blue:'#5555FF', green:'#55FF55', cyan:'#55FFFF',
+  red:'#FF5555', mag:'#FF55FF', gold:'#FFAA00', gray:'#AAAAAA', dgray:'#555555',
+  white:'#FFFFFF', REDX:'#FF0000', LIME:'#40FF00' };
+
+// swatch palette (the 16 § colours, matching CategoryHubModel.ARGB)
+const PALETTE = ['#000000','#0000AA','#00AA00','#00AAAA','#AA0000','#AA00AA','#FFAA00','#AAAAAA',
+                 '#555555','#5555FF','#55FF55','#55FFFF','#FF5555','#FF55FF','#FFFF55','#FFFFFF'];
+
+function mkBlocks(prefix, names){ return names.map(n=>({
+  id: prefix + n.toLowerCase().replace(/[^a-z0-9]+/g,'_'),
+  name: n
+})); }
+
+let cats = [
+  { id:'arabic_numbers', name:'Arabic Numbers', color:'#FF5555', def:false,
+    blocks: mkBlocks('arabic_num_', ['Zero Black','One Black','Two Black','Three Black','Four Black','Five Black','Six Black','Seven Black','Eight Black','Nine Black']) },
+  { id:'arabic_letters', name:'Arabic Letters', color:'#FF5555', def:false,
+    blocks: mkBlocks('arabic_', ['Ain Black Fin','Ain Black Ini','Ain Black Mid','Alef Black','Ba Black Ini','Ba Black Mid','Dal Black','Fa Black Ini','Gaf Black','Ha Black Mid','Jim Black Fin','Kaf Black Ini','Lam Black','Mim Black Mid','Nun Black Fin','Qaf Black','Ra Black','Sin Black Ini','Ta Black Mid','Waw Black','Ya Black Fin','Zay Black']) },
+  { id:'english_numbers', name:'English Numbers', color:'#55FFFF', def:true,
+    blocks: mkBlocks('eng_num_', ['Digit 0','Digit 1','Digit 2','Digit 3','Digit 4','Digit 5','Digit 6','Digit 7','Digit 8']) },
+  { id:'english_numbersa', name:'English Numbersa', color:'#AAAAAA', def:false, blocks: [] },
+];
+// uncategorized bucket (real blocks with no category)
+let uncat = mkBlocks('blk_', Array.from({length:24}, (_,i)=>'Loose Block '+(i+1)));
+// pretend there are 979 in reality; we only render a sample
+let uncatRealCount = 979;
+
+/* ── State ───────────────────────────────────────────────────────────────── */
+let sel = null;            // category id, "" = uncategorized, null = none
+let picked = null;         // picked block id
+let confirmDelete = false;
+
+const $ = s => document.querySelector(s);
+const catList = $('#catList'), detail = $('#detail');
+
+function catById(id){ return cats.find(c=>c.id===id); }
+function selBlocks(){ return sel==='' ? uncat : (catById(sel)?.blocks||[]); }
+function selName(){ return sel==='' ? '(uncategorized)' : (catById(sel)?.name||''); }
+function selColor(){ return sel==='' ? '#777777' : (catById(sel)?.color||'#fff'); }
+function countOf(c){ return c.blocks.length; }
+function totalCount(){ return cats.reduce((n,c)=>n+c.blocks.length,0) + uncatRealCount; }
+
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show');
+  clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2600); }
+
+/* ── Render left list ────────────────────────────────────────────────────── */
+function renderList(){
+  const q = $('#catSearch').value.trim().toLowerCase();
+  const rows = cats.filter(c=> !q || c.name.toLowerCase().includes(q));
+  const showUncat = (uncat.length>0) && (!q || 'uncategorized'.includes(q));
+  catList.innerHTML='';
+  rows.forEach(c=>catList.appendChild(catRow(c.id, c.name, c.color, countOf(c), c.def)));
+  if(showUncat) catList.appendChild(catRow('', '(uncategorized)', '#777777', uncatRealCount, false));
+  $('#shownCount').textContent = rows.length + (showUncat?1:0);
+  $('#totalBlocks').textContent = totalCount();
+}
+function catRow(id, name, color, count, def){
+  const el = document.createElement('div');
+  el.className = 'catrow' + (id===sel?' sel':'');
+  el.dataset.id = id;
+  el.innerHTML =
+    `<div class="swatch" style="background:${color}"></div>
+     <div class="nm"><div style="color:${color}">${name}</div>
+       <div class="ct">${count} blk</div></div>
+     ${def?'<div class="star">★</div>':''}
+     <div class="bump">+1</div>`;
+  el.onclick = ()=>select(id);
+  // drop target
+  el.addEventListener('dragover', e=>{ e.preventDefault(); el.classList.add('drop-ok'); });
+  el.addEventListener('dragleave', ()=>el.classList.remove('drop-ok'));
+  el.addEventListener('drop', e=>{ e.preventDefault(); el.classList.remove('drop-ok');
+    const blkId = e.dataTransfer.getData('text/plain');
+    if(blkId) moveBlock(blkId, id, true, el);
+  });
+  return el;
+}
+
+/* ── Render right detail ─────────────────────────────────────────────────── */
+function renderDetail(){
+  if(sel===null){ detail.innerHTML =
+    `<div class="empty">Select a category on the left to manage it.
+       <span>Or type a name below and press <b>+ New</b> to start one.</span></div>`;
+    return; }
+  const real = sel!=='';
+  const c = real ? catById(sel) : null;
+  const name = selName(), color = selColor();
+  const blocks = selBlocks();
+
+  detail.innerHTML = `
+    <div class="dhead">
+      <div class="dname" style="color:${color}">${name}</div>
+      ${c&&c.def?'<div class="dstar">★ default</div>':''}
+      <div class="dcount">${real?blocks.length:uncatRealCount} blocks</div>
+    </div>
+
+    ${real ? `
+    <div class="card">
+      <div class="lbl">Name</div>
+      <div class="row">
+        <input class="tf grow" id="nameField" value="${name}">
+        <button class="b" id="renameBtn">Rename</button>
+        <button class="b danger${confirmDelete?' armed':''}" id="deleteBtn">${confirmDelete?'Click again to confirm':'Delete'}</button>
+      </div>
+    </div>` : `
+    <div class="card">
+      <div class="lbl">Uncategorized bucket</div>
+      <div style="color:#8a8a8a;font-size:17px">These blocks have no category yet. Move them into one below — drag a row onto a category, or use <b style="color:#fff">Move ALL blocks to…</b></div>
+    </div>`}
+
+    <div class="card">
+      <div class="lbl">Move blocks out of "${name}"</div>
+      <div class="row">
+        <button class="b big primary" id="moveAllBtn">${real?'Merge — Move ALL blocks to… ▾':'Empty — Move ALL blocks to… ▾'}</button>
+      </div>
+      <div style="color:#6a6a72;font-size:15px;margin-top:8px">
+        ${real?'Empties this category into another, then removes this one.':'Sends every loose block into the category you pick.'}
+      </div>
+    </div>
+
+    ${real ? `
+    <div class="card">
+      <div class="lbl">Colour</div>
+      <div class="swatches" id="swatches">
+        ${PALETTE.map((p,i)=>`<div class="sw${p.toUpperCase()===color.toUpperCase()?' on':''}" style="background:${p}" data-c="${p}"></div>`).join('')}
+        <div class="sw clear" id="swClear" title="clear colour">✖</div>
+      </div>
+      <div class="hexrow">
+        <input id="hexField" placeholder="#RRGGBB" value="">
+        <button class="b" id="setHexBtn">Set #</button>
+        <div class="hexprev" id="hexPrev" style="background:${color}"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">Options</div>
+      <div class="row" style="flex-wrap:wrap">
+        <button class="b${c.def?' on':''}" id="defBtn">${c.def?'★ Default (on)':'Set default'}</button>
+        <button class="b" id="sortBtn">Sort: A–Z</button>
+        <button class="b" id="lockBtn">Lock all</button>
+        <button class="b" id="unlockBtn">Unlock all</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">Description (shown in the browser)</div>
+      <div class="row">
+        <input class="tf grow" id="descField" placeholder="description shown in the browser">
+        <button class="b" id="saveDescBtn">Save</button>
+      </div>
+    </div>` : ''}
+
+    <div class="blkhead">
+      <div class="h">BLOCKS</div>
+      <input id="blkSearch" placeholder="search blocks in this category…">
+    </div>
+    <div class="blklist" id="blkList"></div>
+    <div id="moveBarWrap"></div>
+  `;
+  wireDetail();
+  renderBlocks();
+}
+
+function renderBlocks(){
+  const wrap = $('#blkList'); if(!wrap) return;
+  const q = ($('#blkSearch')?.value||'').trim().toLowerCase();
+  const all = selBlocks();
+  const list = q ? all.filter(b=>b.name.toLowerCase().includes(q)||b.id.toLowerCase().includes(q)) : all;
+  if(list.length===0){ wrap.innerHTML = `<div class="blkempty">${all.length===0?'(no blocks — drag one here or Move one in)':'(no blocks match "'+q+'")'}</div>`; }
+  else {
+    wrap.innerHTML='';
+    list.forEach(b=>{
+      const el=document.createElement('div');
+      el.className='blk'+(b.id===picked?' picked':'');
+      el.draggable=true; el.dataset.id=b.id;
+      el.innerHTML=`<span class="grip">⠿</span><span class="bn">${b.name}</span><span class="bid">${b.id}</span>`;
+      el.onclick=()=>pickBlock(b.id);
+      el.addEventListener('dragstart', e=>{ e.dataTransfer.setData('text/plain', b.id); e.dataTransfer.effectAllowed='move'; el.classList.add('dragging'); pickBlock(b.id, true); });
+      el.addEventListener('dragend', ()=>el.classList.remove('dragging'));
+      wrap.appendChild(el);
+    });
+  }
+  renderMoveBar();
+}
+
+function renderMoveBar(){
+  const wrap=$('#moveBarWrap'); if(!wrap) return;
+  if(!picked){ wrap.innerHTML=''; return; }
+  const b = selBlocks().find(x=>x.id===picked);
+  wrap.innerHTML = `<div class="movebar">
+      <span class="mt">Picked <b>${b?b.name:picked}</b></span>
+      <button class="b primary" id="movePickBtn">Move to… ▾</button>
+      <button class="b" id="unpickBtn">Cancel</button>
+      <span class="hintdrag">tip: you can also drag a block onto a category ⟵</span>
+    </div>`;
+  $('#movePickBtn').onclick=()=>openPicker('Move "'+(b?b.name:picked)+'" to…', null, target=>moveBlock(picked, target, false));
+  $('#unpickBtn').onclick=()=>{ picked=null; renderBlocks(); };
+}
+
+/* ── Wiring ──────────────────────────────────────────────────────────────── */
+function wireDetail(){
+  const real = sel!=='';
+  if(real){
+    $('#renameBtn').onclick=()=>{ const to=$('#nameField').value.trim(); if(!to){toast('Edit the name first.');return;}
+      const c=catById(sel); c.name=to; c.id = to.toLowerCase().replace(/\s+/g,'_'); sel=c.id; toast('Renamed to "'+to+'"'); renderAll(); };
+    $('#deleteBtn').onclick=()=>doDelete();
+    $('#swClear').onclick=()=>{ catById(sel).color='#FFFFFF'; toast('Colour cleared'); renderAll(); };
+    $('#swatches').querySelectorAll('.sw[data-c]').forEach(s=>s.onclick=()=>{ catById(sel).color=s.dataset.c; toast('Name colour set'); renderAll(); });
+    $('#setHexBtn').onclick=()=>{ let h=$('#hexField').value.trim(); if(!/^#?[0-9a-f]{6}$/i.test(h)){toast('Enter a hex like #40FF00');return;} if(h[0]!=='#')h='#'+h; catById(sel).color=h; toast('Custom colour set'); renderAll(); };
+    $('#defBtn').onclick=()=>{ const c=catById(sel); if(c.def){c.def=false;toast('Default cleared');} else {cats.forEach(x=>x.def=false); c.def=true; toast('"'+c.name+'" is now the default');} renderAll(); };
+    $('#sortBtn').onclick=()=>toast('Blocks sorted A–Z');
+    $('#lockBtn').onclick=()=>toast('All blocks locked');
+    $('#unlockBtn').onclick=()=>toast('All blocks unlocked');
+    $('#saveDescBtn').onclick=()=>toast('Description saved');
+  }
+  $('#moveAllBtn').onclick=()=>openMoveAll();
+  const bs=$('#blkSearch'); if(bs) bs.oninput=()=>renderBlocks();
+}
+
+function select(id){ sel=id; picked=null; confirmDelete=false; renderAll(); }
+function pickBlock(id, silent){ picked = (picked===id && !silent)?null:id; renderBlocks(); }
+
+function doDelete(){
+  if(!confirmDelete){ confirmDelete=true; renderDetail(); return; }
+  const c=catById(sel); const had = c.blocks.length>0;
+  // blocks are NOT lost — they fall into uncategorized
+  uncat = uncat.concat(c.blocks); uncatRealCount += c.blocks.length;
+  cats = cats.filter(x=>x.id!==sel);
+  confirmDelete=false;
+  if(had){ sel=''; toast('Deleted — its '+c.blocks.length+' blocks are safe here in (uncategorized).'); }
+  else { sel=null; toast('Category deleted.'); }
+  renderAll();
+}
+
+/* Move ONE block to a target category id */
+function moveBlock(blkId, targetId, viaDrag, rowEl){
+  const src = selBlocks();
+  const idx = src.findIndex(b=>b.id===blkId);
+  if(idx<0) return;
+  const [b] = src.splice(idx,1);
+  if(sel==='') uncatRealCount = Math.max(0, uncatRealCount-1);
+  const t = catById(targetId);
+  if(targetId===''){ uncat.push(b); uncatRealCount++; } else if(t){ t.blocks.push(b); }
+  picked=null;
+  const tName = targetId===''?'(uncategorized)':(t?t.name:targetId);
+  toast('Moved "'+b.name+'" → '+tName);
+  renderAll();
+  // "+1" bump on the target row
+  const trow = catList.querySelector(`.catrow[data-id="${targetId}"] .bump`);
+  if(trow){ trow.classList.remove('go'); void trow.offsetWidth; trow.classList.add('go'); }
+}
+
+/* Move ALL blocks (merge for a real cat, empty for uncategorized) */
+function openMoveAll(){
+  const title = sel==='' ? 'Empty (uncategorized) into…' : 'Merge "'+selName()+'" into…';
+  openPicker(title, sel==='' ? null : sel, target=>{
+    const t=catById(target); if(!t) return;
+    if(sel===''){ t.blocks = t.blocks.concat(uncat); uncat=[]; uncatRealCount=0; toast('Emptied all loose blocks → '+t.name); sel=t.id; }
+    else { const c=catById(sel); t.blocks=t.blocks.concat(c.blocks); cats=cats.filter(x=>x.id!==sel); toast('Merged "'+c.name+'" → '+t.name); sel=t.id; }
+    renderAll();
+  });
+}
+
+/* ── Popup picker (opaque) ───────────────────────────────────────────────── */
+function openPicker(title, excludeId, cb){
+  $('#popTitle').textContent = title;
+  const body=$('#popBody'); body.innerHTML='';
+  cats.filter(c=>c.id!==excludeId).forEach(c=>{
+    const el=document.createElement('div'); el.className='pi';
+    el.innerHTML=`<div class="sw" style="background:${c.color}"></div><div class="pn" style="color:${c.color}">${c.name}</div><div class="pc">${c.blocks.length} blk</div>`;
+    el.onclick=()=>{ closePicker(); cb(c.id); };
+    body.appendChild(el);
+  });
+  const cr=document.createElement('div'); cr.className='pi create';
+  cr.innerHTML=`<div class="sw" style="background:${'#40FF00'}"></div><div class="pn">+ Create new category…</div>`;
+  cr.onclick=()=>{ const n=prompt('New category name:'); if(n&&n.trim()){ const id=n.trim().toLowerCase().replace(/\s+/g,'_'); cats.push({id,name:n.trim(),color:'#FFFFFF',def:false,blocks:[]}); closePicker(); cb(id);} };
+  body.appendChild(cr);
+  $('#scrim').classList.add('show'); $('#popup').classList.add('show');
+}
+function closePicker(){ $('#scrim').classList.remove('show'); $('#popup').classList.remove('show'); }
+
+/* ── New category ────────────────────────────────────────────────────────── */
+function newCat(){
+  const n=$('#newCatName').value.trim(); if(!n){toast('Type a category name first.');return;}
+  const id=n.toLowerCase().replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'');
+  if(catById(id)){toast('That category already exists.');return;}
+  cats.push({id,name:n,color:'#FFFFFF',def:false,blocks:[]});
+  $('#newCatName').value=''; sel=id;
+  toast('Created "'+n+'" — drag a block onto it, or pick one and Move it.');
+  renderAll();
+}
+
+/* ── Boot ────────────────────────────────────────────────────────────────── */
+function renderAll(){ renderList(); renderDetail(); }
+
+$('#catSearch').oninput=renderList;
+$('#newCatBtn').onclick=newCat;
+$('#newCatName').addEventListener('keydown',e=>{if(e.key==='Enter')newCat();});
+$('#helpBtn').onclick=()=>$('#helpWrap').classList.add('show');
+$('#helpX').onclick=()=>$('#helpWrap').classList.remove('show');
+$('#helpWrap').onclick=e=>{ if(e.target.id==='helpWrap')$('#helpWrap').classList.remove('show'); };
+$('#popX').onclick=closePicker;
+$('#scrim').onclick=closePicker;
+$('#closeBtn').onclick=()=>toast('(Close returns to the previous screen)');
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'){ $('#helpWrap').classList.remove('show'); closePicker(); } });
+
+// fit to window
+function fit(){ const w=window.innerWidth/1536, h=window.innerHeight/800; document.documentElement.style.setProperty('--ui', Math.min(w,h,1)); }
+window.addEventListener('resize',fit); fit();
+
+renderAll();
+</script>
+</body>
+</html>

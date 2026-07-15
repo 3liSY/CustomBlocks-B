@@ -24,6 +24,7 @@ import net.minecraft.client.MinecraftClient;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -33,6 +34,10 @@ public final class ResourcePackGenerator {
 
     /** Options entry that enables our loose pack ("file/<folder name>"). */
     private static final String PACK_ENTRY = "file/CustomBlocks";
+
+    /** Serializes the loose-file write pass so two burst regens can't interleave their writes +
+     *  deleteStale on the same folder (SP corrupt-PNG fix, 2026-07-03). */
+    private static final Object WRITE_LOCK = new Object();
 
     /** Guards against stacking reloadResources() calls; a second request rides the pendingHash. */
     private static final AtomicBoolean reloadInFlight = new AtomicBoolean(false);
@@ -64,19 +69,45 @@ public final class ResourcePackGenerator {
         t.start();
     }
 
-    /** Write every emitted pack file loose under {@code packRoot}, then delete files left behind. */
+    /**
+     * Write every emitted pack file loose under {@code packRoot}, then delete files left behind.
+     * Held under {@link #WRITE_LOCK} so two burst regens run one-after-another instead of racing
+     * each other's writes/deleteStale; each file lands via {@link #writeAtomic} so a concurrent
+     * reloadResources() never reads a half-written PNG (SP corrupt-PNG fix, 2026-07-03).
+     */
     private static void writeLoosePack(File packRoot) throws Exception {
-        Set<String> written = new HashSet<>();
-        ServerPackGenerator.emit((path, data) -> {
-            File dest = new File(packRoot, path);
-            File parent = dest.getParentFile();
-            if (parent != null) parent.mkdirs();
-            Files.write(dest.toPath(), data);
-            written.add(path.replace('\\', '/'));
-        });
-        deleteStale(packRoot, packRoot, written);
-        CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack written ({} files) to {}.",
-                written.size(), packRoot.getPath());
+        synchronized (WRITE_LOCK) {
+            Set<String> written = new HashSet<>();
+            ServerPackGenerator.emit((path, data) -> {
+                File dest = new File(packRoot, path);
+                File parent = dest.getParentFile();
+                if (parent != null) parent.mkdirs();
+                writeAtomic(dest, data);
+                written.add(path.replace('\\', '/'));
+            });
+            deleteStale(packRoot, packRoot, written);
+            CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack written ({} files) to {}.",
+                    written.size(), packRoot.getPath());
+        }
+    }
+
+    /**
+     * Write {@code data} to {@code dest} atomically: fill a sibling {@code .tmp} first, then rename it
+     * over the target. A reader (the resource reload) therefore sees either the whole old file or the
+     * whole new one — never the truncate-then-fill window of a raw {@code Files.write}, which was
+     * leaving readers with 0-byte / partial PNGs during a fast create burst. The {@code .tmp} sits in
+     * the same directory as {@code dest} so the move stays on one FileStore and can be atomic.
+     */
+    private static void writeAtomic(File dest, byte[] data) throws Exception {
+        File tmp = new File(dest.getAbsolutePath() + ".tmp");
+        Files.write(tmp.toPath(), data);
+        try {
+            Files.move(tmp.toPath(), dest.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            // Extremely unlikely (same dir, same volume) — fall back to a plain replace.
+            Files.move(tmp.toPath(), dest.toPath(), StandardCopyOption.REPLACE_EXISTING);
+        }
     }
 
     /**

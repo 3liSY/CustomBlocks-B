@@ -13,25 +13,28 @@
  * emits the matching model — so the change is one pack rebuild away from being visible. Undoable
  * via the dedicated SHAPE undo kind (which rebuilds the pack on undo/redo). Locked blocks refuse.
  *
+ * NO-REJOIN (see HudSync's banner; owner 2026-06-27): applyShape (the shared rail for /cb setshape,
+ * /cb clearshape AND the Shape Editor screen) broadcasts the slot cache so the HUD shape value
+ * refreshes live for every player — no rejoin.
+ *
  * Depends on: SlotManager/SlotData, BlockShapes, LockManager, UndoManager, ResourcePackServer, Chat
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.block.BlockShapes;
 import com.customblocks.command.Chat;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
-import com.customblocks.gui.GuiMode;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav;
+import com.customblocks.network.HudSync;
 import com.customblocks.network.ResourcePackServer;
-import com.customblocks.network.payloads.OpenGuiPayload;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.command.CommandSource;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
@@ -71,41 +74,26 @@ public final class ShapeCommands {
                         .executes(ctx -> shapePreview(ctx.getSource(),
                                 StringArgumentType.getString(ctx, "shape")))));
 
-        // Group 27 §G27.5 / §F2 — the ONLY /cb shapeeditor (old Group 08 chest registration removed):
-        //   no id  → chest block-picker (pick a block) → opens the 3D Shape Editor screen
-        //   <id>   → opens the 3D Shape Editor screen directly
+        // §G27.11 fold — /cb shapeeditor opens the Block Creation Studio (edit mode) on its Shape section;
+        // the standalone 3D Shape Editor screen is retired (the studio's Shape section IS the editor now).
+        //   no id  → chest block-picker (pick a block) → studio Shape section
+        //   <id>   → studio Shape section directly
         root.then(CommandManager.literal("shapeeditor")
                 .executes(ctx -> openShapePicker(ctx.getSource()))
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
-                        .executes(ctx -> openShapeEditor(ctx.getSource(),
+                        .executes(ctx -> CreationStudioBridge.openStudioShape(ctx.getSource(),
                                 StringArgumentType.getString(ctx, "id")))));
     }
 
-    /** /cb shapeeditor (no id) — open the chest block-picker; clicking a block opens the 3D Shape Editor. */
+    /** /cb shapeeditor (no id) — open the chest block-picker; clicking a block re-runs /cb shapeeditor
+     *  &lt;id&gt; (ColorPickBlockMenu), which now opens the studio's Shape section. */
     private static int openShapePicker(ServerCommandSource src) {
         if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
             Chat.error(src, "Run /cb shapeeditor as a player — it opens an in-game screen.");
             return 0;
         }
         GuiRouter.openFresh(player, Nav.MenuKey.of(Nav.Dest.COLOR_PICK, "shapeeditor"));
-        return 1;
-    }
-
-    /** /cb shapeeditor <id> — send the player to the client Shape Editor screen. */
-    private static int openShapeEditor(ServerCommandSource src, String id) {
-        if (!(src.getEntity() instanceof ServerPlayerEntity player)) {
-            Chat.error(src, "Run /cb shapeeditor as a player — it opens an in-game screen.");
-            return 0;
-        }
-        SlotData d = SlotManager.getById(id);
-        if (d == null) {
-            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
-            return 0;
-        }
-        // data = "<id>|<texture url>|<current shape>" (texUrl may be empty — the screen falls back to a flat colour).
-        String data = id + "|" + ResourcePackServer.getTexUrl(id) + "|" + d.shape();
-        ServerPlayNetworking.send(player, new OpenGuiPayload(GuiMode.SHAPE_EDITOR.id, data));
         return 1;
     }
 
@@ -123,7 +111,7 @@ public final class ShapeCommands {
             return 0;
         }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
         if (!BlockShapes.isValid(shape)) {
@@ -139,11 +127,12 @@ public final class ShapeCommands {
         if (after == null) { Chat.error(src, "Couldn't set the shape of \"" + id + "\"."); return 0; }
         UndoManager.recordShape(actor(src), before, after);
         ResourcePackServer.updatePack(); // the model changed — rebuild so the new shape shows
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD shape value updates live for all players
 
         if (shape.equals(BlockShapes.DEFAULT)) {
             Chat.success(src, "Cleared the shape of \"" + id + "\" — back to a full block. Undo with /cb undo.");
         } else {
-            Chat.success(src, "Set the shape of \"" + id + "\" to §e" + shape + "§r. Undo with /cb undo.");
+            Chat.success(src, "Set the shape of \"" + id + "\" to " + CbFmt.VALUE + shape + CbFmt.RESET + ". Undo with /cb undo.");
         }
         return 1;
     }
@@ -151,7 +140,7 @@ public final class ShapeCommands {
     private static int shapeList(ServerCommandSource src) {
         Chat.info(src, "Available shapes (use /cb setshape <id> <shape>):");
         for (String name : BlockShapes.names()) {
-            src.sendFeedback(() -> Text.literal("  §e" + name + " §7- " + BlockShapes.description(name)), false);
+            Chat.raw(src, Text.literal("  " + CbFmt.VALUE + name + " " + CbFmt.DIM + "- " + BlockShapes.description(name)));
         }
         return 1;
     }
@@ -188,7 +177,7 @@ public final class ShapeCommands {
         String summon = "summon minecraft:block_display " + pos + " {block_state:" + blockStateNbt(shape)
                 + ",Tags:[\"" + tag + "\"],brightness:{block:15,sky:15}}";
         server.getCommandManager().executeWithPrefix(silent, summon);
-        Chat.info(src, "Previewing §e" + shape + "§r for 5 seconds…");
+        Chat.info(src, "Previewing " + CbFmt.VALUE + shape + CbFmt.RESET + " for 5 seconds…");
 
         // Remove it after 5s — daemon thread (the mod's timed-work idiom), hop back to the server thread.
         String kill = "kill @e[type=minecraft:block_display,tag=" + tag + "]";

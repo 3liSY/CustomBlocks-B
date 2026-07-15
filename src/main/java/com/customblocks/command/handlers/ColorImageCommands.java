@@ -22,6 +22,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.IncidentRecorder;
@@ -129,7 +130,7 @@ public final class ColorImageCommands {
             return 0;
         }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return 0;
         }
         if (!TextureStore.has(d.index()) && TextureStore.loadSource(d.index()) == null) {
@@ -139,7 +140,7 @@ public final class ColorImageCommands {
         final int index = d.index();
         final String mode = CustomBlocksConfig.backgroundMode;
         final int tol = CustomBlocksConfig.backgroundTolerance;
-        Chat.info(src, "Resizing \"" + id + "\" to §e" + px + "×" + px + "px§r…");
+        Chat.info(src, "Resizing \"" + id + "\" to " + CbFmt.VALUE + px + "×" + px + "px" + CbFmt.RESET + "…");
         Thread worker = new Thread(() -> {
             try {
                 byte[] source = TextureStore.loadSource(index);
@@ -156,13 +157,12 @@ public final class ColorImageCommands {
                 server.execute(() -> {
                     ResourcePackServer.updatePack();
                     ResourcePackServer.syncToAll();
-                    Chat.success(src, "\"" + id + "\" texture resized to §e" + px + "×" + px + "px§r"
-                            + (source != null ? " §7(re-rendered from its saved image)." : "."));
+                    Chat.success(src, "\"" + id + "\" texture resized to " + CbFmt.VALUE + px + "×" + px + "px" + CbFmt.RESET
+                            + (source != null ? " " + CbFmt.DIM + "(re-rendered from its saved image)." : "."));
                 });
             } catch (Exception e) {
-                String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Resize failed for \"" + id + "\" to " + px + "px", id, src.getName(), e);
-                server.execute(() -> Chat.error(src, "Couldn't resize that texture. " + msg));
+                String code = IncidentRecorder.record("Resize failed for \"" + id + "\" to " + px + "px", id, src.getName(), e);
+                server.execute(() -> Chat.incidentError(src, "Couldn't resize that texture.", code));
             }
         }, "CustomBlocks-Resize");
         worker.setDaemon(true);
@@ -190,20 +190,19 @@ public final class ColorImageCommands {
             Files.write(tmp, tex);
             Files.move(tmp, out, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
             Path abs = out.toAbsolutePath();
-            Chat.success(src, "Exported \"" + id + "\" texture → §f" + EXPORT_DIR + "/" + file);
-            src.sendFeedback(() -> Text.literal("  §8" + abs), false);
+            Chat.success(src, "Exported \"" + id + "\" texture → " + CbFmt.BODY + EXPORT_DIR + "/" + file);
+            Chat.raw(src, Text.literal("  " + CbFmt.FAINT + abs));
             // Clickable [download] link — opens the PNG over the mod's localhost HTTP server.
             String url = ResourcePackServer.getPngUrl(UNSAFE.matcher(id).replaceAll("_"));
-            src.sendFeedback(() -> Text.literal("  ")
-                    .append(Text.literal("§b[download]").styled(st -> st
+            Chat.raw(src, Text.literal("  ")
+                    .append(Text.literal(CbFmt.VALUE + "[download]").styled(st -> st
                             .withClickEvent(new net.minecraft.text.ClickEvent(
                                     net.minecraft.text.ClickEvent.Action.OPEN_URL, url))
                             .withHoverEvent(new net.minecraft.text.HoverEvent(
-                                    net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal(url))))), false);
+                                    net.minecraft.text.HoverEvent.Action.SHOW_TEXT, Text.literal(url))))));
         } catch (Exception e) {
-            String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-            IncidentRecorder.record("Export PNG failed for \"" + id + "\"", id, src.getName(), e);
-            Chat.error(src, "Couldn't export that texture. " + msg);
+            String code = IncidentRecorder.record("Export PNG failed for \"" + id + "\"", id, src.getName(), e);
+            Chat.incidentError(src, "Couldn't export that texture.", code);
             return 0;
         }
         return 1;
@@ -236,7 +235,7 @@ public final class ColorImageCommands {
         final UUID who = actor(src);
         final int size = CustomBlocksConfig.textureSize;
         final int n = steps;
-        Chat.info(src, "Generating §e" + n + "§r gradient block(s) between \"" + id1 + "\" and \"" + id2 + "\"…");
+        Chat.info(src, "Generating " + CbFmt.VALUE + n + CbFmt.RESET + " gradient block(s) between \"" + id1 + "\" and \"" + id2 + "\"…");
         Thread worker = new Thread(() -> {
             try {
                 int rgbA = ColorMath.averageColor(texA);
@@ -267,14 +266,13 @@ public final class ColorImageCommands {
                         return;
                     }
                     UndoManager.recordBatch(who, children, "gradient (" + children.size() + ")");
-                    Chat.success(src, "Created §a" + made.size() + "§r gradient block(s): §f"
-                            + String.join(", ", made) + "§r. §7One /cb undo removes them all.");
+                    Chat.success(src, "Created " + CbFmt.OK + made.size() + CbFmt.RESET + " gradient block(s): " + CbFmt.BODY
+                            + String.join(", ", made) + CbFmt.RESET + ". " + CbFmt.DIM + "One /cb undo removes them all.");
                 });
             } catch (Exception e) {
-                String msg = e.getMessage() != null ? e.getMessage() : e.toString();
-                IncidentRecorder.record("Gradient failed for \"" + id1 + "\" → \"" + id2 + "\" (" + n + ")",
+                String code = IncidentRecorder.record("Gradient failed for \"" + id1 + "\" → \"" + id2 + "\" (" + n + ")",
                         id1, src.getName(), e);
-                server.execute(() -> Chat.error(src, "Couldn't build that gradient. " + msg));
+                server.execute(() -> Chat.incidentError(src, "Couldn't build that gradient.", code));
             }
         }, "CustomBlocks-Gradient");
         worker.setDaemon(true);
@@ -305,7 +303,7 @@ public final class ColorImageCommands {
                 GradientSession.setColorB(p.getUuid(), hex, id);
             }
             Chat.success(src, "Set gradient colour " + endpoint.toUpperCase(Locale.ROOT)
-                    + " to §f" + hex + "§r (from \"" + id + "\").");
+                    + " to " + CbFmt.BODY + hex + CbFmt.RESET + " (from \"" + id + "\").");
             GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.GRADIENT_PICKER));
         } catch (Exception e) {
             Chat.error(src, "Couldn't read that block's colour.");

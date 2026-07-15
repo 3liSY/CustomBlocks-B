@@ -27,11 +27,11 @@ public final class HudBrickRow {
 
     public static void draw(DrawContext ctx, TextRenderer tr, HudField f, int px, int ry, int rowH,
                             int screenW, boolean selected, boolean reorderTarget, int cyan) {
-        if (selected)       ctx.fill(px - 4, ry - 1, screenW, ry + rowH - 1, 0x55FFAA00);
+        if (selected)       ctx.fill(px - 4, ry - 1, screenW, ry + rowH - 1, com.customblocks.client.gui.CbTheme.GLOW);
         if (reorderTarget)  ctx.fill(px - 4, ry, screenW, ry + 1, cyan);
         String eye = f.visible ? "§a●" : "§7○";
         ctx.drawText(tr, Text.literal("§8⠿ " + eye + " §f" + f.type.label()), px - 2, ry + 3, 0xFFFFFFFF, false);
-        ctx.drawText(tr, Text.literal("§e⚙ §c✕"), screenW - 26, ry + 3, 0xFFFFFFFF, false);
+        ctx.drawText(tr, Text.literal("§7⚙ §c✕"), screenW - 26, ry + 3, 0xFFFFFFFF, false);
     }
 
     /** Map an X within a row to its control zone (Y is the caller's row hit-test). */

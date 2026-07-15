@@ -6,7 +6,7 @@
 //  PHASING NOTE (per Engineering Bible §7 "start minimal, expand per-phase"):
 //  This build script only declares what the CURRENT phase needs. Dependencies
 //  and tasks are added when their feature is built — NOT all up front.
-//    • Phase 0  (now)  → loom, fabric-api, UTF-8, verifyMojibake, verifySound
+//    • Phase 0  (now)  → loom, fabric-api, UTF-8, mojibakeShield, soundGate
 //    • Phase 13        → jcodec (video-to-texture)
 //    • Phase 15        → SpotBugs static analysis (strict mode)
 //    • when needed     → fabric-permissions-api (permissions are post-v1.0)
@@ -50,6 +50,11 @@ dependencies {
     include implementation("com.twelvemonkeys.common:common-io:3.12.0")
     include implementation("com.twelvemonkeys.common:common-image:3.12.0")
 
+    // Group 29 - Windows capture-invisible Shorts overlay.
+    // JNA calls user32.dll for click-through and WDA_EXCLUDEFROMCAPTURE.
+    include implementation("net.java.dev.jna:jna:5.14.0")
+    include implementation("net.java.dev.jna:jna-platform:5.14.0")
+
     // Phase 16 — Mod Menu config screen integration (compile-only; not shipped)
     modCompileOnlyApi "com.terraformersmc:modmenu:11.0.2"
 
@@ -74,159 +79,27 @@ java {
     targetCompatibility = JavaVersion.VERSION_21
 }
 
-// ── Mojibake gate (NFR-11) ──────────────────────────────────────────────────
-// Scans every .java and .json source file for known mojibake byte sequences
-// (CP1252 bytes mis-decoded as Latin-1 then re-encoded as UTF-8). If ANY file
-// contains a corrupted sequence the build FAILS with file + line info.
-// To fix: open docs/MOJIBAKE_SHIELD.md, repair the corruption, re-run build.
-// TextSanitizer.java is excluded — it intentionally stores mojibake as repair keys.
-tasks.register('verifyMojibake') {
-    group = 'verification'
-    description = 'Fails the build if any .java or .json source file contains mojibake sequences.'
-
-    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
-    def srcRes  = layout.projectDirectory.dir('src/main/resources').asFile
-    inputs.dir(srcJava)
-    inputs.dir(srcRes)
-
-    doLast {
-        def PATTERNS = [
-            'Â°', 'Â·', 'Ã‚', 'Ãƒ', 'â€', 'âœ', 'â–', 'â"',
-            'â†', 'Â«', 'Â»', 'Ã¢', 'âœ–', 'âœ¦', 'â–¶', 'â—€',
-            'Ã°Å¸', 'Ã¢â‚¬', 'Ã¢Å"'
-        ]
-
-        def violations = []
-
-        [srcJava, srcRes].each { root ->
-            if (!root.exists()) return
-            root.eachFileRecurse { file ->
-                if (!file.isFile()) return
-                def name = file.name
-                if (!(name.endsWith('.java') || name.endsWith('.json'))) return
-                if (name == 'TextSanitizer.java') return // intentional mojibake repair keys
-
-                def lines = file.readLines('UTF-8')
-                lines.eachWithIndex { line, idx ->
-                    PATTERNS.each { pat ->
-                        if (line.contains(pat)) {
-                            violations << "${file.absolutePath}:${idx + 1} — pattern '${pat}' found"
-                        }
-                    }
-                }
-            }
-        }
-
-        if (!violations.isEmpty()) {
-            def msg = new StringBuilder()
-            msg.append('\n\n')
-            msg.append('════════════════════════════════════════════════════════════\n')
-            msg.append('  MOJIBAKE DETECTED — BUILD FAILED\n')
-            msg.append('  Read docs/MOJIBAKE_SHIELD.md before fixing.\n')
-            msg.append('════════════════════════════════════════════════════════════\n')
-            violations.each { msg.append("  ✖ ${it}\n") }
-            msg.append('════════════════════════════════════════════════════════════\n')
-            throw new Exception(msg.toString())
-        }
-    }
-}
-
-// ── Sound linkage gate (NFR-12) ─────────────────────────────────────────────
-// In Yarn 1.21.1+build.3, BLOCK_NOTE_BLOCK_* constants are RegistryEntry<SoundEvent>
-// and require .value() to unwrap. Using them raw causes silent crashes.
-// Only the NOTE_BLOCK family needs .value(); other SoundEvents.* are bare SoundEvent.
-tasks.register('verifySound') {
-    group = 'verification'
-    description = 'Fails the build if any .java file uses SoundEvents.BLOCK_NOTE_BLOCK_* without .value().'
-
-    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
-    inputs.dir(srcJava)
-
-    doLast {
-        def RAW_NOTE_BLOCK = java.util.regex.Pattern.compile(
-            'SoundEvents\\.BLOCK_NOTE_BLOCK_[A-Z0-9_]+(?!\\.value\\(\\))\\s*[,)]'
-        )
-
-        def violations = []
-
-        if (srcJava.exists()) {
-            srcJava.eachFileRecurse { file ->
-                if (!file.isFile() || !file.name.endsWith('.java')) return
-                def lines = file.readLines('UTF-8')
-                lines.eachWithIndex { line, idx ->
-                    if (RAW_NOTE_BLOCK.matcher(line).find()) {
-                        violations << "${file.absolutePath}:${idx + 1} — BLOCK_NOTE_BLOCK_* needs .value(): ${line.trim()}"
-                    }
-                }
-            }
-        }
-
-        if (!violations.isEmpty()) {
-            def msg = new StringBuilder()
-            msg.append('\n\n')
-            msg.append('════════════════════════════════════════════════════════════\n')
-            msg.append('  SOUND LINKAGE VIOLATION — BUILD FAILED\n')
-            msg.append('  BLOCK_NOTE_BLOCK_* constants are RegistryEntry<SoundEvent> and need .value()\n')
-            msg.append('════════════════════════════════════════════════════════════\n')
-            violations.each { msg.append("  ✖ ${it}\n") }
-            msg.append('════════════════════════════════════════════════════════════\n')
-            throw new Exception(msg.toString())
-        }
-    }
-}
-
-// ── File-size gate (§9.3 — no monoliths) ────────────────────────────────────
-// Prevents the disaster of the old project (GuiManager ~9,400 lines,
-// CustomBlockCommand ~6,300 lines). Any .java file over its limit FAILS the build.
-//   • general cap:      500 lines
-//   • command handlers: 400 lines  (anything under command/handlers/)
-//   • config classes:   300 lines  (*Config.java)
-// package-info.java is exempt (documentation only).
-tasks.register('verifyFileSize') {
-    group = 'verification'
-    description = 'Fails the build if any .java file exceeds its line-count limit (Bible §9.3).'
-
-    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
-    inputs.dir(srcJava)
-
-    doLast {
-        def violations = []
-
-        if (srcJava.exists()) {
-            srcJava.eachFileRecurse { file ->
-                if (!file.isFile() || !file.name.endsWith('.java')) return
-                if (file.name == 'package-info.java') return
-
-                def count = file.readLines('UTF-8').size()
-                def path  = file.absolutePath.replace('\\', '/')
-
-                def limit = 500
-                def kind  = 'class'
-                if (path.contains('/command/handlers/')) { limit = 400; kind = 'command handler' }
-                else if (file.name.endsWith('Config.java')) { limit = 300; kind = 'config class' }
-
-                if (count > limit) {
-                    violations << "${file.absolutePath}:${count} lines — exceeds ${kind} limit of ${limit}"
-                }
-            }
-        }
-
-        if (!violations.isEmpty()) {
-            def msg = new StringBuilder()
-            msg.append('\n\n')
-            msg.append('════════════════════════════════════════════════════════════\n')
-            msg.append('  FILE SIZE VIOLATION — BUILD FAILED (§9.3 no-monolith rule)\n')
-            msg.append('  Split the file into focused classes. See CLAUDE.md §5 / Bible §9.3.\n')
-            msg.append('════════════════════════════════════════════════════════════\n')
-            violations.each { msg.append("  ✖ ${it}\n") }
-            msg.append('════════════════════════════════════════════════════════════\n')
-            throw new Exception(msg.toString())
-        }
-    }
-}
+// All verification gates live in verify.gradle (split out for clarity).
+apply from: 'verify.gradle'
 
 tasks.named('build').configure {
-    dependsOn tasks.named('verifyMojibake')
-    dependsOn tasks.named('verifySound')
-    dependsOn tasks.named('verifyFileSize')
+    dependsOn tasks.named('mojibakeShield')
+    dependsOn tasks.named('soundGate')
+    dependsOn tasks.named('monolithGate')
+    dependsOn tasks.named('tgGate')
+    // G04-3 chat gates — WIRED 2026-07-14. All legacy violations are cleaned: 82 raw sends now route
+    // through Chat, and 850 hand-picked §-codes are named meanings in CbFmt. Wired as dependsOn so
+    // the drift cannot come back — a new handler that bypasses Chat, or hardcodes a colour, fails
+    // the build the first time it is compiled.
+    dependsOn tasks.named('chatRouteGate')
+    dependsOn tasks.named('chatColourGate')
+    // G04 §F — hotbar unification. Colour is chosen by the Chat method (green/red/white + yellow value),
+    // never jammed into the body by the caller. Wired as a HARD gate (owner-locked 2026-07-15): a raw
+    // hotbar send outside Chat, or a § / CbFmt colour in a hotbar body, fails the build. Hotbar-only —
+    // it does not touch client HUD/overlay rendering.
+    dependsOn tasks.named('hotbarRouteGate')
+    // G04-2 — a command with no help entry is invisible to /cb help AND to "did you mean".
+    // 67 of 119 had drifted into that state; this stops it recurring.
+    dependsOn tasks.named('helpCoverageGate')
+    finalizedBy tasks.named('staleTodoGate')
 }

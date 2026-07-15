@@ -11,6 +11,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.network.payloads.TransparentBgPayload;
@@ -38,8 +39,8 @@ public final class RenderConfigCommands {
     }
 
     private static int status(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Block background: " + (CustomBlocksConfig.transparentBackground ? "§btransparent" : "§ablack")
-                + " §8(/cb config transparent toggle)");
+        Chat.info(ctx.getSource(), "Block background: " + (CustomBlocksConfig.transparentBackground ? CbFmt.VALUE + "transparent" : CbFmt.OK + "black")
+                + " " + CbFmt.FAINT + "(/cb config transparent toggle)");
         return 1;
     }
 

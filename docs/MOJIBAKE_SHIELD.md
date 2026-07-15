@@ -56,7 +56,7 @@ The 2-arg `player.playSound(SoundEvents.X.value(), vol, pitch)` form also requir
 
 ### Rule 5: After any edit to voice_*.json, run the build gate locally
 ```
-./gradlew verifyMojibake verifySound verifyVoiceCatalog
+./gradlew mojibakeShield soundGate verifyVoiceCatalog
 ```
 All three must pass green before any commit.
 
@@ -78,12 +78,12 @@ All three must pass green before any commit.
 
 This repo has three build-time verification tasks that run automatically on every `./gradlew build`:
 
-### `verifyMojibake`
+### `mojibakeShield`
 Scans all `.java` and `.json` source files for known mojibake byte sequences.
 - Fails with the exact file, line, and pattern that is corrupted.
 - Fix the corruption, then re-run build.
 
-### `verifySound`
+### `soundGate`
 Scans all `.java` files for `playSound` calls using raw `SoundEvents.*` without `.value()`.
 - Fails with the exact file and line number.
 - Add `.value()`, then re-run build.
@@ -96,9 +96,9 @@ Ensures all six `voice_*.json` files contain every key from `voice_keys_inventor
 ## If the Build Fails Because of Mojibake
 
 1. Read this document again from the top.
-2. Find the file and line reported by `verifyMojibake`.
+2. Find the file and line reported by `mojibakeShield`.
 3. Fix the corrupted characters to their correct UTF-8 equivalents (see table above).
-4. Run `./gradlew verifyMojibake` again — must be green.
+4. Run `./gradlew mojibakeShield` again — must be green.
 5. Run `./gradlew build` — must be fully green before committing.
 
 **Do not bypass the gate. Do not add an exception. Fix the source.**

@@ -17,6 +17,7 @@ import net.minecraft.util.shape.VoxelShapes;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class BlockShapes {
 
@@ -67,8 +68,16 @@ public final class BlockShapes {
         };
     }
 
+    /** Per-name VoxelShape cache — blocks now use dynamicBounds (no built-in shape cache), so these are
+     *  queried live every collision/outline check; build each shape's VoxelShape once and reuse it. */
+    private static final Map<String, VoxelShape> OUTLINE_CACHE = new ConcurrentHashMap<>();
+
     /** The outline (selection) shape: full cube for full, a small box for cross, else the boxes. */
     public static VoxelShape outline(String shape) {
+        return OUTLINE_CACHE.computeIfAbsent(shape == null ? "full" : shape, BlockShapes::buildOutline);
+    }
+
+    private static VoxelShape buildOutline(String shape) {
         if (isFull(shape)) return VoxelShapes.fullCube();
         if (isCross(shape)) return VoxelShapes.cuboid(2 / 16d, 0, 2 / 16d, 14 / 16d, 16 / 16d, 14 / 16d);
         return union(boxes(shape));

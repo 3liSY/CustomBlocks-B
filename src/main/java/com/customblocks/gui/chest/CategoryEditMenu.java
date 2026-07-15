@@ -15,6 +15,8 @@
  */
 package com.customblocks.gui.chest;
 
+import com.customblocks.command.Chat;
+
 import com.customblocks.block.SlotBlock;
 import com.customblocks.core.CategoryMetadataStore;
 import com.customblocks.core.LockManager;
@@ -160,12 +162,15 @@ public final class CategoryEditMenu {
                     GuiRouter.runCommand(p, "category export " + cat);
                 });
 
-        // Share (slot 15) — greyed out / coming soon
-        m.set(15, Icons.of(Items.ENDER_PEARL, "§8§lShare §8(coming soon)",
+        // Share (slot 15) — upload to the vault, get a share code
+        m.set(15, Icons.of(Items.ENDER_PEARL, "§d§lShare",
                         "§7Upload this category to the vault",
-                        "§7and get a share code.",
-                        "§8Vault Worker not deployed yet."),
-                (p, b, a) -> GuiFx.deny(p));
+                        "§7and get a share code to send to friends.",
+                        "§8Needs cloud sharing on + vaultEndpoint set."),
+                (p, b, a) -> {
+                    GuiFx.apply(p);
+                    GuiRouter.runCommand(p, "category share " + cat);
+                });
 
         // Lock / Unlock All (slot 16)
         int fLocked = locked;

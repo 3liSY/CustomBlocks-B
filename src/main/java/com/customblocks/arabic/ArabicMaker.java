@@ -10,14 +10,15 @@
  * "Render preview" makes a single reusable throwaway block (one slot per player), cleaned up when
  * the player Creates or returns to the hub.
  *
- * Depends on: ArabicBlockRegistry, ArabicLetterMap, SlotManager, HudSync, ResourcePackServer,
+ * Depends on: ArabicBlockRegistry (importWord), ArabicGlyphs, ArabicSlotBootstrap (letter slot
+ *             ids), SlotManager, HudSync, ResourcePackServer,
  *             AnvilPrompt, GuiRouter/Nav, ArabicWordSession, CustomBlocksConfig, Chat
  * Called by:  ArabicCommands, ArabicHubMenu, WordChoiceMenu, ColorStudioMenu
  */
 package com.customblocks.arabic;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
-import com.customblocks.block.ArabicLetterBlock;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
@@ -71,7 +72,7 @@ public final class ArabicMaker {
                 raw -> {
                     String id = cleanId(raw, s.name);
                     if (SlotManager.hasId(id)) {
-                        Chat.error(player.getCommandSource(), "Id '§e" + id + "§r' is taken — pick another.");
+                        Chat.error(player.getCommandSource(), "Id \"" + CbFmt.VALUE + id + CbFmt.RESET + "\" is taken — pick another.");
                         askId(player, s);
                         return;
                     }
@@ -125,7 +126,7 @@ public final class ArabicMaker {
         ArabicWordSession s = ArabicWordSession.get(player.getUuid());
         if (s == null || s.text == null) { GuiRouter.openFresh(player, MenuKey.of(Dest.ARABIC)); return; }
         clearPreview(player);
-        if (SlotManager.hasId(s.id)) { Chat.error(player.getCommandSource(), "Id '§e" + s.id + "§r' got taken — open the maker again."); return; }
+        if (SlotManager.hasId(s.id)) { Chat.error(player.getCommandSource(), "Id \"" + CbFmt.VALUE + s.id + CbFmt.RESET + "\" got taken — open the maker again."); return; }
         String err = ArabicBlockRegistry.importWord(s.text, s.id, s.name, s.letterArgb, s.bgArgb);
         if (err != null) {
             Chat.error(player.getCommandSource(), "Couldn't make the block: " + err);
@@ -134,7 +135,7 @@ public final class ArabicMaker {
         }
         giveById(player, s.id);
         HudSync.sendTo(player);
-        Chat.success(player.getCommandSource(), "Made §e" + s.name + "§r §7(id " + s.id + ", "
+        Chat.success(player.getCommandSource(), "Made " + CbFmt.VALUE + s.name + CbFmt.RESET + " " + CbFmt.DIM + "(id " + s.id + ", "
                 + hex(s.letterArgb) + " on " + hex(s.bgArgb) + "). Gave you one.");
         ArabicWordSession.clear(player.getUuid());
         GuiRouter.openFresh(player, MenuKey.of(Dest.ARABIC));
@@ -220,21 +221,22 @@ public final class ArabicMaker {
 
     // ── letter blocks ─────────────────────────────────────────────────────────
     /**
-     * Give one JOINABLE letter block (the auto-join {@link ArabicLetterBlock}, black) per Arabic letter
-     * in {@code text}. Non-letters (spaces, numbers, punctuation) are skipped. Placed right-to-left these
-     * auto-shape and connect into the word — they are the "(Join)" blocks, not the old static bundled art.
+     * Give one REAL joinable letter slot block (the isolated black form, G13-25) per Arabic letter
+     * in {@code text}. Non-letters (spaces, numbers, punctuation) are skipped. Placed right-to-left
+     * these auto-shape and connect into the word by swapping between the pre-baked form slots.
      */
     public static void giveLetterBlocks(ServerPlayerEntity player, String text) {
         int given = 0, skipped = 0;
         for (int i = 0; i < text.length(); i++) {
             char c = text.charAt(i);
-            if (ArabicLetterMap.byCodePoint(c).isEmpty()) { skipped++; continue; }
-            player.getInventory().insertStack(ArabicLetterBlock.stackFor(c, 1));
-            given++;
+            String base = ArabicGlyphs.artBase(c).orElse(null);
+            if (base == null) { skipped++; continue; }
+            if (giveById(player, ArabicSlotBootstrap.slotId(base, ArabicJoining.ISOLATED))) given++;
+            else skipped++; // base slot missing (created at boot) — never crash the give
         }
         if (given == 0) Chat.error(player.getCommandSource(), "No Arabic letters in that text — nothing to give.");
-        else Chat.success(player.getCommandSource(), "Gave you §e" + given + "§r joinable letter block(s)"
-                + (skipped > 0 ? " §7(" + skipped + " skipped)" : "") + ". Place them right-to-left — they auto-join.");
+        else Chat.success(player.getCommandSource(), "Gave you " + CbFmt.VALUE + given + CbFmt.RESET + " joinable letter block(s)"
+                + (skipped > 0 ? " " + CbFmt.DIM + "(" + skipped + " skipped)" : "") + ". Place them right-to-left — they auto-join.");
     }
 
     private static boolean giveById(ServerPlayerEntity player, String id) {

@@ -23,10 +23,6 @@ import net.minecraft.client.gui.widget.ButtonWidget;
 import net.minecraft.text.Text;
 import org.lwjgl.glfw.GLFW;
 
-import javax.imageio.ImageIO;
-import java.awt.image.BufferedImage;
-import java.net.URI;
-
 @Environment(EnvType.CLIENT)
 public class ArabicPreviewScreen extends Screen {
 
@@ -36,9 +32,9 @@ public class ArabicPreviewScreen extends Screen {
     private static final double SPIN_MAX = 2.5, SPIN_STEP = 0.15;    // scroll = spin speed
     private static final int    HALF_MIN = 36, HALF_MAX = 120, ZOOM_STEP = 8; // shift+scroll = zoom
 
-    // ── Group 27 standard frame ───────────────────────────────────────────────
-    private static final int BAR_BG   = 0xAA000000;
-    private static final int GOLD     = 0xFF_FF_AA_00;
+    // ── Group 27 standard frame — locked red+black (2026-07-04) ───────────────
+    private static final int BAR_BG   = CbTheme.BAR_BG;
+    private static final int GOLD     = CbTheme.ACCENT;
     private static final int BAR_H    = 42;
 
     // Curated palette — mirrors ColorStudioMenu so the two pickers match.
@@ -56,7 +52,7 @@ public class ArabicPreviewScreen extends Screen {
     private final PreviewCube cube = new PreviewCube(); // shared cube renderer; disposed in removed()
 
     private double yaw = DEF_YAW, pitch = DEF_PITCH;
-    private double spinSpeed = DEF_SPIN;     // idle auto-spin (deg/render delta); scroll adjusts
+    private double spinSpeed = CbScreenPrefs.get().spinDefault; // idle auto-spin (§G27.8.B default); scroll adjusts
     private boolean spinning = true;         // click (no drag) pauses/resumes
     private int     half = DEF_HALF;         // shift+scroll zooms
     private boolean dragging, dragged;       // dragged = the press actually moved (rotate), not a click
@@ -65,6 +61,7 @@ public class ArabicPreviewScreen extends Screen {
     private boolean confirmingCancel;
     private CbColorPanel panel; // §G27.7 §B floating colour panel (right side; replaces bottom swatch rows)
     private CbActionBar bar;    // §G27.7 §A4 dockable/hideable action bar (replaces the fixed bottom strip)
+    private final CbSettingsOverlay settings = new CbSettingsOverlay(); // §G27.8.B ⚙ Settings (replaces the dim slider)
     private final CbHelpOverlay help = new CbHelpOverlay("Live Preview", java.util.List.of(
             new CbHelpOverlay.Group("VIEW", java.util.List.of(
                     new CbHelpOverlay.Row("Drag", "Rotate the cube"),
@@ -101,9 +98,13 @@ public class ArabicPreviewScreen extends Screen {
     @Override
     protected void init() {
         if (confirmingCancel) { addCancelButtons(); return; } // re-init while the discard overlay is up
-        // [?] help — top-right of the title bar
+        // [?] help + ⚙ settings — top-right of the title bar (§G27.8.B: gear replaces the dim slider)
         addDrawableChild(ButtonWidget.builder(Text.literal("?"), b -> help.toggle()).dimensions(width - 24, 10, 16, 16).build());
-        addDrawableChild(new CbDimSlider(width - 110, 8, 78, 13)); // §A2 backdrop dim
+        addDrawableChild(ButtonWidget.builder(Text.literal("⚙"), b -> settings.toggle()).dimensions(width - 44, 10, 16, 16).build());
+        // §G27.8.A quick view angles
+        addDrawableChild(ButtonWidget.builder(Text.literal("Front"), b -> { yaw = 0; pitch = 0; }).dimensions(8, BAR_H + 6, 38, 14).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Iso"), b -> { yaw = DEF_YAW; pitch = DEF_PITCH; }).dimensions(48, BAR_H + 6, 30, 14).build());
+        addDrawableChild(ButtonWidget.builder(Text.literal("Top"), b -> { yaw = 45; pitch = 85; }).dimensions(80, BAR_H + 6, 30, 14).build());
         // §A4 dockable / hideable / smaller action bar (replaces the old fixed full-width button strip).
         if (bar == null) bar = new CbActionBar("arabic", java.util.List.of(
                 new CbActionBar.Item("Undo", this::undo, false),
@@ -135,9 +136,10 @@ public class ArabicPreviewScreen extends Screen {
         final String url = texUrl;
         Thread t = new Thread(() -> {
             try {
-                BufferedImage img = ImageIO.read(URI.create(url).toURL());
-                if (img == null) { failed = true; loading = false; return; }
-                grid = PreviewCube.downsample(img); // shared downsample; a new ref re-bakes the cube
+                // §preview-fix: robust fetch (browser UA + Tenor/Giphy resolve) instead of naive ImageIO.read.
+                StudioTextureLoader.Result r = StudioTextureLoader.load(url);
+                if (r == null || r.frames() == null || r.frames().length == 0) { failed = true; loading = false; return; }
+                grid = r.frames()[0]; // a new ref re-bakes the cube
                 loading = false;
             } catch (Exception e) {
                 failed = true; loading = false;
@@ -148,9 +150,8 @@ public class ArabicPreviewScreen extends Screen {
     }
 
     private void create() {
-        if (bar != null) bar.flashPrimary(); // brief green flash over Create (Group 27 save feedback)
-        if (client != null && client.player != null)
-            client.player.sendMessage(Text.literal("§a✔ Creating block '" + pid + "'…"), false);
+        if (bar != null) bar.flashPrimary(); // brief lime flash over Create (Group 27 save feedback)
+        CbToast.success("Creating block '" + pid + "'…"); // §G27.13 — toast, not chat
         ClientPlayNetworking.send(new ArabicPreviewPayload(ArabicPreviewPayload.ACTION_CREATE, letterArgb, bgArgb));
         // The server makes the block and opens the hub chest GUI, which replaces this screen.
     }
@@ -160,7 +161,9 @@ public class ArabicPreviewScreen extends Screen {
     /** Back / Esc → confirm if colours changed, else ask the server to reopen the Color Studio. */
     @Override
     public void close() {
-        if (isDirty() && !confirmingCancel) { confirmingCancel = true; clearChildren(); init(); return; }
+        if (isDirty() && CbScreenPrefs.get().confirmDiscard && !confirmingCancel) { // §G27.8.B toggleable
+            confirmingCancel = true; clearChildren(); init(); return;
+        }
         ClientPlayNetworking.send(new GuiBackPayload());
         super.close();
     }
@@ -198,7 +201,7 @@ public class ArabicPreviewScreen extends Screen {
         // Title bar strip + gold border.
         ctx.fill(0, 0, width, BAR_H, BAR_BG);
         ctx.fill(0, BAR_H - 1, width, BAR_H, GOLD);
-        ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lLive Preview §7— §f" + text), 8, 10, 0xFFFFFFFF);
+        ctx.drawTextWithShadow(textRenderer, CbTheme.title("Live Preview", text), 8, 10, 0xFFFFFFFF);
         ctx.drawTextWithShadow(textRenderer,
                 Text.literal("§7drag rotate · scroll = speed · shift+scroll = zoom · click = pause · R = reset"), 8, 22, 0xFFFFFFFF);
         ctx.drawTextWithShadow(textRenderer,
@@ -212,6 +215,7 @@ public class ArabicPreviewScreen extends Screen {
             if (panel != null) panel.render(ctx, width, height, textRenderer, mx, my);
         }
         if (confirmingCancel) renderCancelConfirm(ctx);
+        settings.render(ctx, width, height, textRenderer, mx, my); // §G27.8.B ⚙ popup
         help.render(ctx, width, height, textRenderer, mx, my); // drawn last → always on top; only the red X closes it
 
         if (!dragging && spinning && !confirmingCancel) { yaw = (yaw + spinSpeed * delta) % 360.0; } // idle spin (click toggles)
@@ -221,7 +225,7 @@ public class ArabicPreviewScreen extends Screen {
         int cx = width / 2, cy = height / 2;
         int pw = 200, ph = 70;
         ctx.fill(cx - pw / 2 - 1, cy - ph / 2 - 1, cx + pw / 2 + 1, cy + ph / 2 + 1, GOLD);
-        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, 0xFF1A1A1A);
+        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, CbTheme.DIALOG_BG);
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§fDiscard colour changes?"), cx, cy - 18, 0xFFFFFFFF);
     }
 
@@ -243,6 +247,7 @@ public class ArabicPreviewScreen extends Screen {
     @Override
     public boolean mouseClicked(double mx, double my, int button) {
         if (help.mouseClicked(mx, my)) return true;                       // help open → only the red X closes it
+        if (settings.mouseClicked(mx, my)) return true;                   // settings open → modal
         if (confirmingCancel) return super.mouseClicked(mx, my, button);  // only the Yes/No buttons are live
         if (panel != null && panel.isDropperActive()) { panel.mouseClicked(mx, my, button); return true; } // dropper: any click samples
         if (super.mouseClicked(mx, my, button)) return true;              // vanilla top widgets ([?], dim slider)
@@ -289,7 +294,7 @@ public class ArabicPreviewScreen extends Screen {
         String code = String.format("#%06X/#%06X", letterArgb & 0xFFFFFF, bgArgb & 0xFFFFFF);
         if (client == null) return;
         client.keyboard.setClipboard(code);
-        if (client.player != null) client.player.sendMessage(Text.literal("§a✔ Copied colours §7" + code), false);
+        CbToast.success("Copied colours §7" + code); // §G27.13 — code is on the clipboard; no chat echo
     }
 
     private void paste() {
@@ -302,6 +307,7 @@ public class ArabicPreviewScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mx, double my, int button, double dx, double dy) {
+        if (settings.mouseDragged(mx, my)) return true;                                // settings sliders
         if (bar != null && bar.mouseDragged(mx, my, button, dx, dy)) return true;     // bar re-dock drag
         if (panel != null && panel.mouseDragged(mx, my, button, dx, dy)) return true; // panel move / reorder
         if (dragging) {
@@ -315,6 +321,7 @@ public class ArabicPreviewScreen extends Screen {
 
     @Override
     public boolean mouseReleased(double mx, double my, int button) {
+        if (settings.mouseReleased()) { dragging = false; return true; }
         if (bar != null && bar.mouseReleased(mx, my, button)) { dragging = false; return true; }
         if (panel != null && panel.mouseReleased(mx, my, button)) { dragging = false; return true; }
         if (dragging && !dragged) spinning = !spinning; // click without a drag = pause / resume spin
@@ -342,6 +349,7 @@ public class ArabicPreviewScreen extends Screen {
             if (key == GLFW.GLFW_KEY_ESCAPE) help.close();                      // Esc closes the help, not the screen
             return true;
         }
+        if (settings.keyPressed(key)) return true;                              // settings open → Esc closes, keys swallowed
         if (key == GLFW.GLFW_KEY_SLASH) { help.open(); return true; }           // ? opens help
         if (panel != null && panel.keyPressed(key, scan, mods)) return true;    // panel: fast keys 1–9, hex input, dropper Esc
         if (ctrl) {
@@ -355,7 +363,7 @@ public class ArabicPreviewScreen extends Screen {
         }
         switch (key) {
             case GLFW.GLFW_KEY_R -> { // reset view
-                yaw = DEF_YAW; pitch = DEF_PITCH; spinSpeed = DEF_SPIN; half = DEF_HALF; spinning = true;
+                yaw = DEF_YAW; pitch = DEF_PITCH; spinSpeed = CbScreenPrefs.get().spinDefault; half = DEF_HALF; spinning = true;
                 return true;
             }
             case GLFW.GLFW_KEY_ENTER, GLFW.GLFW_KEY_KP_ENTER -> { create(); return true; }

@@ -15,11 +15,8 @@
  */
 package com.customblocks.item;
 
-import com.customblocks.arabic.ArabicNaming;
-import com.customblocks.block.ArabicLetterBlock;
-import com.customblocks.block.ArabicLetterBlockEntity;
+import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotBlock;
-import com.customblocks.command.Chat;
 import com.customblocks.core.ColorVariantService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -31,8 +28,6 @@ import net.minecraft.item.ItemUsageContext;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
-import net.minecraft.util.math.BlockPos;
-import net.minecraft.world.World;
 
 import java.util.List;
 
@@ -58,24 +53,15 @@ public class ShapeToolItem extends Item implements ColorSwapTool {
     /** Live name showing the configured hex, e.g. "Black Square [#0A0A0A]" (M3 hex). */
     @Override
     public Text getName(ItemStack stack) {
-        return Text.literal(colorCode + colorName + " " + shape + " §8["
+        return Text.literal(colorCode + colorName + " " + shape + " " + CbFmt.FAINT + "["
                 + ColorVariantService.hexFor(colorName.toLowerCase(java.util.Locale.ROOT)) + "]");
     }
 
     @Override
     public ActionResult useOnBlock(ItemUsageContext ctx) {
         var clicked = ctx.getWorld().getBlockState(ctx.getBlockPos()).getBlock();
-        // Auto-join Arabic letters (Group 13): a Square recolours the placed letter in place. Colour is
-        // per-block BlockEntity data, so we touch ONLY the BlockEntity — never the blockstate — leaving
-        // FACING and the join flow exactly as placed (walking around the letter then recolouring can't
-        // re-orient or re-join it). Triangles don't apply: there is no slot variant to create.
-        if (clicked instanceof ArabicLetterBlock) {
-            if (!"Square".equals(shape)) return ActionResult.PASS;
-            if (!(ctx.getPlayer() instanceof ServerPlayerEntity letterPlayer)) {
-                return ActionResult.SUCCESS; // client swings instantly; server does the work
-            }
-            return recolorArabicLetter(letterPlayer, ctx.getWorld(), ctx.getBlockPos());
-        }
+        // G13-25 CP5: Arabic letters ARE plain SlotBlocks now — the normal Square/Triangle path
+        // below covers them (variant ids follow the same "_<colour>" convention, pre-baked at boot).
         if (!(clicked instanceof SlotBlock slot)) {
             return ActionResult.PASS;
         }
@@ -101,45 +87,23 @@ public class ShapeToolItem extends Item implements ColorSwapTool {
         return ActionResult.SUCCESS;
     }
 
-    /**
-     * Recolour a placed auto-join Arabic letter to this Square's colour — COLOUR ONLY. We mutate the
-     * BlockEntity's colour and sync it; we never setBlockState or re-run the join flow, so FACING, form
-     * and neighbours are untouched (recolouring after walking around the block can't bug its direction).
-     * The client renderer rebuilds the glyph tile per-colour, so the swap is instant — no pack rebuild.
-     */
-    private ActionResult recolorArabicLetter(ServerPlayerEntity player, World world, BlockPos pos) {
-        if (!(world.getBlockEntity(pos) instanceof ArabicLetterBlockEntity be) || be.letter() == 0) {
-            return ActionResult.SUCCESS; // letter not stamped yet — nothing to recolour
-        }
-        String colour = colorName.toLowerCase(java.util.Locale.ROOT); // green/yellow/red/black — bundled set
-        String name = ArabicNaming.displayName(be.letter(), colour, be.effectiveForm());
-        if (colour.equals(be.color())) {
-            Chat.tool(player, "§7Already §f" + name + "§7.");
-            return ActionResult.SUCCESS;
-        }
-        be.setColor(colour); // colour only — no blockstate change, no re-flow
-        be.sync();           // push the new colour to clients; renderer rebuilds the tile per-colour
-        Chat.tool(player, "§bSwapped to §f" + name);
-        return ActionResult.SUCCESS;
-    }
-
     @Override
     public void appendTooltip(ItemStack stack, Item.TooltipContext context, List<Text> tooltip,
                               net.minecraft.item.tooltip.TooltipType type) {
         if ("Triangle".equals(shape)) {
-            tooltip.add(Text.literal("§7Right-click a custom block to create its "
-                    + colorCode + colorName.toLowerCase() + " §7variant.").styled(s -> s.withItalic(false)));
-            tooltip.add(Text.literal("§7The image's background is recoloured; the design stays.")
+            tooltip.add(Text.literal(CbFmt.DIM + "Right-click a custom block to create its "
+                    + colorCode + colorName.toLowerCase() + " " + CbFmt.DIM + "variant.").styled(s -> s.withItalic(false)));
+            tooltip.add(Text.literal(CbFmt.DIM + "The image's background is recoloured; the design stays.")
                     .styled(s -> s.withItalic(false)));
-            tooltip.add(Text.literal("§8Sneak + right-click to see a confirm first.")
+            tooltip.add(Text.literal(CbFmt.FAINT + "Sneak + right-click to see a confirm first.")
                     .styled(s -> s.withItalic(false)));
         } else {
-            tooltip.add(Text.literal("§7Right-click a placed custom block to swap it to its "
-                    + colorCode + colorName.toLowerCase() + " §7variant.").styled(s -> s.withItalic(false)));
-            tooltip.add(Text.literal("§7Swaps only — create the variants with the Triangles.")
+            tooltip.add(Text.literal(CbFmt.DIM + "Right-click a placed custom block to swap it to its "
+                    + colorCode + colorName.toLowerCase() + " " + CbFmt.DIM + "variant.").styled(s -> s.withItalic(false)));
+            tooltip.add(Text.literal(CbFmt.DIM + "Swaps only — create the variants with the Triangles.")
                     .styled(s -> s.withItalic(false)));
             if ("Black".equals(colorName)) {
-                tooltip.add(Text.literal("§8No black variant? Swaps back to the original block.")
+                tooltip.add(Text.literal(CbFmt.FAINT + "No black variant? Swaps back to the original block.")
                         .styled(s -> s.withItalic(false)));
             }
         }

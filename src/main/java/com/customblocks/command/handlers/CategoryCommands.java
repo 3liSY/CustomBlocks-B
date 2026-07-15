@@ -5,21 +5,8 @@
  * categorydesc, givecategory, exportcategory, sharecategory, importcategory are GONE — folded
  * in here):
  *
- *   /cb category list                     — open the category browser GUI (console: text list)
- *   /cb category edit <cat>               — open the CategoryEditMenu for a category (in-game)
- *   /cb category info <cat>               — text summary (counts, locks, colour, sort, icon, desc)
- *   /cb category rename <old> <new>       — rename (updates all blocks + metadata)
- *   /cb category merge <source> <target>  — move all blocks into target, delete source
- *   /cb category delete <cat>             — uncategorize all blocks (blocks kept)
- *   /cb category color <cat> <color>      — tint the category name (green/aqua/red/none/…)
- *   /cb category desc <cat> <text…>       — set the description
- *   /cb category icon <cat> <blockId>     — set the category icon block
- *   /cb category sort <cat> alpha|custom  — set the block display order
- *   /cb category lock|unlock <cat>        — lock/unlock every block in the category
- *   /cb category give <cat>               — give one of every block
- *   /cb category export <cat>             — ZIP every block (textures + JSON)
- *   /cb category share <cat>              — upload to the vault, get a share code (off-thread)
- *   /cb category import <code>            — download a shared category by code (off-thread)
+ *   list (opens the Category Hub) · edit · info · rename · merge · delete · color · desc · icon ·
+ *   sort · lock|unlock · give · export · share · import  (one arg each, see the builder below).
  *
  * Sync logic lives in core/CategoryService (shared with CategoryEditMenu). Player/threaded
  * ops (give, export, share, import) stay here. Under the 400-line handler gate.
@@ -30,16 +17,24 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.core.IncidentRecorder;
+
+import com.customblocks.command.CbFmt;
+import com.customblocks.CustomBlocksConfig;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.cloud.CloudVaultClient;
+import com.customblocks.cloud.VaultHistory;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.CategoryService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.gui.GuiMode;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav;
 import com.customblocks.network.ResourcePackServer;
+import com.customblocks.network.payloads.OpenGuiPayload;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
@@ -168,7 +163,8 @@ public final class CategoryCommands {
 
     private static int openList(ServerCommandSource src) {
         if (src.getEntity() instanceof ServerPlayerEntity p) {
-            GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CATEGORY_LIST));
+            // Group 27: open the full red+black Category Hub client screen (replaces the old chest browser).
+            ServerPlayNetworking.send(p, new OpenGuiPayload(GuiMode.CATEGORY_HUB.id, ""));
             return 1;
         }
         List<String> cats = new ArrayList<>(SlotManager.categories());
@@ -190,7 +186,7 @@ public final class CategoryCommands {
     }
 
     private static int info(ServerCommandSource src, String category) {
-        for (String line : CategoryService.info(category)) src.sendFeedback(() -> Text.literal(line), false);
+        for (String line : CategoryService.info(category)) Chat.raw(src, Text.literal(line));
         return 1;
     }
 
@@ -223,8 +219,8 @@ public final class CategoryCommands {
         }
         StringBuilder msg = new StringBuilder("Gave " + gave.size() + " item"
                 + (gave.size() == 1 ? "" : "s") + ": " + String.join(", ", gave) + ".");
-        if (overflow > 0) msg.append(" §e").append(overflow).append(" didn't fit (inventory full).");
-        if (missing > 0)  msg.append(" §8").append(missing).append(" had no item — try /cb reload.");
+        if (overflow > 0) msg.append(" " + CbFmt.VALUE).append(overflow).append(" didn't fit (inventory full).");
+        if (missing > 0)  msg.append(" " + CbFmt.FAINT).append(missing).append(" had no item — try /cb reload.");
         Chat.success(src, msg.toString());
         return 1;
     }
@@ -244,10 +240,10 @@ public final class CategoryCommands {
             Chat.error(src, "Export failed — couldn't write the ZIP.");
             return 0;
         }
-        MutableText msg = Text.literal(Chat.PREFIX + "§fExported §e" + blocks.size()
-                        + "§f block(s) of §b" + cat + "§f → §7" + zip.getFileName() + "  ")
-                .append(Text.literal("§b[download]").styled(s -> s.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, ResourcePackServer.getZipUrl(zip.getFileName().toString()))).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal("§7Open in browser to download")))));
-        src.sendFeedback(() -> msg, false);
+        MutableText msg = Text.literal(CbFmt.BODY + "Exported " + CbFmt.VALUE + blocks.size()
+                        + CbFmt.BODY + " block(s) of " + CbFmt.VALUE + cat + CbFmt.BODY + " → " + CbFmt.DIM + zip.getFileName() + "  ")
+                .append(Text.literal(CbFmt.VALUE + "[download]").styled(s -> s.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, ResourcePackServer.getZipUrl(zip.getFileName().toString()))).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(CbFmt.DIM + "Open in browser to download")))));
+        Chat.line(src, msg);
         return 1;
     }
 
@@ -256,6 +252,7 @@ public final class CategoryCommands {
     private static int shareCategory(CommandContext<ServerCommandSource> ctx, String category) {
         ServerCommandSource src = ctx.getSource();
         String cat = category.trim().toLowerCase(Locale.ROOT);
+        if (!CustomBlocksConfig.cloudShareEnabled) { Chat.error(src, "Cloud sharing is disabled. Enable it in /cb config (cloudShareEnabled)."); return 0; }
         if (!CloudVaultClient.isConfigured()) {
             Chat.error(src, "The cloud vault isn't set up yet. Put your worker URL in config.json as "
                     + "\"vaultEndpoint\", then /cb reload.");
@@ -279,14 +276,16 @@ public final class CategoryCommands {
                     if (code == null) {
                         Chat.error(src, "Upload failed — check vaultEndpoint and that the worker is reachable.");
                     } else {
-                        MutableText msg = Text.literal(Chat.PREFIX + "§aShared §b" + cat + "§a — code: §e" + code + "  ")
-                                .append(copyButton("[copy code]", code))
-                                .append(Text.literal("  §7Import with §f/cb category import " + code));
-                        src.sendFeedback(() -> msg, false);
+                        VaultHistory.record("category", code, cat, src);
+                        MutableText msg = Text.literal(CbFmt.OK + "Shared " + CbFmt.VALUE + cat + CbFmt.OK + " — code: " + CbFmt.VALUE + code + "  ")
+                                .append(Chat.shareButton(code))
+                                .append(Text.literal("  " + CbFmt.DIM + "Import with " + CbFmt.BODY + "/cb category import " + code));
+                        Chat.line(src, msg);
                     }
                 });
             } catch (Exception ex) {
-                server.execute(() -> Chat.error(src, "Share failed: " + ex.getMessage()));
+                String code = IncidentRecorder.record("Category vault share failed for \"" + cat + "\"", null, src.getName(), ex);
+                server.execute(() -> Chat.incidentError(src, "Couldn't share that category — the vault didn't answer. Check your connection and try again.", code));
             }
         }, "cb-vault-share").start();
         return 1;
@@ -296,6 +295,7 @@ public final class CategoryCommands {
 
     private static int importCategory(CommandContext<ServerCommandSource> ctx, String code) {
         ServerCommandSource src = ctx.getSource();
+        if (!CustomBlocksConfig.cloudShareEnabled) { Chat.error(src, "Cloud sharing is disabled. Enable it in /cb config (cloudShareEnabled)."); return 0; }
         if (!CloudVaultClient.isConfigured()) {
             Chat.error(src, "The cloud vault isn't set up yet. Put your worker URL in config.json as "
                     + "\"vaultEndpoint\", then /cb reload.");
@@ -320,7 +320,8 @@ public final class CategoryCommands {
                     if (c == 0 && s == 0 && f == 0) Chat.info(src, "Nothing to import from that code.");
                 });
             } catch (Exception ex) {
-                server.execute(() -> Chat.error(src, "Import failed: " + ex.getMessage()));
+                String incidentCode = IncidentRecorder.record("Category vault import failed (code: " + code + ")", null, src.getName(), ex);
+                server.execute(() -> Chat.incidentError(src, "Couldn't import that code — it may be wrong, expired, or the vault is unreachable.", incidentCode));
             }
         }, "cb-vault-import").start();
         return 1;
@@ -337,11 +338,11 @@ public final class CategoryCommands {
         String cat = com.customblocks.core.AutoCategorizeManager.suggest(d);
         if (cat.isEmpty()) return;
         String set = "/cb setcategory " + d.customId() + " " + cat;
-        MutableText msg = Text.literal(Chat.PREFIX + "§7Looks like category §b" + cat + "§7.  ")
-                .append(runButton("§a[Add]", set, "Set " + d.customId() + " → " + cat))
+        MutableText msg = Text.literal(CbFmt.DIM + "Looks like category " + CbFmt.VALUE + cat + CbFmt.DIM + ".  ")
+                .append(Chat.runButton(CbFmt.OK + "[Add]", set, "Set " + d.customId() + " → " + cat))
                 .append(Text.literal(" "))
-                .append(suggestButton("§e[Edit]", set, "Pick a different category"));
-        src.sendFeedback(() -> msg, false);
+                .append(Chat.suggestButton(CbFmt.VALUE + "[Edit]", set, "Pick a different category"));
+        Chat.line(src, msg);
     }
 
     // ── helpers ─────────────────────────────────────────────────────────────────
@@ -352,25 +353,8 @@ public final class CategoryCommands {
         return out;
     }
 
-    private static MutableText copyButton(String label, String value) {
-        return Text.literal(label).styled(s -> s
-                .withColor(Formatting.AQUA)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.COPY_TO_CLIPBOARD, value))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Text.literal("§7Copy:\n§f" + value))));
-    }
 
-    private static MutableText runButton(String label, String command, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, command))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal("§7" + hover))));
-    }
 
-    private static MutableText suggestButton(String label, String command, String hover) {
-        return Text.literal(label).styled(s -> s
-                .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, command))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal("§7" + hover))));
-    }
 
     private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
     suggestCategories(CommandContext<ServerCommandSource> ctx,

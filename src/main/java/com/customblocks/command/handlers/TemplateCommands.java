@@ -11,6 +11,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
@@ -78,21 +79,21 @@ public final class TemplateCommands {
         ServerCommandSource src = ctx.getSource();
         List<String> names = TemplateManager.list();
         if (names.isEmpty()) {
-            src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§7No templates yet."), false);
-            src.sendFeedback(() -> Text.literal("§7Templates capture a block's §fglow, hardness, sound, collision §7and §fcategory§7."), false);
-            src.sendFeedback(() -> Text.literal("§7Stamp them onto any block to apply the same style instantly."), false);
-            src.sendFeedback(() -> Text.literal("§7Create one: §f/cb template save <name> <id>"), false);
+            Chat.raw(src, CbFmt.DIM + "No templates yet.");
+            Chat.raw(src, Text.literal(CbFmt.DIM + "Templates capture a block's " + CbFmt.BODY + "glow, hardness, sound, collision " + CbFmt.DIM + "and " + CbFmt.BODY + "category" + CbFmt.DIM + "."));
+            Chat.raw(src, Text.literal(CbFmt.DIM + "Stamp them onto any block to apply the same style instantly."));
+            Chat.raw(src, Text.literal(CbFmt.DIM + "Create one: " + CbFmt.BODY + "/cb template save <name> <id>"));
             return 1;
         }
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§e" + names.size() + " template(s) §8— glow · hardness · sound · collision · category"), false);
+        Chat.raw(src, CbFmt.VALUE + names.size() + " template(s) " + CbFmt.FAINT + "— glow · hardness · sound · collision · category");
         for (String n : names) {
             TemplateManager.Template t = TemplateManager.load(n);
             String attrs = t == null ? "?" : formatAttrs(t);
-            MutableText line = Text.literal("§7 - §f" + n + " §8(" + attrs + ") ")
-                    .append(applyButton(n))
+            MutableText line = Text.literal(CbFmt.DIM + " - " + CbFmt.BODY + n + " " + CbFmt.FAINT + "(" + attrs + ") ")
+                    .append(Chat.suggestButton("[apply]", "/cb template apply " + n + " "))
                     .append(Text.literal(" "))
-                    .append(deleteButton(n));
-            src.sendFeedback(() -> line, false);
+                    .append(Chat.runButton("[x]", "/cb template delete " + n));
+            Chat.raw(src, line);
         }
         return 1;
     }
@@ -101,8 +102,8 @@ public final class TemplateCommands {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
-        if (!TemplateManager.save(name, d)) { Chat.error(src, "Failed to save template '" + name + "'"); return 0; }
-        Chat.success(src, "Saved §f\"" + name + "\"§r from §e" + id + "§r §8(" + formatAttrs(d) + ")");
+        if (!TemplateManager.save(name, d)) { Chat.error(src, "Failed to save template \"" + name + "\""); return 0; }
+        Chat.success(src, "Saved " + CbFmt.BODY + "\"" + name + "\"" + CbFmt.RESET + " from " + CbFmt.VALUE + id + CbFmt.RESET + " " + CbFmt.FAINT + "(" + formatAttrs(d) + ")");
         return 1;
     }
 
@@ -111,22 +112,22 @@ public final class TemplateCommands {
         SlotData before = SlotManager.getById(id);
         if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "'" + id + "' is locked — /cb unlock " + id + " first");
+            Chat.lockedError(src, id);
             return 0;
         }
         TemplateManager.Template t = TemplateManager.load(name);
         SlotData after = TemplateManager.apply(name, id);
-        if (after == null) { Chat.error(src, "No template '" + name + "'"); return 0; }
+        if (after == null) { Chat.error(src, "No template \"" + name + "\""); return 0; }
         UndoManager.recordModify(actor(src), before, after, "template:" + name);
-        String attrs = t != null ? " §8(" + formatAttrs(t) + ")" : "";
-        Chat.success(src, "Applied §f\"" + name + "\"§r → §e" + id + attrs);
+        String attrs = t != null ? " " + CbFmt.FAINT + "(" + formatAttrs(t) + ")" : "";
+        Chat.success(src, "Applied " + CbFmt.BODY + "\"" + name + "\"" + CbFmt.RESET + " → " + CbFmt.VALUE + id + attrs);
         return 1;
     }
 
     private static int delete(CommandContext<ServerCommandSource> ctx, String name) {
         ServerCommandSource src = ctx.getSource();
-        if (!TemplateManager.exists(name)) { Chat.error(src, "No template '" + name + "'"); return 0; }
-        if (!TemplateManager.delete(name)) { Chat.error(src, "Failed to delete template '" + name + "'"); return 0; }
+        if (!TemplateManager.exists(name)) { Chat.error(src, "No template \"" + name + "\""); return 0; }
+        if (!TemplateManager.delete(name)) { Chat.error(src, "Failed to delete template \"" + name + "\""); return 0; }
         Chat.success(src, "Deleted template \"" + name + "\"");
         return 1;
     }
@@ -143,7 +144,7 @@ public final class TemplateCommands {
         sb.append(" hard:").append(t.hardness());
         sb.append(" ").append(t.soundType());
         if (t.noCollision()) sb.append(" passable");
-        if (!t.category().isEmpty()) sb.append(" §o").append(t.category()).append("§8");
+        if (!t.category().isEmpty()) sb.append(" " + CbFmt.ITALIC).append(t.category()).append(CbFmt.FAINT);
         return sb.toString();
     }
 
@@ -153,27 +154,8 @@ public final class TemplateCommands {
         sb.append(" hard:").append(d.hardness());
         sb.append(" ").append(d.soundType());
         if (d.noCollision()) sb.append(" passable");
-        if (!d.category().isEmpty()) sb.append(" §o").append(d.category()).append("§8");
+        if (!d.category().isEmpty()) sb.append(" " + CbFmt.ITALIC).append(d.category()).append(CbFmt.FAINT);
         return sb.toString();
     }
 
-    // ── Clickable chat helpers ───────────────────────────────────────────────
-
-    private static MutableText applyButton(String name) {
-        return Text.literal("[apply →]").styled(s -> s
-                .withColor(Formatting.GREEN)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.SUGGEST_COMMAND,
-                        "/cb template apply " + name + " "))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Text.literal("Apply '" + name + "' to a block"))));
-    }
-
-    private static MutableText deleteButton(String name) {
-        return Text.literal("[x]").styled(s -> s
-                .withColor(Formatting.RED)
-                .withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND,
-                        "/cb template delete " + name))
-                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT,
-                        Text.literal("Delete template '" + name + "'"))));
-    }
 }

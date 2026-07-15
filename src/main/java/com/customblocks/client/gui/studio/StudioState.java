@@ -27,6 +27,10 @@ public final class StudioState {
     // Texture source — an image URL and/or a background colour. The colour fills BEHIND the image's
     // transparent pixels (or, with no image, becomes the whole block). They are NOT mutually exclusive.
     public String url = "";
+    // Display-only: the source link an EXISTING block was made from (edit mode). Shown under the preview so
+    // the link is always visible, WITHOUT going into `url` — `url` drives "Save = re-skin", and pre-filling
+    // it would re-download the image on every settings-only save (Group 14 Bucket 1).
+    public String sourceLink = "";
     public boolean hasBg = false;        // true once the player picks a background colour
     public int bgArgb = 0xFFCCCCCC;      // the chosen background colour (always treated opaque)
 
@@ -64,6 +68,9 @@ public final class StudioState {
     public boolean editMode;             // true = the studio is editing, not creating ("Save changes")
     public String editOrigId = "";       // the id the block had on open — the server lookup key, even after a rename
     public String baseline = "";         // signature captured right after edit-load, so dirty() = "changed"
+    // Edit-load section hint (§G27.11) — which sidebar section to focus on open, e.g. "shape" for
+    // /cb shapeeditor. UI-only: rides the edit-load attrs as open=<section>, never re-serialised on Save.
+    public String openSection = "";
 
     /** True once the player has entered/changed anything worth a discard-confirm. */
     public boolean dirty() {
@@ -95,8 +102,11 @@ public final class StudioState {
         return isAnimated() ? toAttrs() + ";anim=" + animCsv() : toAttrs();
     }
 
-    /** Pick a background colour — the image (if any) stays, the colour fills behind transparent pixels. */
+    /** Pick a background colour — the image (if any) stays, the colour fills behind transparent pixels.
+     *  GIFs don't use a background colour (the frames render off-atlas over black), so this is a no-op when
+     *  the loaded clip is animated (Group 14 Bucket 1 — owner: "remove bg colouring entirely for gifs"). */
     public void pickBg(int argb) {
+        if (isAnimated()) return;
         hasBg = true;
         bgArgb = 0xFF000000 | (argb & 0xFFFFFF);
         loadState = "ok";

@@ -1,0 +1,604 @@
+// =============================================================================
+//  CustomBlocks — verify.gradle
+//
+//  All build-time verification gates, split out of build.gradle for clarity.
+//  Ordered by severity: hard-fail (blocking) gates first, then non-blocking
+//  report/wired-later gates.
+//
+//  Wired into `build` in build.gradle:
+//    dependsOn (blocking): mojibakeShield, soundGate, monolithGate, tgGate,
+//                          chatRouteGate, chatColourGate, hotbarRouteGate, helpCoverageGate
+//    finalizedBy (report-only): staleTodoGate
+// =============================================================================
+
+// ── mojibakeShield (NFR-11) ──────────────────────────────────────────────────
+// Scans every .java and .json source file for known mojibake byte sequences
+// (CP1252 bytes mis-decoded as Latin-1 then re-encoded as UTF-8). If ANY file
+// contains a corrupted sequence the build FAILS with file + line info.
+// To fix: open docs/MOJIBAKE_SHIELD.md, repair the corruption, re-run build.
+// TextSanitizer.java is excluded — it intentionally stores mojibake as repair keys.
+tasks.register('mojibakeShield') {
+    group = 'verification'
+    description = 'Fails the build if any .java or .json source file contains mojibake sequences.'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    def srcRes  = layout.projectDirectory.dir('src/main/resources').asFile
+    inputs.dir(srcJava)
+    inputs.dir(srcRes)
+
+    doLast {
+        def PATTERNS = [
+            'Â°', 'Â·', 'Ã‚', 'Ãƒ', 'â€', 'âœ', 'â–', 'â"',
+            'â†', 'Â«', 'Â»', 'Ã¢', 'âœ–', 'âœ¦', 'â–¶', 'â—€',
+            'Ã°Å¸', 'Ã¢â‚¬', 'Ã¢Å"'
+        ]
+
+        def violations = []
+
+        [srcJava, srcRes].each { root ->
+            if (!root.exists()) return
+            root.eachFileRecurse { file ->
+                if (!file.isFile()) return
+                def name = file.name
+                if (!(name.endsWith('.java') || name.endsWith('.json'))) return
+                if (name == 'TextSanitizer.java') return // intentional mojibake repair keys
+
+                def lines = file.readLines('UTF-8')
+                lines.eachWithIndex { line, idx ->
+                    PATTERNS.each { pat ->
+                        if (line.contains(pat)) {
+                            violations << "${file.absolutePath}:${idx + 1} — pattern '${pat}' found"
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  MOJIBAKE DETECTED — BUILD FAILED\n')
+            msg.append('  Read docs/MOJIBAKE_SHIELD.md before fixing.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── soundGate (NFR-12) ───────────────────────────────────────────────────────
+// In Yarn 1.21.1+build.3, BLOCK_NOTE_BLOCK_* constants are RegistryEntry<SoundEvent>
+// and require .value() to unwrap. Using them raw causes silent crashes.
+// Only the NOTE_BLOCK family needs .value(); other SoundEvents.* are bare SoundEvent.
+tasks.register('soundGate') {
+    group = 'verification'
+    description = 'Fails the build if any .java file uses SoundEvents.BLOCK_NOTE_BLOCK_* without .value().'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    inputs.dir(srcJava)
+
+    doLast {
+        def RAW_NOTE_BLOCK = java.util.regex.Pattern.compile(
+            'SoundEvents\\.BLOCK_NOTE_BLOCK_[A-Z0-9_]+(?!\\.value\\(\\))\\s*[,)]'
+        )
+
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                def lines = file.readLines('UTF-8')
+                lines.eachWithIndex { line, idx ->
+                    if (RAW_NOTE_BLOCK.matcher(line).find()) {
+                        violations << "${file.absolutePath}:${idx + 1} — BLOCK_NOTE_BLOCK_* needs .value(): ${line.trim()}"
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  SOUND LINKAGE VIOLATION — BUILD FAILED\n')
+            msg.append('  BLOCK_NOTE_BLOCK_* constants are RegistryEntry<SoundEvent> and need .value()\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── monolithGate (§9.3 — no monoliths) ───────────────────────────────────────
+// Prevents the disaster of the old project (GuiManager ~9,400 lines,
+// CustomBlockCommand ~6,300 lines). Any .java file over its limit FAILS the build.
+//   • general cap:      500 lines
+//   • command handlers: 400 lines  (anything under command/handlers/)
+//   • config classes:   300 lines  (*Config.java)
+// package-info.java is exempt (documentation only).
+tasks.register('monolithGate') {
+    group = 'verification'
+    description = 'Fails the build if any .java file exceeds its line-count limit (Bible §9.3).'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    inputs.dir(srcJava)
+
+    doLast {
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                if (file.name == 'package-info.java') return
+
+                def count = file.readLines('UTF-8').size()
+                def path  = file.absolutePath.replace('\\', '/')
+
+                def limit = 500
+                def kind  = 'class'
+                if (path.contains('/command/handlers/')) { limit = 400; kind = 'command handler' }
+                else if (file.name.endsWith('Config.java')) { limit = 300; kind = 'config class' }
+
+                if (count > limit) {
+                    violations << "${file.absolutePath}:${count} lines — exceeds ${kind} limit of ${limit}"
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  FILE SIZE VIOLATION — BUILD FAILED (§9.3 no-monolith rule)\n')
+            msg.append('  Split the file into focused classes. See CLAUDE.md §5 / Bible §9.3.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── tgGate ────────────────────────────────────────────────────────────────
+// Every jar build must be paired with a testing-guide update (dev requirement:
+// "after EVERY jar build, TG must be edited with what changed" — no exceptions).
+// Marker file records the timestamp of the last build that passed this gate.
+// Fails if any src/main/java/*.java changed since the marker but no
+// docs/testing/GROUP_*_TESTING_GUIDE.md changed since it too.
+// BLOCKING: wired as dependsOn (not finalizedBy) — build fails until TG is updated.
+tasks.register('tgGate') {
+    group = 'verification'
+    description = 'Fails the build if source changed since the last build but no testing guide was updated.'
+
+    def srcJava   = layout.projectDirectory.dir('src/main/java').asFile
+    def tgDir     = layout.projectDirectory.dir('docs/testing').asFile
+    def marker    = layout.buildDirectory.file('tg-gate-marker.txt').get().asFile
+    outputs.upToDateWhen { false }
+
+    doLast {
+        def markerTime = marker.exists() ? marker.lastModified() : 0L
+
+        def newestSrc = 0L
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { f ->
+                if (f.isFile() && f.name.endsWith('.java') && f.lastModified() > newestSrc) newestSrc = f.lastModified()
+            }
+        }
+
+        def newestTg = 0L
+        if (tgDir.exists()) {
+            tgDir.eachFileMatch(groovy.io.FileType.FILES, ~/(?i)Group_.*_Testing_Guide\.md/) { f ->
+                if (f.lastModified() > newestTg) newestTg = f.lastModified()
+            }
+        }
+
+        if (markerTime > 0 && newestSrc > markerTime && newestTg <= markerTime) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  TESTING GUIDE NOT UPDATED — BUILD FAILED\n')
+            msg.append('  Source changed since the last build, but no GROUP_*_TESTING_GUIDE.md\n')
+            msg.append('  was edited to reflect it. Update the relevant guide (what changed,\n')
+            msg.append('  what to test) before rebuilding. See AGENTS.md.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+
+        marker.parentFile.mkdirs()
+        marker.text = new Date().toString()
+    }
+}
+
+// ── staleTodoGate ─────────────────────────────────────────────────────────
+// Report-only (does not fail the build). Scans .java, .json, and .md files
+// under src/ and docs/ for TODO/FIXME markers and prints file:line for each.
+tasks.register('staleTodoGate') {
+    group = 'verification'
+    description = 'Reports every TODO/FIXME marker in the codebase (does not fail the build).'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    def srcRes  = layout.projectDirectory.dir('src/main/resources').asFile
+    def docsDir = layout.projectDirectory.dir('docs').asFile
+    inputs.dir(srcJava)
+    inputs.dir(srcRes)
+    inputs.dir(docsDir)
+
+    doLast {
+        def MARKER = java.util.regex.Pattern.compile('TODO|FIXME')
+        def hits = []
+
+        [srcJava, srcRes, docsDir].each { root ->
+            if (!root.exists()) return
+            root.eachFileRecurse { file ->
+                if (!file.isFile()) return
+                def name = file.name
+                if (!(name.endsWith('.java') || name.endsWith('.json') || name.endsWith('.md'))) return
+
+                file.readLines('UTF-8').eachWithIndex { line, idx ->
+                    if (MARKER.matcher(line).find()) {
+                        hits << "${file.absolutePath}:${idx + 1} — ${line.trim()}"
+                    }
+                }
+            }
+        }
+
+        if (!hits.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('────────────────────────────────────────────────────────────\n')
+            msg.append("  ${hits.size()} TODO/FIXME marker(s) found (report-only, build not failed)\n")
+            msg.append('────────────────────────────────────────────────────────────\n')
+            hits.each { msg.append("  • ${it}\n") }
+            msg.append('────────────────────────────────────────────────────────────\n')
+            logger.lifecycle(msg.toString())
+        }
+    }
+}
+
+// ── Shared Java scanner for the two chat gates (G04-3) ───────────────────────
+// Both gates used to regex raw LINES, which made them lie in two directions:
+//   • false positives — "CLAUDE.md §5.8" and "(§9.3)" in a COMMENT matched the §-colour pattern
+//     (§5 and §9 are real colour codes), so 102 doc references counted as violations;
+//   • false negatives — a `.sendMessage(` mentioned in a comment counted as a real call.
+// So scan the source properly instead: walk it once, tracking // comments, /* */ comments, char
+// literals and string literals. Returns the string literals (what the colour gate judges) and a
+// MASKED copy of the source with comments and string bodies blanked out (what the routing gate
+// judges), so neither can ever be fooled by prose again.
+ext.cbScanJava = { File file ->
+    String s = file.getText('UTF-8')
+    int n = s.length()
+    def literals = []                       // [line: int, text: String]
+    StringBuilder masked = new StringBuilder(n)
+    int i = 0, line = 1
+
+    while (i < n) {
+        String c = s.substring(i, i + 1)
+
+        if (c == '\n') { masked.append('\n'); line++; i++; continue }
+
+        // line comment → blank to end of line
+        if (c == '/' && i + 1 < n && s.charAt(i + 1) == ('/' as char)) {
+            while (i < n && s.charAt(i) != ('\n' as char)) { masked.append(' '); i++ }
+            continue
+        }
+        // block comment / javadoc → blank, but keep the newlines so line numbers hold
+        if (c == '/' && i + 1 < n && s.charAt(i + 1) == ('*' as char)) {
+            masked.append('  '); i += 2
+            while (i < n && !(s.charAt(i) == ('*' as char) && i + 1 < n && s.charAt(i + 1) == ('/' as char))) {
+                if (s.charAt(i) == ('\n' as char)) { masked.append('\n'); line++ } else { masked.append(' ') }
+                i++
+            }
+            if (i < n) { masked.append('  '); i += 2 }
+            continue
+        }
+        // char literal — 'a', '\n', '\\'
+        if (c == "'") {
+            masked.append(' '); i++
+            while (i < n) {
+                if (s.charAt(i) == ('\\' as char)) { masked.append('  '); i += 2; continue }
+                if (s.charAt(i) == ("'" as char)) break
+                masked.append(' '); i++
+            }
+            if (i < n) { masked.append(' '); i++ }
+            continue
+        }
+        // string literal — capture its body, blank it in the masked copy
+        if (c == '"') {
+            int startLine = line
+            StringBuilder body = new StringBuilder()
+            masked.append('"'); i++
+            while (i < n) {
+                char d = s.charAt(i)
+                if (d == ('\\' as char)) {
+                    body.append(d); if (i + 1 < n) body.append(s.charAt(i + 1))
+                    masked.append('  '); i += 2; continue
+                }
+                if (d == ('"' as char) || d == ('\n' as char)) break
+                body.append(d); masked.append(' '); i++
+            }
+            if (i < n && s.charAt(i) == ('"' as char)) { masked.append('"'); i++ }
+            literals << [line: startLine, text: body.toString()]
+            continue
+        }
+
+        masked.append(c); i++
+    }
+    return [literals: literals, masked: masked.toString()]
+}
+
+// ── chatRouteGate (G04-3) ────────────────────────────────────────────────────
+// Every player-facing message goes through a Chat helper (success / error / info / raw / line /
+// tool / toPlayer / …) so voice, branding and colour are decided in ONE place. This fails the build
+// if anything calls Minecraft's raw send methods directly — the exact drift that let ~15 handlers
+// answer with unbranded grey lines next to branded ones.
+// Client-side files (/client/, /mixin/) are exempt: they render, they don't send chat.
+tasks.register('chatRouteGate') {
+    group = 'verification'
+    description = 'Fails the build if anything bypasses Chat and calls sendFeedback/sendMessage directly.'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    def scanJava = project.ext.cbScanJava
+    inputs.dir(srcJava)
+
+    doLast {
+        def RAW_SEND = java.util.regex.Pattern.compile('\\.(sendFeedback|sendMessage)\\s*\\(')
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                def path = file.absolutePath.replace('\\', '/')
+                if (path.contains('/client/') || path.contains('/mixin/')) return
+                if (file.name == 'Chat.java') return    // Chat IS the sanctioned way in
+
+                def masked = scanJava(file).masked
+                masked.readLines().eachWithIndex { l, idx ->
+                    if (RAW_SEND.matcher(l).find()) {
+                        violations << "${file.absolutePath}:${idx + 1} — bypasses Chat, calls a raw send"
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  CHAT ROUTING VIOLATION — BUILD FAILED (G04-3)\n')
+            msg.append('  Route it through Chat: success / error / info / raw / line / lockedError\n')
+            msg.append('  · tool / toolSuccess / toolError (hotbar) · toPlayer (no command source).\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── chatColourGate (G04-3) ───────────────────────────────────────────────────
+// A raw §-code in a string literal means someone hand-picked a colour, which is how the palette
+// drifted: the same grey meant "a side detail" in one file and "the whole message" in another, and
+// RainbowRectangleItem used a gold that existed nowhere else. CbFmt now owns every colour BY NAME
+// (DIM / VALUE / BAD / TOOL_OK …), so a restyle is one edit. This gate keeps it that way.
+//
+// Exempt, and why (each is a different rendering surface with its own palette, not chat):
+//   • CbFmt.java   — it DEFINES the colours.
+//   • Chat.java    — it owns the [CB] tag and the ✔/✖ glyphs.
+//   • /client/, /gui/, /mixin/ — screen + chest-GUI render. ItemStack lore genuinely needs §, and
+//     that palette belongs to Group 02 / Group 27 (the CbActionBar restyle is G04-1's job).
+//   • StarterBook  — written-book pages; black ink on paper is a physical constraint, not a choice.
+tasks.register('chatColourGate') {
+    group = 'verification'
+    description = 'Fails the build if a raw §-colour code appears in a string literal outside CbFmt.'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    def scanJava = project.ext.cbScanJava
+    inputs.dir(srcJava)
+
+    doLast {
+        def RAW_COLOUR = java.util.regex.Pattern.compile('§[0-9a-fk-orA-FK-OR]')
+        def EXEMPT = ['CbFmt.java', 'Chat.java', 'StarterBook.java'] as Set
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                def path = file.absolutePath.replace('\\', '/')
+                if (path.contains('/client/') || path.contains('/gui/') || path.contains('/mixin/')) return
+                if (EXEMPT.contains(file.name)) return
+
+                scanJava(file).literals.each { lit ->
+                    if (RAW_COLOUR.matcher(lit.text).find()) {
+                        violations << "${file.absolutePath}:${lit.line} — raw §-colour in a string: \"${lit.text.take(60)}\""
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  AD-HOC COLOUR VIOLATION — BUILD FAILED (G04-3)\n')
+            msg.append('  Name the MEANING, don\'t pick the colour. Use CbFmt.DIM / VALUE / BODY /\n')
+            msg.append('  OK / BAD / HEAD / FAINT / DANGER, or CbFmt.TOOL_* on the hotbar.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── hotbarRouteGate (G04 §F) ─────────────────────────────────────────────────
+// The hotbar's whole colour contract lives in Chat: three label colours (green/red/white) + one
+// value colour (yellow), chosen by the METHOD from the meaning the caller names. A caller must never
+// jam colour into a hotbar body — that is the exact drift §F kills. Two ways it could sneak back:
+//   • a raw sendMessage(…, true) that bypasses Chat entirely (server-side); and
+//   • a § / CbFmt colour passed INTO a Chat.tool / toolSuccess / toolError body.
+// This gate fails the build on either. It is CALL-SCOPED for the colour check — it spans each hotbar
+// call's own parentheses and judges only THAT argument — so legitimate ItemStack-lore § elsewhere in a
+// gui/ file is never touched. chatColourGate can't see these: the colour arrives as `CbFmt.BAD + …`,
+// a constant reference, not a raw § in a literal. Client HUD/overlay (/client/, /mixin/) is exempt —
+// the gate is hotbar-only and does not touch client rendering.
+tasks.register('hotbarRouteGate') {
+    group = 'verification'
+    description = 'Fails the build on a raw hotbar send outside Chat, or a § / CbFmt colour inside a hotbar body (G04 §F).'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    def scanJava = project.ext.cbScanJava
+    inputs.dir(srcJava)
+
+    doLast {
+        // A colour named by a caller inside a hotbar body — the method must colour it, not the caller.
+        def CBFMT_COLOUR = java.util.regex.Pattern.compile(
+            'CbFmt\\.(OK|BAD|WARN|DANGER|HEAD|BODY|VALUE|DIM|FAINT|CLICK|BOLD|UNDER|ITALIC|RESET|INK|TOOL_OK|TOOL_BAD|TOOL_INFO)\\b')
+        def RAW_HOTBAR_SEND = java.util.regex.Pattern.compile('\\.sendMessage\\s*\\([^;]*,\\s*true\\s*\\)')
+        def HOTBAR_CALL     = java.util.regex.Pattern.compile('\\bChat\\.(tool|toolSuccess|toolError)\\s*\\(')
+
+        def violations = []
+
+        if (srcJava.exists()) {
+            srcJava.eachFileRecurse { file ->
+                if (!file.isFile() || !file.name.endsWith('.java')) return
+                if (file.name == 'Chat.java') return                       // Chat IS the one sanctioned send point
+                def path = file.absolutePath.replace('\\', '/')
+                boolean clientOverlay = path.contains('/client/') || path.contains('/mixin/')
+
+                def masked  = scanJava(file).masked                        // strings/comments blanked, positions 1:1 with source
+                def rawText = file.getText('UTF-8')
+
+                // (A) a raw hotbar send that skips Chat (server-side only; client HUD/overlay is exempt).
+                if (!clientOverlay) {
+                    masked.readLines().eachWithIndex { l, idx ->
+                        if (RAW_HOTBAR_SEND.matcher(l).find()) {
+                            violations << "${file.absolutePath}:${idx + 1} — raw hotbar sendMessage(…, true) bypasses Chat"
+                        }
+                    }
+                }
+
+                // (B) a § / CbFmt colour inside a hotbar body. Span each Chat.tool*( call's own parens
+                // (depth-matched on the masked copy, so a '(' or ')' inside a string never miscounts) and
+                // judge only that argument. CbFmt is read from masked (identifiers survive); § from raw
+                // (it lives in a string literal, which masking blanks).
+                def m = HOTBAR_CALL.matcher(masked)
+                while (m.find()) {
+                    int open = masked.indexOf('(', m.start())
+                    if (open < 0) continue
+                    int depth = 0, j = open
+                    while (j < masked.length()) {
+                        char ch = masked.charAt(j)
+                        if (ch == ('(' as char)) depth++
+                        else if (ch == (')' as char)) { depth--; if (depth == 0) break }
+                        j++
+                    }
+                    int endExclusive = Math.min(j, masked.length())
+                    String maskedArgs = masked.substring(open + 1, endExclusive)
+                    String rawArgs    = rawText.substring(open + 1, Math.min(endExclusive, rawText.length()))
+                    if (CBFMT_COLOUR.matcher(maskedArgs).find() || rawArgs.contains('§')) {
+                        int lineNo = masked.substring(0, m.start()).count('\n') + 1
+                        violations << "${file.absolutePath}:${lineNo} — § / CbFmt colour in a hotbar body; pass a label + value and let the method colour it"
+                    }
+                }
+            }
+        }
+
+        if (!violations.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  HOTBAR ROUTING VIOLATION — BUILD FAILED (G04 §F)\n')
+            msg.append('  The hotbar has three label colours (green/red/white) + a yellow value, all\n')
+            msg.append('  chosen by the Chat method. Pass MEANING: Chat.toolSuccess / toolError / tool\n')
+            msg.append('  (label[, value[, tail]]). Never a § or CbFmt colour in a hotbar body.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            violations.each { msg.append("  ✖ ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+    }
+}
+
+// ── helpCoverageGate (G04-2) ─────────────────────────────────────────────────
+// A command that nobody wrote help for is invisible: absent from /cb help, and — before G04-2 —
+// absent from "did you mean" too, which is exactly how `/cb anim` ended up suggesting `/cb gui`
+// while `animation` sat there unmentionable. 67 of 119 commands had drifted into that state.
+//
+// So: every subcommand registered on the /cb root must be ACCOUNTED FOR in HelpTopics — either it
+// has a Topic, or it is explicitly named in HelpTopics.INTERNAL with a reason. Ship a new command
+// without doing one of those and the build stops.
+//
+// This is a static scan, so it must know every shape a root registration is written in:
+//     root.then(CommandManager.literal("x")          — the common one
+//     root.then(tree(CommandManager.literal("x")))   — wrapped in a builder method (NoteCommands)
+//     root.then(familyCommand("x"))                  — built by a factory taking the name
+//     root.then(macro);  with  macro = CommandManager.literal("x")   — built into a local first
+// CommandTree.auditHelpCoverage() re-checks the REAL Brigadier tree at runtime and logs an error,
+// which covers any fifth shape someone invents later.
+tasks.register('helpCoverageGate') {
+    group = 'verification'
+    description = 'Fails the build if a registered /cb subcommand has no HelpTopics entry.'
+
+    def srcJava = layout.projectDirectory.dir('src/main/java').asFile
+    inputs.dir(srcJava)
+
+    doLast {
+        def cmdDir = new File(srcJava, 'com/customblocks/command')
+        def helpFile = new File(srcJava, 'com/customblocks/gui/chest/HelpTopics.java')
+        if (!cmdDir.exists() || !helpFile.exists()) return
+
+        // 1. every literal registered directly on the /cb root
+        def literals = [] as Set
+        cmdDir.eachFileRecurse { file ->
+            if (!file.isFile() || !file.name.endsWith('.java')) return
+            def src = file.getText('UTF-8')
+
+            (src =~ /root\.then\(\s*CommandManager\.literal\("([a-z0-9_]+)"/).each { m, name ->
+                literals << name
+            }
+            (src =~ /root\.then\(\s*\w+\(\s*CommandManager\.literal\("([a-z0-9_]+)"/).each { m, name ->
+                literals << name
+            }
+            (src =~ /root\.then\(\s*\w+\("([a-z0-9_]+)"\)\s*\)/).each { m, name ->
+                literals << name
+            }
+            (src =~ /root\.then\(\s*(\w+)\s*\)\s*;/).each { m, varName ->
+                def decl = (src =~ /\b\Q${varName}\E\s*=\s*CommandManager\.literal\("([a-z0-9_]+)"/)
+                if (decl.find()) literals << decl.group(1)
+            }
+        }
+        literals.remove('subcommand')   // DidYouMean's greedy catch-all is an argument, not a command
+
+        // 2. every command HelpTopics accounts for — a Topic, or an explicit INTERNAL declaration
+        def helpSrc = helpFile.getText('UTF-8')
+        def documented = [] as Set
+        (helpSrc =~ /new Topic\("[^"]*",\s*"\/cb ([a-z0-9_]+)/).each { m, name ->
+            documented << name
+        }
+        // Non-greedy up to the closing `);` — a `[^;]*` capture would break on the first semicolon
+        // inside a trailing // comment, which is a real thing the INTERNAL entries have.
+        def internalBlock = helpSrc =~ /INTERNAL\s*=\s*Set\.of\(([\s\S]*?)\)\s*;/
+        if (internalBlock.find()) {
+            (internalBlock.group(1) =~ /"([a-z0-9_]+)"/).each { m, name -> documented << name }
+        }
+
+        def missing = (literals - documented).sort()
+        if (!missing.isEmpty()) {
+            def msg = new StringBuilder()
+            msg.append('\n\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            msg.append('  UNDOCUMENTED COMMAND — BUILD FAILED (G04-2)\n')
+            msg.append("  ${missing.size()} registered /cb subcommand(s) have no HelpTopics entry.\n")
+            msg.append('  They would be invisible in /cb help AND unsuggestable by "did you mean".\n')
+            msg.append('  Add a Topic in HelpTopics, or name it in HelpTopics.INTERNAL with a reason.\n')
+            msg.append('════════════════════════════════════════════════════════════\n')
+            missing.each { msg.append("  ✖ /cb ${it}\n") }
+            msg.append('════════════════════════════════════════════════════════════\n')
+            throw new Exception(msg.toString())
+        }
+        logger.lifecycle("  helpCoverageGate: ${literals.size()} commands, all documented.")
+    }
+}

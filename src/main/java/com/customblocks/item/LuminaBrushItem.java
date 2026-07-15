@@ -9,11 +9,13 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotLighting;
 import com.customblocks.command.Chat;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
+import com.customblocks.network.HudSync;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -37,7 +39,8 @@ public class LuminaBrushItem extends CustomToolItem {
         if (updated == null) return;
         UndoManager.recordModify(player.getUuid(), d, updated, "glow");
         SlotLighting.applyToPlaced(player.getServer(), d.index(), next); // refresh placed copies
-        Chat.tool(player, d.customId() + " glow → " + next);
+        HudSync.broadcast(player.getServer()); // NO-REJOIN: HUD glow updates live for all players
+        Chat.toolSuccess(player, d.customId() + " glow →", String.valueOf(next));
     }
 
     private static int nextStep(int cur) {
@@ -53,8 +56,8 @@ public class LuminaBrushItem extends CustomToolItem {
     @Override
     public void appendTooltip(ItemStack stack, Item.TooltipContext context, java.util.List<Text> tooltip,
                               net.minecraft.item.tooltip.TooltipType type) {
-        tooltip.add(Text.literal("§7Brushes living light into your custom blocks.").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§7Right-click to brighten; sneak + right-click to dim.").styled(s -> s.withItalic(false)));
-        tooltip.add(Text.literal("§8Now folded into the Omni-Tool as Glow mode.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "Brushes living light into your custom blocks.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.DIM + "Right-click to brighten; sneak + right-click to dim.").styled(s -> s.withItalic(false)));
+        tooltip.add(Text.literal(CbFmt.FAINT + "Now folded into the Omni-Tool as Glow mode.").styled(s -> s.withItalic(false)));
     }
 }

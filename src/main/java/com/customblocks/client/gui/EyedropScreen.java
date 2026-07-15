@@ -37,9 +37,9 @@ import java.util.function.IntConsumer;
 @Environment(EnvType.CLIENT)
 public class EyedropScreen extends Screen {
 
-    private static final int BACKDROP = 0x33000000; // faint so the picked colour stays true
-    private static final int BAR_BG   = 0xAA000000;
-    private static final int GOLD     = 0xFF_FF_AA_00;
+    private static final int BACKDROP = 0x33000000; // faint so the picked colour stays true (§A2 exception)
+    private static final int BAR_BG   = CbTheme.BAR_BG;
+    private static final int GOLD     = CbTheme.ACCENT; // locked red (2026-07-04)
     private static final int BAR_H    = 42;
 
     private boolean pendingSample;
@@ -107,7 +107,7 @@ public class EyedropScreen extends Screen {
         if (!hideUi) {
             ctx.fill(0, 0, width, BAR_H, BAR_BG);
             ctx.fill(0, BAR_H - 1, width, BAR_H, GOLD);
-            ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lScreen Eyedrop"), 8, 10, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(textRenderer, CbTheme.title("Screen Eyedrop"), 8, 10, 0xFFFFFFFF);
             ctx.drawTextWithShadow(textRenderer, Text.literal("§7click any pixel · H = hide UI · Esc = cancel"), 8, 22, 0xFFFFFFFF);
             ctx.drawTextWithShadow(textRenderer, Text.literal("§8the colour drops into your palette"), 8, 32, 0xFFFFFFFF);
             ctx.fill(mx - 6, my, mx + 7, my + 1, 0xFFFFFFFF); // crosshair
@@ -124,8 +124,8 @@ public class EyedropScreen extends Screen {
     private void renderIntro(DrawContext ctx) {
         int cx = width / 2, cy = height / 2, pw = 260, ph = 92;
         ctx.fill(cx - pw / 2 - 1, cy - ph / 2 - 1, cx + pw / 2 + 1, cy + ph / 2 + 1, GOLD);
-        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, 0xF0101010);
-        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§6§lScreen Eyedrop"), cx, cy - 32, 0xFFFFFFFF);
+        ctx.fill(cx - pw / 2, cy - ph / 2, cx + pw / 2, cy + ph / 2, CbTheme.PANEL_BG);
+        ctx.drawCenteredTextWithShadow(textRenderer, CbTheme.title("Screen Eyedrop"), cx, cy - 32, 0xFFFFFFFF);
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§fClick any pixel to grab its colour."), cx, cy - 14, 0xFFFFFFFF);
         ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("§7It drops straight into your palette."), cx, cy - 2, 0xFFFFFFFF);
         introBtnW = 90; introBtnH = 18; introBtnX = cx - introBtnW / 2; introBtnY = cy + 16;

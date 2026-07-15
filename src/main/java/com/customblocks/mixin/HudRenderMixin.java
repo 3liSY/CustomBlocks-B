@@ -11,6 +11,8 @@
 package com.customblocks.mixin;
 
 import com.customblocks.client.HudRenderer;
+import com.customblocks.client.hud.CbOverlay;
+import com.customblocks.client.capture.CaptureOverlayFallbackRenderer;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.client.gui.DrawContext;
@@ -28,5 +30,10 @@ public class HudRenderMixin {
     @Inject(method = "render", at = @At("TAIL"))
     private void cbRender(DrawContext context, RenderTickCounter tickCounter, CallbackInfo ci) {
         HudRenderer.render(context);
+        // The CustomBlocks overlay layer: Group 03's 7 HUD widgets + Group 04's chat flourishes. Both
+        // ride THIS injection — the one we already own — rather than adding mixins or (never) rewriting
+        // vanilla chat. See CbOverlay.
+        CbOverlay.render(context);
+        CaptureOverlayFallbackRenderer.render(context);
     }
 }

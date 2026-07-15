@@ -7,12 +7,13 @@
  *
  * Fields grow per-phase (Bible §7). Phase 1 had the identity fields only; glow, hardness,
  * sound, and noCollision are Phase 6; category is Phase 8. Shapes etc. arrive in their phases.
+ * arabic (G13-25) marks a slot as an auto-join letter/number — null for every normal block.
  */
 package com.customblocks.core;
 
 public record SlotData(int index, String customId, String displayName,
                        int glow, float hardness, String soundType, boolean noCollision,
-                       String category, String shape, AnimData anim) {
+                       String category, String shape, AnimData anim, ArabicMeta arabic) {
 
     /** Vanilla stone hardness — the default break resistance for a new block. */
     public static final float DEFAULT_HARDNESS = 1.5f;
@@ -27,6 +28,13 @@ public record SlotData(int index, String customId, String displayName,
     public SlotData {
         shape = (shape == null || shape.isBlank()) ? DEFAULT_SHAPE : shape;
         anim = anim == null ? AnimData.NONE : anim;
+    }
+
+    /** Back-compat (pre-Arabic, G13-25): same fields as before, not an Arabic slot. */
+    public SlotData(int index, String customId, String displayName,
+                    int glow, float hardness, String soundType, boolean noCollision,
+                    String category, String shape, AnimData anim) {
+        this(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, null);
     }
 
     /** Back-compat (pre-anim): same fields as before, no animation. */
@@ -64,52 +72,62 @@ public record SlotData(int index, String customId, String displayName,
 
     /** Return a copy with a new id + display name (the canonical .update() builder). */
     public SlotData update(String newCustomId, String newDisplayName) {
-        return new SlotData(index, newCustomId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim);
+        return new SlotData(index, newCustomId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic);
     }
 
     public SlotData withCustomId(String newCustomId) {
-        return new SlotData(index, newCustomId, displayName, glow, hardness, soundType, noCollision, category, shape, anim);
+        return new SlotData(index, newCustomId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic);
     }
 
     public SlotData withDisplayName(String newDisplayName) {
-        return new SlotData(index, customId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim);
+        return new SlotData(index, customId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic);
     }
 
     /** Return a copy with a new light level, clamped to the valid 0..15 range. */
     public SlotData withGlow(int newGlow) {
-        return new SlotData(index, customId, displayName, Math.max(0, Math.min(15, newGlow)), hardness, soundType, noCollision, category, shape, anim);
+        return new SlotData(index, customId, displayName, Math.max(0, Math.min(15, newGlow)), hardness, soundType, noCollision, category, shape, anim, arabic);
     }
 
     /** Return a copy with a new break hardness (negative = unbreakable, 0 = instant break). */
     public SlotData withHardness(float newHardness) {
-        return new SlotData(index, customId, displayName, glow, newHardness, soundType, noCollision, category, shape, anim);
+        return new SlotData(index, customId, displayName, glow, newHardness, soundType, noCollision, category, shape, anim, arabic);
     }
 
     /** Return a copy with a new sound group key (see SlotBlock.getSoundGroup). */
     public SlotData withSoundType(String newSoundType) {
-        return new SlotData(index, customId, displayName, glow, hardness, newSoundType, noCollision, category, shape, anim);
+        return new SlotData(index, customId, displayName, glow, hardness, newSoundType, noCollision, category, shape, anim, arabic);
     }
 
     /** Return a copy with collision toggled (true = passable/walk-through, false = solid). */
     public SlotData withNoCollision(boolean newNoCollision) {
-        return new SlotData(index, customId, displayName, glow, hardness, soundType, newNoCollision, category, shape, anim);
+        return new SlotData(index, customId, displayName, glow, hardness, soundType, newNoCollision, category, shape, anim, arabic);
     }
 
     /** Return a copy in a new category ("" = uncategorized). */
     public SlotData withCategory(String newCategory) {
         return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision,
-                newCategory == null ? DEFAULT_CATEGORY : newCategory, shape, anim);
+                newCategory == null ? DEFAULT_CATEGORY : newCategory, shape, anim, arabic);
     }
 
     /** Return a copy with a new shape (null/blank → full; see BlockShapes for valid names). */
     public SlotData withShape(String newShape) {
         return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category,
-                newShape == null || newShape.isBlank() ? DEFAULT_SHAPE : newShape, anim);
+                newShape == null || newShape.isBlank() ? DEFAULT_SHAPE : newShape, anim, arabic);
     }
 
     /** Return a copy with new animation state (AnimData.NONE = make it a plain static block). */
     public SlotData withAnim(AnimData newAnim) {
         return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape,
-                newAnim == null ? AnimData.NONE : newAnim);
+                newAnim == null ? AnimData.NONE : newAnim, arabic);
+    }
+
+    /** G13-25: true when this slot IS an Arabic auto-join letter/number. */
+    public boolean isArabic() {
+        return arabic != null && arabic.isValid();
+    }
+
+    /** Return a copy with new Arabic meta (null = a normal block; see ArabicMeta). */
+    public SlotData withArabic(ArabicMeta newArabic) {
+        return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, newArabic);
     }
 }

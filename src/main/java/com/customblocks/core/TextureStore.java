@@ -19,6 +19,7 @@ package com.customblocks.core;
 
 import com.customblocks.CustomBlocksMod;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -39,6 +40,10 @@ public final class TextureStore {
 
     private static Path sourceFile(int index) {
         return Path.of(SRC_DIR, "slot_" + index + ".src");
+    }
+
+    private static Path urlFile(int index) {
+        return Path.of(SRC_DIR, "slot_" + index + ".url");
     }
 
     private static Path faceFile(int index, String face) {
@@ -76,6 +81,24 @@ public final class TextureStore {
         return Files.exists(file(index));
     }
 
+    /**
+     * The pixel width of a slot's baked texture, read from just the 24-byte PNG header — cheap, no
+     * full load. Lets the source audit size up ~1000 blocks without reading every texture in full.
+     * Returns 0 when there's no texture or it isn't a PNG.
+     */
+    public static int bakedWidth(int index) {
+        Path file = file(index);
+        if (!Files.exists(file)) return 0;
+        try (var in = Files.newInputStream(file)) {
+            byte[] h = in.readNBytes(24);
+            if (h.length < 24 || (h[0] & 0xFF) != 0x89 || h[1] != 'P' || h[2] != 'N' || h[3] != 'G') return 0;
+            // PNG: 8-byte signature, then IHDR (4-byte length + "IHDR" + 4-byte big-endian width at offset 16).
+            return ((h[16] & 0xFF) << 24) | ((h[17] & 0xFF) << 16) | ((h[18] & 0xFF) << 8) | (h[19] & 0xFF);
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
     /** Atomically store a block's ORIGINAL downloaded image (raw bytes, any format). */
     public static void saveSource(int index, byte[] raw) {
         if (raw == null || raw.length == 0) return;
@@ -106,6 +129,57 @@ public final class TextureStore {
     /** True if a re-renderable source image exists for this slot. */
     public static boolean hasSource(int index) {
         return Files.exists(sourceFile(index));
+    }
+
+    /**
+     * Atomically store the SOURCE LINK a block was made from (the image/GIF URL), so the studio can show
+     * it when re-opening an existing block (Group 14 Bucket 1). A blank url clears nothing; only the
+     * url-based create/retexture/re-skin paths call this, so blocks with no link (Arabic/video) have none.
+     */
+    public static void saveUrl(int index, String url) {
+        if (url == null || url.isBlank()) return;
+        try {
+            Path dir = Path.of(SRC_DIR);
+            Files.createDirectories(dir);
+            Path file = urlFile(index);
+            Path tmp = dir.resolve("slot_" + index + ".url.tmp");
+            Files.write(tmp, url.trim().getBytes(StandardCharsets.UTF_8));
+            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception e) {
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to save source link for slot {}", index, e);
+        }
+    }
+
+    /** The source link a block was made from, or null if none was stored. */
+    public static String loadUrl(int index) {
+        Path file = urlFile(index);
+        if (!Files.exists(file)) return null;
+        try {
+            String s = new String(Files.readAllBytes(file), StandardCharsets.UTF_8).trim();
+            return s.isEmpty() ? null : s;
+        } catch (Exception e) {
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to read source link for slot {}", index, e);
+            return null;
+        }
+    }
+
+    /** Remove ONLY a slot's stored source image (leaves the baked texture). Used by tempretexture undo to
+     *  restore a block whose original had no re-renderable source. No-op if none exists. */
+    public static void deleteSource(int index) {
+        try {
+            Files.deleteIfExists(sourceFile(index));
+        } catch (Exception e) {
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to delete source image for slot {}", index, e);
+        }
+    }
+
+    /** Remove ONLY a slot's stored source link. Used by tempretexture undo. No-op if none exists. */
+    public static void deleteUrl(int index) {
+        try {
+            Files.deleteIfExists(urlFile(index));
+        } catch (Exception e) {
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to delete source link for slot {}", index, e);
+        }
     }
 
     // ── Per-face overrides (M4) — extra PNGs beside the base; absent file = base shows ──
@@ -167,6 +241,11 @@ public final class TextureStore {
         }
         try {
             Files.deleteIfExists(sourceFile(index));
+        } catch (Exception ignored) {
+            // best-effort cleanup
+        }
+        try {
+            Files.deleteIfExists(urlFile(index));
         } catch (Exception ignored) {
             // best-effort cleanup
         }

@@ -7,9 +7,15 @@
  *
  * Phase 6 (attributes): setglow + sethardness. setsound / shape commands land here next,
  * keeping CreationCommands focused on the block lifecycle.
+ *
+ * NO-REJOIN (see HudSync's NO-REJOIN PRINCIPLE banner; owner 2026-06-27): block BEHAVIOUR is live
+ * (glow via SlotLighting.applyToPlaced; hardness/sound/collision read live in SlotBlock) AND each
+ * setter now broadcasts the slot cache so the look-HUD's DISPLAYED values (glow/hard/sound/pass/cat)
+ * refresh live for every player too — no rejoin (fixed 2026-06-27).
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.block.SlotLighting;
 import com.customblocks.command.Chat;
@@ -17,6 +23,8 @@ import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
+import com.customblocks.core.onboarding.FirstUseHints;
+import com.customblocks.network.HudSync;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -108,7 +116,7 @@ public final class AttributeCommands {
     /** Returns true (and prints an error) if the block is locked. Call before any mutation. */
     private static boolean locked(ServerCommandSource src, String id) {
         if (LockManager.isLocked(id)) {
-            Chat.error(src, "\"" + id + "\" is locked. Use /cb unlock " + id + " to edit it.");
+            Chat.lockedError(src, id);
             return true;
         }
         return false;
@@ -128,8 +136,10 @@ public final class AttributeCommands {
         UndoManager.recordModify(actor(src), before, d, "glow");
         // New placements inherit it via getPlacementState; refresh already-placed ones nearby.
         SlotLighting.applyToPlaced(src.getServer(), d.index(), clamped);
-        String note = level > 15 ? " §7(15 is the maximum)" : level < 0 ? " §7(0 is the minimum)" : "";
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD glow value updates live for all players
+        String note = level > 15 ? " " + CbFmt.DIM + "(15 is the maximum)" : level < 0 ? " " + CbFmt.DIM + "(0 is the minimum)" : "";
         Chat.success(src, "Set \"" + id + "\" glow to " + clamped + "." + note);
+        if (src.getEntity() instanceof ServerPlayerEntity p) FirstUseHints.onFirstSetglow(p); // Group 23: one-time hint
         return 1;
     }
 
@@ -150,6 +160,7 @@ public final class AttributeCommands {
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "hardness");
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD hardness updates live for all players
         // Read live on every break attempt (SlotBlock.calcBlockBreakingDelta).
         if (value < 0)       Chat.success(src, "\"" + id + "\" is now unbreakable.");
         else if (value == 0) Chat.success(src, "\"" + id + "\" now breaks instantly.");
@@ -185,7 +196,7 @@ public final class AttributeCommands {
             if (s.equals(key)) { valid = true; break; }
         }
         if (!valid) {
-            Chat.error(src, "Unknown sound '" + type + "'. Options: " + String.join(", ", SlotBlock.SOUND_TYPES));
+            Chat.error(src, "Unknown sound \"" + type + "\". Options: " + String.join(", ", SlotBlock.SOUND_TYPES));
             return 0;
         }
         SlotData before = SlotManager.getById(id);
@@ -197,6 +208,7 @@ public final class AttributeCommands {
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "sound");
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD sound updates live for all players
         // Read live in SlotBlock.getSoundGroup — placed blocks use the new sound immediately.
         Chat.success(src, "Set \"" + id + "\" sound to " + key + ".");
         return 1;
@@ -218,6 +230,7 @@ public final class AttributeCommands {
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "collision");
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD passable/solid updates live for all players
         // Read live in SlotBlock.getCollisionShape — placed blocks update immediately.
         Chat.success(src, "\"" + id + "\" is now " + (passable ? "passable — players walk through it." : "solid."));
         return 1;
@@ -240,6 +253,7 @@ public final class AttributeCommands {
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "category");
+        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD category updates live for all players
         Chat.success(src, cat.isEmpty()
                 ? "Removed \"" + id + "\" from its category."
                 : "Moved \"" + id + "\" to the \"" + cat + "\" category.");

@@ -43,7 +43,7 @@ public final class RecolorToneTools {
 
     public void layout(int x, int y, int w) {
         headX = x; headY = y;
-        int sy = y + 14;
+        int sy = y + 24; // §overlap-fix: clear gap under "TONE TOOLS" so the first slider label doesn't sit on it
         for (int i = 0; i < sliders.length; i++) sliders[i].set(x, sy + i * 26, w);
         fx = x; fy = sy + sliders.length * 26 + 4;
         fbw = (w - 3 * 4) / 4;
@@ -56,8 +56,8 @@ public final class RecolorToneTools {
             int bx = fx + i * (fbw + 4);
             boolean on = filter == i + 1;
             boolean hover = mx >= bx && mx < bx + fbw && my >= fy && my < fy + 14;
-            ctx.fill(bx, fy, bx + fbw, fy + 14, on ? 0xFF_FF_AA_00 : (hover ? 0xFF555555 : 0xFF333333));
-            ctx.drawCenteredTextWithShadow(tr, Text.literal((on ? "§0" : "§f") + FILTERS[i]), bx + fbw / 2, fy + 3, 0xFFFFFFFF);
+            ctx.fill(bx, fy, bx + fbw, fy + 14, on ? CbTheme.ACCENT : (hover ? 0xFF555555 : 0xFF333333));
+            ctx.drawCenteredTextWithShadow(tr, Text.literal("§f" + FILTERS[i]), bx + fbw / 2, fy + 3, 0xFFFFFFFF);
         }
     }
 

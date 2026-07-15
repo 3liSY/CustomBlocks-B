@@ -30,7 +30,7 @@ import java.util.Locale;
 @Environment(EnvType.CLIENT)
 public final class CbColorDropper {
 
-    private static final int GOLD = 0xFF_FF_AA_00;
+    private static final int GOLD = com.customblocks.client.gui.CbTheme.ACCENT; // loupe edge — locked red (2026-07-04)
     private static final int SRC_R = 6;     // sample radius in framebuffer px → (2R+1)² loupe grid
     private static final int CELL  = 7;      // on-screen size of each magnified source pixel
 

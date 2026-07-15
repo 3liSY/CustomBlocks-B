@@ -40,7 +40,7 @@ import java.util.Set;
 @Environment(EnvType.CLIENT)
 public final class StudioCategoryPanel {
 
-    private static final int GOLD = 0xFF_FF_AA_00;
+    private static final int GOLD = CbTheme.ACCENT; // selected/hover accent — now theme neon-red (§G27.6.P P1)
     // The 16 Minecraft formatting colours: { §-tag, swatch argb }.
     private static final String[] COL_TAG = {
             "§0","§1","§2","§3","§4","§5","§6","§7","§8","§9","§a","§b","§c","§d","§e","§f"};
@@ -76,13 +76,13 @@ public final class StudioCategoryPanel {
         int cx = x, cy = y + 14, rowH = 16, maxX = x + 214;
         for (String cat : cats) {
             String tag = ClientSlotCache.colorTag(cat);
-            String label = (tag.isEmpty() ? "§f" : tag) + cat + (cat.equals(def) ? " §6★" : "");
+            String label = (tag.isEmpty() ? "§f" : tag) + cat + (cat.equals(def) ? " §c★" : "");
             int w = tr.getWidth(label.replaceAll("§.", "")) + 12;
             if (cx + w > maxX) { cx = x; cy += rowH; }
             boolean sel = cat.equalsIgnoreCase(st.category == null ? "" : st.category.trim());
             boolean hov = mx >= cx && mx < cx + w && my >= cy && my < cy + 14;
             ctx.fill(cx - 1, cy - 1, cx + w + 1, cy + 15, sel ? GOLD : (hov ? 0xFF888888 : 0xFF000000));
-            ctx.fill(cx, cy, cx + w, cy + 14, sel ? 0xFF3A2E00 : 0xFF1E1E1E);
+            ctx.fill(cx, cy, cx + w, cy + 14, sel ? CbTheme.SEL_FILL : 0xFF1E1E1E);
             ctx.drawTextWithShadow(tr, Text.literal(label), cx + 6, cy + 3, 0xFFFFFFFF);
             chipRects.add(new int[]{cx, cy, w, 14});
             chipCats.add(cat);

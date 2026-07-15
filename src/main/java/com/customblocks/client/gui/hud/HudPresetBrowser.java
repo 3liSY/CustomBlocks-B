@@ -28,7 +28,7 @@ import java.util.List;
 @Environment(EnvType.CLIENT)
 public class HudPresetBrowser extends Screen {
 
-    private static final int GOLD = 0xFFFFAA00;
+    private static final int GOLD = com.customblocks.client.gui.CbTheme.ACCENT; // locked red (2026-07-04)
     private static final int PW = 300, PH = 230;
     private static final int ROW_H = 34, THUMB_W = 56, THUMB_H = 28;
     private static final int REF_W = 320, REF_H = 180;   // reference resolution for thumbnails
@@ -101,10 +101,10 @@ public class HudPresetBrowser extends Screen {
         if (parent != null) parent.render(ctx, mx, my, 0);
         ctx.fill(0, 0, width, height, 0x66000000);
         ctx.fill(px - 1, py - 1, px + PW + 1, py + PH + 1, GOLD);
-        ctx.fill(px, py, px + PW, py + PH, 0xF0101010);
+        ctx.fill(px, py, px + PW, py + PH, com.customblocks.client.gui.CbTheme.PANEL_BG);
 
         if (mode == Mode.LIST) {
-            ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lHUD Presets"), px + 8, py + 9, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(textRenderer, com.customblocks.client.gui.CbTheme.red("HUD Presets"), px + 8, py + 9, 0xFFFFFFFF);
             ctx.enableScissor(px, listTop, px + PW, listBottom);
             int y = listTop - scroll;
             for (int i = 0; i < presets.size(); i++) {
@@ -118,11 +118,11 @@ public class HudPresetBrowser extends Screen {
             }
             ctx.disableScissor();
         } else if (mode == Mode.NAME) {
-            ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lSave preset as…"), px + 8, py + 9, 0xFFFFFFFF);
+            ctx.drawTextWithShadow(textRenderer, com.customblocks.client.gui.CbTheme.red("Save preset as…"), px + 8, py + 9, 0xFFFFFFFF);
             ctx.drawText(textRenderer, Text.literal("§7Name this layout, then Save."), px + 8, py + 24, 0xFFFFFFFF, false);
         } else {
-            ctx.drawTextWithShadow(textRenderer, Text.literal("§6§lOverwrite?"), px + 8, py + 9, 0xFFFFFFFF);
-            ctx.drawText(textRenderer, Text.literal("§eA preset named '" + pendingName + "' exists."), px + 8, py + 40, 0xFFFFFFFF, false);
+            ctx.drawTextWithShadow(textRenderer, com.customblocks.client.gui.CbTheme.red("Overwrite?"), px + 8, py + 9, 0xFFFFFFFF);
+            ctx.drawText(textRenderer, Text.literal("§fA preset named '" + pendingName + "' exists."), px + 8, py + 40, 0xFFFFFFFF, false);
             ctx.drawText(textRenderer, Text.literal("§7Overwrite it?"), px + 8, py + 54, 0xFFFFFFFF, false);
         }
 
@@ -217,8 +217,9 @@ public class HudPresetBrowser extends Screen {
         reloadList();
     }
 
+    /** §G27.13 — a REAL toast now (this used to secretly send chat; that was the confirmed root cause). */
     private void toast(String msg) {
-        if (client != null && client.player != null) client.player.sendMessage(Text.literal(msg), false);
+        com.customblocks.client.gui.CbToast.info(msg);
     }
 
     private void back() { if (client != null) client.setScreen(parent); }

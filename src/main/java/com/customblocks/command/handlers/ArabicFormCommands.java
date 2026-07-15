@@ -12,6 +12,7 @@
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.arabic.ArabicLabels;
 import com.customblocks.command.Chat;
@@ -49,15 +50,15 @@ public final class ArabicFormCommands {
     }
 
     private static int show(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Arabic join form labels — initial: §f" + ArabicLabels.ini()
-                + "§7 · medial: §f" + ArabicLabels.mid() + "§7 · final: §f" + ArabicLabels.fin()
-                + "§8  (/cb config arabicforms ini|mid|fin <label> · reset)");
+        Chat.info(ctx.getSource(), "Arabic join form labels — initial: " + CbFmt.BODY + ArabicLabels.ini()
+                + CbFmt.DIM + " · medial: " + CbFmt.BODY + ArabicLabels.mid() + CbFmt.DIM + " · final: " + CbFmt.BODY + ArabicLabels.fin()
+                + CbFmt.FAINT + "  (/cb config arabicforms ini|mid|fin <label> · reset)");
         return 1;
     }
 
     private static int reset(CommandContext<ServerCommandSource> ctx) {
         return apply(ctx, ArabicLabels.DEFAULT_INI, ArabicLabels.DEFAULT_MID, ArabicLabels.DEFAULT_FIN,
-                "Arabic form labels reset to §fIni / Mid / Fin§a.");
+                "Arabic form labels reset to " + CbFmt.BODY + "Ini / Mid / Fin" + CbFmt.OK + ".");
     }
 
     private static int set(CommandContext<ServerCommandSource> ctx, String which, String label) {
@@ -68,7 +69,7 @@ public final class ArabicFormCommands {
             case "fin" -> fin = label;
         }
         return apply(ctx, ini, mid, fin,
-                "Arabic " + which + " label → §f" + label + "§a. Every block re-labels instantly.");
+                "Arabic " + which + " label → " + CbFmt.BODY + label + CbFmt.OK + ". Every block re-labels instantly.");
     }
 
     /** Persist, update the live labels, broadcast to clients, then confirm. */

@@ -1,0 +1,6 @@
+{
+  "variants": {
+    "pressed=false": { "model": "customblocks:block/buzzer" },
+    "pressed=true": { "model": "customblocks:block/buzzer_pressed" }
+  }
+}

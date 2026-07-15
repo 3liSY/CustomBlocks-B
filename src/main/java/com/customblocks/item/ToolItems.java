@@ -10,7 +10,9 @@
  */
 package com.customblocks.item;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksMod;
+import net.minecraft.component.DataComponentTypes;
 import net.minecraft.item.Item;
 import net.minecraft.registry.Registries;
 import net.minecraft.registry.Registry;
@@ -44,14 +46,14 @@ public final class ToolItems {
                 new RainbowRectangleItem(new Item.Settings().maxCount(1)));
 
         // Eight colour/shape tools — textures reused from the old project, code is new.
-        registerShape("green",  "§a", "green_square",   "Green",  "Square");
-        registerShape("green",  "§a", "green_triangle", "Green",  "Triangle");
-        registerShape("yellow", "§e", "yellow_square",  "Yellow", "Square");
-        registerShape("yellow", "§e", "yellow_triangle","Yellow", "Triangle");
-        registerShape("red",    "§c", "red_square",     "Red",    "Square");
-        registerShape("red",    "§c", "red_triangle",   "Red",    "Triangle");
-        registerShape("black",  "§8", "black_square",   "Black",  "Square");
-        registerShape("black",  "§8", "black_triangle", "Black",  "Triangle");
+        registerShape("green",  CbFmt.OK, "green_square",   "Green",  "Square");
+        registerShape("green",  CbFmt.OK, "green_triangle", "Green",  "Triangle");
+        registerShape("yellow", CbFmt.VALUE, "yellow_square",  "Yellow", "Square");
+        registerShape("yellow", CbFmt.VALUE, "yellow_triangle","Yellow", "Triangle");
+        registerShape("red",    CbFmt.BAD, "red_square",     "Red",    "Square");
+        registerShape("red",    CbFmt.BAD, "red_triangle",   "Red",    "Triangle");
+        registerShape("black",  CbFmt.FAINT, "black_square",   "Black",  "Square");
+        registerShape("black",  CbFmt.FAINT, "black_triangle", "Black",  "Triangle");
 
         // Custom-colour pair: any-hex tools given by /cb customcolor (Group 06).
         CUSTOM_SQUARE   = register("custom_square",   new CustomColorToolItem(new Item.Settings().maxCount(1), "Square"));
@@ -59,7 +61,11 @@ public final class ToolItems {
     }
 
     private static void registerShape(String color, String code, String id, String colorName, String shape) {
-        SHAPES.add(register(id, new ShapeToolItem(new Item.Settings().maxCount(1), colorName, code, shape)));
+        // Glint by default (enchant shimmer) so every preset colour tool "magic-glows" like the
+        // /cb customcolor pair (which sets ENCHANTMENT_GLINT_OVERRIDE on its stacks) — consistent look.
+        SHAPES.add(register(id, new ShapeToolItem(
+                new Item.Settings().maxCount(1).component(DataComponentTypes.ENCHANTMENT_GLINT_OVERRIDE, true),
+                colorName, code, shape)));
     }
 
     private static <T extends Item> T register(String name, T item) {

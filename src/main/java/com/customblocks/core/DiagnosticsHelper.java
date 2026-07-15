@@ -9,6 +9,7 @@
  */
 package com.customblocks.core;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import net.minecraft.server.MinecraftServer;
 
@@ -27,30 +28,30 @@ public final class DiagnosticsHelper {
     /** Collect system state as formatted display lines for /cb diag. */
     public static List<String> collect(MinecraftServer server) {
         List<String> lines = new ArrayList<>();
-        lines.add("§6=== CustomBlocks Diagnostics ===");
+        lines.add(CbFmt.HEAD + "=== CustomBlocks Diagnostics ===");
 
         int used = SlotManager.usedSlots();
         int max  = CustomBlocksConfig.maxSlots;
-        lines.add("§fSlots used: §e" + used + " / " + max);
-        lines.add("§fUndo mode: §e" + CustomBlocksConfig.undoMode);
-        lines.add("§fTexture size: §e" + CustomBlocksConfig.textureSize + "px");
-        lines.add("§fHTTP: §e" + CustomBlocksConfig.httpHost + ":" + CustomBlocksConfig.httpPort);
-        lines.add("§fHUD enabled: §e" + CustomBlocksConfig.hudEnabled);
+        lines.add(CbFmt.BODY + "Slots used: " + CbFmt.VALUE + used + " / " + max);
+        lines.add(CbFmt.BODY + "Undo mode: " + CbFmt.VALUE + CustomBlocksConfig.undoMode);
+        lines.add(CbFmt.BODY + "Texture size: " + CbFmt.VALUE + CustomBlocksConfig.textureSize + "px");
+        lines.add(CbFmt.BODY + "HTTP: " + CbFmt.VALUE + CustomBlocksConfig.httpHost + ":" + CustomBlocksConfig.httpPort);
+        lines.add(CbFmt.BODY + "HUD enabled: " + CbFmt.VALUE + CustomBlocksConfig.hudEnabled);
 
         long packBytes = fileSize(Path.of("config/customblocks/pack.zip"));
-        lines.add("§fResource pack: §e" + formatBytes(packBytes));
+        lines.add(CbFmt.BODY + "Resource pack: " + CbFmt.VALUE + formatBytes(packBytes));
 
         MemoryMXBean mem = ManagementFactory.getMemoryMXBean();
         long usedMb = mem.getHeapMemoryUsage().getUsed()  / (1024 * 1024);
         long maxMb  = mem.getHeapMemoryUsage().getMax()   / (1024 * 1024);
-        lines.add("§fHeap: §e" + usedMb + " MB / " + maxMb + " MB");
+        lines.add(CbFmt.BODY + "Heap: " + CbFmt.VALUE + usedMb + " MB / " + maxMb + " MB");
 
         if (server != null) {
             float tps = Math.min(20f, 1000f / Math.max(1, (float) server.getAverageTickTime()));
-            lines.add("§fTPS: §e" + String.format("%.1f", tps));
-            lines.add("§fPlayers online: §e" + server.getCurrentPlayerCount());
+            lines.add(CbFmt.BODY + "TPS: " + CbFmt.VALUE + String.format("%.1f", tps));
+            lines.add(CbFmt.BODY + "Players online: " + CbFmt.VALUE + server.getCurrentPlayerCount());
         }
-        lines.add("§7Snapshot: " + Instant.now());
+        lines.add(CbFmt.DIM + "Snapshot: " + Instant.now());
         return lines;
     }
 
@@ -64,10 +65,10 @@ public final class DiagnosticsHelper {
 
     /** TPS — green ≥18 / yellow 15–17 / red <15. */
     public static Gauge tps(MinecraftServer server) {
-        if (server == null) return new Gauge(Health.YELLOW, List.of("§7TPS: §f— §8(no server)"));
+        if (server == null) return new Gauge(Health.YELLOW, List.of(CbFmt.DIM + "TPS: " + CbFmt.BODY + "— " + CbFmt.FAINT + "(no server)"));
         float tps = Math.min(20f, 1000f / Math.max(1, (float) server.getAverageTickTime()));
         Health h = tps >= 18f ? Health.GREEN : tps >= 15f ? Health.YELLOW : Health.RED;
-        return new Gauge(h, List.of("§7TPS: §f" + String.format("%.1f", tps) + " §7/ 20.0"));
+        return new Gauge(h, List.of(CbFmt.DIM + "TPS: " + CbFmt.BODY + String.format("%.1f", tps) + " " + CbFmt.DIM + "/ 20.0"));
     }
 
     /** Block registry — green while used ≤ max, red if over capacity. */
@@ -76,8 +77,8 @@ public final class DiagnosticsHelper {
         int max  = SlotManager.getMaxSlots();
         Health h = used <= max ? Health.GREEN : Health.RED;
         return new Gauge(h, List.of(
-                "§7Used: §f" + used + " §7/ §f" + max + " slots",
-                "§7Free: §a" + Math.max(0, max - used)));
+                CbFmt.DIM + "Used: " + CbFmt.BODY + used + " " + CbFmt.DIM + "/ " + CbFmt.BODY + max + " slots",
+                CbFmt.DIM + "Free: " + CbFmt.OK + Math.max(0, max - used)));
     }
 
     /** Network sync — best-effort: online count + pack SHA, no per-client lag. */
@@ -86,9 +87,9 @@ public final class DiagnosticsHelper {
         String hash = com.customblocks.network.ResourcePackServer.getHash();
         Health h = hash != null ? Health.GREEN : Health.YELLOW;
         return new Gauge(h, List.of(
-                "§7Players online: §f" + online,
-                "§7Pack SHA: §f" + shortHash(hash),
-                "§8best-effort (no per-client lag)"));
+                CbFmt.DIM + "Players online: " + CbFmt.BODY + online,
+                CbFmt.DIM + "Pack SHA: " + CbFmt.BODY + shortHash(hash),
+                CbFmt.FAINT + "best-effort (no per-client lag)"));
     }
 
     /** Pack status — yellow rebuilding / red missing / green current. */
@@ -101,10 +102,10 @@ public final class DiagnosticsHelper {
                 ? new java.text.SimpleDateFormat("MMM d, HH:mm").format(new java.util.Date(f.lastModified()))
                 : "—";
         return new Gauge(h, List.of(
-                "§7Size: §f" + formatBytes(size),
-                "§7SHA-1: §f" + shortHash(com.customblocks.network.ResourcePackServer.getHash()),
-                "§7Last rebuild: §f" + when,
-                rebuilding ? "§eRebuilding…" : ""));
+                CbFmt.DIM + "Size: " + CbFmt.BODY + formatBytes(size),
+                CbFmt.DIM + "SHA-1: " + CbFmt.BODY + shortHash(com.customblocks.network.ResourcePackServer.getHash()),
+                CbFmt.DIM + "Last rebuild: " + CbFmt.BODY + when,
+                rebuilding ? CbFmt.VALUE + "Rebuilding…" : ""));
     }
 
     /** Memory — green <70% / yellow 70–85% / red >85% of heap. */
@@ -117,8 +118,8 @@ public final class DiagnosticsHelper {
         int pct = maxB > 0 ? (int) (usedB * 100 / maxB) : 0;
         Health h = pct < 70 ? Health.GREEN : pct <= 85 ? Health.YELLOW : Health.RED;
         return new Gauge(h, List.of(
-                "§7Heap: §f" + usedMb + " §7/ §f" + maxMb + " MB",
-                "§7Usage: §f" + pct + "%"));
+                CbFmt.DIM + "Heap: " + CbFmt.BODY + usedMb + " " + CbFmt.DIM + "/ " + CbFmt.BODY + maxMb + " MB",
+                CbFmt.DIM + "Usage: " + CbFmt.BODY + pct + "%"));
     }
 
     private static String shortHash(String hash) {

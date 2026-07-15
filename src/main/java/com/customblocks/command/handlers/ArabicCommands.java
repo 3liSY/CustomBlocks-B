@@ -1,22 +1,27 @@
 /**
  * ArabicCommands.java
  *
- * Responsibility: /cb arabic subcommands — import (224 bundled art blocks), letter (give),
- * word (opens the all-in-GUI maker), list (marked browser GUI). The old `text` subcommand was
- * removed entirely (Area 2b) — its function now lives in `word`. Stays under 400 lines (§9.3).
+ * Responsibility: /cb arabic subcommands — letter (give the real letter slot block), word (opens
+ * the all-in-GUI maker), list (marked browser GUI). The old `text` subcommand was removed (Area
+ * 2b, lives in `word`); `import` was removed at G13-25 CP5 (the static art blocks are retired —
+ * real Arabic slot blocks are pre-baked at boot instead). Stays under 400 lines (§9.3).
  * The maker flow itself lives in ArabicMaker; this file only wires the commands.
  *
- * Depends on: ArabicArt, ArabicBlockRegistry, ArabicMaker, SlotManager, GuiRouter/Nav, Chat
+ * Depends on: ArabicArt (catalog), ArabicGlyphs, ArabicMaker, ArabicSlotBootstrap (slot ids),
+ *             SlotManager, GuiRouter/Nav, Chat
  * Called by: CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
+import com.customblocks.command.CbFmt;
 import com.customblocks.arabic.ArabicArt;
-import com.customblocks.arabic.ArabicBlockRegistry;
 import com.customblocks.arabic.ArabicGlyphs;
+import com.customblocks.arabic.ArabicJoining;
 import com.customblocks.arabic.ArabicMaker;
-import com.customblocks.block.ArabicLetterBlock;
+import com.customblocks.arabic.ArabicSlotBootstrap;
+import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
+import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav;
@@ -25,13 +30,13 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import net.minecraft.item.ItemStack;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.text.Text;
 
 import java.util.Locale;
-import java.util.Optional;
 
 public final class ArabicCommands {
 
@@ -41,14 +46,12 @@ public final class ArabicCommands {
         // Bare /cb arabic opens the Arabic Studio hub (Pass 5).
         var arabic = CommandManager.literal("arabic").executes(ArabicCommands::openHub);
 
-        // /cb arabic import — create the 224 bundled art blocks (idempotent), rebuild pack once
-        arabic.then(CommandManager.literal("import")
-                .executes(ArabicCommands::importArt));
+        // (`import` was removed at G13-25 CP5 — static art blocks are retired; the real Arabic
+        //  slot blocks are guaranteed at boot by ArabicSlotBootstrap instead.)
 
-        // /cb arabic letter <name> [color] [count] — give the auto-joining letter block (default
-        // black, count 1). Place these right-to-left and they auto-shape (isolated/initial/medial/
-        // final) from their neighbours. The old static-bundled letters were retired, so this single
-        // name now drives the one auto-join system (the separate `join` subcommand was a dupe, removed).
+        // /cb arabic letter <name> [color] [count] — give the REAL auto-joining letter slot block
+        // (default black, count 1). Place these right-to-left and they auto-shape (isolated/
+        // initial/medial/final) from their neighbours by swapping between the pre-baked form slots.
         arabic.then(CommandManager.literal("letter")
                 .then(CommandManager.argument("name", StringArgumentType.word())
                         .suggests((c, b) -> {
@@ -92,38 +95,35 @@ public final class ArabicCommands {
         root.then(arabic);
     }
 
-    private static int importArt(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource src = ctx.getSource();
-        Chat.info(src, "Importing bundled Arabic art blocks (56 glyphs x 4 colors)...");
-        ArabicBlockRegistry.ImportResult r = ArabicBlockRegistry.importArt(true);
-        if (r.created() > 0) Chat.success(src, "Created §e" + r.created() + "§r block(s).");
-        if (r.skipped() > 0) Chat.info(src,    "Skipped §e" + r.skipped() + "§r (already exist).");
-        if (r.failed()  > 0) Chat.error(src,   "Failed §c"  + r.failed()  + "§r — check log.");
-        if (r.created() == 0 && r.failed() == 0) Chat.info(src, "All Arabic art blocks already present.");
-        return 1;
-    }
-
     /**
-     * /cb arabic letter <name> [color] [count] — give auto-joining letter blocks. Place them
-     * right-to-left and they auto-shape (isolated/initial/medial/final) from their neighbours.
-     * (Replaces both the old static-bundled `letter` giver and the duplicate `join` subcommand.)
+     * /cb arabic letter <name> [color] [count] — give the REAL isolated letter slot block (G13-25:
+     * one pre-baked slot per letter x form x colour; black is the base id, colours are "_<colour>"
+     * variants). Placed right-to-left they auto-shape by swapping between the sibling form slots.
      */
     private static int giveLetter(CommandContext<ServerCommandSource> ctx, String name, String color, int count)
             throws CommandSyntaxException {
         ServerCommandSource src = ctx.getSource();
         String col = color.toLowerCase(Locale.ROOT);
         if (!ArabicArt.isColor(col)) {
-            Chat.error(src, "Unknown color '§e" + color + "§r'. Use: black, red, green, yellow.");
+            Chat.error(src, "Unknown color \"" + CbFmt.VALUE + color + CbFmt.RESET + "\". Use: black, red, green, yellow.");
             return 0;
         }
-        Optional<Character> ch = ArabicGlyphs.charForName(name.toLowerCase(Locale.ROOT));
-        if (ch.isEmpty()) {
-            Chat.error(src, "Unknown letter '§e" + name + "§r'. Valid: " + ArabicArt.letterNames());
+        String base = name.toLowerCase(Locale.ROOT);
+        if (ArabicGlyphs.charForName(base).isEmpty()) {
+            Chat.error(src, "Unknown letter \"" + CbFmt.VALUE + name + CbFmt.RESET + "\". Valid: " + ArabicArt.letterNames());
+            return 0;
+        }
+        String id = ArabicSlotBootstrap.slotId(base, ArabicJoining.ISOLATED)
+                + ("black".equals(col) ? "" : "_" + col);
+        SlotData d = SlotManager.getById(id);
+        SlotBlock.SlotItem item = (d == null) ? null : SlotManager.itemAt(d.index());
+        if (item == null) {
+            Chat.error(src, "Block \"" + CbFmt.VALUE + id + CbFmt.RESET + "\" is missing — it is created at boot; check the log.");
             return 0;
         }
         ServerPlayerEntity player = src.getPlayerOrThrow();
-        player.getInventory().insertStack(ArabicLetterBlock.stackFor(ch.get(), col, -1, count));
-        Chat.success(src, "Gave §e" + count + "§r §e" + name.toLowerCase(Locale.ROOT) + "§r ("
+        player.getInventory().insertStack(new ItemStack(item, count));
+        Chat.success(src, "Gave " + CbFmt.VALUE + count + CbFmt.RESET + " " + CbFmt.VALUE + base + CbFmt.RESET + " ("
                 + col + "). Place right-to-left — they auto-join.");
         return 1;
     }
@@ -133,7 +133,7 @@ public final class ArabicCommands {
         ServerCommandSource src = ctx.getSource();
         ServerPlayerEntity player = src.getPlayer();
         if (player == null) { Chat.error(src, "Run this in-game — it opens an anvil to type the text."); return 0; }
-        if (SlotManager.hasId(id)) { Chat.error(src, "Id '§e" + id + "§r' is taken. Pick another."); return 0; }
+        if (SlotManager.hasId(id)) { Chat.error(src, "Id \"" + CbFmt.VALUE + id + CbFmt.RESET + "\" is taken. Pick another."); return 0; }
         ArabicMaker.startFromCommand(player, id, name);
         return 1;
     }
@@ -154,17 +154,14 @@ public final class ArabicCommands {
         return 1;
     }
 
+    /** Console fallback: count the REAL Arabic slot blocks (SlotData carries ArabicMeta). */
     private static int listArt(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         long present = 0;
-        for (ArabicArt.Glyph g : ArabicArt.ALL)
-            for (String c : ArabicArt.COLORS)
-                if (SlotManager.getById(ArabicArt.blockId(g, c)) != null) present++;
-        long total = (long) ArabicArt.ALL.size() * ArabicArt.COLORS.length;
+        for (SlotData d : SlotManager.assignedSlots()) if (d.isArabic()) present++;
         final long fp = present;
-        src.sendFeedback(() -> Text.literal(Chat.PREFIX + "§eArabic art: §f" + fp + "/" + total
-                + " blocks present §7(" + ArabicArt.letterNames().split(",").length
-                + " letters + numbers, x4 colors)"), false);
+        Chat.raw(src, CbFmt.VALUE + "Arabic blocks: " + CbFmt.BODY + fp
+                + " present " + CbFmt.DIM + "(letters x4 forms + numbers, per colour)");
         return 1;
     }
 }
