@@ -111,7 +111,9 @@ public final class WheelBlockEntity extends BlockEntity {
      * so the handle lists always stay in step with what is actually standing.
      */
     public void ensureBuilt(ServerWorld world) {
-        if (handles.complete()) return;
+        // complete() only proves the handles were RECORDED; probe the arrow so a wheel someone /kill'ed (or
+        // that lost its entities any other way) rebuilds on the next spin instead of staying invisible.
+        if (handles.complete() && handles.arrow() != null && world.getEntity(handles.arrow()) != null) return;
         WheelDisplayVisual.despawnAll(world, handles, pos);
         if (ringItems.size() != WheelRing.SLICES) ringItems = WheelRing.sample(world.getRandom(), WheelRing.SLICES);
         Item shown = result != null ? result : Items.CLOCK;

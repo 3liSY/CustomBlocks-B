@@ -2,7 +2,7 @@
 
 > Group 07 lets a player make one deliberate change across many custom blocks, with an honest preview, a clear confirmation, and one reversible history step.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_07.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_07.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -204,7 +204,7 @@ Set All is a friendly front door to the bulk engine, not a separate all-block mu
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_07.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_07.md) · [All Groups](README.md)
 
 - [G04 Communication](GROUP_04_Communication.md)
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)

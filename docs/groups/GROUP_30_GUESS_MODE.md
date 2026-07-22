@@ -2,7 +2,7 @@
 
 > Group 30 lets an operator run a voice-led block guessing game: the holder sees a disguised CustomBlock while everyone else sees the real answer and the shared guessing pose.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_30_Done.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_30_Done.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -200,7 +200,7 @@ This entire section is one future cohesive pass. Hint stages, countdown/timer, t
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_30_Done.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_30_Done.md) · [All Groups](README.md)
 
 - [G03 HUD and Escape](GROUP_03_HUD_ESC.md)
 - [G04 Communication](GROUP_04_Communication.md)

@@ -2,7 +2,7 @@
 
 > Group 26 keeps player-facing block names clean, makes ID lookup forgiving without changing stored identity, and offers an optional human-readable texture mirror that can never affect the real block assets.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_26.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_26.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -156,7 +156,7 @@ This is display text only. It does not change server block data, resource-pack c
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_26.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_26.md) · [All Groups](README.md)
 
 - [G04 Communication](GROUP_04_Communication.md)
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)

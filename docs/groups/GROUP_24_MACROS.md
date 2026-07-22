@@ -2,7 +2,7 @@
 
 > Group 24 lets operators record and replay repeatable CustomBlocks actions as a simple saved macro, with one understandable undo for the whole run.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_24.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_24.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -153,7 +153,7 @@ G24 does not define Screen chrome or navigation standards. Those remain G27 resp
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_24.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_24.md) · [All Groups](README.md)
 
 - [G03 HUD and Escape](GROUP_03_HUD_ESC.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

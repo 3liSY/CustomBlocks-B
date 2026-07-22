@@ -2,7 +2,7 @@
 
 > Owns a referee-run fortune-wheel spectacle block for team-race YouTube content.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_34.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_34.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -17,7 +17,7 @@ Content creator wants a fortune-wheel block for live videos: two teams race to o
 | Owns | Does not own |
 | --- | --- |
 | Wheel block + block entity, center-arrow spin interaction, spin/result logic, item pool caching, ring/arrow/popup display entities, `/cb wheel` commands | CB slot/texture editing (owned by the `gui/chest/*Menu.java` system) — wheel is not user-recolorable |
-| `wheel/` package: `WheelBlockRegistry`, `WheelBlock`, `WheelBlockEntity`, `WheelPool`, `WheelRing`, `WheelDisplayVisual`, `WheelCommands` | Score tracking across rounds — referee tracks manually, mod does not persist match state |
+| `wheel/` package: `WheelBlockRegistry`, `WheelBlock`, `WheelBlockEntity`, `WheelPool`, `WheelRing`, `WheelDisplayVisual`, `WheelFx`, `WheelCommands` | Score tracking across rounds — referee tracks manually, mod does not persist match state |
 
 ## Direction
 
@@ -155,7 +155,7 @@ Does not persist the result after the next spin overwrites it; the mod never giv
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_34.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_34.md) · [All Groups](README.md)
 
 - `buzzergame/` package — structural reference for registry + entity/block + commands + NBT display visual.
 - `GuessShowcaseBlock`/`GuessShowcaseBlockEntity` — block+entity pattern reference.

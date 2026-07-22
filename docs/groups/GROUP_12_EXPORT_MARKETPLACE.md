@@ -2,7 +2,7 @@
 
 > Group 12 turns CustomBlocks into useful local files, portable Blueprint items, and later safe Vault/Marketplace artifacts without exposing a server address or losing block data.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_12.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_12.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -185,7 +185,7 @@ Folder import is an input workflow, not a substitute for remote Vault sharing or
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_12.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_12.md) · [All Groups](README.md)
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)

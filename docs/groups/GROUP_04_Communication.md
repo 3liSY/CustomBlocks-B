@@ -2,7 +2,7 @@
 
 > Group 04 owns the clear, human language CustomBlocks gives players in chat, on the hotbar, and when the mod disconnects them.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/TESTING_GUIDE_04.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/TESTING_GUIDE_04.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -177,7 +177,7 @@ This Group owns CustomBlocks-caused disconnect wording and the screen contract. 
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/TESTING_GUIDE_04.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/TESTING_GUIDE_04.md) · [All Groups](README.md)
 
 - [G16 Diagnostics](GROUP_16_DIAGNOSTICS.md)
 - [G27 Screens](GROUP_27_SCREENS.md)

@@ -2,7 +2,7 @@
 
 > Group 25 makes advanced block management safe and direct: rename or swap identity, target the block in front of or held by a player, and manage block-specific extras without losing attached data.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_25.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_25.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -186,7 +186,7 @@ This is ownership consolidation, not permission to assume the features exist or 
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_25.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_25.md) · [All Groups](README.md)
 
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
 - [G10 Colour and Image Tools](GROUP_10_COLOR_IMAGE.md)

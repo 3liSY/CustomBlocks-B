@@ -138,7 +138,7 @@ Each group has one current Group document and one current Testing Guide. Those t
 | --- | --- |
 | Group document | Lives in `docs/groups/` and owns final feature decisions, ownership, boundaries, and technical truth. |
 | Testing Guide | Lives in `docs/testing/` and owns verdict, test rows, results, progress, and folded history. |
-| Dashboard | Lives at `docs/testing/00_DASHBOARD.md`, is generated from canonical guides, and links to current documents only. It never overrides them. |
+| Dashboard | Lives at `docs/testing/Dashboard.md`, is generated from canonical guides, and links to current documents only. It never overrides them. |
 | Archive | Preserves history. It cannot override an active Group document or Testing Guide. |
 
 ### Testing Guide filenames

@@ -2,7 +2,7 @@
 
 > Group 10 owns the image and color rules that turn a source into a clean, editable CustomBlock without losing the player's intended design.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_10.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_10.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -243,7 +243,7 @@ The advanced Hub is separate future work. It does not delay the ordinary backgro
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_10.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_10.md) · [All Groups](README.md)
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)

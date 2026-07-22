@@ -2,7 +2,7 @@
 
 > Group 06 owns the physical tools that change CustomBlocks, their immediate player feedback, and the shared deletion and glow behavior behind them.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_06.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_06.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -266,7 +266,7 @@ G06 owns how a tool invokes the outcome. G10 owns the broader image and color au
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_06.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_06.md) · [All Groups](README.md)
 
 - [G04 Communication](GROUP_04_Communication.md)
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)

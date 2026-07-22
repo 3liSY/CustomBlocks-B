@@ -2,7 +2,7 @@
 
 > Group 15 lets a creator explore generated block textures inside the Creation Studio, while keeping provider quality, cost, privacy, and published results honest.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_15.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_15.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -161,7 +161,7 @@ These enhancements wait for a provider that meets the basic speed and quality ba
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_15.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_15.md) · [All Groups](README.md)
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)

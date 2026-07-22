@@ -2,9 +2,9 @@
 
 ## Documentation Dashboard
 
-*Refreshed: 2026-07-23 01:15:03*
+*Refreshed: 2026-07-23 02:01:15*
 
-**22** Built 🎯 · **4** Designed ⏳ / Planned 📜 · **6** Done ✅ · **1** Scrapped 👎
+**23** Built 🎯 · **3** Designed ⏳ / Planned 📜 · **6** Done ✅ · **1** Scrapped 👎
 
 [Built](#built) · [Designed & Planned](#designed--planned) · [Done](#done) · [Scrapped](#scrapped)
 
@@ -16,7 +16,7 @@
 
 ## Built
 
-<details><summary>22 group(s)</summary>
+<details><summary>23 group(s)</summary>
 
 | Group | Progress | Last tested | Open |
 | --- | --- | --- | --- |
@@ -42,19 +42,19 @@
 | G29 - Creator / Capture Tools | 🟩🟩🟩🟥🟥🟥🟥🟥🟥🟥 30% | 2026-06-30 | [TG](Testing_Guide_29.md) · [Group](../groups/GROUP_29_CREATOR_TOOLS.md) |
 | G31 - BuzzerGame | 🟩🟩🟩🟥🟥🟥🟥🟥🟥🟥 37% | 2026-07-19 | [TG](Testing_Guide_31.md) · [Group](../groups/GROUP_31_BUZZERGAME.md) |
 | G32 - Explosive Tomato | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% | 2026-07-18 | [TG](Testing_Guide_32.md) · [Group](../groups/GROUP_32_EXPLOSIVE_TOMATO.md) |
+| G34 - Wheel of Fortune | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-07-22 | [TG](Testing_Guide_34.md) · [Group](../groups/GROUP_34_WHEEL_OF_FORTUNE.md) |
 
 </details>
 
 ## Designed & Planned
 
-<details><summary>4 group(s)</summary>
+<details><summary>3 group(s)</summary>
 
 | Group | Progress | Last tested | Open |
 | --- | --- | --- | --- |
 | G19 - Showcase & Hologram Display Systems | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-07-10 | [TG](Testing_Guide_19.md) · [Group](../groups/GROUP_19_DISPLAY.md) |
 | G22 - Permissions System | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-06-22 | [TG](Testing_Guide_22.md) · [Group](../groups/GROUP_22_PERMISSIONS.md) |
 | G33 - CB Control Center | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-07-18 | [TG](Testing_Guide_33.md) · [Group](../groups/GROUP_33_CB_CONTROL_CENTER.md) |
-| G34 - Wheel of Fortune | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-07-22 (v1, now superseded) | [TG](Testing_Guide_34.md) · [Group](../groups/GROUP_34_WHEEL_OF_FORTUNE.md) |
 
 </details>
 

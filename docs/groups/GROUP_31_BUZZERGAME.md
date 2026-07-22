@@ -2,7 +2,7 @@
 
 > Group 31 owns a filmable buzzer/stopwatch minigame: a pressable buzzer block and a physical timer stand whose screen shows an Arabic target and a live result, hosted from a wand with no GUI.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_31.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_31.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -277,7 +277,7 @@ The blueprint-style live cursor-drag preview from the earlier spec is replaced b
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_31.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_31.md) · [All Groups](README.md)
 
 - [G03 HUD System and ESC Integration](GROUP_03_HUD_ESC.md)
 - [G04 Communication](GROUP_04_Communication.md)

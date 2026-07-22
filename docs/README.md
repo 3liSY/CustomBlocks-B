@@ -6,7 +6,7 @@ Start with the current system. It is separate from the older phase records kept 
 
 | Need | Open |
 | --- | --- |
-| See every group, progress, and next task | [Documentation Dashboard](testing/00_DASHBOARD.md) |
+| See every group, progress, and next task | [Documentation Dashboard](testing/Dashboard.md) |
 | Read a feature's decisions and technical scope | [Group documents](groups/README.md) |
 | See test actions, results, and folded history | [Testing Guides](testing/) |
 | Check the shared status, archive, and filename rules | [Documentation Glossary](testing/extra/Glossary.md) |

@@ -7,6 +7,64 @@
 
 ---
 
+## Group 34 · Wheel of Fortune — v2 realism rebuild, §A–§F built in one pass · 2026-07-23 (🟢 build-green — NOT confirmed in-game)
+
+> Full rewrite of the `wheel/` package to the v2 spec locked in the owner's 30-question design pass. The v1
+> flat wool disc, its pre-picked-then-faked landing, and the single-reel popup are all gone. Build-green only:
+> `gradlew build` with every gate green, `customblocks-1.0.0.jar` produced. Nothing confirmed in-game yet.
+
+- **§A · Structure — real blocks replaced by display entities.** `WheelRing` no longer places wool; it now owns
+  the wheel's geometry (a vertical plane spanned by world-up and one horizontal axis, expressed in the display
+  entities' own local frame at the placer's yaw) plus the two entity layers: 100 alternating carnival wedges
+  (concrete block items squashed into thin radial bars, aimed with a single quaternion about local Z) and 100
+  prize icons drawn in their `gui` inventory look on top. `WheelBlock` is now an INVISIBLE, no-collision anchor
+  with no `FACING` blockstate property — facing is a precise yaw float on the BlockEntity, not four cardinals,
+  and the old property never matched the single-variant blockstate json anyway. **224 display entities per
+  wheel** (100 wedges + 100 icons + arrow + 2 popup + 21 click surfaces); only the arrow and popup are pushed
+  per tick, wedges are spawned once and never touched.
+
+- **§A · Removal is a tag sweep, not just handle discards.** Because the anchor is invisible and the body is
+  entities, a lost UUID handle used to mean permanent debris. Every wheel entity now carries a `cb_wheel`
+  command tag and `WheelDisplayVisual.despawnAll` discards the known handles *and* sweeps a 52-block box for
+  the tag, so a `/kill`, a crash, or an older build can't leave anything standing. `ensureBuilt` also probes
+  that the arrow entity still resolves — `complete()` only proves the handles were recorded, not that the
+  entities are alive, so a killed wheel now rebuilds on the next spin instead of staying invisible.
+
+- **§B/§C · Honest landing, by construction.** The spin draws a target slice uniformly at random, then lays an
+  easing curve (`1-(1-p)^3` over 160 ticks, 8–12 random full turns) that ends exactly on that slice's centre
+  angle. On landing the winner is **read back out of the arrow's final angle** via `WheelRing.sliceAt` — there
+  is no separate `winner` field the animation could disagree with, which is what made v1 dishonest. Icons are
+  re-rolled from the cached pool every spin by partial Fisher-Yates (no repeats within a spin), so the 100-icon
+  perf cap never blocks any of the ~1300 pool items from appearing.
+
+- **§B · Clicking a wall of display entities.** Display entities aren't clickable, so the wheel spawns 21
+  INTERACTION surfaces (one 4×4 on the centre pivot, 20 around the rim) tagged with the owning anchor's pos.
+  `WheelBlock.onWheelInteract` is wired to Fabric's Use/AttackEntityCallback *after* the BuzzerGame listeners,
+  which PASS on anything that isn't a stand part. Right-click any surface spins; left-click the centre takes
+  the wheel down and returns the item — needed because the centre INTERACTION covers the invisible anchor, so
+  the block itself can no longer be aimed at.
+
+- **§D · Popup animation.** Giant `ITEM_DISPLAY` icon on a centre billboard with a per-tick quaternion about
+  local Y (spins inside the camera-facing frame, so D1 "slow 3D turn" and D4 "keeps facing you" both hold), plus
+  a `TEXT_DISPLAY` banner glowing in brand lime via `Glowing` + `glow_color_override`. Pop-in is a back-out
+  overshoot curve pushed every other tick with `interpolation_duration=2` filling the gap.
+
+- **§E · Audio tracks the curve, not a timer.** `WheelFx` takes a 0–1 speed factor taken from the derivative of
+  the same easing curve that drives the arrow, so the whir's pitch/volume and the peg-clacks can't drift out of
+  sync with what the eye sees. Clacks fire on peg crossings capped at one per tick: a rattle at full speed that
+  spaces itself into single clacks as the arrow settles. Landing layers bell + fanfare + firework + level-up.
+
+- **§F · Commands trimmed.** `/cb wheel` now gives the item (v1's `place` and `spin` leaves are gone — the wheel
+  is placed like a block so it can face the placer, and spun by right-click; the command backup stays deferred
+  scope). `/cb wheel list` reports the pool. `WheelPool` is unchanged — the existing denylist + spawn-egg filter
+  already met the §F contract. Show-only is preserved: the mod never hands the landed item to anyone.
+
+- **Build-gate note.** `verify.gradle`'s `tgGate` matched `Group_*_Testing_Guide.md`, but the testing guides are
+  named `Testing_Guide_NN.md`, so the gate could match no file and would fail every build once its marker
+  existed. Regex widened to accept the current naming.
+
+---
+
 ## Group 08 · Shapes — §F defects F1/F2/F3 fixed (from the 2026-07-22 MP pass) · 2026-07-22 (🟢 build-green — NOT confirmed in-game)
 
 > One jar for the three MP-pass defects in the §J/§B fix plan (group doc §F). §L (F4, vanilla parity)

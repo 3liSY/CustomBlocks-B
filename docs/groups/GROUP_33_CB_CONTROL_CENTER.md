@@ -2,7 +2,7 @@
 
 > Group 33 gives the CustomBlocks owner one private SRBProjects control center for seeing official CB use and controlling CB access without controlling Minecraft or the user's computer.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_33.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_33.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -253,7 +253,7 @@ Emergency pause disables CustomBlocks only. It never shuts down Minecraft, resta
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_33.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_33.md) · [All Groups](README.md)
 
 - [G04 Messages and Command Communication](GROUP_04_Communication.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

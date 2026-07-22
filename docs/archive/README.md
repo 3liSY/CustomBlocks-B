@@ -4,7 +4,7 @@ This folder preserves older project phases and retired working material.
 
 These records are historical evidence only. Keep their original language, dates, and status systems intact. Do not migrate them to the current Testing Guide template or glossary.
 
-For current work, use the [documentation dashboard](../testing/00_DASHBOARD.md), the relevant Group document, and its canonical Testing Guide.
+For current work, use the [documentation dashboard](../testing/Dashboard.md), the relevant Group document, and its canonical Testing Guide.
 
 ## Contents
 

@@ -2,7 +2,7 @@
 
 > Group 27 gives CustomBlocks one calm, capable Screen experience: a consistent visual system, one Studio for creating and editing blocks, and clear Screen handoffs without stealing the underlying feature logic.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_27.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_27.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -297,7 +297,7 @@ G27 owns the Screen and presentation only; G06 keeps mode state, switching logic
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_27.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_27.md) · [All Groups](README.md)
 
 - [G04 Communication](GROUP_04_Communication.md)
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)

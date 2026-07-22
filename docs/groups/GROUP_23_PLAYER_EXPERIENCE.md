@@ -2,7 +2,7 @@
 
 > Group 23 gives new players a useful first session and gives every player private, persistent hints and achievement progress without duplicating G27's Screen work.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_23.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_23.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -159,7 +159,7 @@ No chest or duplicate Screen UI is created here. G23 only supplies the server-si
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_23.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_23.md) · [All Groups](README.md)
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)

@@ -2,7 +2,7 @@
 
 > Group 18 gives a CustomBlock one clear editable Lore feature: saved lines that appear on its item hover when enabled.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_18.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_18.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -164,7 +164,7 @@ G18 owns Lore content format. G20 owns remote Vault transport and credentials.
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_18.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_18.md) · [All Groups](README.md)
 
 - [G04 Communication](GROUP_04_Communication.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

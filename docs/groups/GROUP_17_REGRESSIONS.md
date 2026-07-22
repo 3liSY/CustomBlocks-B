@@ -2,7 +2,7 @@
 
 > Group 17 keeps everyday CustomBlocks commands at least as capable, safe, and clear as their trusted older behavior.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_17.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_17.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -174,7 +174,7 @@ The Group guards command capability; it does not own visual Search UI design.
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_17.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_17.md) · [All Groups](README.md)
 
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
 - [G09 Backup, Data Safety, and Trash](GROUP_09_BACKUP_SAFETY.md)

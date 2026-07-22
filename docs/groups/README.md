@@ -1,6 +1,6 @@
 # Current Group Documents
 
-Each Group document is the current design and ownership source for one feature area. Start from the [documentation dashboard](../testing/00_DASHBOARD.md), then open the linked Group document and Testing Guide together.
+Each Group document is the current design and ownership source for one feature area. Start from the [documentation dashboard](../testing/Dashboard.md), then open the linked Group document and Testing Guide together.
 
 ## What Belongs Here
 

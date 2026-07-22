@@ -2,7 +2,7 @@
 
 > Group 29 helps a creator frame 9:16 shorts over Minecraft while keeping recording-mode guides out of the actual OBS footage.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_29.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_29.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -161,7 +161,7 @@ The server distributes instructions, not native windows. It cannot guarantee ano
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_29.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_29.md) · [All Groups](README.md)
 
 - [G03 HUD and Escape](GROUP_03_HUD_ESC.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

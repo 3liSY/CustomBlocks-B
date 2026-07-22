@@ -2,7 +2,7 @@
 
 > Group 16 gives the owner a trustworthy place to inspect CustomBlocks health, repair known problems, control feedback, and run private in-game tests without altering the official guides.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_16.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_16.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -218,7 +218,7 @@ Runtime cleanup erases testing data. Repository cleanup erases implementation; t
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_16.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_16.md) · [All Groups](README.md)
 
 - [G04 Communication](GROUP_04_Communication.md)
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)

@@ -2,7 +2,7 @@
 
 > Group 28 makes every undo, redo, and history entry honestly describe what it will change, including large bulk operations and face-texture edits.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_28.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_28.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -185,7 +185,7 @@ G27 provides the Screen. It cannot declare or repair history semantics on its ow
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_28.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_28.md) · [All Groups](README.md)
 
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
 - [G07 Bulk Operations](GROUP_07_BULK_OPERATIONS.md)

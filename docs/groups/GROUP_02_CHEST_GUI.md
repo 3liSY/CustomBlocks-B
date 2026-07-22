@@ -2,7 +2,7 @@
 
 > Group 02 preserves the retirement boundary for the old chest GUI system so discontinued menus do not quietly return.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_02_Scrapped.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_02_Scrapped.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -107,7 +107,7 @@ Keeping temporary base code does not reopen the retired chest-GUI scope.
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_02_Scrapped.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_02_Scrapped.md) · [All Groups](README.md)
 
 - [G27 Screens](GROUP_27_SCREENS.md)
 - [G22 Permissions](GROUP_22_PERMISSIONS.md)

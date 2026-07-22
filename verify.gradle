@@ -190,7 +190,11 @@ tasks.register('tgGate') {
 
         def newestTg = 0L
         if (tgDir.exists()) {
-            tgDir.eachFileMatch(groovy.io.FileType.FILES, ~/(?i)Group_.*_Testing_Guide\.md/) { f ->
+            // Both namings: the original Group_NN_Testing_Guide.md and the current Testing_Guide_NN.md
+            // (the docs rename left this gate matching NOTHING, so it failed every build once its marker
+            // existed, no matter which guide was edited). Testing_Guide_Template.md is excluded — editing the
+            // template is not updating a guide.
+            tgDir.eachFileMatch(groovy.io.FileType.FILES, ~/(?i)(Group_\d+_Testing_Guide\.md|Testing_Guide_\d+.*\.md)/) { f ->
                 if (f.lastModified() > newestTg) newestTg = f.lastModified()
             }
         }

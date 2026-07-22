@@ -2,7 +2,7 @@
 
 > [One clear sentence saying what this Group owns for the player.]
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Group_XX_Testing_Guide.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Group_XX_Testing_Guide.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -100,7 +100,7 @@ Use `*(none)*` inside the fold when no historical decision needs preserving.
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Group_XX_Testing_Guide.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Group_XX_Testing_Guide.md) · [All Groups](README.md)
 
 - [Relevant ADR or architectural reference.]
 - [Relevant historical record, used only as dated background.]

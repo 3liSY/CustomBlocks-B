@@ -2,7 +2,7 @@
 
 > Group 32 gives operators a ridiculous, powerful tomato projectile whose real explosion, temporary crater recovery, sauce gameplay, and visual chaos never take priority over server stability or player world safety.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_32.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_32.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -237,7 +237,7 @@ Tomato configuration does not modify shared CustomBlocks config schema unnecessa
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_32.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_32.md) · [All Groups](README.md)
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G09 Backup and Recovery](GROUP_09_BACKUP_SAFETY.md)

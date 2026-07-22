@@ -2,7 +2,7 @@
 
 > Group 11 gives creators a clear way to organize, browse, customize, export, and later share collections of CustomBlocks.
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_11.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_11.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -193,7 +193,7 @@ G11 defines category contents. G12 owns export/download experience and G20 owns 
 
 ## References
 
-[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_11.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_11.md) · [All Groups](README.md)
 
 - [G07 Bulk Operations](GROUP_07_BULK_OPERATIONS.md)
 - [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)

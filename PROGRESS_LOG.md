@@ -690,7 +690,7 @@ lock's padlocks don't appear until something else pushes — single `/cb lock` d
 which makes the asymmetry visible. One line, but it belongs to the padlock work in slice 2, not here.
 
 **Untouched, as instructed:** `hotbarRouteGate` (G04 §F) · G27 §R Diagnostics · G04 A3's missing Edit screen ·
-`00_DASHBOARD.md` (generated — regenerate via `docs/testing/tools/dashboard_gui.py` once the slices land).
+`Dashboard.md` (generated — regenerate via `docs/testing/tools/dashboard_gui.py` once the slices land).
 
 ---
 

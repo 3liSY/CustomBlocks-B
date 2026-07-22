@@ -171,7 +171,7 @@ def generate_dashboard():
         dashboard.extend(_dashboard_row(record) for record in items)
         dashboard.extend(['', '</details>', ''])
 
-    dash_path = os.path.join(DIR, '00_DASHBOARD.md')
+    dash_path = os.path.join(DIR, 'Dashboard.md')
     with open(dash_path, 'w', encoding='utf-8') as file:
         file.write('\n'.join(dashboard).rstrip() + '\n')
     print(f'✅ Generated {dash_path}')

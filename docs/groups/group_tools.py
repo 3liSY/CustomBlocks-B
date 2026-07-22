@@ -34,7 +34,7 @@ BANNED_PATTERNS = (
     (r"^## Current Truth\s*$", "Use Direction and Feature Plan instead of Current Truth"),
 )
 NAV_LINKS = (
-    ("Dashboard", "../testing/00_DASHBOARD.md"),
+    ("Dashboard", "../testing/Dashboard.md"),
     ("Testing Guide", None),
     ("All Groups", "README.md"),
 )
