@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.IntPredicate;
 
 public final class DeletedSlots {
 
@@ -72,6 +73,24 @@ public final class DeletedSlots {
     /** Un-retire one index — undo of a delete restored the block, so its index is live again. */
     public static synchronized void remove(int index) {
         if (DELETED.remove(index)) save();
+    }
+
+    /**
+     * Boot self-heal (G06-C safeguard): drop every retired index that is actually assigned to a
+     * LIVE block right now. A live slot must NEVER sit in this set — the
+     * {@link com.customblocks.block.DeletedPlacementSweeper} would otherwise turn all of that live
+     * block's placements into "Deleted: &lt;name&gt;" markers (the mass green-variant corruption).
+     * This repairs historical damage frozen on disk (a delete+restore under an older jar that never
+     * un-retired the index, or the {@link FreedSlots} boot migration importing an index that later
+     * went live) with no manual file edit. Idempotent; persists once only if it changed anything.
+     * Returns how many stale live indices were removed.
+     */
+    public static synchronized int reconcileLive(IntPredicate liveAssigned) {
+        int before = DELETED.size();
+        DELETED.removeIf(liveAssigned::test);
+        int removed = before - DELETED.size();
+        if (removed > 0) save();
+        return removed;
     }
 
     /** Snapshot of all deleted indices, sorted ascending. */

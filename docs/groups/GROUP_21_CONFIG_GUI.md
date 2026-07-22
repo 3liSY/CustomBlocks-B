@@ -1,155 +1,140 @@
-# Group 21 — Config sync backend (`max_blocks` cross-client registry sync)
+# Group 21 - Registry Capacity Sync
 
-> **Screen content moved 2026-07-12** — the entire Settings Book spec (decisions D1–D13, layout, settings
-> registry, full setting inventory, polish/power features, save/live-apply, build order, acceptance tests
-> G21.1–G21.15) now lives in **`GROUP_27_SCREENS.md` §G27.27**. That's the current owner-locked design
-> (2026-06-22) for what was `/cb config`'s Settings Book. This doc keeps only what's left: §9 below, the
-> `max_blocks` cross-client registry-sync fix — networking/mixin backend, not screen content, unaffected by
-> whatever medium the config UI itself ends up in.
->
-> **Prerequisite:** Group 02 (Chest GUI) verified.
->
-> **Status / test progress lives in** `Reports/GROUP_21_TESTING_GUIDE.md` §E (G21.16–G21.21).
+> Group 21 prevents an outdated client registry size from producing Fabric's raw CustomBlocks registry kick when it joins a server with more slots.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_21.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## 9. Config sync across clients — `max_blocks` (LOCKED 2026-06-26)
+## Purpose
 
-> **Owner-locked approach: BOTH layers** — a **client self-heal net** (Phase A) **and** a **server
-> handshake** (Phase B), built to cooperate (§9.6). D7 covers only the *local* "restart required"
-> warning when *you* change the value; this section covers propagating it to **other clients** so they
-> aren't kicked. Decision made with the owner 2026-06-26 (see D13).
->
-> 🔁 **Revised 2026-06-27 (owner): Phase B retired — Phase A is the complete fix, not a net under B.**
-> Tracing the join path proved a server handshake **cannot** beat this kick (registry frozen at
-> launch + kick fires before any server payload reaches the client) and could only re-introduce the
-> raw error if it loses the ordering race. Full reasoning in §9.7 Phase B. Phase A stands alone.
+`max_blocks` determines how many CustomBlocks block and item registry entries a client creates during launch. When its value is lower than the server's value, Fabric rejects the connection before normal play-time synchronization can occur. The raw message is technical and gives the player no route back.
 
-### 9.1 The problem (real incident — 2026-06-26)
+G21 owns the client-side recovery path for that one registry-capacity mismatch. It raises the local setting safely, explains the required full restart, and preserves the fact that a client with equal or greater capacity must remain untouched. It does not own the in-game configuration interface.
 
-`max_blocks` (config key `maxSlots`) sets the **registry size**. The owner raised it on the
-server; a client still set to `1124` was kicked at join with the cryptic Fabric error:
+## Ownership
 
-```
-Received 300 registry entries that are unknown to this client.
-The following registry entry namespaces may be related: customblocks
-(missing: customblocks:slot_1124, slot_1125, …)
-```
+| Owns | Does not own |
+| --- | --- |
+| `max_blocks` mismatch detection during config-phase registry synchronization | `/cb config`, Settings Book layout, and general setting editing: G27 |
+| Atomic, raise-only local repair and the restart-required message | Normal play-phase configuration synchronization |
+| The client mixin and helper that prevent the raw missing-slot disconnect | New registries, block metadata, and resource-pack delivery |
+| Narrow audit of registry-size-related join failures | Generic config payload cleanup or a speculative server handshake |
 
-The owner expected the client to "just sync." **It cannot** — see the hard constraints.
+## Direction
 
-### 9.2 Hard constraints (verified in source — any fix must obey these)
+When the server advertises more `customblocks:slot_N` entries than the client's frozen launch registry, the client intercepts the registry-remap failure. It learns the required capacity, raises only the local `max_blocks` value, and tells the player to fully restart Minecraft before rejoining.
 
-| Fact | Where | Consequence |
-|---|---|---|
-| Blocks register in a flat loop `slot_0 … slot_{max-1}` | `SlotManager.registerAll(int max)` (`core/SlotManager.java:54`) | Registry size = `max_blocks`, nothing else (slots.json only paints metadata). |
-| `registerAll` runs **once at mod init**, reading the **local** config | `CustomBlocksMod:224`, `CustomBlocksConfigStore:49` | The count is baked at client **launch**. |
-| **No** payload carries `maxSlots` | grep: zero sync/packet refs | Today it never propagates at all. |
-| Minecraft **freezes registries after init** | engine | You physically cannot add `slot_N` after launch → **≥ 1 client restart is unavoidable** when a client is too low. |
-| The kick fires in the **config phase** (Fabric registry sync) | engine, **before** the PLAY-phase `JOIN` hook | The existing on-join config pushes (`CustomBlocksMod.java:279`) are **too late** — the fix must intercept the config phase, not `JOIN`. |
-| Direction matters | engine registry-sync | **client ≥ server = OK** (extra client slots are harmless); only **client < server** kicks → self-heal only ever **raises** the client value, never lowers. |
+The repair is deliberately small and idempotent. A client that already has enough slots joins normally, sees no prompt, and keeps its higher value. Settings changed by the owner through a future Screen are a different concern from recovering another player's under-sized launch registry.
 
-### 9.3 Audit result — the desync surface is narrow (verified 2026-06-26)
+## Locked Decisions
 
-Every `Registry.register` site was checked. **`max_blocks` is the only registry sized by data** —
-so it is the only thing that can cause this kick:
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-26 | Only `max_blocks` creates a data-sized CustomBlocks registry surface. | The repair stays focused instead of synchronizing unrelated settings. |
+| 2026-06-26 | The client repairs itself automatically with an atomic raise-only write. | Players never manually edit a file, and the client can never lower its capacity. |
+| 2026-06-26 | The shipped default stays modest. | Client memory/registry cost remains reasonable; an affected client needs one restart. |
+| 2026-06-27 | Config-phase self-heal is the complete solution. | A server handshake is not built because normal payloads arrive after the kick. |
+| 2026-06-27 | Mismatch detection compares against the live registry, not the just-updated config value. | A same-session retry cannot leak the raw error while registries still await restart. |
+| 2026-07-12 | Settings Book and Discord editor work belong to G27 and G21. | G21 remains a networking/mixin backend document. |
 
-| Surface | Count source | Kick risk |
-|---|---|---|
-| `SlotManager` `slot_0…slot_{max}` (block + item) | **`max_blocks`** | ⚠️ **this bug** |
-| `ArabicLetterRegistry` | 1 fixed block | none |
-| `AnimSlotRegistry` | 1 block-entity type | none |
-| `RemovedBlock`, 3 item-group tabs, `ToolItems` | fixed in code | none |
+## Feature Plan
 
-Everything else is either **already live-synced** on join (silent-pack, transparent-bg, colour
-hexes, Arabic labels, HUD — `CustomBlocksMod.java:279`) or **server-side only** (`textureSize` is
-used server-side to generate the PNGs, then shipped via the pack; `httpHost`/`httpPort` are
-local-machine and must **not** sync). No second hard-desync vector exists.
+### A. Launch-Time Capacity Repair
 
-### 9.4 The fix — one shared healer, two callers (LOCKED)
+**Player outcome**
 
-The whole feature converges on **one** helper so the two layers can't fight:
+A player with too few CustomBlocks slots sees a clear restart instruction instead of a cryptic unknown-registry disconnect.
 
-- **`MaxSlotsHealer.ensureAtLeast(int needed)`** *(new file — `SlotManager` is 497/500, full)*
-  - If local `max_blocks` ≥ `needed` → **no-op, silent** (idempotent).
-  - Else: **atomic raise-only write** of `config.json` (reuse `CustomBlocksConfigStore` temp+rename
-    + `clamp(1,8192)`), set a one-shot "restart pending" flag, and show the friendly screen (§9.6 text).
-  - **Raise-only + idempotent** is what makes order-independence and no-double-prompt work.
+**Experience**
 
-- **Caller A — client self-heal mixin (Phase A).** Extend the config-phase interception (precedent:
-  `mixin/ClientCommonNetworkHandlerMixin.java`) to catch the registry-remap failure, read the
-  server's highest `customblocks:slot_N` from the sync data, and call `ensureAtLeast(N+1)`.
-  **No server change** — heals the owner *and* every friend automatically, even against a server the
-  client can't otherwise query.
+- The message names the server capacity, the player's old value, and the fact that the setting was updated.
+- One full Minecraft restart is requested plainly; the player can then rejoin without editing a file.
+- Retrying before restart still avoids the raw registry error, even though the running registry cannot gain slots.
 
-- ~~**Caller B — server handshake (Phase B).**~~ **RETIRED 2026-06-27** — see §9.7. A server payload
-  cannot fire before the config-phase registry kick, so this caller never beats it. Phase A's mixin
-  is the sole path.
+**Requirements**
 
-### 9.5 Locked decisions (was Q1–Q4)
+- A config-phase client mixin reads the highest remote `customblocks:slot_N` entry during the registry-remap failure.
+- `MaxSlotsHealer.ensureAtLeast(int needed)` is the only write path for this repair.
+- The write reuses the normal atomic config-store behavior and clamps capacity within `1..8192`.
+- The restart prompt is one-shot per needed value and logs enough context to diagnose a mismatch without repeated noise.
 
-| # | Decision | Locked choice |
-|---|---|---|
-| Q1 | Transport | **BOTH** — handshake (B) is primary/exact; self-heal mixin (A) is the fallback net. |
-| Q2 | Self-heal | **Auto-write**, raise-only, atomic. No manual file editing. |
-| Q3 | Safety default | **Keep the shipped default low** (no client bloat); rely on self-heal's one restart. |
-| Q4 | Scope | **`max_blocks` first**; build `ConfigSyncPayload` general so future restart-class fields can ride it. |
+**Boundary**
 
-### 9.6 How the two cooperate — the "work perfectly together" rule
+This area repairs a client that is below server capacity. It does not add registry entries at runtime, replace normal setting synchronization, or change a client that is already equal to or above server capacity.
 
-- **Single healer → single write path.** Both callers funnel through `ensureAtLeast`; there is no
-  second place that writes `max_blocks`, so no race, no double-write.
-- **Idempotent + raise-only → order-free.** Whichever fires first heals; the other sees local ≥
-  needed and **stays silent** → exactly one restart prompt (G21.21).
-- **Handshake preferred, mixin is the net.** B fires earlier and carries the exact number, so the
-  player sees the clean message; A still saves clients hitting an old/other server or a dropped
-  handshake packet.
-- **One screen, one wording**, both paths: *"This server uses {M} custom blocks; your game was set to
-  {N}. We've updated your setting — fully restart Minecraft, then rejoin."*
+### B. Capacity Safety Rules
 
-### 9.7 Build order (phased; each compiles green — Bible §7)
+**Player outcome**
 
-**Phase A — client self-heal (MVP, zero server dependency)**
-> ✅ CONFIRMED IN-GAME 2026-06-27 (jar 1.0.0) — `core/MaxSlotsHealer.java` + `mixin/RegistrySyncHealMixin.java` (`@Mixin(RegistrySyncManager.class, remap=false)` HEAD on `checkRemoteRemap`) + `customblocks.mixins.json`. CS-1/2/3 pass (owner + client log); CS-4 (client-higher) not yet run. **v2 fix:** the mixin compares the server slot count against the LIVE registry (`Registries.BLOCK`), not the mutable config — the first build leaked the raw kick on a same-session retry because the heal had already raised the in-memory config while the registry stayed frozen at launch. See TESTING_GUIDE §5 + PROGRESS_LOG 2026-06-27.
-1. `MaxSlotsHealer` (new file): raise-only atomic write + restart-pending flag + helper to read it.
-2. Client config-phase interception (mixin/hook) on the registry-remap failure → derive `needed` →
-   `ensureAtLeast`.
-3. Friendly disconnect/restart screen (replaces the raw "registry entries unknown").
-   → **OWNER TEST A** (G21.16–G21.19).
+Joining a server with fewer slots than the client remains uneventful and safe.
 
-**Phase B — server handshake — ❌ RETIRED 2026-06-27 (owner): not building. Phase A is the full fix.**
-> Decided after tracing the actual join path against the source. A server handshake **cannot** beat
-> this kick, for four concrete reasons:
-> 1. **Seats are locked at launch.** The block registry is frozen at mod init (§9.2). No server
->    message can add `slot_N` to a running client → the client *still* needs one restart. Phase A
->    already gives that. Phase B saves zero restarts.
-> 2. **The message arrives too late.** Every payload this mod sends goes out on the PLAY-phase `JOIN`
->    hook (`CustomBlocksMod.java:279`), *after* configuration. The kick fires *during* configuration
->    (§9.2). An under-provisioned client is disconnected before `JOIN` — so the locked
->    "`PayloadTypeRegistry.playS2C`" line could never reach the client it was meant to help.
-> 3. **The only earlier slot is a race we can lose.** Sending in the configuration phase means
->    cutting in front of Fabric's own registry-sync task. If we lose that ordering race, the **raw
->    kick leaks anyway** → a net *regression* risk over Phase A.
-> 4. **Nobody is left to help.** Only a client that already runs CustomBlocks-B can hit this mismatch
->    (the slots are *our* registrations) — and every such client already carries the Phase A mixin.
->    Phase B's only theoretical audience is "a CustomBlocks-B client on a Fabric-API build where the
->    mixin's target moved," which the fragile config-phase handshake wouldn't reliably serve either.
->
-> Net: best case Phase B equals Phase A; worst case it re-introduces the bug. Not built.
-> `ConfigSyncPayload` as a *general* config broadcaster (replacing the 4 separate `JOIN` payloads) is
-> a possible **future, unrelated** cleanup — **not** a `max_blocks` kick fix. G21.20/G21.21 are void.
+**Experience**
 
-### 9.8 Reuse + file-size map (read before writing — §3 Research First)
+- A higher-capacity client joins without a warning, file write, or value reduction.
+- An equal-capacity client joins without any repair UI.
+- Normal servers with no mismatch never see the recovery experience.
 
-- **New files:** `MaxSlotsHealer` (core), `ConfigSyncPayload` (network/payloads), and likely a
-  client-side registry-sync-failure mixin (sibling of `ClientCommonNetworkHandlerMixin`).
-- **Touch (have headroom):** `CustomBlocksMod` (401/500 — payload registration + config-phase send),
-  `customblocks.mixins.json` (register the new client mixin).
-- **DO NOT touch:** `SlotManager` (497/500 — full; all new logic goes in `MaxSlotsHealer`).
-- **Reuse:** `CustomBlocksConfigStore` atomic save + `clamp(1,8192)`; the payload register/encode/
-  decode pattern of the existing 22 payloads; the config-phase mixin pattern.
-- **Acceptance:** **G21.16–G21.21** (§8).
+**Requirements**
 
----
+- The healer is idempotent: `local >= needed` is silent no-op behavior.
+- The comparison uses live registered slot capacity because config changes cannot alter a running registry.
+- The code path stays isolated from `SlotManager`, which has no safe room for additional logic.
 
-> **Golden Rule:** nothing is ✅ done until the owner runs it in-game and confirms.
+**Boundary**
+
+Capacity safety does not decide the server's configured maximum; it only ensures a joining client can reach that maximum after restart.
+
+## Cross-Group Contracts
+
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G05 | Registered block assets | G21 only heals client registry count; it does not build or serve assets. |
+| G13 | Arabic registry | The fixed Arabic registry is outside `max_blocks` capacity and must not enter the repair calculation. |
+| G16 | Diagnostics | Join failures and healing logs use the diagnostic conventions without exposing a raw Fabric error to players. |
+| G27 | Settings Screen | G27 edits local settings and shows normal restart warnings; G21 handles automatic recovery while joining another server. |
+
+## Technical Contract
+
+- `SlotManager.registerAll(int max)` creates the flat `slot_0` through `slot_{max-1}` block and item registrations once during mod initialization.
+- Minecraft registries are frozen after launch, and the mismatch happens in Fabric's configuration phase before the existing play-phase join hooks can send a payload.
+- The client registry must be greater than or equal to the server registry; extra client slots are harmless, so repair is permanently raise-only.
+- `MaxSlotsHealer` owns atomic config writes and restart-pending state; the config-phase mixin is its only required caller.
+- The repair derives needed capacity from the live remote registry entries and compares it with the live local registry, not mutable in-memory config.
+- `ConfigSyncPayload` may be considered later for unrelated play-time synchronization, but is not a solution to this launch-time kick.
+
+## Deferred Scope
+
+<details><summary>Future ideas outside this Group's current plan</summary>
+
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| General restart-class config payload | It is unrelated cleanup and cannot repair the config-phase mismatch. | Future configuration backend work |
+| Additional registry-capacity repair | No other data-sized CustomBlocks registry surface is currently known. | G21 after a new audit |
+| Settings Book, setting search, live apply, and Discord editor | These are interaction and UI concerns, not launch-time registry recovery. | G27 and G21 |
+
+</details>
+
+## Superseded Decisions
+
+<details><summary>Historical decisions kept only so old work does not return</summary>
+
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-26 | A server handshake and the client healer would cooperate. | The self-heal mixin is the only reliable path because the server cannot send a normal payload before the kick. |
+| 2026-06-27 | The local config value could prove a same-session retry was safe. | The live registry is authoritative until a full restart recreates it. |
+| 2026-07-12 | G21 owned the Settings Book specification. | G27 owns the Screen; G21 retains only registry-capacity recovery. |
+
+</details>
+
+## References
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_21.md) · [All Groups](README.md)
+
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G13 Arabic and Text Blocks](GROUP_13_ARABIC.md)
+- [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 21 snapshot](../archive/group-migration-2026-07-18/GROUP_21_CONFIG_GUI.md)

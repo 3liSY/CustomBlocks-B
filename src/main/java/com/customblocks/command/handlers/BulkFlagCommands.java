@@ -31,6 +31,7 @@ import com.customblocks.core.FavoritesManager;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.UndoManager;
+import com.customblocks.core.WidgetSync;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.CommandManager;
@@ -102,6 +103,13 @@ public final class BulkFlagCommands {
 
         // ONE undo entry for the whole batch, exactly like every other bulk op (G07.2 / G07-BULK-UNDO).
         UndoManager.recordBatch(BulkConfirm.actor(src), children, "bulk-" + op);
+
+        // G03-BULKLOCK-HUD (2026-07-18): a lock is a server-wide fact, so push the padlock widget to
+        // everyone NOW — same as the single-block lock path (ManagementCommands). Without this the HUD
+        // only caught up on the next relog. Favourites are per-player and not a HUD widget, so skip them.
+        if (!favorite) {
+            WidgetSync.pushAll(src.getServer());
+        }
         String hover = CbFmt.DIM + capitalize(pastTense(op)) + " " + changed.size() + " block(s):\n" + CbFmt.BODY
                 + BulkChat.columns(changed);
         MutableText msg = Text.literal(CbFmt.OK + capitalize(pastTense(op)) + " ")

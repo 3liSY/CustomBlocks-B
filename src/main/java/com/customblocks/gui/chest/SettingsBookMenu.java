@@ -37,7 +37,7 @@ public final class SettingsBookMenu {
 
     private static final Section[] SECTIONS = {
         new Section("general", "General", Items.LEVER, "Everyday basics.",
-                new String[]{"max_blocks", "texture_quality", "silent_pack", "typo_correction", "auto_category"}),
+                new String[]{"max_blocks", "texture_quality", "silent_pack", "auto_category"}),
         new Section("appearance", "Appearance", Items.BRUSH, "How blocks look + feedback.",
                 new String[]{"transparent_background", "background_removal", "background_strength",
                         "variant_colours", "named_texture_mirror", "effects", "edit_hud"}),

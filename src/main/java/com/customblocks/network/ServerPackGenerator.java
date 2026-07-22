@@ -23,7 +23,6 @@ import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
 import com.customblocks.image.ColorReplacer;
-import com.customblocks.image.ImageProcessor;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -81,13 +80,25 @@ public final class ServerPackGenerator {
         }
     }
 
+    /** Emit the full-resolution pack (the HTTP zip + integrated host + the 512 sync variant). */
+    public static void emit(PackSink sink) throws Exception {
+        emit(sink, CustomBlocksConfig.textureSize);
+    }
+
     /**
      * Emit every pack file (pack.mcmeta, per-slot textures/models/blockstates, empty-slot
      * placeholders, re-tinted item art) through {@code sink}. The single source of truth for
      * pack contents; the server zips it, the client writes it loose. Duplicate paths are skipped
      * so one bad entry can't abort the build.
+     *
+     * <p>Group 05 §F — every emitted PNG is bounded to {@code maxSize} on a side: static block/face
+     * textures are clamped square, and an animated frame GRID is scaled uniformly so each FRAME (not
+     * just the whole sheet) stays within {@code maxSize} while its grid layout and playback survive.
+     * Only the PNG bytes differ between resolutions; models/blockstates/mcmeta are identical, so a
+     * 128 and a 512 manifest diff only where a texture actually shrank. Passing the configured
+     * {@link CustomBlocksConfig#textureSize} reproduces the pre-§F full-size output byte-for-byte.
      */
-    public static void emit(PackSink sink) throws Exception {
+    public static void emit(PackSink sink, int maxSize) throws Exception {
         Set<String> written = new HashSet<>();
         // pack.mcmeta
         JsonObject pack = new JsonObject();
@@ -104,7 +115,6 @@ public final class ServerPackGenerator {
             assigned.add(i);
             String key = "slot_" + i;
             AnimData anim = SlotManager.animFor(i);
-            String shape = SlotManager.shapeFor(i);
             byte[] tex = TextureStore.load(i);
             if (tex == null || tex.length == 0) tex = PLACEHOLDER_PNG;
             // G05-5 atlas guard: a STATIC block texture must never exceed textureSize on a side. A correctly
@@ -112,57 +122,67 @@ public final class ServerPackGenerator {
             // bad slot can't bloat the atlas/VRAM for every player. Animated slots are skipped — their base is
             // a deliberate off-atlas frame GRID meant to be larger than a single tile.
             boolean animatedGrid = anim.isAnimated() && TextureStore.has(i);
-            if (!animatedGrid) tex = clampStaticTexture(tex);
+            if (!animatedGrid) tex = PackTextureScaler.clampStatic(tex, maxSize);
+            else if (maxSize < CustomBlocksConfig.textureSize) tex = PackTextureScaler.clampAnimatedGrid(tex, maxSize, anim.frameCount());
             put(sink, written, tex(key), tex);
-            put(sink, written, blockstate(key), blockstateJson(MOD_ID + ":block/" + key));
-            // Model selection, in priority order:
-            //   animated (G14) → plain cube_all + a sidecar .mcmeta so the strip plays EVERYWHERE
-            //                    (world/hand/inventory/creative tab) — wins over shape/face so a
-            //                    batch resize or per-face paint can never flatten the strip;
-            //   else non-full shape (G08) → a generated shape model (uses the base texture);
-            //   else M4 per-face overrides → per-face cube; else the plain cube_all.
+            // ── Block model + blockstate ────────────────────────────────────────────────
+            // G08 §B (2026-07-21): NOTHING emitted for a slot depends on its shape. Every slot — static,
+            // animated, or Arabic — ships ONE catch-all ("") blockstate variant and one shape-independent
+            // model, so `/cb setshape` writes data only and never pushes a pack (no reload prompt). The
+            // client draws the real shape over the static model at bake time (DirectionalSlotModel +
+            // SlotShapeMesh); off-atlas blocks (animated / arabic) render through a BlockEntityRenderer and
+            // ignore shape entirely, as they always have. An earlier §B tried a `shape` BLOCK-STATE with
+            // pre-baked variants instead — that OOM'd boot at ~3100 slots and was reverted 2026-07-20.
             if (animatedGrid) {
                 // Group 14: the PLACED animated block AND its ITEM icon both render OFF the block atlas (their
                 // own GL texture — all frames, full speed, no atlas muffle). AnimSlotBER paints the world block;
                 // the builtin/entity item model routes the icon to SlotItemRenderer. The block model is INVISIBLE
                 // so the atlas never stitches the (large) frame grid. A grid sidecar carries the layout + playback;
                 // a LEGACY vertical strip (baked before the grid change) still ships its .mcmeta so old animated
-                // blocks keep working until they're re-created.
+                // blocks keep working until they're re-created. Shape-agnostic → single "" variant.
+                put(sink, written, blockstate(key), blockstateJson(MOD_ID + ":block/" + key));
                 put(sink, written, blockModel(key), invisibleBlockModelJson());
                 put(sink, written, itemModel(key), builtinEntityItemJson());
-                int cols = stripCols(tex, anim.frameCount());
+                int cols = PackTextureScaler.stripCols(tex, anim.frameCount());
                 if (cols >= 2) put(sink, written, gridSidecar(key), gridJsonBytes(anim, cols));
                 else           put(sink, written, tex(key) + ".mcmeta", mcmetaBytes(anim));
-            } else if (!com.customblocks.block.BlockShapes.isFull(shape)) {
-                // G08 §3: a non-full shape honors per-face overrides like the full cube; fixes face→setshape "art lost". cross (1 texture) skips.
-                if (!com.customblocks.block.BlockShapes.isCross(shape)) writeFacePngs(sink, written, i, key);
-                put(sink, written, blockModel(key), shapeModelJson(shape, i, key));
             } else if (d.isArabic()) {
                 // G13-25 CP2: an Arabic letter/number slot renders OFF-ATLAS like an animated block —
                 // AnimSlotBER draws its faces (glyph facing + readable back via the BlockEntity), which
                 // an atlas cube_all cannot do. Invisible block model + builtin/entity item icon
-                // (SlotItemRenderer picks it up through StaticFrameCache automatically).
+                // (SlotItemRenderer picks it up through StaticFrameCache automatically). Shape-agnostic.
+                put(sink, written, blockstate(key), blockstateJson(MOD_ID + ":block/" + key));
                 put(sink, written, blockModel(key), invisibleBlockModelJson());
                 put(sink, written, itemModel(key), builtinEntityItemJson());
-            } else if (TextureStore.hasAnyFace(i)) {
-                writeFacePngs(sink, written, i, key);
-                put(sink, written, blockModel(key), cubeFacesJson(i, key));
             } else {
-                // Group 14 ADR-012: a STATIC, full-shape, single-texture block — the common /cb create block
-                // — renders through the vanilla atlas as a plain cube_all. WORLD model unchanged (keeps chunk-
-                // mesh batching — no per-instance GL texture for the common case).
-                put(sink, written, blockModel(key), cubeAllJson(key));
-                // Group 30 (Guess Mode): route the ITEM icon (hand/inventory/frame/dropped) through
-                // SlotItemRenderer so a flagged holder sees the "?" cube there too. SlotItemRenderer falls back
-                // to StaticFrameCache.getIconFallback (real slot_N.png, atlas gate bypassed) when not flagged —
-                // visually the same cube_all icon this replaces. Placed-in-world rendering is untouched (still
-                // the atlas model above); this only changes how the ITEM is drawn.
-                put(sink, written, itemModel(key), builtinEntityItemJson());
+                // STATIC block: ONE shape-INDEPENDENT model under a single catch-all "" blockstate variant.
+                // Shape is data-driven (SlotData), NOT a block-state property — with ~3100 registered blocks
+                // a shape/facing/half property set multiplied to ~3.97M block-states and OOM'd registration
+                // on boot (G08 revert 2026-07-20).
+                //
+                // G08 §B (2026-07-21): this model is now always the FULL-cube form, whatever the slot's shape
+                // is, and the CLIENT draws the actual shape by emitting BlockShapes' boxes over it
+                // (DirectionalSlotModel / SlotShapeMesh). That is the whole reload-free mechanism: NO byte
+                // written for a static slot depends on its shape any more, so `/cb setshape` has nothing to
+                // re-emit and never pushes a pack. It also means the 4 per-slot stair corner models are gone —
+                // corners are emitted at runtime from BlockShapes.stairBoxes. Painted-face PNGs are shared.
+                if (TextureStore.hasAnyFace(i)) writeFacePngs(sink, written, i, key, maxSize);
+                put(sink, written, blockModel(key), staticShapeModelJson(i, key));
+                put(sink, written, blockstate(key), blockstateJson(MOD_ID + ":block/" + key));
+                // Item icon = the block's model, chosen WITHOUT consulting the shape (§B). A plain block (no
+                // rotation, no painted face) routes its icon through SlotItemRenderer (builtin) for Guess
+                // Mode; a painted/rotated one shows its cube model, exactly as before. The icon still FOLLOWS
+                // the shape — SlotItemRenderer draws it from BlockShapes boxes (ShapeIconMesh) — so nothing
+                // written here depends on the shape and /cb setshape stays reload-free. Only a painted/rotated
+                // shaped slot keeps a cube icon: its icon is an atlas model, and making that one shape-aware
+                // is exactly the pack push §B exists to avoid.
+                boolean plainCube = !com.customblocks.core.FaceRotations.hasAny(i) && !TextureStore.hasAnyFace(i);
+                if (plainCube) {
+                    put(sink, written, itemModel(key), builtinEntityItemJson());
+                } else {
+                    put(sink, written, itemModel(key), itemJson(MOD_ID + ":block/" + key));
+                }
             }
-            // Default item model for the remaining atlas paths (shape / per-face — their normal baked icon,
-            // still out of scope for item-level guess disguise). put() skips this as a duplicate when a branch
-            // above already wrote the item model (animated / arabic / plain-cube → builtin).
-            put(sink, written, itemModel(key), itemJson(MOD_ID + ":block/" + key));
         }
 
         // Empty slots → one shared placeholder model (purple/black missing-texture look).
@@ -230,6 +250,22 @@ public final class ServerPackGenerator {
         JsonObject bs = new JsonObject();
         bs.add("variants", variants);
         return GSON.toJson(bs).getBytes(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * The block model for a STATIC slot — the FULL-cube form, deliberately independent of the slot's shape
+     * (G08 §B). It resolves to the rotated-face, per-face, or plain {@code cube_all} model exactly as the
+     * pre-§B full-cube path did, so a full block is byte-identical to before.
+     *
+     * The client wrap ({@link com.customblocks.client.render.DirectionalSlotModel}) turns this into the real
+     * shape at bake time, and samples this model's own baked quads for each face's sprite — which is why a
+     * §E per-face override survives a shape change with no work here. Because nothing in a static slot's pack
+     * output depends on the shape, `/cb setshape` writes data only: no rebuild, no reload prompt.
+     */
+    private static byte[] staticShapeModelJson(int index, String key) {
+        if (com.customblocks.core.FaceRotations.hasAny(index)) return FaceModelBuilder.rotatedCubeJson(index, key);
+        if (TextureStore.hasAnyFace(index))                    return FaceModelBuilder.cubeFacesJson(index, key);
+        return cubeAllJson(key);
     }
 
     /**
@@ -327,98 +363,13 @@ public final class ServerPackGenerator {
         return GSON.toJson(o).getBytes(StandardCharsets.UTF_8);
     }
 
-    /**
-     * Grid columns for a stored animated texture: {@code 1} = a LEGACY vertical strip (one column, N rows),
-     * {@code ≥2} = a packed grid. Detected from the PNG's own IHDR dimensions: a vertical strip is exactly
-     * {@code frameCount}× as tall as it is wide; anything else is a grid (cols = ⌈√count⌉, matching the decoder).
-     */
-    private static int stripCols(byte[] png, int frameCount) {
-        if (frameCount <= 1) return 1;
-        int w = pngDim(png, 16), h = pngDim(png, 20);   // IHDR: width @16, height @20 (big-endian)
-        if (w <= 0 || h <= 0) return 1;                  // unreadable dims → treat as legacy (safe)
-        if ((long) w * frameCount == h) return 1;        // exact N-tall single column → legacy vertical strip
-        return com.customblocks.image.AnimationDecoder.gridCols(frameCount);
-    }
-
-    /** Read a big-endian 4-byte int from a PNG at {@code off} (16 = width, 20 = height in the IHDR chunk). */
-    private static int pngDim(byte[] b, int off) {
-        if (b == null || b.length < off + 4) return -1;
-        return ((b[off] & 0xFF) << 24) | ((b[off + 1] & 0xFF) << 16)
-                | ((b[off + 2] & 0xFF) << 8) | (b[off + 3] & 0xFF);
-    }
 
     /** Write each painted face's PNG for a slot (shared by the shaped + full-cube per-face model paths). */
-    private static void writeFacePngs(PackSink sink, Set<String> written, int index, String key) throws Exception {
+    private static void writeFacePngs(PackSink sink, Set<String> written, int index, String key, int maxSize) throws Exception {
         for (String face : TextureStore.FACES) {
             byte[] ft = TextureStore.loadFace(index, face);
-            if (ft != null && ft.length > 0) put(sink, written, tex(key + "_" + face), clampStaticTexture(ft));
+            if (ft != null && ft.length > 0) put(sink, written, tex(key + "_" + face), PackTextureScaler.clampStatic(ft, maxSize));
         }
-    }
-
-    /** M4 — full cube model: painted faces point at their override, the rest at the base. */
-    private static byte[] cubeFacesJson(int index, String key) {
-        String base = MOD_ID + ":block/" + key;
-        JsonObject tex = new JsonObject();
-        tex.addProperty("particle", base);
-        for (String face : TextureStore.FACES) {
-            tex.addProperty(face, TextureStore.hasFace(index, face) ? base + "_" + face : base);
-        }
-        JsonObject m = new JsonObject();
-        m.addProperty("parent", "minecraft:block/cube");
-        m.add("textures", tex);
-        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Model for a non-full shape (G08). "cross" = vanilla cross billboard; every other shape is built from
-     * BlockShapes' boxes as elements. Faces default to the base (#all); a PAINTED face points at its own var
-     * (mirrors {@link #cubeFacesJson}) so per-face art survives a shape change (G08 §3).
-     */
-    private static byte[] shapeModelJson(String shape, int index, String key) {
-        String base = MOD_ID + ":block/" + key;
-        JsonObject m = new JsonObject();
-        JsonObject tex = new JsonObject();
-        tex.addProperty("particle", base);
-
-        if (com.customblocks.block.BlockShapes.isCross(shape)) {
-            m.addProperty("parent", "minecraft:block/cross");
-            tex.addProperty("cross", base);
-            m.add("textures", tex);
-            return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
-        }
-
-        m.addProperty("parent", "minecraft:block/block");
-        tex.addProperty("all", base);
-        for (String face : TextureStore.FACES) { // G08 §3: a texture var per painted face (like cubeFacesJson)
-            if (TextureStore.hasFace(index, face)) tex.addProperty(face, base + "_" + face);
-        }
-        m.add("textures", tex);
-        JsonArray elements = new JsonArray();
-        int[][] boxes = com.customblocks.block.BlockShapes.boxes(shape);
-        if (boxes != null) {
-            for (int[] b : boxes) elements.add(element(index, b));
-        }
-        m.add("elements", elements);
-        return GSON.toJson(m).getBytes(StandardCharsets.UTF_8);
-    }
-
-    /** One model element (box): each face uses its #&lt;face&gt; override var when painted, else #all. Auto-UV. */
-    private static com.google.gson.JsonObject element(int index, int[] b) {
-        JsonObject el = new JsonObject();
-        JsonArray from = new JsonArray();
-        from.add(b[0]); from.add(b[1]); from.add(b[2]);
-        JsonArray to = new JsonArray();
-        to.add(b[3]); to.add(b[4]); to.add(b[5]);
-        el.add("from", from);
-        el.add("to", to);
-        JsonObject faces = new JsonObject();
-        for (String face : new String[]{"down", "up", "north", "south", "west", "east"}) {
-            JsonObject f = new JsonObject();
-            f.addProperty("texture", TextureStore.hasFace(index, face) ? "#" + face : "#all");
-            faces.add(face, f);
-        }
-        el.add("faces", faces);
-        return el;
     }
 
     /**
@@ -466,27 +417,6 @@ public final class ServerPackGenerator {
     private static void put(PackSink sink, Set<String> written, String path, byte[] data) throws Exception {
         if (!written.add(path)) return; // skip duplicates so one bad entry can't abort the build
         sink.put(path, data);
-    }
-
-    /**
-     * G05-5 atlas guard: downscale {@code png} to a {@link CustomBlocksConfig#textureSize}-square texture
-     * when it exceeds that size on either side; otherwise return it untouched (the common case — one cheap
-     * IHDR read, no decode). Stops a legacy or imported block texture stored larger than the configured size
-     * from bloating the block atlas / VRAM for every player. Never throws: on a resize failure it logs and
-     * ships the original rather than aborting the whole pack build.
-     */
-    private static byte[] clampStaticTexture(byte[] png) {
-        int max = CustomBlocksConfig.textureSize;
-        int w = ImageProcessor.pngWidth(png), h = ImageProcessor.pngHeight(png);
-        if (w <= max && h <= max) return png; // within budget (or unreadable → leave it) — no work
-        try {
-            byte[] fixed = ImageProcessor.toBlockPng(png, max);
-            CustomBlocksMod.LOGGER.warn("[CustomBlocks] Downscaled oversized block texture {}x{} -> {}px on emit (atlas guard).", w, h, max);
-            return fixed;
-        } catch (Exception e) {
-            CustomBlocksMod.LOGGER.error("[CustomBlocks] Could not downscale oversized texture ({}x{}); shipping as-is.", w, h, e);
-            return png;
-        }
     }
 
     /** A 1x1 PNG used as a placeholder texture for untextured slots. */

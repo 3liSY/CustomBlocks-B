@@ -5,7 +5,6 @@
  *   /cb backup save [name]     — snapshot current data into backups/<name>/ (Slice 1, read-only).
  *   /cb backup list            — list saved backups, newest first (Slice 1).
  *   /cb backup load <name>     — replace live data with a backup. Requires /cb confirm. (Slice 2)
- *                                ("restore" is kept as a hidden alias for load.)
  *   /cb backup delete <name>   — remove a backup folder (never touches live data). (Slice 2)
  *
  * The GUI (BackupMenu / BackupConfirmMenu) calls guiCreate / guiLoad here so it reuses the exact same
@@ -69,12 +68,7 @@ public final class BackupCommands {
                                 .executes(ctx -> save(ctx.getSource(), StringArgumentType.getString(ctx, "name")))))
                 .then(CommandManager.literal("list")
                         .executes(ctx -> list(ctx.getSource())))
-                .then(CommandManager.literal("load") // primary verb (renamed from "restore")
-                        .then(CommandManager.argument("name", StringArgumentType.word())
-                                .suggests(NAMES)
-                                .executes(ctx -> requestRestore(ctx.getSource(),
-                                        StringArgumentType.getString(ctx, "name")))))
-                .then(CommandManager.literal("restore") // hidden alias — keeps old muscle memory working
+                .then(CommandManager.literal("load")
                         .then(CommandManager.argument("name", StringArgumentType.word())
                                 .suggests(NAMES)
                                 .executes(ctx -> requestRestore(ctx.getSource(),

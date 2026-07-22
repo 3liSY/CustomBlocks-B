@@ -250,6 +250,7 @@ public final class TextureStore {
             // best-effort cleanup
         }
         for (String f : FACES) deleteFace(index, f);
+        FaceRotations.clear(index); // G06 §G — a retired/reused slot must not inherit stale face rotations
         TextureNameMirror.removeSlot(index); // Group 26 Part C — drop this slot's named PNG(s) (flag-gated)
     }
 }

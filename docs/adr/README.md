@@ -1381,7 +1381,7 @@ File-by-file changes + the in-game test checklist are in the **2026-06-21 Group 
 - **Status:** Accepted 2026-06-21 (owner decisions). **Diagnosis + plan only — NO code written yet.**
   Builds on [ADR-013](#adr-013) (off-atlas grid stays); this ADR adds the
   fixes found when the owner tested that build in-game. Authoritative narrative + memory math:
-  `docs/groups/GROUP_14_ANIMATION_VIDEO.md` §7. Test plan: `docs/testing/GROUP_14_TESTING_GUIDE.md` §7.
+  `docs/groups/GROUP_14_ANIMATION_VIDEO.md` §7. Test plan: `docs/testing/TESTING_GUIDE_14.md` §7.
 - **Owner:** non-programmer; burned by months of "looks done, ships broken." Nothing here is ✅ until the
   owner confirms each step in-game (Golden Rule). Prior safety checkpoint: commit `6aecd74`.
 

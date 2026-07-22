@@ -48,6 +48,7 @@ public final class TrashEntryMenu {
         m.set(13, Icons.of(Items.PAPER, "§f" + e.customId(),
                 "§7name: §f" + e.displayName(),
                 "§7deleted: §f" + when,
+                "§7slot: §f" + (e.slotIndex() >= 0 ? "#" + e.slotIndex() + " §8(reserved)" : "§8—"),
                 "§7category: §f" + (e.category().isEmpty() ? "none" : e.category()),
                 "§7texture: " + (e.hasTexture() ? "§asaved" : "§8none"),
                 e.pinned() ? "§bPinned §8— never auto-pruned" : "§8Not pinned"));
@@ -98,9 +99,11 @@ public final class TrashEntryMenu {
                 "§8You won't be able to restore the block after this."));
 
         m.set(11, Icons.glint(Items.RED_DYE, "§c§lYes — delete forever",
-                        "§7Permanently remove this entry."),
+                        "§7Permanently remove this entry.",
+                        "§8Frees slot " + (e.slotIndex() >= 0 ? "#" + e.slotIndex() : "?") + " for reuse."),
                 (p, b, a) -> {
-                    boolean ok = TrashManager.purge(e.entryId());
+                    // G06-14 slice 5: Empty frees the reserved slot + tombstones the block's markers.
+                    boolean ok = TrashCommands.guiPurge(p, e.entryId());
                     GuiFx.danger(p);
                     Chat.success(p.getCommandSource(), ok
                             ? "Permanently deleted \"" + e.customId() + "\" from the trash."

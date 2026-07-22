@@ -181,7 +181,6 @@ public final class GuiRouter {
             case DIAG -> ItChestMenu.build(player);
             case SEARCH -> SearchMenu.build(player, key.arg(), key.page());
             case HELP -> HelpMenu.build(player, key.arg(), key.page());
-            case OMNI -> OmniMenu.build(player);
             case SHAPE_EDITOR -> ShapeEditorMenu.build(player, key.arg());
             case FACE_EDITOR -> FaceEditorMenu.build(player, key.arg());
             case BACKUP_LIST -> BackupMenu.build(player, key.page());

@@ -1,0 +1,67 @@
+{
+  "__comment": "Group 31 item F — the timer stand's SCREEN part (tilted bezel + black screen + lime top accent), sliced from timer_display_stand at its ORIGINAL coordinates. Rendered by its own ITEM_DISPLAY; the two digit TEXT_DISPLAYs are glued to this part and scale with it.",
+  "textures": {
+    "body": "minecraft:block/polished_deepslate",
+    "trim": "minecraft:block/red_concrete",
+    "accent": "minecraft:block/lime_concrete",
+    "screen": "minecraft:block/black_concrete",
+    "particle": "minecraft:block/black_concrete"
+  },
+  "elements": [
+    {
+      "name": "bezel",
+      "from": [2, 8, 7.4],
+      "to": [14, 15.5, 9.1],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "down":  { "texture": "#trim" },
+        "up":    { "texture": "#trim" },
+        "north": { "texture": "#trim" },
+        "south": { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "screen_front",
+      "from": [3, 8.7, 9.1],
+      "to": [13, 14.8, 9.32],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "south": { "texture": "#screen" },
+        "north": { "texture": "#screen" },
+        "up":    { "texture": "#trim" },
+        "down":  { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "screen_back",
+      "from": [3, 8.7, 7.18],
+      "to": [13, 14.8, 7.4],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "north": { "texture": "#screen" },
+        "south": { "texture": "#screen" },
+        "up":    { "texture": "#trim" },
+        "down":  { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    },
+    {
+      "name": "top_accent",
+      "from": [2, 15.5, 7.4],
+      "to": [14, 16, 9.1],
+      "rotation": { "angle": -22.5, "axis": "x", "origin": [8, 8, 8.25] },
+      "faces": {
+        "up":    { "texture": "#accent" },
+        "north": { "texture": "#accent" },
+        "south": { "texture": "#accent" },
+        "west":  { "texture": "#accent" },
+        "east":  { "texture": "#accent" }
+      }
+    }
+  ]
+}

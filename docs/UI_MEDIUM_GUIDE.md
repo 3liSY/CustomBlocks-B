@@ -28,7 +28,7 @@ Not a hard rule, but the pattern in every recent decision: **chest GUI is the "o
 Screen is where new richness goes.** Two sessions in a row chose Screen over chest GUI for things that
 used to default to chest:
 
-- `GROUP_04_CHAT.md` §G04-4 — `/cb list`/`/cb macro`/`/cb backup` drop their separate `<sub>gui` chest
+- `GROUP_04_Communication.md` §G04-4 — `/cb list`/`/cb macro`/`/cb backup` drop their separate `<sub>gui` chest
   commands; the base command opens a full screen directly (Advancements-style). Template gets its own
   screen instead of staying chat-only.
 - `GROUP_03_HUD_ESC.md` §G03-2 — the whole HUD/ESC rework is screens + a multi-widget system, nothing
@@ -48,7 +48,7 @@ explicit ruling like G04-4/G03-2 above). Blank = not decided yet.
 | Group | Feature | Medium decided | Where |
 |---|---|---|---|
 | G03 | HUD widgets + ESC panel | Screen(s) | `GROUP_03_HUD_ESC.md` §G03-2 |
-| G04 | list / macro / backup / template / achievements | Screen (was chat+`<sub>gui`) | `GROUP_04_CHAT.md` §G04-4 |
+| G04 | list / macro / backup / template / achievements | Screen (was chat+`<sub>gui`) | `GROUP_04_Communication.md` §G04-4 |
 | G25 | `/cb listgui` tick-select for bulk ops | **Superseded 2026-07-10** — `listgui`/`blockslist` deleted; `/cb list` opens the G07 Bulk Operations Hub (**Blocks List** tab). The earlier "chest GUI (kept)" ruling no longer holds. | `GROUP_07_BULK_OPERATIONS.md` §G07-3/§G07-5 |
 | G21 | Settings Book (config GUI) | Screen — **not built** | `GROUP_21_CONFIG_GUI.md` (top note) |
 | G10 | RecolorSliderScreen + EyedropScreen + BgStudioMenu + ColorVariantsMenu + ColorsMenu (hub) + PaletteMenu + GradientPickerMenu + ColorPickBlockMenu | ALL merge into ONE Coloring Screen — **not built** | `GROUP_10_COLOR_IMAGE.md` |

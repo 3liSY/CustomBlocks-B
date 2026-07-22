@@ -31,7 +31,7 @@ public final class UndoManager {
     private UndoManager() {} // static-only
 
     /** What kind of change an Op represents (drives how undo/redo reverses it). */
-    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG }
+    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG, FACE_ROTATE }
 
     /**
      * A lock / favorite flip, the one edit that lives OUTSIDE SlotData.
@@ -50,6 +50,19 @@ public final class UndoManager {
     public record Flag(String id, String which, boolean on, UUID owner) {}
 
     /**
+     * A per-face quarter-turn flip (G06 §G Face mode) — the one edit, like {@link Flag}, that lives
+     * OUTSIDE SlotData. Face rotations are a flat store in {@link FaceRotations} keyed by slot index +
+     * face, not a field on the SlotData snapshot. So a FACE_ROTATE op carries this payload instead of a
+     * snapshot pair; HistoryCommands restores it through FaceRotations and rebuilds the model.
+     *
+     * @param index the slot index the rotation applies to.
+     * @param face  the face name ("down".."east").
+     * @param oldQ  the quarter-turn BEFORE the rotate (undo restores this).
+     * @param newQ  the quarter-turn AFTER the rotate (redo re-applies this).
+     */
+    public record FaceRot(int index, String face, int oldQ, int newQ) {}
+
+    /**
      * One reversible edit.
      *
      * @param kind         CREATE (before == null), DELETE (after == null), MODIFY (both set),
@@ -64,18 +77,25 @@ public final class UndoManager {
      * @param label        human-readable verb shown in chat ("create", "rename", "glow", "dress", …).
      * @param children     for BATCH: the child ops reverted/re-applied together as one step (null otherwise).
      * @param flag         for FLAG: the lock/favorite payload (null otherwise).
+     * @param faceRot      for FACE_ROTATE: the per-face quarter-turn payload (null otherwise).
      */
     public record Op(Kind kind, SlotData before, SlotData after,
-                     byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag) {
+                     byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot) {
+        /** Pre-FACE_ROTATE 8-arg shape (FLAG era) — faceRot null. */
+        public Op(Kind kind, SlotData before, SlotData after,
+                  byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag) {
+            this(kind, before, after, texture, textureAfter, label, children, flag, null);
+        }
+
         /** Pre-FLAG 7-arg shape — every existing caller still compiles unchanged. */
         public Op(Kind kind, SlotData before, SlotData after,
                   byte[] texture, byte[] textureAfter, String label, List<Op> children) {
-            this(kind, before, after, texture, textureAfter, label, children, null);
+            this(kind, before, after, texture, textureAfter, label, children, null, null);
         }
 
         /** Convenience constructor for a single (non-batch) op — textureAfter + children null. */
         public Op(Kind kind, SlotData before, SlotData after, byte[] texture, String label) {
-            this(kind, before, after, texture, null, label, null, null);
+            this(kind, before, after, texture, null, label, null, null, null);
         }
     }
 
@@ -128,6 +148,16 @@ public final class UndoManager {
     public static void recordShape(UUID player, SlotData before, SlotData after) {
         if (before == null || after == null) return;
         push(player, new Op(Kind.SHAPE, before, after, null, "shape"));
+    }
+
+    /**
+     * Record a per-face rotation (Omni-Tool Face mode, G06 §G). Like FLAG, it carries no SlotData
+     * snapshot — the quarter-turn lives in {@link FaceRotations} — so it stores a {@link FaceRot}
+     * payload. HistoryCommands restores it and rebuilds the model (the block's MODEL changes).
+     */
+    public static void recordFaceRotate(UUID player, int index, String face, int oldQ, int newQ) {
+        push(player, new Op(Kind.FACE_ROTATE, null, null, null, null, "rotate", null, null,
+                new FaceRot(index, face, oldQ, newQ)));
     }
 
     /**
@@ -190,6 +220,8 @@ public final class UndoManager {
             mlId = "×" + (op.children() == null ? 0 : op.children().size());
         } else if (op.kind() == Kind.FLAG) {
             mlId = op.flag() != null ? op.flag().id() : "?"; // FLAG carries no snapshot — the id lives on the payload
+        } else if (op.kind() == Kind.FACE_ROTATE) {
+            mlId = op.faceRot() != null ? "slot " + op.faceRot().index() : "?"; // FACE_ROTATE: id is the slot index
         } else {
             mlId = op.after() != null ? op.after().customId()
                     : (op.before() != null ? op.before().customId() : "?");

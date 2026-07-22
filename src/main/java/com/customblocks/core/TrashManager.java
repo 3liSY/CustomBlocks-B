@@ -57,10 +57,12 @@ public final class TrashManager {
     private static final String TEXTURE = "texture.png";
     private static final String SOURCE = "source.png";
 
-    /** One trashed block, as shown in the trash browser and used to restore it. */
+    /** One trashed block, as shown in the trash browser and used to restore it. {@code slotIndex} is the
+     *  slot number the block held when deleted — RESERVED while it sits here (never reused), shown in the
+     *  trash GUI, and freed only on Empty (G06-14 slices 4-5). -1 for entries written before slices 4-5. */
     public record TrashEntry(String entryId, String customId, String displayName,
                              int glow, float hardness, String soundType, boolean noCollision,
-                             String category, String shape,
+                             String category, String shape, int slotIndex,
                              long deletedEpochMs, String deletedHuman, boolean pinned, boolean hasTexture) {}
 
     // ── Capture (called from SlotManager.delete; BEST-EFFORT — never throws) ───
@@ -83,6 +85,7 @@ public final class TrashManager {
             o.addProperty("noCollision", d.noCollision());
             o.addProperty("category", d.category());
             o.addProperty("shape", d.shape());
+            o.addProperty("slotIndex", d.index()); // the reserved slot number (G06-14 slices 4-5)
             o.addProperty("deleted", System.currentTimeMillis());
             o.addProperty("deletedHuman", LocalDateTime.now().format(HUMAN));
             o.addProperty("pinned", false);
@@ -155,11 +158,12 @@ public final class TrashManager {
             boolean noCol = o.has("noCollision") && o.get("noCollision").getAsBoolean();
             String cat = str(o, "category", SlotData.DEFAULT_CATEGORY);
             String shape = str(o, "shape", SlotData.DEFAULT_SHAPE);
+            int slotIndex = o.has("slotIndex") && !o.get("slotIndex").isJsonNull() ? o.get("slotIndex").getAsInt() : -1;
             long deleted = o.has("deleted") ? o.get("deleted").getAsLong() : 0L;
             String human = str(o, "deletedHuman", "");
             boolean pinned = o.has("pinned") && o.get("pinned").getAsBoolean();
             boolean hasTex = Files.isRegularFile(dir.resolve(TEXTURE));
-            return new TrashEntry(entryId, customId, name, glow, hardness, sound, noCol, cat, shape,
+            return new TrashEntry(entryId, customId, name, glow, hardness, sound, noCol, cat, shape, slotIndex,
                     deleted, human, pinned, hasTex);
         } catch (Exception e) {
             return null;

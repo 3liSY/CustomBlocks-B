@@ -122,6 +122,7 @@ public final class SlotManager {
         SlotData d = new SlotData(idx, customId, name);
         BY_SLOT.put(d.slotKey(), d);
         BY_ID.put(customId, d);
+        // D6 GUARD: do NOT MarkerTombstones.remove here — only a deliberate restore un-tombstones (TrashCommands.doRestore); on create it revives emptied markers → regresses D6.
         if (persist) saveAll();
         return d;
     }
@@ -135,11 +136,10 @@ public final class SlotManager {
             // Snapshot into the trash first, while the texture/source still exist on disk.
             TrashManager.capture(d, TextureStore.load(d.index()), TextureStore.loadSource(d.index()));
             TextureStore.delete(d.index());
-            // Permanently retire the freed index (G06-2 / G06-3 / G05-2, "improved Option 2" 2026-06-26).
-            // A placed copy of this block still wears slot_N in the world; DeletedPlacementSweeper swaps
-            // every such copy to the shared (Removed) block, and nextFreeSlotIndex NEVER reuses the index,
-            // so a leftover can never inherit an old or a future block's identity. NOT RetiredSlots — that
-            // air-cleans placements (Arabic); a deleted block's placement becomes a visible (Removed) block.
+            // G06-14 (recycle-bin): RESERVE the freed index while in trash — never reused (nextFreeSlotIndex
+            // skips DeletedSlots), so a placed copy still wearing slot_N can't inherit a future block's skin;
+            // DeletedPlacementSweeper turns each into a "Deleted: <name>" marker. Released on Restore
+            // (restoreSnapshot reuses this index) or Empty (TrashCommands frees it).
             DeletedSlots.add(d.index());
             saveAll();
         }

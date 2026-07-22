@@ -1,208 +1,207 @@
-# Group 19 — Showcase & Hologram Display Systems
+# Group 19 - Showcase and Hologram Displays
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Texture pipeline (TextureStore / resource-pack render) working (G10/G13/G14 all rely on it). Display Entities are native to MC 1.21.1.
->
-> **Objective:** A **highly customizable** Showcase system — real floating blocks on configurable stands — plus a Hologram preview system (`/cb preview`) and, last, offhand hologram projection.
->
-> **Source issues:** Group J (showcase blocks), Q1 (hologram `/cb preview` + offhand), Decision §I (ambitious features kept).
->
-> **Rules:** Build **one slice at a time**, in order. Owner confirms each in-game before the next (CLAUDE.md §2/§4). Nothing is ✅ until the owner confirms in-game.
->
-> ⚠️ **UI medium audit (2026-07-10):** the showcase config UI is Screen-based, not chest GUI, per the
-> mod-wide Screen migration. G19 is entirely unbuilt, so this is a clean target — no legacy chest code to
-> migrate away from. §S2/G19.6 below and its "multi-tab chest GUI" wording describe the pre-migration design;
-> build it as a Screen instead.
+> Group 19 lets operators place persistent, polished block showcases and temporary hologram previews without faking a floating block as a dropped item.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_19.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## 🔒 Locked Decisions (owner interview 2026-06-21)
+## Purpose
 
-> Surveyed the live code first, then a multi-round owner interview. **Nothing built this pass — design only.**
-> These decisions override anything below them. Reality corrections are read from code, not guessed.
+Showcases make real CustomBlocks and vanilla content presentable in a world. They persist safely, stay configurable, and have explicit performance limits. Hologram previews let an operator inspect content temporarily before choosing to pin it.
 
-**Reality corrections (read, not guessed):**
-- **No display/showcase code exists.** No `showcase`/`DisplayEntity`/`display_blocks.json`/`givedisplayblock` in `src`. G19 is **fully new** — no port, no stub to revive.
-- **Render path = Display Entities (MC 1.21.1 native).** Real blocks → **`BlockDisplay`** (shows the true blockstate as a full 3D block — owner's "block as its block state floating", **not** a dropped item). Vanilla non-block items (e.g. `diamond_sword`) → **`ItemDisplay`**. Both are server-side, so "visible to other players" (old test G20.7) is **free**, not extra work.
-- **Animated/GIF blocks won't show via `BlockDisplay`.** Animated blocks render through a custom BER (`AnimSlotBER`) / `SlotItemRenderer` (G14, off-atlas). `BlockDisplay` renders the static block model only and **never invokes a BER**. So an *animated* showcase must use the **item-render path** (`ItemDisplay` of the animated item model), not `BlockDisplay`. Flagged on slice S3.
-- **Texture source = `TextureStore`** (`core/TextureStore` — `load(i)`, `has(i)`, `hasAnyFace(i)`, `FACES`). `/cb preview <id>` just spawns a `BlockDisplay` of an existing block (already rendered in the pack). `/cb preview <url>` is the heavy path — it must **download + render a temp texture** (reuse the create pipeline), so it can be slow / fail on a bad URL.
-- **Creative tabs exist:** `CUSTOM_BLOCKS_TAB` ("blocks") and **`CUSTOM_TOOLS_TAB` ("tools")** (`CustomBlocksMod.java:59-65`). The **placer item belongs in the Tools tab**.
-- **Commands** split by domain in `command/handlers/*`, registered by `CommandRegistrar`. New handler(s) needed (e.g. `ShowcaseCommands`, `PreviewCommands`), each ≤ 400 lines (§9.3 gate).
-- **Disk I/O** follows the store pattern (atomic write-temp + rename). New `display_blocks.json` gets its own store (e.g. `ShowcaseDataStore`), mirroring `SlotDataStore`.
+G19 owns showcase commands, stored instances, display-entity behavior, hologram lifecycle, and configuration semantics. G27 owns the showcase configuration Screen.
 
-**Locked decisions:**
+## Ownership
 
-| # | Decision |
-|---|---|
-| D1 | **G19 owns showcase fully** — command + config GUI + rendering. Resolves the SWEEP §C contest: G23 only cross-refs. |
-| D2 | **Render = `BlockDisplay` for blocks (custom + vanilla), `ItemDisplay` for vanilla items.** Real floating block, never a dropped-item look. |
-| D3 | **Placement:** spawn on the looked-at surface; if aiming at sky / no block in range → **2 blocks in front of the head** along the look vector (never errors, never orphaned). |
-| D4 | **OP-only** for all placing / removing / editing. |
-| D5 | **Persists** to `config/customblocks/data/display_blocks.json` (atomic); **survives restart**; respawns the display entity on chunk/world load. Auto-assigned instance ids; config/remove target = the showcase you look at, or by id. |
-| D6 | **Display types this group: pedestal + floating only.** Glass case + open shelf = parked. |
-| D7 | **Rotation:** smooth interpolated **spin**, speed slider that **includes a static (no-spin)** setting. (Tumble / multi-axis = parked.) |
-| D8 | **Scale:** 0.5× up to **~4× (giant statues)**. |
-| D9 | **Cool knobs:** glow outline (default colour, per-showcase colour parked) · fullbright (shines in the dark) · hover bob (floats up/down) · floating label (**auto = block name, editable**, shows through walls) · **particle aura (style picked per showcase**: sparkle / embers / enchant / portal). |
-| D10 | **Multi-block:** a showcase holds **1 or more** blocks. **Right-click = cycle** to the next. Optional **auto-cycle** at an owner-set interval (**min 0.1s**). Content = a chosen list **or** "all custom blocks" (**dynamic** — new blocks join the gallery). (Orbit-all-at-once = parked.) |
-| D11 | **Controls:** Right-click = cycle next (single-block = no-op) · **Shift-right-click = config GUI** · **Remove = a button in the config GUI + `/cb showcase remove`** (looked-at or by id). No accidental removal. |
-| D12 | **Config GUI = multi-page tabs (Screen-based):** Appearance / Motion / Display. |
-| D13 | **Presets:** a named **library** + one **auto-default** applied to every new showcase (server-wide, OP-managed). |
-| D14 | **Placer item:** `/cb showcase <id>` spawns directly at aim; **`/cb showcase item`** gives a furniture-style placer; the placer is also in the **Tools creative tab** (and other entry points). |
-| D15 | **Management:** `/cb showcase list` (click → teleport) · locate (glow-highlight nearby) · edit nearest · rename · duplicate/clone · move/reposition · export/share config as a code. |
-| D16 | **Bulk / group:** apply preset to all in radius / remove all in radius · hide-show toggle (temporary, no delete) · lock (freeze config) · groups (name a set, sync settings). |
-| D17 | **Hologram `/cb preview <id\|url>`** — temporary spin (default **10s** OR move **>5 blocks** away). Visible to others (free). `<id>` fast; `<url>` downloads+renders. Extras: **pin** (`/cb preview pin` → permanent baseless display) · **unpin** (`/cb preview unpin`) · **to a player** (`@player`) · **compare two** side by side. Config: `hologramHeight` (1.5), `hologramColor` (none). |
-| D18 | **Offhand hologram = LAST slice (S8).** Hold a custom block in offhand → hologram ~1.5 blocks above head, follows the player, visible to others, vanishes when offhand emptied. Config: `offhandHologramEnabled` (true). |
-| D19 | **Performance cap:** sensible default (per chunk) with a warning; OP-configurable. Auto-cycle/particles/animated all count toward load. |
-| D20 | **Pace = one slice at a time**, in-game confirm between each (CLAUDE.md §4). |
+| Owns | Does not own |
+| --- | --- |
+| Showcase instances, display entities, persistence, commands, and management | Showcase configuration Screen framework: G27 |
+| Hologram preview, pin/unpin, and offhand projection behavior | Animated texture/render implementation: G14 |
+| Showcase presets, groups, cap, and gallery logic | Block creation and normal item tools: G06 |
+| Display-specific feedback/particles | Vault transport for future config sharing: G20 |
 
-**Owner-approved defaults (flag if wrong):** glow default colour = white · "all custom blocks" gallery = dynamic · preview = 10s / 5-block · instance ids auto · config targets the looked-at showcase.
+## Direction
 
----
+Use Minecraft display entities: `BlockDisplay` for custom/vanilla blocks and `ItemDisplay` for vanilla items. Animated custom blocks use the item-render route because a `BlockDisplay` cannot invoke the custom animation renderer. Every saved showcase is an explicit persisted instance with an automatic ID and a server-configurable performance cap.
 
-## ⛔ Parked — discuss later, NOT built in G19
+Build in slices: core persistence first, then Screen controls, multi-content, presets/cap, management, hologram preview, and finally offhand projection. Each slice is independently useful and must not be bundled into one risky build.
 
-| Item | Note |
-|---|---|
-| **Shop mode** | Click showcase to buy/receive the block (free admin-give or priced economy). Flagship, revisit. |
-| **Redstone control** | Power → spin/visible; unpowered → freeze/hide. |
-| **Proximity react** | Idle when alone; spins faster + glows when a player approaches. |
-| Glass case + open shelf types | Only pedestal + floating in G19 (D6). |
-| Per-showcase glow colour | Single default colour for now (D9). |
-| Tilt / lean · tumble rotation · orbit-all-at-once | Parked (D7/D10). |
+## Locked Decisions
 
----
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-21 | G19 fully owns showcases. | Other Groups may link to showcases but do not create competing behavior. |
+| 2026-06-21 | Blocks use `BlockDisplay`; vanilla items use `ItemDisplay`. | A showcase is a real floating block/state, not dropped-item visual trickery. |
+| 2026-06-21 | Sky/no-target placement falls back two blocks ahead of the player's view. | Placement never fails merely because no surface is aimed at. |
+| 2026-06-21 | Create, edit, remove, and bulk showcase actions are operator-only. | Decorative world controls cannot be used by ordinary players. |
+| 2026-06-21 | Showcases persist atomically in `display_blocks.json` and respawn on relevant load. | Restart/chunk load does not lose a placed display. |
+| 2026-06-21 | G19 starts with pedestal and floating types only. | Glass cases, shelves, tumble, orbit, and per-showcase glow color remain parked. |
+| 2026-06-21 | Right-click cycles content; Shift-right-click opens configuration. | Direct interaction stays simple and removal is never an accidental click. |
+| 2026-06-21 | A gallery may hold a chosen list or dynamically include all CustomBlocks. | New blocks join the dynamic gallery without manual list edits. |
+| 2026-06-21 | Hologram previews are temporary by default: ten seconds or five blocks of distance. | Preview cannot become an accidental permanent showcase. |
+| 2026-06-21 | Offhand hologram is the final slice. | It does not delay persistent showcase and preview behavior. |
+| 2026-07-10 | Showcase configuration is a Screen. | G19 does not create a chest configuration UI. |
 
-## 🧱 Slice Plan (build order — confirm each in-game before the next)
+## Feature Plan
 
-| Slice | Scope | Tests |
-|---|---|---|
-| **S1 — Showcase core** | `/cb showcase <id>` spawns a `BlockDisplay` at aim (sky → 2 ahead) · smooth spin + static · **pedestal + floating** · scale incl. giant · persistence (`display_blocks.json`, atomic, survive restart, respawn on load) · `/cb showcase remove` · OP gate · auto instance ids | G19.1–G19.5 |
-| **S2 — Config GUI** | Multi-page tabs (Appearance / Motion / Display): type · rotation speed + static · scale · glow outline · fullbright · hover bob · label (auto name/editable) · particle aura (style pick) · **Shift-right-click opens** · in-GUI remove button | G19.6–G19.9 |
-| **S3 — Multi-block + vanilla + animated + placer** | Cycle on right-click · auto-cycle (≥0.1s) · chosen list **or** "all custom blocks" · vanilla items (`ItemDisplay`) · **animated blocks via item-render path** (reality caveat above) · placer item (`/cb showcase item` + Tools tab) | G19.10–G19.14 |
-| **S4 — Presets + cap** | Named preset library · auto-default for new showcases · performance cap (default + OP-configurable) | G19.15–G19.16 |
-| **S5 — Management (single)** | `/cb showcase list` + click-teleport · locate (glow-highlight) · edit nearest · rename · duplicate/clone · move/reposition | G19.17–G19.20 |
-| **S6 — Bulk / group** | Apply preset to all in radius / remove all in radius · hide-show toggle · lock · groups (sync settings) | G19.21–G19.24 |
-| **S7 — Hologram preview** | `/cb preview <id\|url>` temporary (10s / 5-block) · `@player` · compare two · pin / unpin · `hologramHeight` / `hologramColor` | G19.25–G19.29 |
-| **S8 — Offhand projection** *(hardest, last)* | Offhand custom block → hologram above head, follows player, visible to others, vanishes on empty · `offhandHologramEnabled` | G19.30–G19.31 |
+### A. Showcase Core
 
-> **Each slice ends `🟢 build-green` only — `✅ done` needs the owner's in-game confirm (CLAUDE.md §2).**
-> This is a large group by design (owner wants the full vision). It ships incrementally; we never build the whole stack at once.
+**Player outcome**
 
----
+An operator can place a persistent pedestal or floating showcase that spins smoothly or remains static.
 
-## What this group adds
+**Experience**
 
-| Area | Old CustomBlocks | This Group |
-|---|---|---|
-| Showcase blocks | Basic display block, simple rotation | Full revamp: real floating block (`BlockDisplay`), pedestal + floating, smooth spin/static, scale to 4×, glow/fullbright/bob/label/aura |
-| Showcase content | Custom only | Custom blocks + vanilla blocks + vanilla items + animated blocks; multi-block cycle gallery ("all custom blocks") |
-| Showcase mgmt | None | list/teleport, locate, rename, clone, move, bulk-in-radius, hide/show, lock, groups, presets, export/share |
-| `/cb showcase` / `config` | Existed (basic) | Restored + revamped + multi-tab config GUI + placer item (Tools tab) |
-| Hologram preview | `hologram` stub (never built) | `/cb preview <id\|url>`, pin/unpin, to-player, compare |
-| Offhand hologram | Not present | New (last slice) |
+- `/cb showcase <id>` places at the looked-at surface or the safe sky fallback.
+- Scale ranges from compact display through large statue-like presentation.
+- Spin supports a true no-spin setting.
+- `/cb showcase remove` targets the looked-at showcase or explicit instance ID.
+- Restart and chunk load recreate the same saved display.
 
----
+**Requirements**
 
-## What this group covers (commands)
+- `ShowcaseDataStore` writes atomically under `config/customblocks/data/display_blocks.json`.
+- Instance IDs are automatic and stable.
+- Stored position, type, rotation, scale, visibility, contents, and configuration restore together.
+- Display entity spawn/removal cannot leave orphaned saved data or orphaned world entities.
 
-| Feature | Command |
-|---|---|
-| Create showcase | `/cb showcase <id>` (custom/vanilla block) · `/cb showcase <vanilla-item>` |
-| Placer item | `/cb showcase item` (+ Tools creative tab) |
-| Config | Shift-right-click a showcase · `/cb showcase config <id>` |
-| Remove | in-GUI button · `/cb showcase remove` (looked-at or `<id>`) |
-| Manage | `/cb showcase list` · `rename` · `clone` · `move` · `lock` · `hide`/`show` · `group` · `export`/`import` |
-| Bulk | `/cb showcase bulk <preset\|remove> <radius>` |
-| Hologram | `/cb preview <id\|url>` · `pin` · `unpin` · `<id\|url> @player` · `compare <a> <b>` |
-| Storage | `config/customblocks/data/display_blocks.json` |
-| Config fields | `hologramHeight`, `hologramColor`, `offhandHologramEnabled`, showcase cap |
+**Boundary**
 
----
+Core showcase handles one persisted display instance. It does not include shop, redstone, proximity, or group behavior yet.
 
-## Setup
+### B. Configuration and Content
 
-```
-/cb create g19a ShowcaseTest https://i.imgur.com/example.png
-/cb create g19b ShowcaseTest2
-```
+**Player outcome**
 
----
+Operators can style a showcase, make it recognizable, and choose one or many display contents.
 
-## Tests
+**Experience**
 
-> Numbering is grouped by slice. Old `G20.x` numbering is **retired** (this is Group 19). Tests are ⏳ until their slice is built.
+- Appearance offers glow outline, fullbright, hover bob, scale, label, and aura style.
+- Motion offers static/spin and speed.
+- Display controls select a list or dynamic all-CustomBlocks gallery, with right-click/manual or automatic cycling.
+- A label uses block name by default and can become custom text.
+- `/cb showcase item` supplies a furniture-style placer in the Tools tab.
 
-### S1 — Showcase core
-- **G19.1 — Create showcase (pedestal):** `/cb showcase g19a` → the `g19a` block floats above a pedestal, spinning smoothly. **Fail:** error / nothing.
-- **G19.2 — Floating type:** set type to floating → block spins in mid-air, no base.
-- **G19.3 — Aim at sky:** look up at open sky, `/cb showcase g19a` → it spawns ~2 blocks in front of your head (no error, not orphaned).
-- **G19.4 — Remove:** `/cb showcase remove` while looking at it → showcase gone.
-- **G19.5 — Persist across restart:** restart server → the showcase is still there, still spinning.
+**Requirements**
 
-### S2 — Config GUI
-- **G19.6 — Config opens:** **shift-right-click** the showcase (or `/cb showcase config g19a`) → multi-tab Screen (Appearance / Motion / Display).
-- **G19.7 — Static rotation:** Motion tab → set speed to **static** → block stops spinning.
-- **G19.8 — Cool knobs:** Appearance tab → toggle glow outline, fullbright, hover bob; set giant scale; pick a particle aura → each visibly applies.
-- **G19.9 — Label:** enable label → block's name floats above it (visible through walls); edit it → custom text shows.
+- G27 Screen tabs organize Appearance, Motion, and Display without duplicating saved data logic.
+- Auto-cycle has a minimum 0.1-second interval and is included in performance accounting.
+- Animated custom content routes through the appropriate item-render path; vanilla blocks/items use native display entities.
+- The current config target is always an explicit looked-at/instance-resolved showcase.
 
-### S3 — Multi-block + vanilla + animated + placer
-- **G19.10 — Vanilla item:** `/cb showcase diamond_sword` → a diamond sword displays (item form). No `g19a` needed.
-- **G19.11 — Multi-block cycle:** add `g19a` + `g19b` to one showcase → right-click cycles between them.
-- **G19.12 — Auto-cycle:** set auto-cycle to 0.5s → it flips automatically; set 0.1s → faster.
-- **G19.13 — All-custom gallery:** set content to "all custom blocks" → it cycles through every created block; create a new one → it joins.
-- **G19.14 — Placer item:** `/cb showcase item` (or grab from the **Tools** creative tab) → place it like furniture → becomes a showcase.
+**Boundary**
 
-### S4 — Presets + cap
-- **G19.15 — Preset save/apply:** save a look as a named preset → apply to another showcase → it matches.
-- **G19.16 — Default + cap:** set a preset as default → new showcases start with it. Exceed the cap → a warning appears.
+Configuration updates one persisted instance. It does not silently apply a global style unless a preset/group action is chosen.
 
-### S5 — Management
-- **G19.17 — List + teleport:** `/cb showcase list` → click an entry → teleported to it.
-- **G19.18 — Locate:** locate → all nearby showcases glow-highlight.
-- **G19.19 — Rename + clone:** rename one; clone it → the copy has the same config.
-- **G19.20 — Move + edit nearest:** move a showcase to a new spot; edit-nearest changes the closest one without an id.
+### C. Presets, Management, and Limits
 
-### S6 — Bulk / group
-- **G19.21 — Bulk apply:** apply a preset to all showcases in a radius → all update.
-- **G19.22 — Bulk remove:** remove all in a radius → all gone.
-- **G19.23 — Hide/show + lock:** hide a showcase (still saved) → show it back; lock one → its config can't be changed.
-- **G19.24 — Groups:** group several → change a group setting → all in the group update together.
+**Player outcome**
 
-### S7 — Hologram preview
-- **G19.25 — Preview by id:** `/cb preview g19a` → temporary spinning hologram; disappears after 10s.
-- **G19.26 — Preview by url:** `/cb preview <url>` → downloads + shows; bad url → a clear error, no crash.
-- **G19.27 — Move-away despawn:** `/cb preview g19a`, walk >5 blocks → it vanishes early.
-- **G19.28 — Pin / unpin:** `/cb preview pin` → it stays; `/cb preview unpin` → gone.
-- **G19.29 — To-player + compare:** `/cb preview g19a @player` → that player sees it; `/cb preview compare g19a g19b` → two side by side.
+An operator can reuse a design, find/manage showcases, and avoid placing enough active displays to hurt a server/client.
 
-### S8 — Offhand projection
-- **G19.30 — Offhand shows:** hold `g19a` in offhand → hologram ~1.5 blocks above your head; another player sees it.
-- **G19.31 — Offhand clears:** empty the offhand slot → hologram disappears immediately.
+**Experience**
 
----
+- Named presets and one server default speed up new showcases.
+- List/teleport, locate, edit-nearest, rename, clone, and move make individual management practical.
+- Radius actions apply a preset or remove intentionally selected showcases.
+- Hide/show retains data; lock prevents configuration edits; groups synchronize selected settings.
+- A cap warns before display density, particles, cycling, or animation becomes excessive.
 
-## Group 19 Verdict
+**Requirements**
 
-| Slice | Tests | Result |
-|---|---|---|
-| S1 — Core | G19.1–G19.5 | ⏳ |
-| S2 — Config GUI | G19.6–G19.9 | ⏳ |
-| S3 — Multi/vanilla/animated/placer | G19.10–G19.14 | ⏳ |
-| S4 — Presets + cap | G19.15–G19.16 | ⏳ |
-| S5 — Management | G19.17–G19.20 | ⏳ |
-| S6 — Bulk / group | G19.21–G19.24 | ⏳ |
-| S7 — Hologram preview | G19.25–G19.29 | ⏳ |
-| S8 — Offhand projection | G19.30–G19.31 | ⏳ |
+- Presets and groups are separate persisted records with clear instance references.
+- Bulk actions report scope and results and use a deliberate confirmation where destructive.
+- Cap calculations account for active display cost, not only raw instance count.
+- Future export/share serializes a showcase configuration, never a live world entity identity.
 
-**Group 19 passes when showcases and holograms both work in-game, slice by slice.**
+**Boundary**
 
-If anything shows ❌ — paste: (1) the exact command/action, (2) what appeared vs expected, (3) last ~20 lines of `latest.log`.
+Management does not turn Showcase into a player economy/shop system.
 
----
+### D. Hologram Preview and Projection
 
-## Cleanup
+**Player outcome**
 
-```
-/cb showcase remove        (look at each, or /cb showcase bulk remove <radius>)
-/cb delete g19a
-/cb delete g19b
-```
+An operator can preview a block or image temporarily, compare two, pin an intentional display, and later project the offhand block.
+
+**Experience**
+
+- `/cb preview <id>` is fast; URL preview uses a temporary safe render/download route.
+- Preview disappears after the time/distance rule, unless pinned.
+- Preview can target another player or compare two sources side by side.
+- Pinned previews become explicit baseless persistent displays; unpin removes them.
+- Offhand projection appears above the holder, follows them, is visible to others, and vanishes with an empty offhand.
+
+**Requirements**
+
+- Temporary preview state is isolated from persistent showcase records until Pin.
+- Bad URL handling cleans up without leaving a broken display.
+- Config stores hologram height/color and offhand enablement separately from showcase instances.
+- Projection use is counted within the performance cap.
+
+**Boundary**
+
+Offhand projection comes after Showcase and Preview are reliable; it is not a shortcut around their data/performance model.
+
+## Cross-Group Contracts
+
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G05 | Block assets | G19 shows already available block/item assets and never rebuilds packs per display tick. |
+| G06 | Tools tab | Showcase placer follows the Tools tab and normal item behavior. |
+| G14 | Animated content | G14 supplies the animation renderer; G19 uses the compatible item-display route where required. |
+| G16 | Feedback and diagnostics | Showcase aura uses feedback conventions and display failures can become diagnostic incidents. |
+| G20 | Config sharing | G20 transports future showcase config codes; G19 validates/applies the data. |
+| G27 | Config Screen | G27 owns UI layout; G19 owns every stored display action. |
+
+## Technical Contract
+
+- Showcase records persist atomically under `display_blocks.json`, use automatic instance IDs, and recreate native display entities on server/chunk load.
+- Block content maps to `BlockDisplay`; vanilla item content maps to `ItemDisplay`; animated custom blocks use the compatible item-render route.
+- Placement resolves a target surface or safe forward fallback before creation.
+- Interaction resolves one showcase by entity/instance identity before mutation.
+- Temporary previews do not write persistent data until Pin.
+- Cap/load accounting includes active effects, auto-cycle, and animated content.
+- G27 Screen actions call G19 server services; client UI does not own showcase state.
+
+## Deferred Scope
+
+<details><summary>Future ideas outside this Group's current plan</summary>
+
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Shop mode | Needs a separate inventory/economy contract. | G19 with economy owner |
+| Redstone/proximity behavior | Follows the core display platform and defined behavior fields. | G19 |
+| Glass case, shelf, tumble, orbit | Core pedestal/floating interaction and performance come first. | G19 |
+| Per-showcase glow color | One default outline color is sufficient initially. | G19 |
+| Offhand projection | Final slice after showcase and preview stability. | G19 |
+
+</details>
+
+## Superseded Decisions
+
+<details><summary>Historical decisions kept only so old work does not return</summary>
+
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-21 | Showcase could use a dropped-item-like block visual. | Native display entities represent blocks/items correctly. |
+| 2026-06-21 | Hologram preview could become permanent without an explicit action. | Preview is temporary; Pin creates the persistent form. |
+| 2026-07-10 | Showcase configuration is a chest GUI. | It is a G27 Screen. |
+
+</details>
+
+## References
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_19.md) · [All Groups](README.md)
+
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
+- [G14 Animation and Video](GROUP_14_ANIMATION_VIDEO.md)
+- [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)
+- [G20 External Integrations](GROUP_20_EXTERNAL_INTEGRATIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 19 snapshot](../archive/group-migration-2026-07-18/GROUP_19_DISPLAY.md)

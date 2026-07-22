@@ -62,15 +62,6 @@ public final class ConfigCommands {
                         .then(CommandManager.literal("on").executes(ctx -> setHud(ctx, true)))
                         .then(CommandManager.literal("off").executes(ctx -> setHud(ctx, false)))));
 
-        // /cb config didyoumean [smart|always|off] — typo-correction mode (Group 04).
-        root.then(CommandManager.literal("config")
-                .then(CommandManager.literal("didyoumean")
-                        .executes(ConfigCommands::didYouMeanStatus)
-                        .then(CommandManager.literal("smart").executes(ctx -> setDidYouMean(ctx, "smart")))
-                        .then(CommandManager.literal("always").executes(ctx -> setDidYouMean(ctx, "always")))
-                        .then(CommandManager.literal("off").executes(ctx -> setDidYouMean(ctx, "off")))
-                        .then(CommandManager.literal("cycle").executes(ConfigCommands::cycleDidYouMean))));
-
         // /cb config silentpack [toggle|on|off] — silent resource-pack delivery (Group 05).
         root.then(CommandManager.literal("config")
                 .then(CommandManager.literal("silentpack")
@@ -233,32 +224,6 @@ public final class ConfigCommands {
         }
         Chat.success(ctx.getSource(), "HUD " + (enabled ? "enabled" : "disabled") + ".");
         return 1;
-    }
-
-    private static int didYouMeanStatus(CommandContext<ServerCommandSource> ctx) {
-        Chat.info(ctx.getSource(), "Typo correction (Did-you-mean) is set to " + CbFmt.BODY
-                + CustomBlocksConfig.didYouMean + CbFmt.DIM + ". Options: smart, always, off.");
-        return 1;
-    }
-
-    private static int setDidYouMean(CommandContext<ServerCommandSource> ctx, String mode) {
-        CustomBlocksConfig.didYouMean = mode;
-        CustomBlocksConfig.save();
-        Chat.success(ctx.getSource(), switch (mode) {
-            case "off"    -> "Typo correction turned off — unknown commands show a plain message.";
-            case "always" -> "Typo correction set to \"always\" — the closest match is always suggested.";
-            default        -> "Typo correction set to \"smart\" — suggestions only when confident.";
-        });
-        return 1;
-    }
-
-    private static int cycleDidYouMean(CommandContext<ServerCommandSource> ctx) {
-        String next = switch (CustomBlocksConfig.didYouMean) {
-            case "smart"  -> "always";
-            case "always" -> "off";
-            default        -> "smart";
-        };
-        return setDidYouMean(ctx, next);
     }
 
     private static int silentPackStatus(CommandContext<ServerCommandSource> ctx) {

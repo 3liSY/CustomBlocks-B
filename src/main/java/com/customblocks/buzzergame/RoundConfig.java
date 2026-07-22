@@ -1,13 +1,13 @@
 /**
  * RoundConfig.java — Group 31 (BuzzerGame) Phase 1 items 5-6.
  *
- * The tunable rules for one panel's rounds, held inside its {@link PanelSession} and persisted with it.
- * Kept in its own small class (well under the 300-line *Config cap) so PanelSession stays focused on the
+ * The tunable rules for one host session's rounds, held inside its {@link BuzzerSession}.
+ * Kept in its own small class (well under the 300-line *Config cap) so BuzzerSession stays focused on the
  * state machine. Defaults match the design spec: Precision Stop format, 5.00s target, a 3-2-1 countdown
  * on, and DISQUALIFY on a Reaction Race false start.
  *
  * Depends on: FalseStartRule
- * Called by:  PanelSession (owns + reads), BuzzerGameCommands (config verbs)
+ * Called by:  BuzzerSession (owns + reads), BuzzerGameCommands (config verbs)
  */
 package com.customblocks.buzzergame;
 

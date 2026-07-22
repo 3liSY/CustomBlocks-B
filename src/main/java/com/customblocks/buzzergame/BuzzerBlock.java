@@ -2,15 +2,16 @@
  * BuzzerBlock.java — Group 31 (BuzzerGame) Phase 1 items 1 + 3 + 5-6.
  *
  * The game-show buzzer players press. Right-click behaviour, in order:
- *   1. Holding the BuzzerGame wand (Link mode) → link this buzzer to the selected admin panel.
- *   2. Linked + a round is live → route the press into the panel's {@link PanelSession#onBuzz} (records
+ *   1. Holding the BuzzerGame wand (Link mode) → link this buzzer to the host's wand session.
+ *   2. Linked + a round is live → route the press into the host {@link BuzzerSession#onBuzz} (records
  *      the stopped time / reaction, or a false start), with a chime on accept / a low note on reject.
  *   3. Linked but no round running → a gentle "no round" nudge.
- *   4. Not linked → the standalone item-1 demo press (log + honk + action-bar), so a lone buzzer still works.
- * On break, a linked buzzer auto-unlinks itself from its panel's session and warns nearby hosts.
+ *   4. Not linked (or the host's session is gone) → the standalone demo press (log + honk + action-bar),
+ *      so a lone buzzer still works; a stale link (host logged off) is cleared lazily here.
+ * On break, a linked buzzer auto-unlinks itself from its host session and warns nearby players.
  * Server is authoritative; the dome always pops via the {@code pressed} state + a scheduled release.
  *
- * Depends on: BuzzerBlockEntity, AdminPanelBlockEntity, PanelSession, BuzzerGameWand, RoundBroadcast, CustomBlocksMod
+ * Depends on: BuzzerBlockEntity, BuzzerSession, BuzzerSessionManager, BuzzerGameWand, RoundBroadcast, CustomBlocksMod
  * Called by:  BuzzerGameRegistry.register(), the game (placement / press / tick / break)
  */
 package com.customblocks.buzzergame;
@@ -105,28 +106,27 @@ public final class BuzzerBlock extends BlockWithEntity {
         // 1) BuzzerGame wand in hand → linking, not buzzing.
         ItemStack main = serverPlayer.getMainHandStack();
         if (BuzzerGameWand.isWand(main)) {
-            BuzzerGameWand.onBuzzerClicked(serverPlayer, world, buzzer);
+            BuzzerGameWand.onBuzzerClicked(serverPlayer, buzzer);
             return ActionResult.SUCCESS;
         }
 
-        // 2/3) Linked to a live panel → route the press into its session.
-        AdminPanelBlockEntity panel = linkedPanel(world, buzzer);
-        if (panel != null) {
-            PanelSession session = panel.session();
+        // 2/3) Linked to a live host session → route the press into the solo stopwatch cycle.
+        BuzzerSession session = buzzer != null ? BuzzerSessionManager.bySession(buzzer.getSessionId()) : null;
+        if (session != null) {
             pressDome(serverWorld, pos, state);
-            if (session.isBuzzAccepting()) {
-                PanelSession.Result r = session.onBuzz(buzzer.getBuzzerId(), serverPlayer.getName().getString());
-                panel.markDirty();
-                if (r.ok()) playPress(serverWorld, pos); else playReject(serverWorld, pos);
-                if (r.ok()) Chat.toolSuccess(serverPlayer, r.message()); else Chat.toolError(serverPlayer, r.message());
-            } else {
-                playReject(serverWorld, pos);
-                Chat.tool(serverPlayer, "No round running on this buzzer's panel yet.");
+            BuzzerSession.BuzzOutcome out = session.onBuzz(buzzer.getBuzzerId(), serverPlayer.getName().getString());
+            switch (out.phase()) {
+                case START -> { fxStart(serverWorld, pos); Chat.toolSuccess(serverPlayer, out.message()); }
+                case STOP  -> { fxStop(serverWorld, pos);  Chat.toolSuccess(serverPlayer, out.message()); }
+                case RESET -> { fxReset(serverWorld, pos); Chat.tool(serverPlayer, out.message()); }
+                case IGNORED -> { playReject(serverWorld, pos); Chat.toolError(serverPlayer, out.message()); }
             }
             return ActionResult.SUCCESS;
         }
+        // A link whose host has logged off resolves to no session — clear it so it reads as unlinked.
+        if (buzzer != null && buzzer.isLinked()) buzzer.clearLink();
 
-        // 4) Unlinked → the standalone demo press (item 1).
+        // 4) Unlinked → the standalone demo press.
         pressDome(serverWorld, pos, state);
         playPress(serverWorld, pos);
         CustomBlocksMod.LOGGER.info("[CustomBlocks] Buzzer pressed at {} by {} (id={})",
@@ -143,32 +143,22 @@ public final class BuzzerBlock extends BlockWithEntity {
     }
 
     /**
-     * Auto-unlink a linked buzzer from its panel's session when it's broken; warn nearby hosts. Must read
+     * Auto-unlink a linked buzzer from its host session when it's broken; warn nearby players. Must read
      * this buzzer's BlockEntity BEFORE super (AbstractBlock.onStateReplaced removes the BE on block change).
      */
     @Override
     protected void onStateReplaced(BlockState state, World world, BlockPos pos, BlockState newState, boolean moved) {
         if (!state.isOf(newState.getBlock()) && !world.isClient
-                && world.getBlockEntity(pos) instanceof BuzzerBlockEntity buzzer && buzzer.isLinked()
-                && world.getBlockEntity(buzzer.getPanelPos()) instanceof AdminPanelBlockEntity panel
-                && buzzer.getSessionId() != null && buzzer.getSessionId().equals(panel.session().sessionId())) {
-            panel.session().unlinkBuzzer(buzzer.getBuzzerId());
-            panel.markDirty();
-            if (world instanceof ServerWorld serverWorld) {
-                RoundBroadcast.warnNear(serverWorld, buzzer.getPanelPos(), "A linked buzzer was removed.");
+                && world.getBlockEntity(pos) instanceof BuzzerBlockEntity buzzer && buzzer.isLinked()) {
+            BuzzerSession session = BuzzerSessionManager.bySession(buzzer.getSessionId());
+            if (session != null) {
+                session.unlinkBuzzer(buzzer.getBuzzerId());
+                if (world instanceof ServerWorld serverWorld) {
+                    RoundBroadcast.warnNear(serverWorld, pos, "A linked buzzer was removed.");
+                }
             }
         }
         super.onStateReplaced(state, world, pos, newState, moved);
-    }
-
-    /** The admin panel this buzzer is linked to, only if the link is still valid (matching session id). */
-    private static @Nullable AdminPanelBlockEntity linkedPanel(World world, @Nullable BuzzerBlockEntity buzzer) {
-        if (buzzer == null || !buzzer.isLinked()) return null;
-        if (world.getBlockEntity(buzzer.getPanelPos()) instanceof AdminPanelBlockEntity panel
-                && buzzer.getSessionId() != null && buzzer.getSessionId().equals(panel.session().sessionId())) {
-            return panel;
-        }
-        return null;
     }
 
     private void pressDome(ServerWorld world, BlockPos pos, BlockState state) {
@@ -181,6 +171,39 @@ public final class BuzzerBlock extends BlockWithEntity {
         world.playSound(null, pos, SoundEvents.BLOCK_AMETHYST_BLOCK_CHIME, SoundCategory.BLOCKS, 1.0f, 1.15f);
         Vec3d c = Vec3d.ofCenter(pos).add(0, 0.2, 0);
         world.spawnParticles(ParticleTypes.ENCHANT, c.x, c.y, c.z, 18, 0.25, 0.25, 0.25, 0.0);
+    }
+
+    // ------------------------------------------------------------------ §G press FX — 3 distinct combos
+    // Vanilla sounds + particles only (true custom particles need a client mod). Note-block SoundEvents
+    // use .value(); every other SoundEvents constant is a bare SoundEvent. Tunable at the call site.
+
+    /** Press 1 (START): a bright rising three-layer cue — pling + bell + a trident-return swell — and a
+     *  green happy-villager burst (I8). */
+    private static void fxStart(ServerWorld world, BlockPos pos) {
+        Vec3d c = Vec3d.ofCenter(pos).add(0, 0.35, 0);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_PLING.value(), SoundCategory.BLOCKS, 1.0f, 1.5f);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_BELL.value(), SoundCategory.BLOCKS, 0.5f, 2.0f);
+        world.playSound(null, pos, SoundEvents.ITEM_TRIDENT_RETURN, SoundCategory.BLOCKS, 0.6f, 1.5f); // rising swell
+        world.spawnParticles(ParticleTypes.HAPPY_VILLAGER, c.x, c.y, c.z, 22, 0.30, 0.30, 0.30, 0.02);
+    }
+
+    /** Press 2 (STOP): a hard "locked" combo — basedrum + hat snap + a low anvil clunk — and a bigger crit
+     *  burst, clearly different from the start (I8). */
+    private static void fxStop(ServerWorld world, BlockPos pos) {
+        Vec3d c = Vec3d.ofCenter(pos).add(0, 0.35, 0);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_BASEDRUM.value(), SoundCategory.BLOCKS, 1.0f, 0.9f);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), SoundCategory.BLOCKS, 0.9f, 1.7f);
+        world.playSound(null, pos, SoundEvents.BLOCK_ANVIL_LAND, SoundCategory.BLOCKS, 0.35f, 1.4f); // metallic clunk, low vol
+        world.spawnParticles(ParticleTypes.CRIT, c.x, c.y, c.z, 34, 0.40, 0.40, 0.40, 0.15);
+    }
+
+    /** Press 3 (RESET): a soft but clearly-audible combo — a hat tick + an item-pickup blip at full volume —
+     *  and a cloud puff. Replaces the near-inaudible lone button click (I8: G3 was barely hearable). */
+    private static void fxReset(ServerWorld world, BlockPos pos) {
+        Vec3d c = Vec3d.ofCenter(pos).add(0, 0.30, 0);
+        world.playSound(null, pos, SoundEvents.BLOCK_NOTE_BLOCK_HAT.value(), SoundCategory.BLOCKS, 0.9f, 1.2f);
+        world.playSound(null, pos, SoundEvents.ENTITY_ITEM_PICKUP, SoundCategory.BLOCKS, 1.0f, 1.2f); // audible blip @ vol 1.0
+        world.spawnParticles(ParticleTypes.CLOUD, c.x, c.y, c.z, 10, 0.18, 0.12, 0.18, 0.0);
     }
 
     /** Reject feedback: a low note + a puff of smoke (too-early / no-round press). */

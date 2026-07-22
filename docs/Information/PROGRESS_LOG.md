@@ -7,6 +7,163 @@
 
 ---
 
+## Group 08 · Shapes — §F defects F1/F2/F3 fixed (from the 2026-07-22 MP pass) · 2026-07-22 (🟢 build-green — NOT confirmed in-game)
+
+> One jar for the three MP-pass defects in the §J/§B fix plan (group doc §F). §L (F4, vanilla parity)
+> stays parked. Build-green only: `compileJava` + every gate green, `customblocks-1.0.0.jar` produced.
+> Owner in-game MP confirmation still owed for all three (F3 also needs a facing eyeball — see below).
+
+- **F1 · upside-down stair corners picked the mirror wedge (TG8 J8/J9, 2nd regression).** Cause:
+  `StairConnection.compute` classifies the corner (`INNER_LEFT`/`RIGHT`, `OUTER_LEFT`/`RIGHT`) in the base
+  NORTH/bottom frame, but `BlockShapes.orient` renders a TOP half as x:180 + y:180 = 180° about Z — which
+  preserves Z (front/back = inner vs outer) and mirrors only left↔right. The 2026-07-21 J8 fix only verified
+  the left/right-symmetric STRAIGHT stair, so the asymmetric corner wedges landed on the wrong side upside-down.
+  Fix: new `topSwap(shape, half)` swaps LEFT↔RIGHT of the chosen corner when `half == TOP` (STRAIGHT passes
+  through); front/back detection + the `isDifferentOrientation` guard untouched (Z preserved). Collision reads
+  the same stored `StairShape` through the same `orient`, so hitbox == visual for free — no separate branch.
+
+- **F2 · Omni-Tool face rotation did nothing on a shaped block, MP only (TG8 B5).** Cause: `rotateFace`
+  (and the undo/redo `FACE_ROTATE` cases in `HistoryCommands`) pushed the pack (`ResourcePackServer.updatePack`)
+  but never `HudSync.broadcast`. A full cube bakes rotation into the pushed pack model, so it updated; a §B
+  shaped block reads rotation only from the synced packed value (`ClientSlotCache.rot` → `resolveFaceRot`),
+  which the pack push never refreshes → the remote client re-meshed with the stale rot. SP worked (reads
+  `FaceRotations.packed` in-process). Fix: `HudSync.broadcast(server)` after the rotate and after each
+  undo/redo `FACE_ROTATE` restore — `HudSync` already carries the packed rot (line ~94), and the changed
+  `ClientSlotCache.rot` makes `geometryDiffers()` trigger the world re-mesh.
+
+- **F3 · plain shaped stair item icon showed the wrong angle (TG8 B6).** Cause: `SlotItemRenderer`/`ShapeIconMesh`
+  draw the icon in the base NORTH/bottom frame; the `builtin/entity` display transforms already equal vanilla,
+  so scale is right but the presented face is the tall back, not the step. Fix: for a DIRECTIONAL shape (stairs),
+  ICON PATH ONLY, pre-rotate the geometry to a fixed presentation facing via the shared `BlockShapes.orientPoint`
+  (+ a matching normal rotation), bottom half. Shipped with **`Direction.EAST`** as the first guess per the fix
+  plan — the item layer is no-cull so no face drops; the rotation only re-aims the step + lighting. **Needs a
+  visual check:** if the step still faces away in-game, change `iconFacing` in `SlotItemRenderer` to
+  `Direction.SOUTH`. The placed mesh + hitbox are never touched.
+
+---
+
+## Group 31 · BuzzerGame — third-pass regression fixes (Steps 1–6) · 2026-07-19 (🟢 build-green — NOT confirmed in-game)
+
+> The 2026-07-19 retest found the second pass's screen/hitbox/break/flicker fixes did not hold; re-root-caused
+> into `docs/testing/extra/G31_FIX_PLAN.md` + the Group doc's third-pass table. All six agreed steps landed in
+> one build. Verified here: both bake tools re-run and their PNGs eyeballed (labels ≤256px + green; LED sheet
+> tinted-green preview shows uniform 7-segment + ghost-8 + bloom), the jar packs the new assets, `compileJava`
+> + every build gate (monolith/help/hotbar/chat/tg) green. In-game confirmation still owed.
+
+- **Step 1 · label tofu (I1).** Cause: `BakeTimerLabels` baked at `FONT_SIZE=240` → PNGs 351px/360px wide,
+  past MC's 256px font-atlas page, so the glyph was dropped and rendered as a tofu box. Fix: the baker now
+  AUTO-FITS the font size down (stroke weight scaled with it to keep the approved cursive weight) until the
+  widest word + the shared canvas both fit ≤250px → 243×141 / 249×141. Also baked GREEN (locked brand
+  `#15FF00`), and `TimerDisplayVisual.lineText` renders the label UNTINTED (white style over the green PNG) so
+  `/textcolor` recolors only the LED digits, never the locked-green label. `font/timer_label.json` height/ascent
+  moved 10/7 → 11/8 from the bake print (both PNGs share one vertical box → one baseline with the LED line).
+  Also reordered `lineText` to the locked RTL layout: LED number LEFT, blinking colon, Arabic label RIGHT
+  (`5.00 : الهدف`) — all characters are bidi-neutral/L so MC's bidi keeps code order = visual order.
+
+- **Step 2 · text floated off the tilted glass (I2).** Cause: the forward offset was XZ-only and the two lines
+  separated along world-Y, so on the −22.5° face the text drifted off. Fix: `textNbt` now offsets along the
+  TRUE face-normal (horizontal × cos(pitch), vertical = −sin(pitch)) and separates the two lines along the
+  tilted local-up axis (`f·sin(pitch)`, `cos(pitch)`, …), both derived from the per-face pitch + facing.
+
+- **Step 3 · can't select/resize/rotate/break parts (I4/I5).** Cause: the block's voxel is clamped to the
+  0–16px cell, so it never matched the floating/tilted/scaled parts; the invisible block also gave no crack
+  feedback → break read as slow. Fix: three server-side INTERACTION entities (base/leg/screen) sized to each
+  rendered band via `partBandsPx`, re-fit every resize/rotate, carrying command tags (stand pos + part) that
+  survive reload. New `TimerHitbox` owns them (split out to keep `TimerDisplayVisual` under the 500-line gate).
+  The stand block's outline is now empty; the wand routes clicks on the part entities through
+  `onPartInteract` (Fabric Use/AttackEntityCallback in `CustomBlocksMod`): RC = link/grow/rotate, sneak-RC =
+  select THAT exact part, left-click any part = break the whole stand instantly (`world.breakBlock`), sneak-LC
+  in Resize = shrink. Overlap → MC's entity pick makes the nearest-crosshair part win. `size/textcolor/textsize`
+  now find the stand by raycasting these entities (the block has no outline to raycast).
+
+- **Step 4 · cooler LED.** `led_digits.png` redrawn procedurally (new `tools/BakeLedFont.java`) from one shared
+  7-segment map so all ten digits are uniform (the old malformed "5" top bar is fixed). Each glyph bakes three
+  layers that all tint with the TEXT_DISPLAY colour, so ghost + bloom follow `/textcolor` with ZERO extra
+  entities: GHOST = all seven segments in dark grey (→ faint textcolor "ghost-8" behind the lit digit), BLOOM =
+  a blurred grey halo of the lit segments (→ soft glow), LIT = crisp white (→ full textcolor). Dimensions
+  unchanged so `font/led.json` still lines up. The colon blinks ~1 Hz via a `blink` flag on `Render` (world
+  time `% 20 < 10`) that recolors just the `:` between bright textcolor and a dim shade — same char, no jitter.
+  Glass stays plain dark (no scanlines). Bloom is baked into the font rather than a separate backing
+  TEXT_DISPLAY layer, to avoid a per-stand entity explosion and to make it follow `/textcolor`.
+
+- **Step 5 · defaults / bounds / digit-mode.** Resize bounds widened `SCALE_MIN/MAX` 0.4–3.0 → 0.1–5.0, step
+  0.15 → 0.1; the `size <scale>` arg bound widened to 0.1–5.0. New persisted spawn default
+  `CustomBlocksConfig.timerDefaultScale` (shipped ×1.3, clamped 0.1–5.0) drives a freshly placed stand's scale;
+  `/cb buzzergame size <n> setdefault` saves it (and applies to the aimed-at stand). The plain-text digit style
+  is dropped: the wand's DIGITS mode + the LED↔plain toggle are gone (modes are Link/Resize/Rotate), `Render`
+  is always LED, `TimerDisplayBlockEntity.ledDigits` removed. Text-size still accepts the 30× arg but the
+  on-screen glyph is capped (`TEXT_SCALE_ONSCREEN_MAX`) so digits never overflow the glass.
+
+- **Step 6 · hotbar label (I7/F7).** Mode cycling already shows a short glyph+word action-bar label
+  (`⛓ Link` / `⤢ Resize` / `⟳ Rotate`) with the how-to on one chat line; dropping the DIGITS mode leaves the
+  three clean labels. Rotate is now 45° steps (8 facings), yaw-only, whole stand.
+
+---
+
+## Group 31 · BuzzerGame — C→G regression batch (I1–I8) · 2026-07-18 (🟢 build-green — NOT confirmed in-game)
+
+> The 2026-07-18 in-game pass root-caused eight regressions/fails across C/E/F/G (see
+> `docs/testing/extra/G31_FIX_PLAN.md`). All eight are now implemented in one pass; the owner batch-tests
+> C→G. Verified here: I1 baked-glyph shaping eyeballed on the rendered PNG (correct join/direction), I3 the
+> real `BuzzerSession` driven through both press cycles headlessly (all-pass), the jar packs the new font +
+> PNGs, and every G04 build gate stays green. I2 glue geometry may want one owner tuning round.
+
+- **I3 · linked buzzer wouldn't start on press (D blocked).** Cause: `onBuzz` had no IDLE case — only
+  `armTarget` (the `start` command) moved IDLE→ARMED, so a bare press hit the `default → IGNORED` arm.
+  Fix: added IDLE→START (`state=RUNNING`, `elapsedTicks=0`, a new `targetless` flag). A `targetless` run
+  shows no هدف line (`hasTarget()` returns false) and press 3 lands back in IDLE, not ARMED; the armed
+  (`start`) flow is unchanged (press 3 → ARMED, هدف kept). `targetless` is cleared by `armTarget`/`clearRound`.
+  Drove the compiled class through both cycles headlessly (`tools/VerifyI3.java`): all assertions pass.
+
+- **I2 · screen text detached from the glass (massive regression).** Cause: two placeholder constants in
+  `TimerDisplayVisual` — `TEXT_FORWARD = 0.34` pushed the line to ~z+0.84, 0.36 block SOUTH of the glass
+  (front face at z+0.482); and `SCREEN_PITCH = +22.5` tilted the text plane the wrong way vs the model's
+  −22.5° screen. Fix: `TEXT_FORWARD → 0.02` (sit on the glass), `SCREEN_PITCH → −22.5` (front −22.5 / back
+  +22.5). Geometry-only; may want one in-game tuning round on the `*_LINE_UP` offsets.
+
+- **I1 · Arabic read L→R, number garbled, one tofu box.** Cause: the labels were stored as pre-shaped
+  presentation-form constants drawn as MC text; MC re-runs Unicode bidi on every rendered line, reversing the
+  already-visual glyphs (→ reads left-to-right) and dragging the neutral `.`/separator around the RTL run,
+  fragmenting the LED digits and leaving a neutral char glyph-less. Fix (Path B, owner-locked): baked
+  `الهدف`/`النتيجة` from their LOGICAL strings via Java2D `TextLayout` (RTL, `arabtype.ttf`, the same cursive
+  recipe as `ArabicWordRenderer`) into two WHITE transparent-bg PNGs (`tools/BakeTimerLabels.java`), served by
+  a new `customblocks:timer_label` bitmap font (`font/timer_label.json`) on bidi-neutral PUA codepoints
+  (U+E000 target / U+E001 result). `lineText` now emits the single PUA glyph in that font + the number in the
+  LED font — no strong-RTL run, so nothing reorders; white ink still tints with `textcolor`. Shaping/join/
+  direction eyeballed on the baked PNGs before shipping.
+
+- **I4 · stand hitbox inaccurate; parts hard to select/resize.** Cause: `shapeFor` returned one fat hollow
+  cuboid (full-width over the whole height) built off the WHOLE scale only, and the wand's select bands
+  (0.34/0.67) didn't match the model bands. Fix: `shapeFor` now unions the real base/leg/screen columns, each
+  tracking whole + per-part scale + the stacking lift via a new shared `TimerDisplayVisual.partBandsPx`; the
+  wand's `selectPart` reads the SAME px bands (base 0–2.5, leg 2.5–9, screen 8–16 at scale 1) so the highlight
+  box, the click-to-select bands, and the visible stand can never drift apart. Collision uses the base column
+  only (don't snag the screen).
+
+- **I5 · stand break felt slow/bugged (buzzer instant).** Cause: identical `strength(0.2f)` on both blocks,
+  but the stand is INVISIBLE (its look is display entities) so there's no crack-overlay to sell a 0.2 mine,
+  and the old oversized hollow box meant you were often mining empty air. Fix: tightened the outline (shared
+  with I4) + dropped the stand to `strength(0.05f, 6.0f)` — a true one-hit, reading as instant like the buzzer.
+
+- **I7 · mode hotbar was a long jargon sentence.** Cause: `cycleMode` sent `"Wand mode: " + label + " — " +
+  hintFor(mode)` (a full how-to) to the action bar. Fix: the action bar now shows a short, glanceable label —
+  a BMP glyph (unifont-covered, won't tofu like an astral emoji) + one word: `⛓ Link` / `⤢ Resize` /
+  `⟳ Rotate` / `# Digits`; the how-to moved to one dim chat line on switch (routed through `CbFmt` per the
+  colour gate, not raw §).
+
+- **I8 · G3 reset inaudible; all three FX plain.** Cause: G3 was a lone quiet `WOODEN_BUTTON_CLICK_OFF`@0.8.
+  Fix: reworked all three into layered combos — START adds an `ITEM_TRIDENT_RETURN` swell, STOP adds a low
+  `BLOCK_ANVIL_LAND` clunk, RESET is now `NOTE_BLOCK_HAT`@1.2 + `ENTITY_ITEM_PICKUP`@vol 1.0 + cloud puff
+  (louder, clearly audible, clearly different). Kept the `.value()` rule (only `BLOCK_NOTE_BLOCK_*`).
+
+- **I6 · one-tick place flicker (cosmetic).** Cause: a freshly spawned display entity can render its default
+  pose for frame 0 before the NBT transform applies client-side. Fix: the transform is seeded into the spawn
+  NBT pre-spawn and `interpolation_duration`/`teleport_duration` are 0; added `start_interpolation = 0` so the
+  final pose commits at tick 0. A residual 1-frame client-side snap can't be fully removed server-side (no
+  client mod, by design) — needs the owner's eye to confirm.
+
+---
+
 ## Group 03 · HUD Overlay — widget framework CUT, 3 widgets kept · 2026-07-14 (🟢 build-green — NOT confirmed in-game)
 
 > First MP test run rejected most of §G03-2. This pass is pure deletion: no new behaviour, nothing to test

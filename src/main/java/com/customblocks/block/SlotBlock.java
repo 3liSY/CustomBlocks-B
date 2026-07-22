@@ -124,36 +124,17 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
         return lore == null ? List.of() : lore;
     }
 
-    /**
-     * G08 client-shape seam — same idea as {@link #CLIENT_NAME_RESOLVER}. The block's outline + collision
-     * boxes are built from its shape; on a DEDICATED server the client's SlotManager is empty, so the
-     * shape read fell back to "full" and the selection/hitbox box stayed a full cube even though the MODEL
-     * (from the pack) showed e.g. a carpet. The synced shape lives in the client-only ClientSlotCache;
-     * the client entrypoint installs this resolver (slotIndex -> shape name, or null). Null on a server JVM,
-     * never consulted in singleplayer/LAN host (their in-process SlotManager is the live truth).
-     */
-    public static volatile IntFunction<String> CLIENT_SHAPE_RESOLVER = null;
+    // G08 §B/§J — the SHAPE + FACE-ROTATION client seams live in SlotGeometryData (split out for the
+    // no-monolith limit; they travel together because §B builds both the collision boxes and the drawn
+    // mesh from them). resolveShape below stays here as the name every caller already uses.
 
-    /**
-     * Resolve a slot's shape for outline/collision. Server JVM / singleplayer / LAN host read the live
-     * SlotManager; a remote client ({@link #CLIENT_REMOTE_SESSION}) skips its stale SlotManager and reads
-     * the synced shape via {@link #CLIENT_SHAPE_RESOLVER}, falling back to {@link SlotData#DEFAULT_SHAPE}.
-     */
+    /** @see SlotGeometryData#resolveShape */
     public static String resolveShape(int slotIndex, String slotKey) {
-        if (!CLIENT_REMOTE_SESSION) {
-            SlotData d = SlotManager.getBySlot(slotKey);
-            if (d != null) return d.shape();
-        }
-        IntFunction<String> resolver = CLIENT_SHAPE_RESOLVER;
-        if (resolver != null) {
-            String cached = resolver.apply(slotIndex);
-            if (cached != null && !cached.isEmpty()) return cached;
-        }
-        return SlotData.DEFAULT_SHAPE;
+        return SlotGeometryData.resolveShape(slotIndex, slotKey);
     }
 
     /**
-     * S4 client-sound seam — same idea as {@link #CLIENT_SHAPE_RESOLVER}. Footstep/break/place sounds are
+     * S4 client-sound seam — same idea as {@link SlotGeometryData#CLIENT_SHAPE_RESOLVER}. Footstep/break/place sounds are
      * played CLIENT-side from the block's sound group; on a DEDICATED server the client's SlotManager is empty,
      * so {@link #getSoundGroup} fell back to stone and a custom sound (single /cb setsound, or bulk/setall
      * sound) never took effect for the player. The synced sound type lives in the client-only ClientSlotCache
@@ -181,12 +162,50 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
     }
 
     /**
+     * G06-17 client-glow seam — same idea as {@link #CLIENT_SOUND_RESOLVER}. The placed-block light level
+     * (LIGHT state) is computed client-side in {@link #getPlacementState} when the client predicts a
+     * placement; on a DEDICATED server the client's SlotManager is empty, so glowFor returned 0 and the
+     * predicted block was briefly unlit until the server's authoritative state landed ("light appears
+     * late"). The synced glow already rides in ClientSlotCache ("glow" field, HudSync); the client
+     * entrypoint installs this resolver (slotIndex -> glow 0..15, or null). Null on a server JVM.
+     */
+    public static volatile IntFunction<Integer> CLIENT_GLOW_RESOLVER = null;
+
+    /**
+     * Resolve a slot's glow level (0..15). Server JVM / singleplayer / LAN host read the live SlotManager;
+     * a remote client ({@link #CLIENT_REMOTE_SESSION}) skips its stale SlotManager and reads the synced
+     * glow via {@link #CLIENT_GLOW_RESOLVER}, falling back to 0.
+     */
+    public static int resolveGlow(int slotIndex, String slotKey) {
+        if (!CLIENT_REMOTE_SESSION) {
+            SlotData d = SlotManager.getBySlot(slotKey);
+            if (d != null) return d.glow();
+        }
+        IntFunction<Integer> resolver = CLIENT_GLOW_RESOLVER;
+        if (resolver != null) {
+            Integer cached = resolver.apply(slotIndex);
+            if (cached != null) return Math.max(0, Math.min(15, cached));
+        }
+        return 0;
+    }
+
+    /**
      * Light emission as a real block-state property (0..15). Minecraft bakes a state's
      * luminance ONCE at construction (getLuminance() returns a final field), so dynamic
      * glow MUST live in the state — a luminance lambda reading mutable data is frozen at 0.
      * The model is identical for every value; the pack's "" catch-all variant covers all 16.
      */
     public static final IntProperty LIGHT = IntProperty.of("light", 0, 15);
+
+    // G08 revert (2026-07-20 — OOM incident): shape/facing/half are NOT block-state properties.
+    // With ~3100 registered slot blocks, LIGHT(16) × SHAPE(10) × FACING(4) × HALF(2) = 1280 states
+    // each = ~3.97 MILLION block-states at registration → OutOfMemoryError in SlotManager.registerAll
+    // (the game died on boot before any crash report could write). Shape is data-driven again: it lives
+    // on SlotData, collision/outline read it live (getOutlineShape/getCollisionShape), and the rendered
+    // model is the single baked model the pack emits for the slot's current shape — /cb setshape rebuilds
+    // + pushes the pack (ShapeCommands / HistoryCommands). Only LIGHT stays a property (luminance must be
+    // baked per-state). Per-placement stair rotation (§J) is dropped with the properties; see
+    // docs/groups Group 08 for the redesign path (BlockEntity-stored orientation).
 
     private final int slotIndex;
     private final String slotKey;
@@ -203,10 +222,16 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
         builder.add(LIGHT);
     }
 
-    /** New placements inherit the block's configured glow (from SlotData via SlotManager). */
+    /** New placements inherit the block's configured glow (G06-17: resolveGlow so a remote client's
+     *  predicted placement is lit from the synced cache, not left dark until the server packet lands).
+     *  Shape is data-driven (SlotData) — not a placement state — so nothing shape-related is set here. */
     @Override
     public BlockState getPlacementState(ItemPlacementContext ctx) {
-        return getDefaultState().with(LIGHT, SlotManager.glowFor(slotIndex));
+        // G08 §J — a directional shape (stairs) captures its facing + clicked half for onPlaced to stamp on
+        // the BlockEntity (there is NO facing/half block-state — the 2026-07-20 OOM revert). Non-directional
+        // shapes are a no-op inside the helper and stay exactly as before.
+        DirectionalPlacement.capture(ctx, resolveShape(slotIndex, slotKey));
+        return getDefaultState().with(LIGHT, resolveGlow(slotIndex, slotKey));
     }
 
     public int getSlotIndex() { return slotIndex; }
@@ -258,6 +283,9 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
     @Override
     public void onPlaced(World world, BlockPos pos, BlockState state, @Nullable LivingEntity placer, ItemStack stack) {
         super.onPlaced(world, pos, state, placer, stack);
+        // G08 §J — stamp the directional orientation captured in getPlacementState onto the BlockEntity
+        // (data-only, no block-state); server-authoritative + predicting client. No-op for non-directional.
+        DirectionalPlacement.stamp(world, pos, placer, resolveShape(slotIndex, slotKey));
         // Session-aware gate (CP3b): a remote client's own SlotManager is stale — the flow's
         // helper consults the synced cache there, so the prediction actually fires.
         if (com.customblocks.arabic.ArabicSlotJoinFlow.isArabicSlot(world, slotIndex, slotKey)) {
@@ -275,6 +303,19 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
         if (com.customblocks.arabic.ArabicSlotJoinFlow.isArabicSlot(world, slotIndex, slotKey)) {
             com.customblocks.arabic.ArabicSlotJoinFlow.onBreak(world, pos);
         }
+    }
+
+    /**
+     * G08 §J corners — when a neighbour changes, a stairs-shaped block recomputes its connection shape
+     * (inner/outer corner or straight) from its neighbours, exactly like vanilla stairs. Server-side only:
+     * the recompute writes the shape to the BlockEntity, which syncs to clients (and the collision/outline
+     * read it live). {@link StairConnection#refresh} self-gates — it is a cheap no-op for the ~99% of slot
+     * blocks that aren't stairs, and for stairs it only writes (and re-meshes) when the shape actually changed.
+     */
+    @Override
+    public void neighborUpdate(BlockState state, World world, BlockPos pos, Block sourceBlock, BlockPos sourcePos, boolean notify) {
+        super.neighborUpdate(state, world, pos, sourceBlock, sourcePos, notify);
+        if (!world.isClient) StairConnection.refresh(world, pos);
     }
 
     /**
@@ -360,7 +401,14 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
     public VoxelShape getOutlineShape(BlockState state, BlockView world, BlockPos pos, ShapeContext context) {
         // resolveShape reads the synced shape on a dedicated client (its SlotManager is empty) so the
         // selection box matches the shape for everyone — no more full-cube box on a carpet (G08 MP fix).
-        return BlockShapes.outline(resolveShape(slotIndex, slotKey));
+        String shape = resolveShape(slotIndex, slotKey);
+        // G08 §J — a directional shape rotates its box to the placed facing/half (read from the BE), so the
+        // selection box tracks the same rotation the client draws (both go through BlockShapes.orient).
+        if (BlockShapes.isDirectional(shape)) {
+            SlotOrientation o = DirectionalPlacement.at(world, pos);
+            if (o != null) return BlockShapes.stairOutline(o.shape(), o.facing(), o.half());
+        }
+        return BlockShapes.outline(shape);
     }
 
     /**
@@ -374,7 +422,14 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
         if (d != null && d.noCollision()) return VoxelShapes.empty();
         // resolveShape so a dedicated client predicts the right collision box (carpet/slab/…), matching the
         // server, instead of a full cube (G08 MP fix). Passable is server-authoritative (d above).
-        return BlockShapes.collision(resolveShape(slotIndex, slotKey));
+        String shape = resolveShape(slotIndex, slotKey);
+        // G08 §J — directional collision rotates with the placement (BE facing/half), so you walk into the
+        // stair exactly where you see it. Same BlockShapes.orient path as the outline + the drawn mesh.
+        if (BlockShapes.isDirectional(shape)) {
+            SlotOrientation o = DirectionalPlacement.at(world, pos);
+            if (o != null) return BlockShapes.stairCollision(o.shape(), o.facing(), o.half());
+        }
+        return BlockShapes.collision(shape);
     }
 
     @Override

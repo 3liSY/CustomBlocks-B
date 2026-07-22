@@ -1,378 +1,171 @@
-# Group 23 — Player Experience: Onboarding & Achievements
+# Group 23 - Player Experience, Onboarding, and Achievements
 
-> ### ⚠️ SCOPE SPLIT (2026-06-22) — screens moved to Group 27
-> Owner decided the **two `Screen`-based pieces of this group fold into the Screens group (Group 27)**,
-> to be built/migrated there under the unified screen standard with synced + cool features:
-> - **Tutorial screen** (first-join) → **Group 27 §G27.16** (single source of truth for its design).
-> - **Achievements gallery screen** (`/cb achievements`) → **Group 27 §G27.16**.
->
-> **Group 23 keeps the screen-free parts** (build here): first-join detection, Starter Guide **book**,
-> **sample blocks**, **FirstUseHints**, **TipPool**, the achievement **engine** (tracking + title/chat
-> unlock notification + persistence), and the **chest** dashboard wiring (Achievements tab + Tip slot
-> that *open/feed* the G27 screen). Detailed specs for the 2 screens live in G27 only — **not duplicated here.**
->
-> **Achievement scope decision (2026-06-22):** build **milestones first** (`first_block`, `ten_blocks`,
-> `fifty_blocks`, `hundred_blocks`, `first_texture`) — they hook cleanly into create/retexture. The
-> feature-dependent achievements (AI, GIF, vault, marketplace, gradient, palette, bg-removal, shapes,
-> tools, bulk) are stubbed as locked and wired later as each feature is confirmed.
->
-> **Sample-texture decision (2026-06-22):** the 5 sample blocks ship as **bundled PNGs** inside the mod
-> assets (works fully offline), fed through the normal texture pipeline.
->
-> ⚠️ **UI medium audit (2026-07-10):** the achievements gallery is already decided Screen-based (§8 below,
-> 2026-06-22) — consistent with the mod-wide Screen migration, no change needed there. What's actually
-> shipped today (per G25.9's in-game result) is a **plain chat text list**, not a chest GUI — the "Chest
-> GUI" wording in Test G25.9's body below is stale/inaccurate on two counts (not the real interim behavior,
-> and not the eventual Screen target). Fixed below. The dashboard "Achievements"/"Tip" tabs/slots are
-> Group 02's own chest dashboard (out of this group's scope) — G23 only wires a tab that opens the G27
-> screen, it doesn't own that dashboard's medium.
+> Group 23 gives new players a useful first session and gives every player private, persistent hints and achievement progress without duplicating G27's Screen work.
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Group 04 (Chat Messages) verified.
->
-> **Objective:** Build the screen-free first-time player experience (Starter Guide book, sample blocks,
-> contextual hints, rotating tips) and the achievement engine (milestone tracking, title/chat unlock
-> notification, persistence) plus its chest dashboard wiring. The tutorial screen and achievements
-> gallery screen are built in Group 27 (§G27.16). Both systems share `players.json` and TipPool.
->
-> **Source issues:** P7 (first-join welcome book + tutorial screen → screen part in G27), R3
-> (SampleBlocksLoader + FirstUseHints + TipPool), Q4 (Achievement System)
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_23.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## What this group adds
+## Purpose
 
-### Onboarding
+The first few minutes with CustomBlocks should tell a player what matters without repeating itself or forcing a manual. A Starter Guide, small offline sample set, and one-time contextual hints provide the basics while leaving the player in control.
 
-| Area | Old CB | New CB-B | This Group |
-|---|---|---|---|
-| First-join welcome | `OnboardingManager` + `WelcomeManager` — simple message | Stub | Physical Starter Guide book + pop-up tutorial screen |
-| Sample blocks | `SampleBlocksLoader` — loaded presets on fresh install | Stub | 5–10 curated example blocks |
-| FirstUseHints | `FirstUseHints.java` existed | Stub | Contextual one-time hints wired to specific commands |
-| TipPool | `TipPool.java` existed | Stub | Rotating tips in dashboard + after commands |
+Achievements turn ordinary progress into a durable personal record. G23 owns the data, milestones, notifications, and dashboard routes. Tutorial, cinematic, and gallery Screens are intentionally owned by G27 so the feature has one visual system.
 
-### Achievements
+## Ownership
 
-| Area | Old CB | New CB-B | This Group |
-|---|---|---|---|
-| Achievements | Existed — `/cb achievements` | `AchievementsManager` stub | Built from scratch |
-| GUI | Screen-based | Missing | Gallery = Screen (G27 §G27.16); dashboard tab (Group 02's chest dashboard) opens it |
-| Notification | Toast on unlock | Missing | Modern Toast Notification |
-| Persistence | Per-player | N/A | `config/customblocks/data/achievements.json` |
+| Owns | Does not own |
+| --- | --- |
+| First-join detection, Starter Guide book, sample blocks, and first-use hints | Tutorial/cinematic Screen presentation: G27 |
+| Per-player flags, hint history, achievement tracking, and persistence | Achievements gallery Screen layout and interaction: G27 |
+| Milestone definitions and unlock notifications | Main dashboard visual framework: G27 |
+| Dashboard routes and rotating tip data | Block creation and texture events that supply achievement triggers |
 
----
+## Direction
 
-## What this group covers
+On a player's first join, the server identifies that player once, gives the written Starter Guide, and supplies G27 the trigger/flags it needs for the visual onboarding experience. On a truly fresh server, a small set of bundled sample blocks makes the mod immediately understandable even while offline.
 
-| Feature | Commands / Area |
-|---|---|
-| Achievements GUI | `/cb achievements` |
-| Achievement tab | Bottom row of `/cb` main dashboard |
-| Tip slot | Bottom row of `/cb` main dashboard |
-| First-join book | Auto-given to new players |
-| Tutorial screen | Auto-opens on first join |
-| Sample blocks | Auto-loaded on fresh install |
-| FirstUseHints | Fires once after specific commands |
-| Player tracking | `config/customblocks/data/players.json` |
+Hints and achievements are per-player, persistent, and event-driven. A hint or achievement never repeats after it is saved. The current command and dashboard routes expose the engine now, while G27 upgrades the visual experience by reading the same stable data.
 
----
+## Locked Decisions
 
-## Implementation Requirements
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-22 | Starter samples use bundled PNG assets and the normal texture pipeline. | A fresh install works completely offline. |
+| 2026-06-22 | First-use hints fire once per player per trigger. | Helpful guidance never becomes repeated chat noise. |
+| 2026-06-22 | Achievement work starts with creation and texture milestones. | Feature-specific achievements wait for their underlying Groups. |
+| 2026-06-22 | Tutorial and achievements gallery are Screens. | G27 owns their visual design, navigation, and rendering. |
+| 2026-06-22 | G23 owns tutorial dismissal flags, triggers, and achievement data. | G27 can present the experience without becoming the data owner. |
+| 2026-07-10 | Dashboard visual ownership follows the unified Screen framework. | G23 contributes routes and tips, not another dashboard implementation. |
 
-### 1. First-Join Detection
+## Feature Plan
 
-`PlayerManager` checks `config/customblocks/data/players.json` on join. If UUID not present → first join. Mark UUID. Runs once per player, ever.
+### A. First-Join Foundations
 
-### 2. Starter Guide Book
+**Player outcome**
 
-Given on first join — a written book item:
-- **Title:** "CustomBlocks Starter Guide" | **Author:** "CustomBlocks"
-- Page 1: Welcome + what the mod does
-- Page 2: "Your first block: `/cb create <id> <name>` → texture with `/cb retexture <id> <url>`"
-- Page 3: "Open the dashboard: `/cb`"
-- Page 4: "Get your tools: `/cb brush` for glow, `/cb deleter` for removing"
-- Page 5: "Need help? `/cb help` anytime"
+A new player gets a concise written starting point, and a fresh server has examples worth inspecting immediately.
 
-### 3. Cinematic Welcome Video & Tutorial → moved to Group 27 §G27.32 / §G27.16
+**Experience**
 
-**Built in the Screens group (Group 27).** A 10-second unskippable cinematic hype video plays on first join, granting 100% invincibility to the player while playing (designed in **`GROUP_27_SCREENS.md` §G27.32**). The legacy 5-page tutorial screen is merged/handled via G27 as well.
+- The first join gives a five-page `CustomBlocks Starter Guide` by `CustomBlocks` with create, texture, dashboard, tools, and help routes.
+- A player is marked after first-join handling, so the book is not duplicated on later joins.
+- A fresh installation creates the bundled Samples category: Glowing Orb, Red Bricks, Neon Grid, Mossy Stone, and Lava Block.
+- Operators can remove samples intentionally; restarts never recreate or duplicate existing samples.
 
-Group 23's only job for it: set/read the `tutorial_dismissed` flag in `players.json`, ensure invincibility during playback, and trigger the cinematic on first join (after the book is given). The Screen and Video renderer are G27.
+**Requirements**
 
-### 4. Sample Blocks (Fresh Install)
+- Record player UUID and first-join/onboarding flags in `players.json`.
+- Handle a full inventory safely rather than silently losing the guide.
+- Load sample PNGs through the ordinary texture path and assign the documented names/category/glow values.
+- Only create samples when the server has no registered CustomBlocks.
 
-On first boot with 0 registered blocks, `SampleBlocksLoader` creates:
+**Boundary**
 
-| ID | Name | Description |
-|---|---|---|
-| `sample_glowing_orb` | Glowing Orb | Pink/purple texture, glow 8 |
-| `sample_bricks_red` | Red Bricks | Classic red brick pattern |
-| `sample_neon_grid` | Neon Grid | Cyberpunk neon grid |
-| `sample_stone_mossy` | Mossy Stone | Mossy cobblestone variation |
-| `sample_lava_glow` | Lava Block | Lava-like texture, glow 12 |
+G23 provides the trigger and state for visual onboarding. G27 owns tutorial/cinematic layout, playback, and interaction.
 
-Category: "Samples". Only removed if explicitly deleted by an operator.
+### B. Hints, Tips, and Achievement Engine
 
-### 5. FirstUseHints
+**Player outcome**
 
-One-time contextual hints per player (stored in `players.json`):
+Useful first actions receive one clear follow-up, while achievements build a private record of progress over time.
 
-| Trigger | Hint shown |
-|---|---|
-| First `/cb create` | "Give yourself the block with `/cb give <id>` or find it in the Custom Blocks creative tab." |
-| First `/cb give` | "Hold the block in your offhand for a hologram preview." |
-| First `/cb setglow` | "Holding a glowing block in your hand emits dynamic light." |
+**Experience**
 
-Each hint fires once per player only.
+- First create explains how to obtain/use the new block; first give and first glow can offer their matching contextual hints.
+- Tips rotate when the dashboard is opened and evolve from starter help to more advanced guidance.
+- Unlocks notify the player once and retain their original unlock date.
+- The current `/cb achievements` route can show real engine data before the G27 gallery is available.
 
-### 6. Achievement Definitions
+**Requirements**
 
-Tracked per-player UUID. Key achievements:
+- Persist hints, unlocks, dates, counts, and progress separately per player UUID.
+- Begin with `first_block`, `ten_blocks`, `fifty_blocks`, `hundred_blocks`, and `first_texture` milestones.
+- Wire event hooks from create/retexture actions without letting repeated events duplicate unlocks.
+- Provide achievement state and progress to G27 through a stable server-side data route.
 
-**Creation:** `first_block` (1 block), `ten_blocks` (10), `fifty_blocks` (50), `hundred_blocks` (100)
+**Boundary**
 
-**Texture:** `first_texture` (apply URL), `ai_texture` (AI generate), `animated_block` (GIF block)
+The engine owns facts about player progress. G27 owns the trophy-wall gallery and its visual progress presentation.
 
-**Sharing:** `first_share` (vault share), `marketplace_import` (import from market), `category_share` (share category)
+### C. Visual Handoffs and Routes
 
-**Color/Image:** `gradient_created`, `palette_saved`, `bg_removal`
+**Player outcome**
 
-**Mastery:** `all_shapes` (every shape used), `all_tools` (every Omni-Tool mode), `bulk_master` (bulk op on 50+ blocks)
+Onboarding and achievements feel connected to the rest of the mod instead of becoming separate, conflicting UIs.
 
-### 7. Achievement Unlock Notification
+**Experience**
 
-When unlocked:
-- A Modern Toast Notification slides down: "Achievement Unlocked: [Name]" (Group 27 Physics Toast).
+- A fresh player can be routed from G23 onboarding state into the G27 tutorial/cinematic once it is available.
+- Dismissing the visual onboarding saves the flag that stops a repeat.
+- The dashboard Achievements route opens the G27 gallery and the Tip route consumes G23 tip data.
+- The gallery receives locked/unlocked state, dates, and progress from G23 without guessing them locally.
 
-### 8. Achievements gallery → moved to Group 27 §G27.16
+**Requirements**
 
-**The `/cb achievements` gallery is now a full `Screen`** (owner chose Screen over chest, 2026-06-22) —
-trophy-wall grid, locked/unlocked states, unlock dates, progress bar. Full design lives in
-**`GROUP_27_SCREENS.md` §G27.16** — not duplicated here.
+- Keep onboarding trigger, dismissal, and temporary player-protection handoff separate from G27 rendering.
+- Keep command/dashboard routing compatible with the unified Screen system.
+- Do not fork or copy achievement data for a Screen cache that can become stale.
 
-**Stays in Group 23 (chest):** the **"Achievements" tab** in the bottom row of the `/cb` dashboard
-(`MainMenu.java`). Clicking it sends the player to the G27 gallery screen (`OpenGuiPayload`). The
-engine (§6) provides the locked/unlocked + progress data the screen reads.
+**Boundary**
 
-### 9. TipPool in Dashboard
+No chest or duplicate Screen UI is created here. G23 only supplies the server-side behavior and routes the existing interface needs.
 
-Bottom row of `/cb` main dashboard has a "Tip" slot. Hover shows a rotating helpful tip. Tip rotates each time the dashboard is opened. Sourced from `FirstUseHints` early-game → advanced tips after milestone achievements.
+## Cross-Group Contracts
 
----
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G05 | Sample textures | Bundled samples use the normal asset pipeline and do not need a special loader format. |
+| G06 | First-use tools | Tool-related hints describe the actual G06 behavior and fire only after a successful action. |
+| G10 | Colour/image milestones | Future colour and image achievements consume real G10 events. |
+| G14 | Animation milestones | Animated-block achievements wait for a dependable G14 completion event. |
+| G15 | AI milestone | AI achievement tracking waits for a confirmed G15 generation event. |
+| G20 | Sharing milestones | Vault/category-sharing achievements wait for real G20/G12 action events. |
+| G27 | Screens and routes | G27 renders onboarding and gallery Screens; G23 supplies flags, data, and routes. |
 
-## Setup — Onboarding Tests
+## Technical Contract
 
-Log in with a fresh player account (never joined before), OR wipe `players.json` to simulate a fresh join.
+- `players.json` records per-player first-join, tutorial-dismissal, hint, and progress state; achievement persistence retains unlock date and does not re-fire after restart.
+- Fresh-install samples are bundled assets loaded through the normal texture pipeline only when no registered block data exists.
+- Hint and achievement triggers run after the successful owning action, not merely after command parsing.
+- The achievement engine is server authoritative; Screens request/display its stored facts rather than maintain competing progress records.
+- G27 receives only the data/actions required for visual onboarding and gallery flow; G23 does not render those Screens.
 
-## Setup — Achievement Tests
+## Deferred Scope
 
-```
-/cb create g25a AchTest
-```
+<details><summary>Future ideas outside this Group's current plan</summary>
 
----
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| AI, GIF, vault, marketplace, gradient, palette, background-removal, shapes, tools, and bulk achievements | Each waits for a stable event from its owning feature. | G23 with owning Group |
+| Tutorial cinematic and achievements gallery polish | The visual experience is one G27 Screen system. | G27 |
+| More sample blocks | Five curated offline samples are enough for the initial fresh-server experience. | G23 |
 
-## Test G25.1 — Starter Guide book given on first join
+</details>
 
-Log in as a new player.
+## Superseded Decisions
 
-**Expected:** Within 3 seconds: "CustomBlocks Starter Guide" written book in inventory. Chat shows welcome message.
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
-**Pass:** Book in inventory with correct title and 5 pages.
-**Fail:** No book, or wrong content.
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-22 | G23 could own a tutorial and achievement GUI. | G27 owns the Screen surfaces; G23 owns their data/triggers. |
+| 2026-06-22 | Sample content could depend on network texture URLs. | Samples are bundled PNGs and work offline. |
+| 2026-07-10 | The achievements dashboard target could be a chest GUI. | Current routes lead toward the unified G27 Screen system. |
 
----
+</details>
 
-## Test G25.2 — Tutorial screen opens
+## References
 
-Immediately after G25.1.
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_23.md) · [All Groups](README.md)
 
-**Expected:** Full-screen tutorial overlay opens. First page visible. "Next" and "Dismiss" buttons present.
-
-**Pass:** Tutorial screen opens automatically.
-**Fail:** No tutorial screen.
-
----
-
-## Test G25.3 — Tutorial navigation and buttons
-
-Click "Next" through all 5 pages. Click command buttons on each page.
-
-**Expected:** Pages advance. Buttons pre-fill `/cb create`, `/cb`, `/cb brush`, etc. in chat.
-
-**Pass:** All pages accessible, buttons work.
-**Fail:** Navigation broken or buttons wrong.
-
----
-
-## Test G25.4 — Tutorial does not re-show
-
-Dismiss tutorial. Log out and back in.
-
-**Expected:** Tutorial does NOT re-open.
-
-**Pass:** Shown only once.
-**Fail:** Re-opens every login.
-
----
-
-## Test G25.5 — Sample blocks on fresh install
-
-Start a completely fresh server (0 block data). Open creative → CustomBlocks tab.
-
-**Expected:** 5 sample blocks visible. `/cb categories` shows "Samples".
-
-**Pass:** Samples present on first boot.
-**Fail:** Tab empty.
-
----
-
-## Test G25.6 — FirstUseHint after first create
-
-As the new player, run:
-```
-/cb create g25hint HintTest
-```
-
-**Expected:** After success: hint fires — "Give yourself the block with `/cb give g25hint` or find it in the Custom Blocks creative tab."
-
-**Pass:** Contextual hint appears.
-**Fail:** No hint.
-
----
-
-## Test G25.7 — Hint fires only once
-
-```
-/cb create g25hint2 HintTest2
-```
-
-**Expected:** No hint this time.
-
-**Pass:** Hint does not repeat.
-**Fail:** Same hint fires again.
-
----
-
-## Test G25.8 — First Block achievement fires
-
-Creating `g25a` from Setup (or `g25hint` if this is the player's true first block):
-
-**Expected:** Modern Toast Notification slides down showing "Achievement Unlocked: First Block".
-
-**Pass:** Achievement notification fires.
-**Fail:** No notification.
-
-> **Result 2026-06-22:** ✅ PASS (in-game) — Notification engine wired at `CreationCommands.onCreated`.
-
----
-
-## Test G25.9 — Achievements list/gallery ➡️ real target is the G27 §G27.16 Screen; interim behavior is a chat text list
-
-```
-/cb achievements
-```
-
-**Expected (interim, actually shipped):** a chat text list. "First Block" shown unlocked with unlock date; locked achievements shown as locked entries.
-**Expected (target, not built):** the G27 §G27.16 gallery Screen — trophy-wall grid, locked/unlocked states, unlock dates, progress bar.
-
-**Pass:** Correct locked/unlocked states shown (chat list today; Screen once G27 §G27.16 lands).
-**Fail:** Command missing, or all locked despite G25.8.
-
----
-
-## Test G25.10 — Achievement tab in dashboard
-
-```
-/cb
-```
-
-**Expected:** Main dashboard has "Achievements" slot in bottom row. Click → opens achievements GUI.
-
-**Pass:** Slot present, navigation works.
-**Fail:** No achievements slot.
-
----
-
-## Test G25.11 — Progress bar in achievements GUI
-
-In `/cb achievements`, bottom row.
-
-**Expected:** Progress slot showing "X of Y achievements unlocked."
-
-**Pass:** Progress displayed.
-**Fail:** No progress indicator.
-
----
-
-## Test G25.12 — TipPool hint in dashboard
-
-```
-/cb
-```
-
-**Expected:** Bottom row has "Tip" slot. Hover → helpful tip. Open dashboard again → tip may differ.
-
-**Pass:** Tip slot visible, rotates.
-**Fail:** No tip slot, or always same tip.
-
----
-
-## Test G25.13 — Achievement and hint data persists
-
-Restart server.
-
-- `/cb achievements` → "First Block" still unlocked with original date.
-- Open dashboard → tip slot present.
-
-**Pass:** All data persisted.
-**Fail:** Reset after restart.
-
-> **Result 2026-06-22 (partial):** ✅ In-session save confirmed — making a 2nd block did NOT re-fire the
-> "First Block" achievement (proves `achievements.json` saved the unlock). Full restart-persistence test still pending.
-
----
-
-## Group 23 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G25.1 | Starter Guide book given on first join | ✅ 2026-06-23 (in-game — 5-page book on first join) |
-| — | `/cb achievements` text list + progress | ✅ 2026-06-23 (in-game) |
-| G25.2 | Tutorial screen opens automatically | ➡️ G27 §G27.16 (screen) |
-| G25.3 | Tutorial pages + buttons work | ➡️ G27 §G27.16 (screen) |
-| G25.4 | Tutorial shown only once | ➡️ G27 §G27.16 (screen) |
-| G25.5 | Sample blocks on fresh install | ⬜ |
-| G25.6 | FirstUseHint fires after first create | ✅ 2026-06-22 (in-game) |
-| G25.7 | Hint fires only once | ✅ 2026-06-22 (in-game) |
-| G25.8 | First Block achievement notification | ✅ 2026-06-22 (in-game) |
-| — | 10-block milestone "Getting Started" fires at 10 | ✅ 2026-06-23 (in-game) |
-| G25.9 | Achievements gallery shows correct states | ➡️ G27 §G27.16 (screen) |
-| G25.10 | Achievement tab in dashboard (slot 50) | ✅ 2026-06-23 (in-game — slot opens `/cb achievements` text list; gallery screen = G27) |
-| G25.11 | Progress bar shows completion ratio | ➡️ G27 §G27.16 (in gallery screen) |
-| G25.12 | TipPool hint in dashboard rotates (slot 48) | ✅ 2026-06-23 (in-game — rotates each reopen) |
-| G25.13 | All data persists after restart | ✅ 2026-06-23 (in-game — restart confirmed, no re-fire) |
-
-> **Full testing guide:** `Reports/GROUP_23_TESTING_GUIDE.md` (engine tests, marked + scored like the other groups).
-> Rows marked ➡️ are the screen pieces — their tests live in `Reports/GROUP_27_TESTING_GUIDE.md`
-> (§ "G27.16 — Onboarding + Achievements screens"). G25.8/G25.13 still cover the **engine** data the
-> gallery reads; G25.10 covers the **chest tab** that opens the gallery.
-
-**Group 23 passes when the screen-free onboarding + achievement engine work in-game.** The two screen
-pieces pass under Group 27.
-
-If anything shows ❌ — paste:
-1. Whether the player UUID was in `players.json` before the test
-2. What appeared vs what was expected
-3. Last 20 lines of `latest.log`
-
----
-
-## Cleanup
-
-```
-/cb delete g25a
-/cb delete g25hint
-/cb delete g25hint2
-```
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
+- [G10 Colour and Image Tools](GROUP_10_COLOR_IMAGE.md)
+- [G14 Animation and Video](GROUP_14_ANIMATION_VIDEO.md)
+- [G15 AI Textures](GROUP_15_AI_TEXTURES.md)
+- [G20 External Integrations](GROUP_20_EXTERNAL_INTEGRATIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 23 snapshot](../archive/group-migration-2026-07-18/GROUP_23_PLAYER_EXPERIENCE.md)

@@ -56,7 +56,6 @@ public final class CustomBlocksConfigStore {
             CustomBlocksConfig.hudEnabled      = getBool(root, "hudEnabled", CustomBlocksConfig.hudEnabled);
             CustomBlocksConfig.silentPack      = getBool(root, "silentPack", CustomBlocksConfig.silentPack);
             CustomBlocksConfig.transparentBackground = getBool(root, "transparentBackground", CustomBlocksConfig.transparentBackground);
-            CustomBlocksConfig.didYouMean      = CustomBlocksConfig.normalizeDidYouMean(getString(root, "didYouMean", CustomBlocksConfig.didYouMean));
             CustomBlocksConfig.aiApiKey        = getString(root, "aiApiKey", CustomBlocksConfig.aiApiKey);
             CustomBlocksConfig.aiTextureEnabled = getBool(root, "aiTextureEnabled", CustomBlocksConfig.aiTextureEnabled);
             CustomBlocksConfig.aiTextureStyle  = getString(root, "aiTextureStyle", CustomBlocksConfig.aiTextureStyle);
@@ -92,9 +91,12 @@ public final class CustomBlocksConfigStore {
             // Group 32 — Explosive Tomato blast. Power is clamped so a bad config file can't turn the tomato
             // into a world-eater; restore seconds is clamped to a sane window (0 = crater never restores).
             CustomBlocksConfig.tomatoBlastPower     = clampD(getDouble(root, "tomatoBlastPower", CustomBlocksConfig.tomatoBlastPower), 0.0, 32.0);
-            CustomBlocksConfig.tomatoBlastKnockback = getBool(root, "tomatoBlastKnockback", CustomBlocksConfig.tomatoBlastKnockback);
+            CustomBlocksConfig.tomatoBlastKnockback = clampD(getDouble(root, "tomatoBlastKnockback", CustomBlocksConfig.tomatoBlastKnockback), 0.0, 64.0);
             CustomBlocksConfig.tomatoBlastFire      = getBool(root, "tomatoBlastFire", CustomBlocksConfig.tomatoBlastFire);
             CustomBlocksConfig.tomatoRestoreSeconds = (int) clampD(getDouble(root, "tomatoRestoreSeconds", CustomBlocksConfig.tomatoRestoreSeconds), 0, 600);
+            CustomBlocksConfig.tomatoSauceDecaySeconds = (int) clampD(getDouble(root, "tomatoSauceDecaySeconds", CustomBlocksConfig.tomatoSauceDecaySeconds), 1, 600);
+            CustomBlocksConfig.tomatoSauceCapPerChunk  = (int) clampD(getDouble(root, "tomatoSauceCapPerChunk", CustomBlocksConfig.tomatoSauceCapPerChunk), 1, 512);
+            CustomBlocksConfig.timerDefaultScale = (float) clampD(getDouble(root, "timerDefaultScale", CustomBlocksConfig.timerDefaultScale), 0.1, 5.0);
             LOGGER.info("[CustomBlocks] Config loaded: maxSlots={}, httpPort={}, textureSize={}, hudEnabled={}",
                     CustomBlocksConfig.maxSlots, CustomBlocksConfig.httpPort, CustomBlocksConfig.textureSize, CustomBlocksConfig.hudEnabled);
         } catch (Exception e) {
@@ -118,7 +120,6 @@ public final class CustomBlocksConfigStore {
             root.addProperty("hudEnabled",         CustomBlocksConfig.hudEnabled);
             root.addProperty("silentPack",         CustomBlocksConfig.silentPack);
             root.addProperty("transparentBackground", CustomBlocksConfig.transparentBackground);
-            root.addProperty("didYouMean",         CustomBlocksConfig.didYouMean);
             root.addProperty("aiApiKey",           CustomBlocksConfig.aiApiKey);
             root.addProperty("aiTextureEnabled",   CustomBlocksConfig.aiTextureEnabled);
             root.addProperty("aiTextureStyle",     CustomBlocksConfig.aiTextureStyle);
@@ -147,6 +148,9 @@ public final class CustomBlocksConfigStore {
             root.addProperty("tomatoBlastKnockback", CustomBlocksConfig.tomatoBlastKnockback);
             root.addProperty("tomatoBlastFire",      CustomBlocksConfig.tomatoBlastFire);
             root.addProperty("tomatoRestoreSeconds", CustomBlocksConfig.tomatoRestoreSeconds);
+            root.addProperty("tomatoSauceDecaySeconds", CustomBlocksConfig.tomatoSauceDecaySeconds);
+            root.addProperty("tomatoSauceCapPerChunk",  CustomBlocksConfig.tomatoSauceCapPerChunk);
+            root.addProperty("timerDefaultScale", CustomBlocksConfig.timerDefaultScale);
             for (String c : CustomBlocksConfig.FX_CATEGORIES) {
                 root.addProperty("particlesEnabled_" + c, CustomBlocksConfig.particlesOn(c));
             }

@@ -18,7 +18,7 @@ multi-round Q&A. The op-audit and every open design gap were also resolved with 
    the "Op audit — DONE" and "Decisions locked with owner 2026-07-05" blocks right under it.
 3. `docs/mockups/category_hub_rework_v5.html` — the blessed visual ("Red Ops"). Open it; the ⧉ Zones
    button labels every region. This is the look to match (portable subset only — see below).
-4. `docs/testing/GROUP_27_TESTING_GUIDE.md` → **§L-v6 rows L13–L25** — test checklist, already updated with
+4. `docs/testing/TESTING_GUIDE_27.md` → **§L-v6 rows L13–L25** — test checklist, already updated with
    every locked decision baked into the expected results.
 5. Current code: `src/main/java/com/customblocks/client/gui/CategoryHubScreen.java` (493/500 lines),
    `CategoryHubModel.java`, `CategoryHubDragDrop.java`.
@@ -94,7 +94,7 @@ button → sound pass.
 ## BUILD ENV
 JDK 21 only (`JAVA_HOME` → 21, `--no-daemon`; machine default Java is different). Gates: `mojibakeShield`,
 `soundGate`, `monolithGate`. Build: `./gradlew.bat build`. A green build = compiles + gates pass, NOT
-"done" — only the owner's in-game confirmation is done. Keep `docs/testing/GROUP_27_TESTING_GUIDE.md`
+"done" — only the owner's in-game confirmation is done. Keep `docs/testing/TESTING_GUIDE_27.md`
 §L-v6 in sync as you go. Branch before committing; never commit unless asked.
 
 ## FIRST MESSAGE TO SEND THE OWNER

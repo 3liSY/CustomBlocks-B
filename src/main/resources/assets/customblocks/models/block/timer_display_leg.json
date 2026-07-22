@@ -1,0 +1,20 @@
+{
+  "__comment": "Group 31 item F — the timer stand's LEG part, sliced from timer_display_stand at its ORIGINAL coordinates. Rendered by its own ITEM_DISPLAY; resized independently by the wand (growing it lifts the screen part).",
+  "textures": {
+    "body": "minecraft:block/polished_deepslate",
+    "particle": "minecraft:block/polished_deepslate"
+  },
+  "elements": [
+    {
+      "name": "leg",
+      "from": [6.5, 2.5, 7],
+      "to": [9.5, 9, 9.5],
+      "faces": {
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west":  { "texture": "#body" },
+        "east":  { "texture": "#body" }
+      }
+    }
+  ]
+}

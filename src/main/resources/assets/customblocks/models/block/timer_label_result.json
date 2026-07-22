@@ -1,0 +1,17 @@
+{
+  "__comment": "Group 31 item E (rev 2026-07-19) — the baked GREEN word النتيجة as a FLAT double-sided quad (see timer_label_target.json). North face U-flipped so it reads from behind.",
+  "textures": {
+    "l": "customblocks:block/timer_label_result",
+    "particle": "customblocks:block/timer_label_result"
+  },
+  "elements": [
+    {
+      "from": [0, 0, 7.99],
+      "to": [16, 16, 8.01],
+      "faces": {
+        "south": { "uv": [0, 0, 16, 16], "texture": "#l" },
+        "north": { "uv": [16, 0, 0, 16], "texture": "#l" }
+      }
+    }
+  ]
+}

@@ -66,7 +66,6 @@ public final class ConfigApply {
             case "silent_pack":            return "config silentpack toggle";
             case "transparent_background": return "config transparent toggle";
             case "named_texture_mirror":   return "config mirrornames " + (f.asBool() ? "off" : "on");
-            case "typo_correction":        return "config didyoumean cycle";
             case "history_mode":           return "config undomode";
             case "auto_backup_interval":   return "config autobackup interval";
             case "background_removal":     return "config background "

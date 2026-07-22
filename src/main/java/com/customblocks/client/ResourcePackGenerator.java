@@ -25,6 +25,7 @@ import net.minecraft.client.MinecraftClient;
 import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -39,30 +40,54 @@ public final class ResourcePackGenerator {
      *  deleteStale on the same folder (SP corrupt-PNG fix, 2026-07-03). */
     private static final Object WRITE_LOCK = new Object();
 
-    /** Guards against stacking reloadResources() calls; a second request rides the pendingHash. */
-    private static final AtomicBoolean reloadInFlight = new AtomicBoolean(false);
-    private static volatile String pendingHash;       // a regen requested while a reload was running
+    /**
+     * Serializes the ENTIRE write→apply→reload cycle of one regen, not just the reload (SP corrupt-PNG fix,
+     * 2026-07-19). A new regen must NOT run {@link #writeLoosePack} (rewriting the loose folder) while a
+     * previous regen's {@code reloadResources()} is still READING that folder — that overlap is the surviving
+     * B3 race: {@link #writeAtomic} makes each file swap atomic, but a reload mid-folder-rewrite still reads a
+     * {@code slot_N.png} that is being replaced/deleted, which is what surfaced as "Corrupt PNG" on a fast
+     * create burst. The old gate sat inside {@link #applyReload} — AFTER the write had already happened — so
+     * it only stopped stacked reloads, not the write↔read overlap. While an op holds this flag a fresh request
+     * is coalesced into {@link #pendingHash} and re-run by {@link #finishOp} once the op (including its async
+     * reload) is fully done, so a write and a reload-read can never run at the same time.
+     */
+    private static final AtomicBoolean opInFlight = new AtomicBoolean(false);
+    private static volatile String pendingHash;       // latest regen requested while an op was running
     private static volatile boolean hasPending = false;
-    private static volatile String lastAppliedHash;   // hash of the pack currently applied
+    private static volatile String lastAppliedHash;   // hash of the pack currently applied THIS session
 
     private ResourcePackGenerator() {} // static-only
 
     /**
-     * (Re)generate the local pack for {@code hash} and silently reload. No-op if that exact pack is
-     * already applied. File I/O runs off-thread; the reload is scheduled back on the client thread.
+     * (Re)generate the local pack for {@code hash} and silently reload. Reloads are mandatory now, so this
+     * only short-circuits on the exact hash we already applied earlier in THIS session (a duplicate payload) —
+     * it never carries an applied-hash across a restart or world open. File I/O runs off-thread; the reload is
+     * scheduled back on the client thread.
      */
     public static void regenerate(MinecraftClient client, String hash) {
         if (client == null) return;
+        // Intra-session dedup only: a repeated identical regen in the same session must not restart the
+        // write→reload cycle (that would reload-storm on a burst). A fresh JVM / world open starts with
+        // lastAppliedHash == null, so the first regen of any session always writes + reloads.
         if (hash != null && hash.equals(lastAppliedHash)) {
-            CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack already current (hash {}), skipping regen.", hash);
+            CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack already current this session (hash {}), skipping regen.", hash);
+            return;
+        }
+        // Serialize the whole write→reload cycle: if an op is already running, do NOT start a second
+        // writeLoosePack that would rewrite the loose folder while the first op's reload is still reading it
+        // (the SP corrupt-PNG race). Remember the latest hash instead; finishOp re-runs it once the op ends.
+        if (!opInFlight.compareAndSet(false, true)) {
+            pendingHash = hash;
+            hasPending = true;
             return;
         }
         Thread t = new Thread(() -> {
             try {
-                writeLoosePack(new File(client.runDirectory, "resourcepacks/CustomBlocks"));
-                client.execute(() -> applyReload(client, hash));
+                boolean anyChange = writeLoosePack(new File(client.runDirectory, "resourcepacks/CustomBlocks"));
+                client.execute(() -> applyReload(client, hash, anyChange));
             } catch (Exception e) {
                 CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to write local resource pack", e);
+                client.execute(() -> finishOp(client)); // release the gate + run any coalesced regen
             }
         }, "CustomBlocks-ClientPackGen");
         t.setDaemon(true);
@@ -70,25 +95,39 @@ public final class ResourcePackGenerator {
     }
 
     /**
-     * Write every emitted pack file loose under {@code packRoot}, then delete files left behind.
-     * Held under {@link #WRITE_LOCK} so two burst regens run one-after-another instead of racing
-     * each other's writes/deleteStale; each file lands via {@link #writeAtomic} so a concurrent
-     * reloadResources() never reads a half-written PNG (SP corrupt-PNG fix, 2026-07-03).
+     * Write every emitted pack file loose under {@code packRoot}, then delete files left behind — but ONLY
+     * rewrite a file whose bytes actually changed. Returns true when anything changed on disk (a file was
+     * written or a stale file deleted) → {@link #applyReload} must reload; false when disk already matched the
+     * emit exactly → nothing to apply. Held under {@link #WRITE_LOCK} so two burst regens run
+     * one-after-another instead of racing each other's writes/deleteStale; each changed file lands via
+     * {@link #writeAtomic} so a concurrent reloadResources() never reads a half-written PNG (SP corrupt-PNG
+     * fix, 2026-07-03).
      */
-    private static void writeLoosePack(File packRoot) throws Exception {
+    private static boolean writeLoosePack(File packRoot) throws Exception {
         synchronized (WRITE_LOCK) {
             Set<String> written = new HashSet<>();
+            boolean[] anyChange = {false};
             ServerPackGenerator.emit((path, data) -> {
-                File dest = new File(packRoot, path);
+                String rel = path.replace('\\', '/');
+                File dest = new File(packRoot, rel);
                 File parent = dest.getParentFile();
                 if (parent != null) parent.mkdirs();
-                writeAtomic(dest, data);
-                written.add(path.replace('\\', '/'));
+                byte[] old = readOrNull(dest);
+                boolean changed = old == null || !Arrays.equals(old, data);
+                if (changed) { writeAtomic(dest, data); anyChange[0] = true; }
+                written.add(rel);
             });
-            deleteStale(packRoot, packRoot, written);
-            CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack written ({} files) to {}.",
-                    written.size(), packRoot.getPath());
+            if (deleteStale(packRoot, packRoot, written)) anyChange[0] = true;
+            CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack synced ({} files, {} changed) to {}.",
+                    written.size(), anyChange[0] ? "some" : "none", packRoot.getPath());
+            return anyChange[0];
         }
+    }
+
+    /** Read a file's bytes, or null if it doesn't exist / can't be read (treated as "new"). */
+    private static byte[] readOrNull(File f) {
+        try { return f.isFile() ? Files.readAllBytes(f.toPath()) : null; }
+        catch (Exception e) { return null; }
     }
 
     /**
@@ -115,46 +154,70 @@ public final class ResourcePackGenerator {
      * old per-face texture, the stale May-17 leftovers) so the loose folder mirrors the HTTP pack
      * exactly. {@code base} is the pack root used to compute pack-relative paths.
      */
-    private static void deleteStale(File base, File dir, Set<String> written) {
+    private static boolean deleteStale(File base, File dir, Set<String> written) {
         File[] files = dir.listFiles();
-        if (files == null) return;
+        if (files == null) return false;
+        boolean deleted = false;
         for (File f : files) {
             if (f.isDirectory()) {
-                deleteStale(base, f, written);
+                deleted |= deleteStale(base, f, written);
             } else {
                 String rel = base.toPath().relativize(f.toPath()).toString().replace('\\', '/');
-                if (!written.contains(rel)) f.delete();
+                if (!written.contains(rel)) deleted |= f.delete();
             }
         }
+        return deleted;
     }
 
-    /** Enable the pack if needed, then run one guarded silent reload; coalesce a request mid-reload. */
-    private static void applyReload(MinecraftClient client, String hash) {
+    /**
+     * Apply the pack for {@code hash}. Reloads are mandatory: any real change to the loose folder takes one
+     * guarded full {@code reloadResources()}; an empty change set (disk already matched the emit) just records
+     * the hash for this session's dedup. Coalesces a request that arrives mid-reload.
+     */
+    private static void applyReload(MinecraftClient client, String hash, boolean anyChange) {
         injectPackIfNeeded(client);
-        if (reloadInFlight.compareAndSet(false, true)) {
-            client.reloadResources()
-                    .thenRun(() -> client.execute(() -> {
-                        reloadInFlight.set(false);
+
+        // Nothing actually changed on disk — the pack Minecraft already has is correct; no reload needed.
+        if (!anyChange) {
+            lastAppliedHash = hash;
+            finishOp(client);
+            return;
+        }
+
+        // A real change: one full reload. The op stays "in flight" across the async reload, so no coalesced
+        // regen can start a writeLoosePack that would rewrite the folder this reload is still reading — that
+        // overlap was the corrupt-PNG race.
+        client.reloadResources()
+                .thenRun(() -> client.execute(() -> {
+                    try {
                         lastAppliedHash = hash;
                         // Group 14 Phase 1b/1c: the textures just changed on disk — drop the off-atlas
                         // anim AND static caches so placed blocks re-read the fresh image next frame.
                         com.customblocks.client.render.AnimFrameCache.clear();
                         com.customblocks.client.render.StaticFrameCache.clear();
                         CustomBlocksMod.LOGGER.info("[CustomBlocks] Local pack applied (hash {}).", hash);
-                        if (hasPending) {
-                            hasPending = false;
-                            regenerate(client, pendingHash);
-                        }
-                    }))
-                    .exceptionally(ex -> {
-                        client.execute(() -> reloadInFlight.set(false));
-                        CustomBlocksMod.LOGGER.error("[CustomBlocks] Local pack reload failed.", ex);
-                        return null;
-                    });
-        } else {
-            // A reload is already running — remember the latest hash and regen once it finishes.
-            pendingHash = hash;
-            hasPending = true;
+                    } finally {
+                        finishOp(client);   // release the gate even if a cache clear throws — never wedge opInFlight
+                    }
+                }))
+                .exceptionally(ex -> {
+                    CustomBlocksMod.LOGGER.error("[CustomBlocks] Local pack reload failed.", ex);
+                    client.execute(() -> finishOp(client));
+                    return null;
+                });
+    }
+
+    /**
+     * End the current regen op: release the single-op gate, then run one coalesced regen if a request arrived
+     * while this op was running (latest hash wins). Client thread. Because every regenerate/finishOp call runs
+     * on the client thread, the gate release + pending-run is atomic w.r.t. new requests — a write can never be
+     * started while this op's reload is (or was) reading the folder.
+     */
+    private static void finishOp(MinecraftClient client) {
+        opInFlight.set(false);
+        if (hasPending) {
+            hasPending = false;
+            regenerate(client, pendingHash);
         }
     }
 

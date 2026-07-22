@@ -17,14 +17,41 @@
  */
 package com.customblocks.client.render;
 
+import com.customblocks.CustomBlocksMod;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.texture.NativeImage;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.InputStream;
 
 @Environment(EnvType.CLIENT)
 public final class OffAtlasImage {
 
     private OffAtlasImage() {} // static-only
+
+    /**
+     * Read a slot's base {@code slot_N.png} straight from the on-disk loose pack
+     * ({@code resourcepacks/CustomBlocks/…}), NOT via the ResourceManager — the live in-place swap (G05-6)
+     * runs WITHOUT a {@code reloadResources()}, so the ResourceManager's view of the pack is not refreshed;
+     * only the file we just atomically wrote is authoritative. Returns a fresh {@link NativeImage} (caller
+     * owns/closes it) or null if the file is missing/unreadable. On a low-res client the on-disk PNG is the
+     * already-shrunk copy, so the swap naturally uploads the right per-client pixels.
+     */
+    public static NativeImage readLoosePng(int slot) {
+        MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null || slot < 0) return null;
+        File f = new File(mc.runDirectory,
+                "resourcepacks/CustomBlocks/assets/" + CustomBlocksMod.MOD_ID + "/textures/block/slot_" + slot + ".png");
+        if (!f.isFile()) return null;
+        try (InputStream in = new FileInputStream(f)) {
+            return NativeImage.read(in);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * Composite {@code img} over opaque black in place: out = src * (a/255), alpha = 255. Opaque pixels are

@@ -2,7 +2,8 @@
   "textures": {
     "base": "minecraft:block/black_concrete",
     "button": "minecraft:block/red_concrete",
-    "rim": "minecraft:block/light_gray_concrete"
+    "rim": "minecraft:block/light_gray_concrete",
+    "particle": "minecraft:block/red_concrete"
   },
   "elements": [
     {

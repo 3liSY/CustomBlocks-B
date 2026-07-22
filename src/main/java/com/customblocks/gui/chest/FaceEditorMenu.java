@@ -1,6 +1,6 @@
 /**
  * FaceEditorMenu.java — per-face texture editor for one block (Group 08, G08.11). One slot per
- * face (down/up/north/south/west/east): LEFT-click pre-fills "/cb paintface <id> <face> " in chat
+ * face (down/up/north/south/west/east): LEFT-click pre-fills "/cb setface <id> <face> " in chat
  * so the player pastes a URL (the proven long-URL input path, same as Retexture — URLs don't fit
  * an anvil); RIGHT-click clears that face via the tested "/cb clearface <id> <face>". A reset
  * button clears every face. Painted faces carry an enchant glint. No texture logic lives here.
@@ -62,7 +62,7 @@ public final class FaceEditorMenu {
                 if (b == 1) { // right-click → clear just this face
                     GuiRouter.runAndReopen(p, "clearface " + id + " " + face, MenuKey.of(Dest.FACE_EDITOR, id));
                 } else {      // left-click → chat-prefill the paint command for a URL paste
-                    GuiRouter.promptCommand(p, "/cb paintface " + id + " " + face + " ", "paintface " + id + " " + face);
+                    GuiRouter.promptCommand(p, "/cb setface " + id + " " + face + " ", "setface " + id + " " + face);
                 }
             });
         }

@@ -1,0 +1,35 @@
+{
+  "__comment": "Group 31 item F — the timer stand's BASE part (foot + red rim), sliced out of timer_display_stand at its ORIGINAL coordinates so three part ITEM_DISPLAYs at the same origin reassemble into the exact one-piece stand at scale 1. Rendered by its own ITEM_DISPLAY (item_display none); resized independently by the wand.",
+  "textures": {
+    "body": "minecraft:block/polished_deepslate",
+    "trim": "minecraft:block/red_concrete",
+    "particle": "minecraft:block/polished_deepslate"
+  },
+  "elements": [
+    {
+      "name": "base_foot",
+      "from": [2, 0, 3],
+      "to": [14, 2, 13],
+      "faces": {
+        "down":  { "texture": "#body" },
+        "up":    { "texture": "#body" },
+        "north": { "texture": "#body" },
+        "south": { "texture": "#body" },
+        "west":  { "texture": "#body" },
+        "east":  { "texture": "#body" }
+      }
+    },
+    {
+      "name": "base_rim",
+      "from": [2, 2, 3],
+      "to": [14, 2.5, 13],
+      "faces": {
+        "up":    { "texture": "#trim" },
+        "north": { "texture": "#trim" },
+        "south": { "texture": "#trim" },
+        "west":  { "texture": "#trim" },
+        "east":  { "texture": "#trim" }
+      }
+    }
+  ]
+}

@@ -8,7 +8,7 @@
  * TEAM is deferred (design lock) — buzzer→team assignment is designed but the mode itself is out of v1,
  * so it is intentionally NOT an enum value yet.
  *
- * Called by: PanelSession (start validation), the mode command + admin panel readout.
+ * Called by: BuzzerSession (start validation), the mode command + chat readout.
  */
 package com.customblocks.buzzergame;
 

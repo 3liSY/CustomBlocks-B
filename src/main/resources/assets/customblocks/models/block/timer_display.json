@@ -1,3 +1,6 @@
 {
-  "__comment": "Group 31 item 1 — the placed timer-display block is INVISIBLE in-world (its visual is the ItemDisplay entity spawned by the block entity). Empty model = nothing rendered by the block itself."
+  "__comment": "Group 31 item 1 — the placed timer-display block is INVISIBLE in-world (its visual is the ItemDisplay entity spawned by the block entity). No geometry is rendered by the block itself, but a 'particle' texture is set so survival break particles match the stand body (polished_deepslate) instead of showing missing-texture magenta.",
+  "textures": {
+    "particle": "minecraft:block/polished_deepslate"
+  }
 }

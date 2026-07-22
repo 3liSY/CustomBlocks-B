@@ -34,7 +34,8 @@
 | | G09-1 | Trash GUI (`/cb deletedblocks`) needs upgrading — weak UX; also add a cleanup path for the orphan blank "Custom Block" items/placements that delete leaves behind | GROUP_09 | Both | 🗒️ reported 06-26 — backlog (not designed) |
 | **C8 · New Features** | G30-1 | Guess-mode — blind the holder; owner-configurable disguise | GROUP_30 | Both | 🔍 designed → GROUP_30 |
 | | G27-1 | HUD customization — expand on-screen block HUD + universal settings | GROUP_27 | Both | 🔍 designed → GROUP_27 |
-| | G06-6 | Per-face actions — Omni-Tool "Face" mode (rotate/mirror/copy) | GROUP_06 | Both | 🔍 designed → GROUP_06 |
+| | G06-6 | Omni-Tool Face mode — 90-degree clicked-face image rotation + later action backlog | GROUP_06 | Both | ⏳ core designed; extras need discussion → GROUP_06 |
+| | G27-8 | Shared block-browser Filters menu + combinable `Animated` filter + `/cb animation` handoff | GROUP_27 | Both | ⏳ designed; menu details need discussion → GROUP_27 |
 | | G14-1 | Showcase/cycler block — rapidly cycles through custom-block textures | GROUP_14 | Both | 🔍 designed → GROUP_14 |
 | | G29-1 | Shorts framing overlay — capture-invisible 9:16 recording guide | GROUP_29 | Client-only | 🟡 Build A implemented 2026-06-30; awaiting in-game + OBS confirm |
 | **C9 · Pack Integrity** | G05-3 | Random face-swap — concurrent client pack writes corrupt loose pack | GROUP_05 | Client-only | 🔍 diagnosed → GROUP_05 |
@@ -52,7 +53,7 @@
 | **C5** | **Arabic** — shared contract, auto-join revamp, Text Studio tab | G13-19, G13-20, G13-21, G13-22 | 🔍 designed | G13-19 first → G13-20 → G13-21+G13-22 co-design in one session |
 | **C6** | **Undo** — full rework, 3-tab screen, persistence | G28-1 | 🔍 designed | Do after C4+C5 (all new ops from those clusters register undo steps); then build the full screen |
 | **C7** | **Studio + Editor** — `/cb editor` rework + block drops | G07-1, G27-2, G06-7 | 🔍 designed | G07-1 trivial (1-line alias, ship anytime); G27-2 first → G06-7 (Drops tab reuses Studio infra) |
-| **C8** | **New Features** — all independent, pick any order | G30-1, G27-1, G06-6, G14-1, G29-1 | mixed: G29-1 built/pending, others designed | All standalone; no mandatory sequence |
+| **C8** | **New Features** — all independent, pick any order | G30-1, G27-1, G27-8, G06-6, G14-1, G29-1 | mixed: G29-1 built/pending, others designed | All standalone; no mandatory sequence |
 | **C9** | **Pack Integrity** — concurrent client pack write race | G05-3 | 🔍 diagnosed | Standalone; 2 changes, 1 file; fix any time (high priority — causes random face-swap in-game) |
 
 **Key cross-cluster gates:**

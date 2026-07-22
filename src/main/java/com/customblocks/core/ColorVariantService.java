@@ -28,6 +28,7 @@ import com.customblocks.CustomBlocksConfig;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.command.Chat;
 import com.customblocks.image.BackgroundRemover;
+import com.customblocks.image.ColorReplacer;
 import com.customblocks.image.ImageProcessor;
 import com.customblocks.network.HudSync;
 import com.customblocks.network.ResourcePackServer;
@@ -299,12 +300,14 @@ public final class ColorVariantService {
         com.customblocks.CustomBlocksMod.LOGGER.info("[CustomBlocks] G06-C recolorVariants START: key={} oldRgb=#{} newRgb=#{} variantsFound={}",
                 key, String.format(Locale.ROOT, "%06X", oldRgb), String.format(Locale.ROOT, "%06X", newRgb), variants.size());
         Thread worker = new Thread(() -> {
-            int regen = 0, repainted = 0, skipped = 0;
+            int regen = 0, repainted = 0, unchanged = 0, skipped = 0;
             for (SlotData d : variants) {
                 try {
                     byte[] source = TextureStore.loadSource(d.index()); // the original upload, pre-recolour
                     if (source != null && source.length > 0) {
-                        // Clean regenerate to the new hex — same recolour path createVariant used.
+                        // Clean regenerate to the new hex — same recolour path createVariant used
+                        // (byte-identical: recolorBackground → toBlockPng → fillBackground). This branch
+                        // is correct by construction; the confirmed-good create path proves it.
                         byte[] recoloured = BackgroundRemover.recolorBackground(source, mode, tol, newRgb);
                         byte[] png = ImageProcessor.toBlockPng(recoloured, CustomBlocksConfig.textureSize);
                         // Same non-square padding fix as createVariant: fill the transparent top/bottom
@@ -314,14 +317,17 @@ public final class ColorVariantService {
                         regen++;
                         continue;
                     }
-                    // No stored source (older variant, made before sources were kept) → re-detect the
-                    // painted background ON THE BAKED block PNG and repaint it. The block was MADE by
-                    // painting its bg, so its corners ARE that fill colour: recolorBackground samples
-                    // the corners and floods the same region to the new hex — it never needs to know
-                    // the old hex. This is what fixes the older blocks the swap-by-old-hex path missed.
+                    // No stored source (older variant, made before sources were kept). DETERMINISTIC swap,
+                    // NOT a re-run of the BgRemove flood pipeline on the baked PNG: that second-pass
+                    // flood/peel/fringe bleeds into the design ("blocks got fucked a lot"). A variant's
+                    // baked bg is a FLAT fill, so recolorFlatBg samples the corners and swaps only pixels
+                    // near that fill — no flood, so the design is untouched (§7). It returns null (→
+                    // "unchanged, retexture") when there is no flat bg to swap (full-bleed design) instead
+                    // of silently corrupting it or silently doing nothing.
                     byte[] png = TextureStore.load(d.index());
                     if (png == null || png.length == 0) { skipped++; continue; }
-                    byte[] out = BackgroundRemover.recolorBackground(png, mode, tol, newRgb);
+                    byte[] out = ColorReplacer.recolorFlatBg(png, newRgb, tol);
+                    if (out == null) { unchanged++; continue; } // no flat bg / already that hex — leave it as-is
                     TextureStore.save(d.index(), out); // already block-sized — no re-resize
                     repainted++;
                 } catch (Exception e) {
@@ -330,14 +336,15 @@ public final class ColorVariantService {
                             d.customId(), player.getName().getString(), e);
                 }
             }
-            final int fRegen = regen, fRepainted = repainted, fSkipped = skipped;
+            final int fRegen = regen, fRepainted = repainted, fUnchanged = unchanged, fSkipped = skipped;
             server.execute(() -> {
-                com.customblocks.CustomBlocksMod.LOGGER.info("[CustomBlocks] G06-C recolorVariants DONE: regenerated(from-source)={} repainted(baked-bg-detect)={} skipped(no-texture)={} -> updatePack()",
-                        fRegen, fRepainted, fSkipped);
+                com.customblocks.CustomBlocksMod.LOGGER.info("[CustomBlocks] G06-C recolorVariants DONE: regenerated(from-source)={} repainted(baked-flat-swap)={} unchanged(no-flat-bg)={} skipped(no-texture)={} -> updatePack()",
+                        fRegen, fRepainted, fUnchanged, fSkipped);
                 ResourcePackServer.updatePack(); // ONE rebuild, broadcast AFTER the batch (§7)
                 int total = fRegen + fRepainted;
+                int noVisual = fUnchanged + fSkipped;
                 Chat.toolSuccess(player, "Recoloured " + total + " block(s)"
-                        + (fSkipped > 0 ? " (" + fSkipped + " skipped — no texture yet, retexture them)" : "."));
+                        + (noVisual > 0 ? " (" + noVisual + " unchanged — no source + no flat background; retexture them)" : "."));
             });
         }, "CustomBlocks-HexRecolor");
         worker.setDaemon(true);

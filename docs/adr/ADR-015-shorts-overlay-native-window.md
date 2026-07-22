@@ -46,7 +46,7 @@ Tradeoffs:
 
 ## Verification
 
-Owner test rows live in `docs/testing/GROUP_29_TESTING_GUIDE.md` section A.
+Owner test rows live in `docs/testing/TESTING_GUIDE_29.md` section A.
 
 The feature is not complete until:
 

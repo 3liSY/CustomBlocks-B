@@ -4,10 +4,10 @@
  * Pure read/derive logic for the Workbench: which blocks a filter + search leaves visible, and what the
  * live "old → new" preview of an op would be. No drawing, no networking, no state — the Screen owns those.
  *
- * The filter semantics here MIRROR the server's core/BulkScope EXACTLY (all · category: · id: · name:
- * (+ trailing * = starts-with) · favorite:yes|no · locked:yes|no), because the expression this class builds
- * is the one shipped to the server when the player escalates a selection to "all N matches". If the two ever
- * disagree, the preview lies about what Apply will touch.
+ * The filter is a SINGLE condition (all · category · id · name (+ trailing * = starts-with) · favorite ·
+ * locked, each with an optional yes/no) resolved CLIENT-side to a concrete id set that gets ticked; the
+ * server only ever receives an explicit id list (core/BulkScope). The old multi-condition AND/OR/NOT
+ * builder and the `category:`/`id:`/`name:` expression language were ripped out (§G07-B, 2026-07-20).
  *
  * Likewise {@link #preview} mirrors each handler's real skip rules rather than assuming a uniform one:
  * Edit / Rename / Move / Re-ID / Delete skip locked blocks; Duplicate, Export and the flag ops do NOT
@@ -62,127 +62,22 @@ final class BulkWorkbenchModel {
         /** True when the filter is complete enough to narrow the list. */
         boolean active() { return !needsValue() || !value.isBlank(); }
 
-        /** The BulkScope expression this filter sends to the server when the selection is escalated. */
-        String expr() {
-            return switch (kind) {
-                case "category" -> "category:" + value.trim();
-                case "favorite" -> "favorite:yes";
-                case "locked"   -> "locked:yes";
-                case "name"     -> "name:" + value.trim();
-                case "id"       -> "id:" + value.trim();
-                default         -> "all";
-            };
-        }
-
-        /** Plain-words label for the confirm bar ("all 47 in category:stone"). */
+        /** Plain-words label for the confirm bar ("all blocks", "category stone", "favorited"). */
         String label() {
             return switch (kind) {
-                case "category" -> "category:" + value.trim();
-                case "favorite" -> "favorited";
-                case "locked"   -> "locked";
-                case "name"     -> "name:" + value.trim();
-                case "id"       -> "id:" + value.trim();
+                case "category" -> "category " + value.trim();
+                case "favorite" -> value.equalsIgnoreCase("no") ? "unfavorited" : "favorited";
+                case "locked"   -> value.equalsIgnoreCase("no") ? "unlocked" : "locked";
+                case "name"     -> "named " + value.trim();
+                case "id"       -> "id " + value.trim();
                 default         -> "all blocks";
             };
         }
     }
 
-    // ── multi-condition filter builder (§G07-4 AND/OR/NOT combinators) ─────────
-    // Mirrors core/BulkScope's boolean eval EXACTLY (NOT > AND > OR, quoted values), so the Console's live
-    // preview and the escalated server resolve agree on what Execute touches.
-
-    /** Kinds that need a typed value before they narrow anything (favorite/locked carry a yes/no instead). */
-    static boolean kindNeedsValue(String kind) {
-        return switch (kind) { case "category", "name", "id" -> true; default -> false; };
-    }
-
-    /** One condition row in the builder. {@code negate} = NOT; "all" and blank value-kinds are inactive. */
-    record Cond(String kind, String value, boolean negate) {
-        boolean active() {
-            return switch (kind) {
-                case "all" -> false;
-                case "category", "name", "id" -> !value.isBlank();
-                default -> true; // favorite / locked always narrow
-            };
-        }
-        /** The BulkScope token this condition contributes to the sent expression. */
-        String token() {
-            String body = switch (kind) {
-                case "category" -> "category:" + quote(value);
-                case "id"       -> "id:" + quote(value);
-                case "name"     -> "name:" + quote(value);
-                case "favorite" -> "favorite:" + (value.equalsIgnoreCase("no") ? "no" : "yes");
-                case "locked"   -> "locked:" + (value.equalsIgnoreCase("no") ? "no" : "yes");
-                default         -> "all";
-            };
-            return negate ? "NOT " + body : body;
-        }
-        private static String quote(String v) {
-            return v != null && v.contains(" ") ? "\"" + v + "\"" : (v == null ? "" : v);
-        }
-    }
-
-    private static boolean matchesCond(ClientSlotCache.Entry e, Cond c, Set<String> locked, Set<String> fav) {
-        if (!c.active()) return true; // inactive condition passes through, so it never narrows on its own
-        boolean v = switch (c.kind()) {
-            case "category" -> e.category() != null && e.category().equalsIgnoreCase(c.value().trim());
-            case "id"       -> e.id().toLowerCase(Locale.ROOT).startsWith(c.value().trim().toLowerCase(Locale.ROOT));
-            case "name"     -> {
-                String pat = c.value().trim().toLowerCase(Locale.ROOT);
-                boolean wildcard = pat.endsWith("*");
-                String term = wildcard ? pat.substring(0, pat.length() - 1) : pat;
-                String name = e.name().toLowerCase(Locale.ROOT);
-                yield wildcard ? name.startsWith(term) : name.contains(term);
-            }
-            case "favorite" -> fav.contains(e.id()) == !c.value().equalsIgnoreCase("no");
-            case "locked"   -> locked.contains(e.id()) == !c.value().equalsIgnoreCase("no");
-            default         -> true;
-        };
-        return c.negate() ? !v : v;
-    }
-
-    /** Every block the builder selects — the escalation target. {@code conns} holds the connector before each
-     *  condition after the first (size = conds − 1). */
-    static List<ClientSlotCache.Entry> matchingBool(List<Cond> conds, List<String> conns,
-                                                    Set<String> locked, Set<String> fav) {
-        List<ClientSlotCache.Entry> out = new ArrayList<>();
-        for (ClientSlotCache.Entry e : ClientSlotCache.entries()) if (evalConds(e, conds, conns, locked, fav)) out.add(e);
-        out.sort((a, b) -> a.name().compareToIgnoreCase(b.name()));
-        return out;
-    }
-
-    private static boolean evalConds(ClientSlotCache.Entry e, List<Cond> conds, List<String> conns,
-                                     Set<String> locked, Set<String> fav) {
-        boolean result = false, group = true;
-        for (int i = 0; i < conds.size(); i++) {
-            boolean tv = matchesCond(e, conds.get(i), locked, fav);
-            if (i == 0) { group = tv; continue; }
-            String conn = i - 1 < conns.size() ? conns.get(i - 1) : "AND";
-            if ("OR".equalsIgnoreCase(conn)) { result = result || group; group = tv; }
-            else group = group && tv;
-        }
-        return result || group;
-    }
-
-    /** The BulkScope expression the builder sends on escalate (what the client just evaluated locally). */
-    static String exprOf(List<Cond> conds, List<String> conns) {
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < conds.size(); i++) {
-            if (i > 0) sb.append(' ').append(i - 1 < conns.size() ? conns.get(i - 1) : "AND").append(' ');
-            sb.append(conds.get(i).token());
-        }
-        return sb.toString();
-    }
-
-    /** True when at least one condition actually narrows — so escalation and the label mean something. */
-    static boolean anyActive(List<Cond> conds) {
-        for (Cond c : conds) if (c.active()) return true;
-        return false;
-    }
-
     // ── selection ────────────────────────────────────────────────────────────
 
-    /** Every block the filter selects — the escalation target. Mirrors BulkScope.resolve. */
+    /** Every block the single filter selects — the client-side set that gets ticked. */
     static List<ClientSlotCache.Entry> matching(Filter f, Set<String> locked, Set<String> fav) {
         List<ClientSlotCache.Entry> out = new ArrayList<>();
         if (!f.active()) return out;
@@ -219,8 +114,8 @@ final class BulkWorkbenchModel {
                 String name = e.name().toLowerCase(Locale.ROOT);
                 yield wildcard ? name.startsWith(term) : name.contains(term);
             }
-            case "favorite" -> fav.contains(e.id());
-            case "locked"   -> locked.contains(e.id());
+            case "favorite" -> fav.contains(e.id()) == !value.equalsIgnoreCase("no");
+            case "locked"   -> locked.contains(e.id()) == !value.equalsIgnoreCase("no");
             default         -> true;
         };
     }

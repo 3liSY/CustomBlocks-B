@@ -64,6 +64,12 @@ public final class AnimFrameCache {
     private static final long EVICT_MS = 8_000;
     /** Don't sweep the pool more than this often — keeps get() effectively free per frame. */
     private static final long SWEEP_INTERVAL_MS = 2_000;
+    /** G05-§H: max resident animated grids. Past this a new build evicts the least-recently-seen slot. */
+    private static final int MAX_ENTRIES = 32;
+    /** G05-§H: max resident decoded bytes across all grids (a grid can be many MiB, so this binds first). */
+    private static final long MAX_BYTES = 128L * 1024 * 1024;
+    /** Don't log an eviction readout more than this often. */
+    private static final long LOG_THROTTLE_MS = 5_000;
 
     /**
      * One animated slot: its full grid in RAM, a one-cell GL texture re-uploaded per frame, plus the
@@ -72,7 +78,7 @@ public final class AnimFrameCache {
     public static final class Slot {
         private final Identifier textureId;
         private final NativeImageBackedTexture frameTex; // one-cell GPU texture, re-uploaded each frame change
-        private final NativeImage grid;                  // full frame grid kept in RAM, blitted from
+        private NativeImage grid;                        // full frame grid kept in RAM, blitted from (G05-6: live-replaceable)
         private final int count;       // total frames in the grid
         private final int cols;        // grid columns (1 = legacy vertical strip)
         private final int cell;        // cell size in px (square)
@@ -80,6 +86,7 @@ public final class AnimFrameCache {
         private final int[] order;     // frame index shown at each playback step
         private final int[] times;     // MILLISECONDS each playback step is held
         private final long totalMs;
+        private final long bytes;      // native footprint: RAM grid + one-cell GL texture (G05-§H accounting)
         private int lastUploadedFrame = -1; // which frame the one-cell texture currently holds
         private long lastSeenRealMs;        // wall-clock of the last draw — drives pool eviction
 
@@ -98,6 +105,8 @@ public final class AnimFrameCache {
             long sum = 0;
             for (int t : times) sum += Math.max(1, t);
             this.totalMs = Math.max(1, sum);
+            // Grid (imgW×imgH) kept in RAM + the one-cell (cell×cell) GL texture, both RGBA native memory.
+            this.bytes = (long) this.imgW * this.imgH * 4L + (long) this.cell * this.cell * 4L;
             this.lastSeenRealMs = System.currentTimeMillis();
         }
 
@@ -159,6 +168,8 @@ public final class AnimFrameCache {
     /** Slots we've decided are NOT animated (or failed to read) — so we don't retry every frame. */
     private static final Set<Integer> NOT_ANIMATED = new HashSet<>();
     private static long lastSweepMs = 0;
+    private static long cacheBytes = 0;   // G05-§H: sum of resident Slot.bytes
+    private static long lastLogMs = 0;
 
     /** Cached Slot for an animated block, or null if the slot is static / unreadable. */
     public static Slot get(int slotIndex) {
@@ -167,10 +178,35 @@ public final class AnimFrameCache {
         Slot s = CACHE.get(slotIndex);
         if (s != null) return s;
         if (NOT_ANIMATED.contains(slotIndex)) return null;
-        s = build(slotIndex);
-        if (s == null) { NOT_ANIMATED.add(slotIndex); return null; }
+        Built b = build(slotIndex);
+        if (b.slot == null) {
+            // Only REMEMBER "not animated" when that verdict came from a fully-read, present image (a stable
+            // fact: this slot's texture really is a single static frame). If the png was ABSENT or unreadable,
+            // the pack is mid-(re)generation — the exact window that pinned a false negative and left a shaped
+            // slot showing a full cube — so DO NOT poison the cache; retry next frame and self-heal the instant
+            // the file lands, without waiting for a resource reload.
+            if (b.stableNegative) NOT_ANIMATED.add(slotIndex);
+            return null;
+        }
+        s = b.slot;
         CACHE.put(slotIndex, s);
+        cacheBytes += s.bytes;
+        enforceBudget();
         return s;
+    }
+
+    /**
+     * Outcome of {@link #build}: an animated {@link Slot} to cache, or no slot with a flag saying whether the
+     * "not animated" verdict is STABLE (present + decoded, genuinely single-frame → safe to remember) or
+     * TRANSIENT (source absent / unreadable → the pack is still being written; must NOT be cached).
+     */
+    private static final class Built {
+        static final Built TRANSIENT = new Built(null, false);
+        static final Built STATIC = new Built(null, true);
+        final Slot slot;
+        final boolean stableNegative;
+        private Built(Slot slot, boolean stableNegative) { this.slot = slot; this.stableNegative = stableNegative; }
+        static Built ok(Slot slot) { return new Built(slot, false); }
     }
 
     /** Pool out slots not drawn for {@link #EVICT_MS}; throttled to {@link #SWEEP_INTERVAL_MS}. */
@@ -181,25 +217,64 @@ public final class AnimFrameCache {
         Iterator<Map.Entry<Integer, Slot>> it = CACHE.entrySet().iterator();
         while (it.hasNext()) {
             Slot s = it.next().getValue();
-            if (now - s.lastSeenRealMs > EVICT_MS) { s.dispose(); it.remove(); }
+            if (now - s.lastSeenRealMs > EVICT_MS) { s.dispose(); cacheBytes -= s.bytes; it.remove(); }
         }
     }
 
-    private static Slot build(int n) {
+    /**
+     * G05-§H budget: when a fresh build pushes the pool over its entry or byte ceiling, evict the
+     * LEAST-recently-seen grid (smallest {@code lastSeenRealMs}) — closing its RAM grid + one-cell GL
+     * texture — until back under both. Always keeps the just-built slot (guarded by size &gt; 1), so a
+     * single oversized grid still renders. Rebuilt from the pack next time it comes on screen.
+     */
+    private static void enforceBudget() {
+        boolean evicted = false;
+        while (CACHE.size() > 1 && (CACHE.size() > MAX_ENTRIES || cacheBytes > MAX_BYTES)) {
+            Iterator<Map.Entry<Integer, Slot>> it = CACHE.entrySet().iterator();
+            Map.Entry<Integer, Slot> lru = null;
+            while (it.hasNext()) {
+                Map.Entry<Integer, Slot> e = it.next();
+                if (lru == null || e.getValue().lastSeenRealMs < lru.getValue().lastSeenRealMs) lru = e;
+            }
+            if (lru == null) break;
+            lru.getValue().dispose();
+            cacheBytes -= lru.getValue().bytes;
+            CACHE.remove(lru.getKey());
+            evicted = true;
+        }
+        if (evicted) logStatsThrottled();
+    }
+
+    /** Throttled one-line readout — puts the G05 §H animation counters into the log for review (§H8). */
+    private static void logStatsThrottled() {
+        long now = System.currentTimeMillis();
+        if (now - lastLogMs < LOG_THROTTLE_MS) return;
+        lastLogMs = now;
+        CustomBlocksMod.LOGGER.info("[CustomBlocks] G05 anim cache: {}", stats());
+    }
+
+    /** Live counters for diagnostics: resident grid count and MiB against their ceilings. */
+    public static String stats() {
+        return String.format("%d/%d grids %.1f/%d MiB",
+                CACHE.size(), MAX_ENTRIES, cacheBytes / (1024.0 * 1024), MAX_BYTES / (1024 * 1024));
+    }
+
+    private static Built build(int n) {
         MinecraftClient mc = MinecraftClient.getInstance();
+        if (mc == null) return Built.TRANSIENT;                 // teardown — never cache a negative
         ResourceManager rm = mc.getResourceManager();
         Identifier imgPath = Identifier.of(MOD_ID, "textures/block/slot_" + n + ".png");
         Optional<Resource> res = rm.getResource(imgPath);
-        if (res.isEmpty()) return null;
+        if (res.isEmpty()) return Built.TRANSIENT;              // png not written yet (mid-regen) — retry, don't poison
 
         NativeImage img;
         try (InputStream in = res.get().getInputStream()) {
             img = NativeImage.read(in);
         } catch (Exception e) {
-            return null;
+            return Built.TRANSIENT;                             // partial/locked file mid-write — retry, don't poison
         }
         int w = img.getWidth(), h = img.getHeight();
-        if (w <= 0 || h <= 0) { img.close(); return null; }
+        if (w <= 0 || h <= 0) { img.close(); return Built.TRANSIENT; } // degenerate decode — treat as mid-write
 
         // Layout: a grid sidecar (new) wins; else a legacy vertical strip (slot_N.png.mcmeta, cols = 1).
         int count, cols;
@@ -216,9 +291,17 @@ public final class AnimFrameCache {
             cols = 1;
             pb = readMcmeta(rm, n, count);
         }
-        if (count <= 1 || cols < 1) { img.close(); return null; } // single frame → static (atlas handles it)
+        if (count <= 1 || cols < 1) {
+            img.close();
+            // Single frame → static (atlas owns it) is a STABLE verdict ONLY when there is no grid sidecar at
+            // all. If a sidecar IS present but read as ≤1 frame, it is mid-write (a real animated slot whose
+            // .grid.json hasn't fully landed) — transient, so retry instead of pinning a false "not animated".
+            boolean sidecarPresent = rm.getResource(
+                    Identifier.of(MOD_ID, "textures/block/slot_" + n + ".grid.json")).isPresent();
+            return sidecarPresent ? Built.TRANSIENT : Built.STATIC;
+        }
         int cell = w / cols;
-        if (cell <= 0) { img.close(); return null; }
+        if (cell <= 0) { img.close(); return Built.TRANSIENT; } // grid narrower than its column count → partial png
 
         // Flatten transparent pixels (whole image) onto black — same as the static path. Skipped in
         // transparent mode (/cb config transparent) so those pixels stay see-through.
@@ -231,7 +314,7 @@ public final class AnimFrameCache {
         frameTex.setFilter(true, false); // linear/smooth, NO mipmap — full-res, no atlas pre-shrink
         mc.getTextureManager().registerTexture(texId, frameTex);
 
-        return new Slot(texId, frameTex, img, count, cols, cell, w, h, pb[0], pb[1]);
+        return Built.ok(new Slot(texId, frameTex, img, count, cols, cell, w, h, pb[0], pb[1]));
     }
 
     /** Read {@code slot_N.grid.json} (the new grid layout + playback), or null if absent/unreadable. */
@@ -304,5 +387,6 @@ public final class AnimFrameCache {
         for (Slot s : CACHE.values()) s.dispose();
         CACHE.clear();
         NOT_ANIMATED.clear();
+        cacheBytes = 0;
     }
 }

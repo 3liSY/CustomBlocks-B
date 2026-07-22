@@ -28,20 +28,13 @@ final class PayloadRegistrar {
     static void registerAll() {
         // Register server→client payloads (Phase 10/11)
         PayloadTypeRegistry.playS2C().register(OpenGuiPayload.ID,   OpenGuiPayload.CODEC);
-        // Group 31 item 4 — admin panel Screen: client button clicks → server session actions.
-        PayloadTypeRegistry.playC2S().register(
-                com.customblocks.network.payloads.BuzzerPanelActionPayload.ID,
-                com.customblocks.network.payloads.BuzzerPanelActionPayload.CODEC);
-        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.BuzzerPanelActionPayload.ID, (payload, context) ->
-                        com.customblocks.buzzergame.BuzzerPanelNet.handle(payload, context.player()));
         PayloadTypeRegistry.playS2C().register(HudSyncPayload.ID,   HudSyncPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(HudStatePayload.ID,  HudStatePayload.CODEC);
         PayloadTypeRegistry.playS2C().register(ChatPrefillPayload.ID, ChatPrefillPayload.CODEC); // Group 04
         PayloadTypeRegistry.playS2C().register(SilentPackPayload.ID, SilentPackPayload.CODEC);   // Group 05
-        PayloadTypeRegistry.playS2C().register(                                                  // Group 04 §G04-4
-                com.customblocks.network.payloads.ClearLogsPayload.ID,
-                com.customblocks.network.payloads.ClearLogsPayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(                                                  // Group 04 §G04-5 dev
+                com.customblocks.network.payloads.KickPreviewPayload.ID,
+                com.customblocks.network.payloads.KickPreviewPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(                                                  // Group 03 §G03-2
                 com.customblocks.network.payloads.WidgetSyncPayload.ID,
                 com.customblocks.network.payloads.WidgetSyncPayload.CODEC);
@@ -68,13 +61,48 @@ final class PayloadRegistrar {
         PayloadTypeRegistry.playC2S().register(
                 com.customblocks.network.payloads.PackRequestPayload.ID,
                 com.customblocks.network.payloads.PackRequestPayload.CODEC);
+        // Group 05 §G — client flow-control ack (credit) + terminal application result.
+        PayloadTypeRegistry.playC2S().register(
+                com.customblocks.network.payloads.PackAckPayload.ID,
+                com.customblocks.network.payloads.PackAckPayload.CODEC);
+        PayloadTypeRegistry.playC2S().register(
+                com.customblocks.network.payloads.PackAppliedPayload.ID,
+                com.customblocks.network.payloads.PackAppliedPayload.CODEC);
+        // Group 05 §I — client compatibility handshake (protocol + build).
+        PayloadTypeRegistry.playC2S().register(
+                com.customblocks.network.payloads.PackHelloPayload.ID,
+                com.customblocks.network.payloads.PackHelloPayload.CODEC);
         // Modded client (dedicated server) asks for the pack files it lacks → queue them for streaming.
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
                 com.customblocks.network.payloads.PackRequestPayload.ID, (payload, context) -> {
                     var player = context.player();
                     player.server.execute(() ->
-                            com.customblocks.network.packsync.PackSyncService.onRequest(player, payload.gz()));
+                            com.customblocks.network.packsync.PackSyncService.onRequest(player, payload.session(), payload.gz()));
                 });
+        // §G1/§G4: client returns send credit as it writes each chunk → the server may stream more.
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackAckPayload.ID, (payload, context) -> {
+                    var player = context.player();
+                    player.server.execute(() ->
+                            com.customblocks.network.packsync.PackSyncService.onAck(player, payload.session(), payload.bytes()));
+                });
+        // §G10/§G11: client reports the reload result → server marks applied (ok) or records a failure.
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackAppliedPayload.ID, (payload, context) -> {
+                    var player = context.player();
+                    player.server.execute(() ->
+                            com.customblocks.network.packsync.PackSyncService.onApplied(player, payload.session(), payload.hash(), payload.ok()));
+                });
+        // §I1-3: client declares its pack-sync protocol → server accepts + syncs, or rejects clearly.
+        net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PackHelloPayload.ID, (payload, context) -> {
+                    var player = context.player();
+                    player.server.execute(() ->
+                            com.customblocks.network.packsync.PackSyncService.onHello(player, payload.protocol(), payload.build()));
+                });
+        PayloadTypeRegistry.playS2C().register(                                                    // Group 32 — Explosive Tomato E8
+                com.customblocks.network.payloads.SauceHitPayload.ID,
+                com.customblocks.network.payloads.SauceHitPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(ArabicLabelsPayload.ID, ArabicLabelsPayload.CODEC); // Group 13 / O6
         PayloadTypeRegistry.playS2C().register(                                                    // Group 30 — Guess Mode
                 com.customblocks.network.payloads.GuessModePayload.ID,

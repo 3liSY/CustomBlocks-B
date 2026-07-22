@@ -40,9 +40,12 @@ public final class ClientSlotCache {
      *  {@code lore} = the active lore lines (Group 18 REVAMP v2), empty when none/disabled.
      *  {@code arabic} = the Arabic identity tuple "glyph/form/colour" (G13-25 CP3b join-flow
      *  prediction on a remote session), "" for every normal block. */
+    /** {@code rot} = G08 §B: the six face quarter-turns packed 2-bits-per-face in Direction order
+     *  (FaceRotations.packed / unpack), 0 when nothing is rotated. The runtime shape mesh needs it
+     *  because it never reads the pack's model JSON, where the rotations used to live. */
     public record Entry(String id, String name, String category, int glow,
                         float hardness, String sound, String shape, boolean passable, List<String> lore,
-                        String arabic) {}
+                        String arabic, int rot) {}
 
     private static volatile Map<Integer, Entry> INDEX = Collections.emptyMap();
     private static volatile Map<String, String> CAT_COLORS = Collections.emptyMap(); // category → §-colour tag
@@ -91,7 +94,7 @@ public final class ClientSlotCache {
                             str(o, "id", ""), str(o, "name", ""), str(o, "cat", ""),
                             num(o, "glow", 0), (float) dbl(o, "hard", 1.5),
                             str(o, "sound", "stone"), str(o, "shape", "full"), bool(o, "pass", false),
-                            lore(o), str(o, "ar", "")));
+                            lore(o), str(o, "ar", ""), num(o, "rot", 0)));
                 } else if (v.isJsonPrimitive()) {
                     // Legacy delimited string fallback (id + NUL-or-space + name).
                     String val = v.getAsString();
@@ -99,10 +102,15 @@ public final class ClientSlotCache {
                     if (sep < 0) sep = val.indexOf(' ');
                     if (sep >= 0)
                         map.put(idx, new Entry(val.substring(0, sep), val.substring(sep + 1),
-                                "", 0, 1.5f, "stone", "full", false, List.of(), ""));
+                                "", 0, 1.5f, "stone", "full", false, List.of(), "", 0));
                 }
             }
+            // G08 §B — a shape (or face-rotation) change no longer rebuilds and pushes the resource
+            // pack, so nothing invalidates the chunk sections that already drew the old geometry. Detect
+            // the change here (this cache is the only place the new shape arrives) and re-mesh the world.
+            boolean geometryChanged = geometryDiffers(INDEX, map);
             INDEX = Collections.unmodifiableMap(map);
+            if (geometryChanged) requestWorldRemesh();
             CAT_COLORS = Collections.unmodifiableMap(colors);
             CAT_HEX = Collections.unmodifiableMap(hexes);
             CAT_DESC = Collections.unmodifiableMap(descs);
@@ -112,6 +120,34 @@ public final class ClientSlotCache {
         } catch (Exception ignored) {
             INDEX = Collections.emptyMap();
         }
+    }
+
+    // ── G08 §B — reload-free shape swap ──────────────────────────────────────────────────────────
+
+    /** True when any slot's drawn geometry differs between two index snapshots — a shape swap, a face
+     *  rotation, or a slot appearing/disappearing. Ignores name/category/lore churn, which the HUD
+     *  re-syncs constantly and which never changes a single quad. */
+    private static boolean geometryDiffers(Map<Integer, Entry> before, Map<Integer, Entry> after) {
+        if (before.isEmpty()) return false; // first populate (join): the initial bake is already correct
+        for (var e : after.entrySet()) {
+            Entry old = before.get(e.getKey());
+            Entry now = e.getValue();
+            if (old == null) continue;                       // new slot: nothing placed with it yet
+            if (!old.shape().equals(now.shape())) return true;
+            if (old.rot() != now.rot()) return true;
+        }
+        return false;
+    }
+
+    /** Re-mesh every loaded chunk section so placed blocks pick up the new shape without a pack reload.
+     *  Hops to the render thread first — populate() runs on the network thread. A shape change is an
+     *  admin action, so one brief full re-mesh is the right trade against tracking placements per slot. */
+    private static void requestWorldRemesh() {
+        net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+        if (mc == null) return;
+        mc.execute(() -> {
+            if (mc.worldRenderer != null && mc.world != null) mc.worldRenderer.reload();
+        });
     }
 
     /** Every known category — synced blocks' categories UNION explicitly-created 0-block ones (§G27 L11), sorted A→Z. */

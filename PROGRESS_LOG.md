@@ -5,11 +5,476 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 229 sessions · 2026-06-09 → 2026-07-15 · ✅ 43 confirmed · 🟡 139 built/pending · 📝 20 docs · ⛔ 6 reverted
+**At a glance:** 239 sessions · 2026-06-09 → 2026-07-21 · ✅ 44 confirmed · 🟡 151 built/pending · 📝 20 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
 
 ---
+
+## G08 — §B see-through shapes (UP/NORTH/EAST wound backwards) + shaped item icon BUILT · 2026-07-21 (🟡 built, pending in-game)
+
+Owner reported the §B jar broke every shaped block: the placed block draws **see-through**, and a stairs block shows **no stair** in hotbar / inventory / hand.
+
+**Evidence first.** The client log (`.minecraft/logs/latest.log`, 13:48–13:52 run) ruled out the whole environment class of causes: Indigo is the active renderer with **no Sodium/Indium** in the 116-mod list, so FRAPI `emitBlockQuads` is fully supported, and there is **not one render or chunk-build exception** in the run. Nothing was throwing — the quads were being emitted and then discarded by the GPU.
+
+**Root cause — three of six faces wound backwards.** `QuadEmitter.square(dir, left, bottom, right, top, depth)` requires **canonical** arguments (`left < right`, `bottom < top`); it performs the UP / EAST / SOUTH mirroring **itself**, which is what its own `1 - left` / `1 - top` lines are for. `SlotShapeMesh.square` mirrored the values *and* left the pair in the un-swapped order, which cancels square()'s flip and reverses the winding. Checked per face against the renderer-api-v1 3.4.0 source: DOWN (`x0 < x1`), WEST (`z0 < z1`) and SOUTH (`x0 < x1`) were canonical and correct; **UP** (`bottom = 1-z0 > top = 1-z1`), **NORTH** (`left = 1-x0 > right = 1-x1`) and **EAST** (`left = 1-z0 > right = 1-z1`) were reversed. A backwards quad is back-face culled, so every non-full shape drew only its down/south/west faces — you look at a slab or a stair from above or from the north/east and see straight through it. Not stairs-specific: it hit all 8 box shapes, which is why it survived the corner work (§J's rows were tested on the pre-§B pack-baked models).
+
+**Fix.** `SlotShapeMesh.square` passes all six faces canonically — `UP → (x0, 1-z1, x1, 1-z0, 1-y1)`, `NORTH → (1-x1, y0, 1-x0, y1, z0)`, `EAST → (1-z1, y0, 1-z0, y1, 1-x1)`. World extents are unchanged (verified term by term); only the winding flips. The invariant is now written into the method's doc so the next edit can't re-mirror the pair order.
+
+**Shaped item icon — the cube-icon trade is retired.** §B made the pack shape-blind, which left a shaped block with a cube in the hotbar (TG8 B6 recorded it as a known trade; the owner rejected it). The icon is now drawn client-side from the same boxes as the mesh and hitbox: new `ShapeIconMesh.drawBoxes` renders the `BlockShapes` boxes into the builtin/entity item space with position-derived UVs (a slab's side shows the texture's bottom half, matching the world mesh's `BAKE_LOCK_UV`), and `SlotItemRenderer` picks it whenever the slot's shape is non-full and non-cross. **No pack byte depends on the shape, so `/cb setshape` stays reload-free.** A stair icon draws in the base NORTH/bottom orientation — an icon has no placement to follow. Remaining trade, deliberate: a **painted/rotated** shaped slot keeps its atlas cube item model (making that one shape-aware is precisely the pack push §B exists to avoid).
+
+**Found in the same log, unrelated and NOT fixed:** `Using missing texture, unable to load customblocks:block/slot_2303 — java.io.IOException: Could not load image: Corrupt PNG`. One slot's stored PNG is corrupt and needs a re-texture; flagged to the owner rather than patched blind.
+
+---
+
+## G08 — §J J8 upside-down fix (root cause found) + §B reload-free shape draw BUILT · 2026-07-21 (🟡 built, pending in-game)
+
+Owner tested the corner jar: **J1, J6, J7, J9 pass** (facing, corner forming, L-turns both ways + 4-stair square, break-reverts-to-straight + corner collision). **J8 failed** with two symptoms, which turned out to be one bug.
+
+**J8 root cause — `x:180` is only a top-half flip in an EAST-identity frame.** Vanilla's stair base model faces **EAST (+x)**, and `x:180` rotates about the X axis, so X is the one horizontal axis it does NOT move — vanilla's facing survives the flip. This mod re-authored the base to **NORTH (−z)** for the J1 fix but kept vanilla's `x:180` (`rotX180 = (x, 1-y, 1-z)`), and that flips Z — the mod's own facing axis. Traced concretely: NORTH/bottom is slab + `{0,8,0,16,16,8}`; after `rotX180` the tall column lands at `{0,0,8,16,8,16}` = **SOUTH**. So every upside-down stair was 180° off in yaw — which is symptom 2 (an upside-down stair doesn't face the player) — and because the whole block was yaw-flipped, left/right corner geometry landed on the wrong side of the turn, which is symptom 1 (mangled ceiling corners in the owner's screenshots). `StairConnection.compute` was innocent: byte-faithful to vanilla, the corner *decision* was right and the *transform* was wrong.
+
+**Fix (verified by composition, not assumed).** A TOP half now applies `x:180` **plus `y:180`** — net a 180° rotation about Z, which is exactly what vanilla's `x:180` means in a NORTH-identity frame. Composed both sides by hand: mod-north-top maps `(x,y,z) → (-z,-y,-x)`; vanilla-north-top (`R ∘ X180`) maps `(x,y,z) → (-z,-y,-x)`. Identical, and by symmetry for all 4 facings and all 5 stair shapes. Expressed once as `BlockShapes.topExtraSteps(half)` and applied at all four sites that must never disagree: `orient` (collision/outline), `orientPoint` (mesh vertices), `orientDir` (cull/nominal face), `DirectionalSlotModel.rotateVec` (normals).
+
+**§B reload-free shape draw — built.** Design was locked with the owner before any code (five decisions, recorded in `GROUP_08_SHAPES.md`). Mechanism: **no byte a static slot writes into the pack depends on its shape**, so `/cb setshape` has nothing to re-emit.
+- `ServerPackGenerator.staticShapeModelJson` no longer branches on shape — a static slot always ships the FULL-cube model (`cubeAll` / `cubeFaces` / `rotatedCube`, byte-identical to the old full-block output). The item model likewise stops consulting shape.
+- The client draws the real shape: `SlotShapeMesh` (new) emits `BlockShapes.boxes`/`stairBoxes` through `QuadEmitter.square` with `BAKE_LOCK_UV`, so UVs match vanilla auto-UV; `DirectionalSlotModel` owns the per-slot state and forwards untouched when the shape is full. Face sprites are **sampled off the wrapped cube's own baked quads**, so §E per-face overrides arrive already resolved — no Identifier guessing, no second lookup.
+- Vertex winding + cull-face handling were read out of Fabric's own `QuadEmitter.square` source (renderer-api-v1 3.4.0) rather than reconstructed from memory.
+- G06 §G quarter-turns lived only in the pack's model JSON, which the runtime mesh never reads, so they are now synced: `FaceRotations.packed/unpack` (2 bits per face, Direction order) → HudSync `rot` field → `ClientSlotCache.Entry.rot` → `SlotGeometryData.resolveFaceRot`, mirroring the existing `CLIENT_SHAPE_RESOLVER` seam.
+- Because no pack push invalidates chunk sections any more, `ClientSlotCache.populate` diffs shape/rot against the previous snapshot and calls `worldRenderer.reload()` on the render thread when the geometry actually changed. Undo/redo of a SHAPE op also stopped pushing a pack — otherwise undo would prompt a reload the change itself never did.
+- Scope was the owner's call: all 10 shapes, one code path. That includes stairs, so the pack no longer ships 4 corner models per stairs slot and corners are emitted from `stairBoxes` at runtime. `FaceModelBuilder.shapeModelJson` + `stairModelJson` were deleted as dead.
+
+**Consequence the owner was told up front:** §B rewrote the render path J1/J6/J7/J9 had just passed on, so those four rows went back to 🎯 for a retest in this jar.
+
+**Split.** The new face-rotation seam pushed `SlotBlock.java` to 515 lines, over the §9.3 500-line gate. The shape + face-rotation client seams moved into `block/SlotGeometryData.java` (they travel together — §B builds both collision and mesh from them); `SlotBlock.resolveShape` stays as a delegate so no caller changed. `SlotBlock` is now 473.
+
+**Incident (no data lost).** Mid-session `git checkout -- BlockShapes.java` was run to revert one edit; §J was never committed, so it reverted the file to the last commit and wiped the whole §J implementation in it. Restored verbatim from the session's own read of the file and confirmed by a clean compile. Worth recording because the repo still has **no §J checkpoint commit** — every §J/§B file is untracked or modified.
+
+Jar builds green (JDK 21). Needs the owner's in-game pass on J1, J6–J9 and the new B1–B10.
+
+---
+
+## G08 — §J stair FLIP fixed + vanilla CORNER connection built; §E confirmed; §H (FaceGuide) removed · 2026-07-21 (🟡 built, pending in-game)
+
+Owner tested the §J jar: **J2–J5 pass** (hitbox==visual, half, FPS, persistence) and **§E passes** (per-face textures on non-full shapes → ✅). Two regressions came back, both fixed here.
+
+**Regression 1 — stairs place flipped (J1).** Cause: `BlockShapes.boxes("stairs")` authored the tall step on the **south (+z)** side, but §J defines **NORTH as the identity** orientation (`facingSteps(NORTH)=0`). So a stair placed facing north drew its tall step on the south — every facing was 180° off. Confirmed against vanilla assets rather than guessed: vanilla's `stairs.json` is slab `[0,0,0→16,8,16]` + top `[8,8,0→16,16,16]` (tall on **east**) and its blockstate maps `facing=east → y0`, i.e. **`facing` is the side carrying the tall step**; the per-facing y-rotations then put the tall step on the facing side. Fix: upper-step box → **north (−z)** `{0,8,0,16,16,8}`. Because the baked mesh (`FaceModelBuilder` → `boxes`) and the collision (`BlockShapes.orient`) both derive from that one box, J2's hitbox==visual invariant is preserved by construction.
+
+**Regression 2 — no corner/connecting stairs.** Vanilla auto-forms inner/outer L pieces; the mod shipped only the straight shape, so an L-turn left a gap. Built to **full vanilla parity (incl. upside-down corners)**, with the geometry and algorithm both verified against vanilla assets/source rather than reasoned from memory:
+- **Geometry** — vanilla `inner_stairs.json` = 3 boxes (slab + east-half top + `[0,8,8→8,16,16]`, i.e. ¾ of the top layer), `outer_stairs.json` = 2 boxes (slab + `[8,8,8→16,16,16]`, ¼ of the top). Rotated into the mod's NORTH identity frame via the blockstate y-table, the top-layer quadrant sets are: straight `NW+NE`, inner\_left `NW+NE+SW`, inner\_right `NW+NE+SE`, outer\_left `NW`, outer\_right `NE`. Cross-checked element-for-element against the vanilla inner model.
+- **Algorithm** — `StairsBlock#getStairShape` ported faithfully: FRONT neighbour (`pos.offset(facing)`) with same half + perpendicular facing → OUTER; BACK neighbour → INNER; neighbour facing `facing.rotateYCounterclockwise()` → LEFT else RIGHT; both guarded by `isDifferentOrientation`. Vanilla reads only the neighbour's FACING+HALF (never its shape), so the recompute is non-recursive and idempotent.
+
+**Files.** `block/StairShape.java` (new enum + model suffix); `block/StairConnection.java` (new — compute/refresh/`refreshWithNeighbors`); `block/BlockShapes.java` (`stairBoxes` per shape + cached `stairOutline`/`stairCollision`; `boxes("stairs")` now delegates to `stairBoxes(STRAIGHT)` so there is one geometry source); `block/SlotOrientation.java` (+`shape`, `isBase` accounts for it); `block/AnimSlotBlockEntity.java` (+`placeShape`, NBT only when non-straight, render data, `applyStairShape`); `block/DirectionalPlacement.java` (stamp → `refreshWithNeighbors`; `at()` carries shape); `block/SlotBlock.java` (new `neighborUpdate` override → server-side recompute; collision/outline use `stairOutline`/`stairCollision`); `network/FaceModelBuilder.java` (+`stairModelJson`, same per-face-paint handling as `shapeModelJson`); `network/ServerPackGenerator.java` (a stairs slot also emits its 4 corner models); `client/render/SlotModelPlugin.java` (`addModels` the corner ids for stairs slots, bake them, hand the map to the wrapper); `client/render/DirectionalSlotModel.java` (shape picks the baked mesh, facing/half then rotate it).
+
+**Design notes.** Corners add **zero block-states** — the 2026-07-20 OOM revert holds; shape lives on the BlockEntity like facing/half. Placement ordering matters: the block is set into the world (firing neighbours' block updates) *before* `onPlaced` stamps the BE facing, so a neighbour that recomputed on that early update saw an unstamped (NORTH) stair — `refreshWithNeighbors` re-settles the four horizontal neighbours after the stamp. Chunk load does **not** fire `neighborUpdate`, so the NBT-restored shape stands on load. A corner model that fails to bake is simply absent from the map and the renderer falls back to the straight mesh, so a stale pack degrades to the previous behaviour instead of crashing the bake.
+
+**§H FaceGuide removed entirely** (owner: "useless"). Deleted `command/handlers/FaceGuideCommands.java`, its `CommandRegistrar` import + register line, and the `faceguide` help topic. Deep search confirms **no `faceguide`/`FaceGuide` reference remains in `src/`**.
+
+Jar builds green (JDK 21). Needs the owner's in-game pass on J1 + the new J6–J9 corner tests.
+
+---
+
+## G08 — §J directional stairs REBUILT as a BlockEntity + BATCHED model wrap (no block-states, no per-frame BER); compiles + boots clean · 2026-07-21 (🟡 built, pending in-game)
+
+Rebuilt §J (per-placement stair facing/half) the way the 2026-07-20 revert + the Group-08 "BlockEntity redesign" note prescribed — orientation on the BlockEntity, not block-states — but with the **render done as a batched Fabric model wrap**, NOT the naive per-frame BlockEntityRenderer the design note sketched. Owner's hard requirement is zero FPS regression on a GT 730 with no "disable on weak hardware" toggle, and a BER draws every instance as its own call (community benchmark: BER chests ~5 FPS vs ~280 for a plain-model barrel in bulk). The batched path bakes the rotated geometry into the chunk mesh like any normal block, so steady-state FPS is unaffected by construction.
+
+**Research first (mandated).** FRAPI on 1.21.1: `FabricBakedModel.emitBlockQuads` runs once per block at chunk rebuild and its quads go into the section mesh (batched, not per-frame); `RenderDataBlockEntity.getRenderData()` (block-view-api-v2, the non-deprecated successor to `RenderAttachmentBlockEntity`) hands per-placement data to the off-thread mesher safely. Sodium 0.6.0 for 1.21.1 supports FRAPI + render-attachment natively (no Indium), and Fabric's bundled Indigo covers the vanilla renderer — so **no new mod is required of any player**, GT 730 included. Every API signature verified against the actual `fabric-api 0.104.0` + `1.21.1` jars (javap / sources), no guessing.
+
+**Data + collision (server-authoritative).**
+- `block/AnimSlotBlockEntity.java` — added `placeFacing` (Direction) + `placeHalf` (BlockHalf), written to NBT **only when non-default** so normal blocks stay byte-free (same discipline as the existing `arabicFacing`). `applyPlacement(...)` stamps them (server → `markForUpdate` sync; predicting client → local re-mesh). Implements `RenderDataBlockEntity`; `getRenderData()` returns an immutable `SlotOrientation` only for a rotated directional placement, else null. Client re-mesh (`world.updateListeners`) when the synced NBT changes.
+- `block/SlotOrientation.java` (new) — immutable {facing, half} record; the safe mesh-thread hand-off.
+- `block/SlotBlock.java` — `getPlacementState` captures facing (`getHorizontalPlayerFacing`) + half (vanilla stair hit-Y rule) for a directional shape into a pos-keyed thread-local; `onPlaced` reads it and stamps the BE (server + predicting client). `getOutlineShape`/`getCollisionShape` rotate via the existing `BlockShapes.outline/collision(shape, facing, half)` when the BE carries an orientation. Removed three dead property imports left from the reverted block-state attempt.
+- `block/BlockShapes.java` — exposed `facingSteps` / `orientPoint` / `orientDir`: the **point form of the same** `rotX180`/`rotY90cw` VoxelShape ops the collision already uses.
+
+**Visual (client, batched).**
+- `client/render/DirectionalSlotModel.java` (new) — `ForwardingBakedModel`, `isVanillaAdapter()=false`, `emitBlockQuads` reads the BE render data and, for a rotated placement, `pushTransform`s a quad rotation built from `BlockShapes.orientPoint`/`orientDir`. **The drawn mesh and the hitbox share one formula, so they cannot desync** — the single biggest correctness risk on a blind (no in-game eyes) build, eliminated by construction rather than by tuning.
+- `client/render/SlotModelPlugin.java` (new) — `ModelLoadingPlugin` → `modifyModelAfterBake` wraps a slot's baked model **only when that slot's current shape is directional** (gated by `resolveShape` + `isDirectional`), skipping the inventory variant. ~99% of blocks are returned untouched on the exact vanilla model + fast path → no possible regression there. Re-evaluated on every resource reload; `/cb setshape` rebuilds+pushes the pack (a reload), so a slot that becomes/stops-being stairs is wrapped/unwrapped automatically.
+- `client/CustomBlocksClient.java` — registers the plugin.
+
+**No block-states added** — `SlotBlock` still `appendProperties(LIGHT)` only, so registration is unchanged. This is exactly what killed the last attempt; it is not reintroduced.
+
+**Verified this session (build + boot only):** `compileJava` BUILD SUCCESSFUL (JDK 21, `--no-daemon`). Dedicated server boots clean — **no OOM**, `Done (7.3s)`, 656 slots assigned, pack rebuild fine. Dev client boots to menu — the model plugin registers and **every model bakes with no exception**; the runtime block-model variant string is `light=N` (confirmed), which the plugin's gate handles. **NOT verified (cannot see the game from here):** the on-screen stair rotation, the facing-vs-player direction (a one-line `facingSteps` / `.getOpposite()` tweak if it reads backwards — the hitbox↔mesh match itself is guaranteed), and an actual FPS number. Those need the owner in-game; the **GT 730 confirmation needs the friend online** and stays pending.
+
+**Known edge (visual-only, self-healing):** on a dedicated server the client's shape cache may be empty at the first bake right after join, so a stair slot can bake unwrapped and render in base (north/bottom) orientation until the next pack reload re-runs the gate; collision is still correct (read live off the BE). Never a crash.
+
+**§B (reload-free shape draw) intentionally NOT started** — per owner ("only after §J confirmed stable") and the redesign note ("§J first, with an in-game placement test before §B, so a regression traces to one change"). Waits on the owner's §J confirmation.
+
+TG8: §J → **Built 🎯** (fresh build; the block-state §J stays folded as Scrapped 👎 + Regression 💔). Group-08 spec §D/§J Direction + Technical Contract updated to record the batched BlockEntity path as built.
+
+## G08 — §B/§J block-state shape jar CRASHED the game on boot (~3.97M block-states → OOM); REVERTED to LIGHT-only data-driven shape · 2026-07-20 (⛔ reverted ⏪)
+
+Owner put the previous session's jar (the §B/§J build below) in the client `mods` folder and the game **would not load** — process showed in Task Manager for a few seconds, then a launcher "Game crashed / Exit Code 1 / Crash report automatically sent" dialog. No local crash report, no `hs_err`.
+
+**Investigation.** `latest.log` (and 3 more crash runs) all died at the **identical** line — right after CustomBlocks' font-load log — with zero stack trace. A prior run the same day (before the jar swap) worked fine with the *same* config (`maxSlots=3100`, `textureSize=512`), so it was a code regression, not config/PC. A try/catch(Throwable) wrapping `onInitialize` did **not** fire → not a catchable Java exception. Disk-flushed step markers pinned it: last marker = `ABOUT-TO-RUN: SlotManager.registerAll(3100)` → the crash is **inside block registration**.
+
+**Root cause.** The §B/§J work (below) added three block-state properties to `SlotBlock`: `SHAPE` (enum, 10 values), `FACING` (4), `HALF` (2), on top of `LIGHT` (16). Per block that is `16×10×4×2 = 1280` block-states; across **3100 registered slot blocks = ~3.97 MILLION block-states** (vanilla Minecraft has ~28k total). Minecraft instantiates every block-state at registration → heap exhausted → **OutOfMemoryError inside `SlotManager.registerAll`**. OOM also starved the crash-report writer and the try/catch, which is exactly why there was no report, no `hs_err`, no caught exception. The old `SlotBlock` had `appendProperties(LIGHT)` only (`16×3100 = 49,600`) and booted fine — the ~80× multiplier from `SHAPE×FACING×HALF` is the regression.
+
+**Fix (revert to LIGHT-only + data-driven shape).** Owner chose the revert over a BlockEntity redesign.
+- `block/SlotBlock.java` — removed `SHAPE`/`FACING`/`HALF` properties; `appendProperties(LIGHT)`; `getPlacementState` sets only `LIGHT`; `getOutlineShape`/`getCollisionShape` use the `BlockShapes.outline/collision(String)` overloads (shape from `SlotData`, live).
+- `network/ServerPackGenerator.java` — a STATIC slot now emits ONE model for its current definition shape under a single `""` blockstate variant (old per-slot design); removed the per-`shape=`/facing×half `variants` + the now-dead `addDirectionalVariants`/`variantsBlockstateJson` helpers.
+- `command/handlers/ShapeCommands.java` — `/cb setshape` calls `ResourcePackServer.updatePack()` again (rebuild + push) instead of the blockstate flip. Bulk setshape already rebuilt the pack.
+- `command/handlers/HistoryCommands.java` — SHAPE undo/redo rebuild the pack; `restoreMeta` no longer flips a blockstate.
+- Deleted `block/SlotShapeSync.java` (its only job was reconciling the SHAPE blockstate) + its `CustomBlocksMod.init` call. `block/ShapeState.java` left in place (orphaned) for the future redesign.
+- Consequence: `/cb setshape` prompts a pack reload again (the pre-§B behavior) and per-placement stair rotation (§J) is gone — deferred to a BlockEntity-stored orientation design.
+
+**Build:** green (JDK 21, `--no-daemon`, `remapJar`). Block-state count back to `16×3100 = 49,600`. Fixed jar installed to the client `mods` folder; the previous crashing jar kept as `customblocks-1.0.0.jar.crashbak`. **Stays ⛔/🟡 until the owner confirms the game LOADS and shapes still render in-game.** TG8: §B/§J → Scrapped 👎 + Regression 💔; Group-08 spec locked decision + Direction/Technical-Contract updated.
+
+## G08 TG8 — cleared the whole group: §D dup purge, §H FaceGuide, §B reload-free setshape, §J directional placement BUILT · 2026-07-20 (🟡 built, pending in-game)
+
+Owner asked to fix + build every unbuilt G08 section so the whole group reads built-or-passed. First reordered TG8 alphabetically and routed the screen-only sections out: **§C** (shape editor, still a chest GUI) and **§F** (advanced face editor — its data/commands already ship via `FaceRotations`+Omni-Tool; only the live-cube screen is left) → **G27 §H**; **§K** sculptor **parked** (genuinely undesigned — owner's call). Then built the rest. **Full jar `build` green** (JDK 21, `--no-daemon`); stays 🟡 until owner confirms in-game.
+
+**§D dup purge.** `/cb paintface` was an identical alias of `/cb setface` (same handler). Removed the `paintface` literal + renamed its helper; deep-searched and fixed every stale reference — `RainbowRectangleItem` right-click prefill, `FaceEditorMenu` prefill, `HelpTopics` (its `paintface` topic wrongly advertised a `<color>` solid-fill that never existed), and `OmniToolItem` comments. No live `paintface` remains. Added a HelpTopics entry for the new `faceguide` (helpCoverageGate).
+
+**§H FaceGuide — non-destructive overlay (`command/handlers/FaceGuideCommands.java`).** `/cb faceguide` raycasts the looked-at custom block and floats six billboarded lime labels (UP/DOWN/NORTH/SOUTH/WEST/EAST) at its face centers for 8s via `text_display` summon/kill (the `shapepreview` idiom), then auto-removes. Built as an overlay, **NOT** the old "world swap" locked decision — the real block is never touched (can't be stranded on a crash) and it's shape-independent. Group-08 locked decision + superseded table updated to record the change.
+
+**§B reload-free setshape — the flagship (`block/ShapeState.java`, `block/SlotShapeSync.java`, `block/SlotBlock.java`, `network/ServerPackGenerator.java`, `command/handlers/ShapeCommands.java`, `HistoryCommands.java`, `CustomBlocksMod`).** Shape is now a block-state property (`SlotBlock.SHAPE`, enum `ShapeState`) selecting a PRE-BAKED model variant. `emit()` bakes every shape's model per slot + a shape-keyed blockstate; off-atlas (animated/arabic) blocks keep their single `""` catch-all variant. `applyShape` drops `ResourcePackServer.updatePack()` → instead flips placed blocks' SHAPE state via `SlotShapeSync.applyToPlaced` (bounded loaded-chunk scan near players, the `SlotLighting` pattern) — **no pack reload**. Existing/unloaded placements reconcile to their definition shape on `CHUNK_LOAD` (cheap BE pass → deferred tick drain, the `DeletedPlacementSweeper` pattern). Undo/redo is reload-free too (`restoreMeta` flips the state; dropped the two SHAPE `updatePack()` calls). **Safety:** collision/outline/persistence still read shape from `SlotData` (unchanged), and `shape=full` output is byte-identical to pre-§B, so existing full blocks (the common case) render exactly as before. First start after this jar rebuilds the pack once to bake variants; reload-free thereafter.
+
+**§J directional placement (`block/SlotBlock.java`, `block/BlockShapes.java`, `network/ServerPackGenerator.java`).** `SlotBlock` gained `FACING` (`HORIZONTAL_FACING`) + `HALF` (`BLOCK_HALF`); `getPlacementState` records both by vanilla stair rules. Only `stairs` rotates: `BlockShapes.orient` rotates collision/outline and `addDirectionalVariants` emits the matching `x:180`(top)+`y:90·k`(facing)+`uvlock` blockstate variants — **collision == model by construction** (same rotation ops + order + direction as the vanilla blockstate convention). Symmetric shapes carry the state but are byte-unchanged (NORTH/bottom = identity), so §A stays intact; existing placements default NORTH/bottom (locked-accepted). ⚠️ One thing needs in-game eyes: the stair *facing direction* relative to the player (cosmetic, a one-line `.getOpposite()` if backwards) — the hitbox↔model match itself is guaranteed.
+
+## G27 TG27 §D / G07 §B — Bulk Hub NL "ask" bar RIPPED, replaced by a combinable Category ▾ filter BUILT · 2026-07-20 (🟡 built, pending in-game)
+
+Owner hit a real mis-targeting bug in the Bulk Operations Hub and asked to fix the natural-language bar from the root or rip it. We ripped it and moved the whole issue from G07 §B to G27 §D (it's a Screen test, not G07 backend).
+
+**Bug → cause.** In-game, typing `glow 10 all red` into the Hub's "ask" bar ticked **all 1718 blocks**, ignoring "red". Root cause in `BulkNlParser.category()`: it only recognised a category when the word was followed by `blocks` (`"red blocks"`) or preceded by the `category`/`move to` keyword. A bare category word (`red`) fell through to the `has(s,"all","every"…)` branch → `filterKind="all"` → every block ticked. A destructive silent over-select.
+
+**Decision (owner).** Rip the NL bar entirely (option 1), and make the filter buttons smarter (add a real category filter + let filters combine) rather than keep patching a heuristic parser or wiring an LLM.
+
+**Rip (`client/gui/`).** Deleted `BulkNlParser.java` + `BulkNlBar.java`. Stripped every reference: `BulkWorkbenchScreen` lost `nl`/`addNlField`/`applyNl`/the Enter-to-parse `keyPressed` branch and the `nl.build()` in `init()`; `BulkConsoleInput` lost `applyNl(Nl)` (+ its now-unused `ClientSlotCache`/`List` imports and NL javadoc); `BulkWorkbenchView` lost `nlField*()` geometry and the chrome NL-preview draw. `NL_BAR_H` removed → `CONTENT_Y = BAR_H + 8` (content reclaims the freed top strip). `grep` for `BulkNl*`/`nlField`/`applyNl` clean.
+
+**Smarter filter (`BulkWorkbenchView` + `BulkWorkbenchScreen`).** New `Category ▾` button in the Blocks List chip row, listing the live `ClientSlotCache.categories()`; picking one sets `browseCategory` and the label shows it, "All categories" clears it. `applyChip` now ANDs the chip (All/Favorites/Locked/Selected) with the category, so `Locked + red` = only locked red blocks. Dropdown renders/​routes like the existing Sort ▾ (`categoryOpen`, `setCategory`, `rCatOpts`/`catOptValues`); opening it closes Sort/Select and vice-versa.
+
+**Docs moved.** G07 §B removed from TG7 (both backend items §A/§C already ✅ → TG7 100%, with a pointer to G27 §D); TG27 §D rewritten with the rip note + rows D7 (Category filter) / D8 (combined filters) / D9 (tick-only scope) and a `/cb bulk` open hint. Locked-decision rows added to both group specs (G27: NL bar removed, Category filter combines; G07: targeting is a G27 Screen concern, not G07's).
+
+**Build:** green (JDK 21 via PATH-prepend, `--no-daemon`, `compileJava`) — only pre-existing deprecation notes. No jar cut this session. Stays 🟡 (Built 🎯 in TG27 §D) until the owner confirms D7–D9 in-game.
+
+## G06 TG6 — Omni-Tool §F–§I reworked into ONE in-hand tool (mode cycle · Face rotate · Delete · Copy) BUILT · 2026-07-19 (🟡 built, pending in-game)
+
+Replaced the scrapped mode-selection Screen with an in-hand mode cycle and wired all five modes as one merged tool, one jar. The Face-rotate subsystem is new; Delete and Copy reuse existing rails.
+
+**§F mode cycle (`core/OmniToolState.java`, `item/OmniToolItem.java`).** `enum Mode` grew to five in fixed cycle order `GLOW → HARDNESS → FACE → COPY → DELETE` (Delete last), wrapping via the existing `next()`. Sneak+right-click now CYCLES instead of opening a GUI (both the `useOnBlock` and `use()` sneak branches), live-renaming the held tool, showing a hotbar line through `Chat.toolSuccess`, and playing `UI_BUTTON_CLICK.value()`. Mode persists per-player across restart (unchanged json). Plain right-click dispatches the active mode.
+
+**§G Face rotate — new subsystem (`core/FaceRotations.java`, `network/ServerPackGenerator.java` + new `network/FaceModelBuilder.java`, undo/redo).** Rotation is a per-face quarter-turn (0..3) rendered by the **vanilla model face `"rotation"`** property — no pixels touched. New `FaceRotations` store (json `config/customblocks/data/face_rotations.json`, keyed by slot index→face→turn; `get/rotateCw/set/hasAny/clear`). `TextureStore.delete` now clears it so a reused slot can't inherit stale turns. Pack-gen: `element()` adds `uv:[0,0,16,16]`+`rotation` only when a face's turn > 0 (un-rotated output byte-identical) → shaped blocks (G9) rotate for free; a full cube with any rotated face uses a new explicit-element `rotatedCubeJson` (parent:cube can't hold per-face rotation), paint-only-no-rotation keeps the plain `cubeFacesJson`. Rotate pushes `updatePack()` live (same rail as `/cb paintface`). Undo/redo: new `UndoManager.Kind.FACE_ROTATE` + `FaceRot` record (lives outside SlotData like FLAG); `HistoryCommands` restores the turn + rebuilds the model.
+
+**§H Delete + §I Copy (`item/OmniToolItem.java`).** Delete calls the shared `CbBlock.cbDelete` (byte-for-byte the red Deleter rail; locked refused by the per-mode gate, H3). Copy is a session-only per-player clipboard (`OmniToolState.Feel` + `COPY_BUF`, cleared on leaving Copy mode and on disconnect): first click GRABS the four feel-stats (glow/hardness/sound/collision — reads a locked source, I4), later clicks PASTE onto the clicked block in ONE undo step (I2), refusing a locked target; look/shape/name/category untouched (I5). The lock gate is now per-mode (every mode except Copy refuses a locked block up front).
+
+**Scrapped Screen removed.** Deleted `gui/chest/OmniMenu.java`; removed the `OMNI` router case and the `Nav.Dest.OMNI` enum value; `git grep OMNI` clean.
+
+**Monolith split.** `ServerPackGenerator` breached 500 with the rotation additions (512), so the per-face/shaped/rotated model builders (`cubeFacesJson`, `shapeModelJson`, `rotatedCubeJson`, `element`) moved to new `network/FaceModelBuilder.java` — SPG back to 411, FMB 133, both under cap. `OmniToolItem` 236, `HistoryCommands` 394 (< 400).
+
+**Build:** green (JDK 21, `--no-daemon`, all gates incl. monolithGate/soundGate/chat*/hotbar*) → `build/libs/customblocks-1.0.0.jar` (12.1 MB, 2026-07-19 22:27). Compiles only — NOT Done. §F–§I stay 🟡 (Built 🎯 in TG6) until the owner confirms in-game (F1–I6).
+
+## G06 TG6 — restore-heal (D5+K5 merged) + §C hex repaint + naming, all pinned from source BUILT · 2026-07-19 (🟡 built, pending in-game)
+
+Merged the duplicate TG6 issue ids and fixed all three open source-pinnable problems. Deep-investigated §C rather than punting it to server logs.
+
+**Merge — D5 ≡ K5 (one bug, one fix).** K5 ("same as §D5") folded into D5 as the canonical restore-heal test; TG6 section table + verdict + Cleanup consolidated. §C sub-issues (name / icon / repaint / naming) already sit under C1.
+
+**Fix ① — restore-heal, D5+K5 (`core/MarkerTombstones.java` + `command/handlers/TrashCommands.java`):** `MarkerTombstones` (marker_tombstones.json) was append-only — no `remove()`, persisted forever. Once an id was Emptied (D6), a later re-create → delete → restore of the same id hit the stale tombstone and `DeletedPlacementSweeper.resolveMarker` blanked fresh markers to generic `(Deleted)` instead of healing. Added `MarkerTombstones.remove(customId)`, called in `doRestore` beside `MarkerResolver.forget(index)`. **Safeguards:** `remove()` mirrors `add()`'s blank-guard; a one-line **D6 GUARD** comment in `SlotManager.create` forbids un-tombstoning there (a same-name create must NOT revive emptied markers — D6).
+
+**Fix ② — §C hex repaint (`image/ColorReplacer.java` + `core/ColorVariantService.recolorVariants`).** Investigation, from source: (a) name-sync `ColorHexSyncPayload` and icon re-tint `ColorReplacer.tint` were already confirmed; (b) the from-source repaint branch is **byte-identical** to the confirmed-good `createVariant` (`recolorBackground → toBlockPng → fillBackground`), so it's correct by construction; (c) delivery to the dedicated **modded** client goes through `PackSyncService` manifest-diff — the same path the confirmed icon uses, so delivery isn't the bug. The real fault was the **no-source fallback**: it re-ran the full BgRemove **BFS-flood + peel + fringe** pipeline on the *already-baked* PNG → second-pass flood bled into the design ("blocks got fucked a lot"), or near-identical hue → silent no-op ("nothing changed"). Fix: new `ColorReplacer.recolorFlatBg(png, newRgb, tol)` — a variant's baked bg is a **flat fill**, so it samples the four corners (require agreement + opaque, else it's a full-bleed design → skip), and swaps only near-fill pixels. **No flood/peel → design pixels untouched (§7); returns null (= "unchanged, retexture") instead of corrupting or silently no-op'ing.** `recolorVariants` now counts `repainted` vs `unchanged` separately in chat + the `G06-C` log. From-source path untouched.
+
+**Fix ③ — naming (`item/CustomColorToolItem.java` `createStack`):** tool label used `nameForHex(hex)` (exact preset) then fell back to raw hex, disagreeing with the block's `nearestName()` snap. Changed label to `ColorLibrary.nearestName(rgb)`; `HexCommands.giveCustom` chat wording aligned.
+
+**Build:** green (JDK 21, `--no-daemon`, all gates incl. monolithGate) → `build/libs/customblocks-1.0.0.jar` (12.6 MB, 2026-07-19 21:49). Compiles only — NOT Done. Everything stays 🟡 until the owner re-confirms in-game. Temporary `G06-C` logging left in place until §C is confirmed. **SP retest for §C:** make a no-source variant, `/cb config hex <colour> <clearly-different #hex>` → Yes → clean bg swap, design intact; read the `G06-C recolorVariants DONE` branch counts from `latest.log`.
+
+## G31 — 4th screen-text regression + hitbox mismatch: labels → image quads, real stand outline BUILT · 2026-07-19 (🟡 built, pending in-game)
+
+**Symptom (owner, screenshot):** timer screen showed only faint green marks / no Arabic words (4th regression of the on-screen text); the selection box did not match the buzzer + stand.
+
+**Diagnosis (verified against the repo, not the last session's notes):**
+- Assets were **good this pass** — opened the PNGs: `led_digits.png` is a clean 0-9 + ghost-8; `timer_label_target.png` is correct green cursive الهدف. So the break was **not** a bad image.
+- The screen-text regression engine is the **font approach itself**: the two Arabic words rendered as a bitmap-font glyph on a Private-Use codepoint, which fights three fragile systems at once — MC's bidi reorder, the 256px font-atlas page, and an invisible PUA-codepoint match between `TimerDisplayVisual.java` and `font/timer_label.json`. Any one silently breaking on a re-bake/re-save → tofu. That is why it regressed four times.
+- **Hitbox:** `TimerDisplayBlock.getOutlineShape` returned `VoxelShapes.empty()` (prior pass moved hit-testing to INTERACTION entities), so the visible stand had **no wireframe at all** — reading as "the hitbox doesn't match" and a slow/feel-less break (no crack overlay on the invisible block). The oversized box in the screenshot was the empty stand outline, not the buzzer (`BuzzerBlock.SHAPE (2,0,2)-(14,10,14)` matches its model exactly).
+
+**Fix:**
+1. **Labels → ITEM_DISPLAY image quads** (new `TimerLabelQuad.java`). The two words are baked GREEN, padded to 256² pow-2 textures (`textures/block/timer_label_*.png`), shown by flat double-sided quad models (north face U-flipped to read from behind) via two render-only registered items. An ITEM_DISPLAY always renders its model → the words can never tofu/reverse/garble again. Removed from the text/font pipeline completely; dead `timer_label` + scrapped `timer_arabic` font providers + their PNGs deleted.
+2. **LED number right-aligned** (`TimerDisplayVisual.numberText`): the number's right edge (after its blinking colon) is pinned to screen centre → grows leftward as seconds gain a digit (no drift/collision), leaving the right half for the word quad. The word reuses the tilted-glass glue (out along the true −22.5° face-normal, up the tilted axis) + a push along the screen's horizontal right axis; the target word hides (scale 0) when idle.
+3. **Stand outline restored** (`getOutlineShape` → the base/leg/screen `shapeFor` union already used for collision): the wireframe now hugs the visible stand; INTERACTION entities still route wand select/resize/rotate/link.
+4. Entities 10→14 (4 word quads); Handles/NBT thread the new UUIDs (old stands auto-despawn+respawn on load). Split `TimerLabelQuad` out to keep both files ≤500 lines (§9.3). Jar built green (JDK 21); front-view preview from the real textures confirms the `[number] : [word]` layout.
+
+**Retest:** E1–E3 (words green + cursive + glued, both faces, never tofu), C2 (outline hugs the stand + instant break), D3–D8 (press flow now the screen renders), E6/E7 (textcolor recolors only the digits; textsize scales digits + word).
+
+---
+
+## G06-C — live blocks wrongly turned into "Deleted:" markers (all green variants) — root cause + safeguard BUILT · 2026-07-19 (🟡 built, pending in-game)
+
+**Symptom (owner, MP):** placed blocks randomly disappearing into red-X `Deleted: <name>` markers. Screenshot showed a whole row of tombstones plus `Deleted: Windows Green`.
+
+**Diagnosis method (image + `deleted_slots.json` + `slots.json` only):** the red-X block is `DeletedMarkerBlock`; the only rail that stamps it into the world is `DeletedPlacementSweeper`, which converts a placed `SlotBlock` on ONE test — `DeletedSlots.contains(slotIndex)` (matches by slot INDEX, not id). Cross-checked the owner's two files:
+
+- 1718 live blocks, 911 indices in the deleted set.
+- **405 live blocks had their index ALSO sitting in the deleted set — and 100% of them were `*_green` variants** (`mario_green`, `ferrari_green`, `num_0_green`, … zero non-green). The other 506 deleted entries are genuinely gone.
+
+**Root cause:** a live slot must never be in `DeletedSlots`, but 405 green-variant slots were. The green family was deleted-then-brought-back at some point; a restore/undo path under an **older jar** put the block back live without un-retiring its index (current `restoreSnapshot` / `TrashCommands` / `HistoryCommands` all clear it correctly, so this is legacy damage frozen in `deleted_slots.json`). The `FreedSlots → DeletedSlots` boot migration also had no live-slot filter. With those indices stuck in the set, the sweeper re-tombstoned every green placement every scan.
+
+**Fix — three layers (defence in depth):**
+1. **Runtime safeguard** (`DeletedPlacementSweeper`): new `shouldMark(index)` requires the index to be retired AND `SlotManager.getBySlot("slot_"+index) == null`. A placement whose slot is a live block is **never** converted — makes tombstoning a live block structurally impossible regardless of stale data. `scanChunk` uses it (live blocks aren't even queued); the swap stage also self-heals (`DeletedSlots.remove(idx)` + skip) if it meets a stale-but-live index.
+2. **Boot self-heal** (`DeletedSlots.reconcileLive` + `CustomBlocksMod`): after `loadAll()` and the FreedSlots migration, scrub every retired index that is currently a live slot, persist once. Repairs the on-disk `deleted_slots.json` automatically on first restart — no manual file edit. For the owner's world this un-retires the 405 greens on boot.
+3. **Auto-heal of existing tombstones:** once the greens are off the deleted set and still live, the sweeper's MARKER stage (`resolveMarker`, heal-by-customId) turns already-placed green tombstones back into the real block as chunks load. So the owner rejoins and the world repairs itself.
+
+Normal delete/restore/empty behaviour is unchanged — the safeguard only refuses to tombstone a placement whose slot is currently live, which is never a real deleted-block leftover (deleted indices are never reused while retired).
+
+**Files:** `core/DeletedSlots.java` (+`reconcileLive`), `CustomBlocksMod.java` (boot call), `block/DeletedPlacementSweeper.java` (`shouldMark` + swap-stage heal). **Build green with JDK 21 (`C:\Program Files\Microsoft\jdk-21.0.10.7-hotspot`, `--no-daemon`); jar in `build/libs/customblocks-1.0.0.jar`.** Not yet owner-confirmed in-game (G06 TG §K).
+
+---
+
+## G05 §A/§B scrapped — reloads are now mandatory, no-reload fast paths removed BUILT · 2026-07-19 (🟡 built, pending in-game)
+
+Owner learned after implementation that resource-pack reloads are mandatory — a live GPU-only swap cannot make
+an edit correct, so the "no reload" work (TG5 §A live in-place texture swap, §B skip-redundant integrated
+first-open reload) is scrapped. `compileJava` + full jar `build` green (`customblocks-1.0.0.jar`), all gates
+pass (staleTodoGate report-only). Nothing ✅ — owner retests §C/§D in-game.
+
+- **What "reloads mandatory" actually kills — investigated the code, not guessed.** The full-reload path was
+  never the fast-path's foundation; the live swap was a thin shortcut bolted on top. Every branch that isn't the
+  swap already fell through to `applyReload()` → `client.reloadResources()` (both the host
+  `ResourcePackGenerator` and the dedicated `ClientPackReceiver`). So this was a subtraction, not a rewrite —
+  the mandatory path (§J/§K/§L, confirmed) already exists and passed.
+- **§A removed.** Deleted `client/render/LiveTextureSwap.java` entirely (the swap + its off-atlas path
+  classifier). Dropped the now-dead `reupload()`/`reuploadInto()` from `StaticFrameCache` and
+  `reupload()`/`replaceGrid()` from `AnimFrameCache` (the normal off-atlas renderer — `get`/`build`/`clear` —
+  is untouched). Host side: `writeLoosePack` no longer classifies pixel-vs-structural; it returns a plain
+  `boolean anyChange` and `applyReload` always takes the full reload on any change (`WriteResult` +
+  `classify()` deleted). Dedicated side: dropped `livePixelSlots`/`liveStructural`/`allOffAtlas` and the
+  live-swap branch in `finalizeDone`; a changed manifest now always reloads.
+- **§B removed.** Deleted the per-world pack-hash sidecar seed
+  (`seedForWorld`/`readSidecarHash`/`writeSidecar`/`sidecarFile`/`packLooksValid`/`modVersion`, `seededWorld`).
+  A fresh JVM / world open now starts with `lastAppliedHash == null` and always reloads once. **Kept** the
+  intra-session `lastAppliedHash` dedup (a repeated *identical* regen in one session must not restart the
+  write→reload cycle — that is not §B and is required so a burst doesn't reload-storm; the §D corrupt-PNG fix's
+  `opInFlight` gate rides on it).
+- **Deliberately NOT touched:** the dedicated `!dirty` no-change rejoin skip + `LowResState.commitFolder` — that
+  is §L (confirmed diff rejoin), a different feature from §B, and it only skips when literally nothing changed
+  on disk. The whole off-atlas renderer (Group 14 crispness system) is unchanged; only the swap-time `reupload`
+  entry points were dead code once §A went.
+- **Docs:** TG5 §A/§B moved to the Scrapped archive (removed from Active Tests + Sections table; §C reworded to
+  "via full reload"; verdict + progress 40%→30%). Group 05 spec: the two 2026-07-16 locked decisions struck
+  through with a superseding 2026-07-19 "reloads mandatory" decision; the §F "Reload behavior" requirements
+  rewritten to match.
+
+## TG4 §E kick-screen regression + TG5 §D corrupt-PNG race — both fixed BUILT · 2026-07-19 (🟡 built, pending in-game)
+
+Two confirmed regressions, root-caused by static analysis (no in-game access this session; owner retests both
+at the end). `compileJava` + full jar `build` green, all gates pass.
+
+- **TG4 §E — real registry-mismatch kick showed the vanilla screen, not `CbKickScreen`.** Traced the whole MC
+  1.21.1 + Fabric 0.104.0 config-phase kick path at the bytecode level (`javap` on the mapped merged jar +
+  the `fabric-registry-sync-v0` sources). Findings: the real path is sound up to the swap — Fabric's
+  `RegistrySyncManager.checkRemoteRemap` runs on the **client main thread** (via `executor.method_5385`), our
+  `RegistrySyncHealMixin` HEAD inject correctly computes `serverMax > localMax` (block ids are
+  `customblocks:slot_N`, confirmed in `SlotManager`) and calls `CbKick.arm()` then throws; the config disconnect
+  goes `ClientConfigurationNetworkHandler.onDisconnected` → `ClientCommonNetworkHandler.onDisconnected` →
+  `createDisconnectedScreen(info)` → vanilla `DisconnectedScreen`, whose `reason()` text is our `CbKickInfo`
+  text. So the *screen text* swaps but the *screen class* did not. The swap lived in `DisconnectedScreenMixin`
+  (init TAIL, **`require = 0`**): an after-the-fact re-entrant `setScreen` that silently no-ops if `init` fails
+  to remap in the production jar — which is exactly why the `/cb debug kick` preview (a direct `setScreen`, no
+  mixin) worked while the real kick did not. **Fix:** new `DisconnectScreenFactoryMixin` intercepts
+  `ClientCommonNetworkHandler.createDisconnectedScreen` at HEAD (cancellable) and, when a kick is armed, returns
+  `CbKickScreen` directly — same class (and injection style) as the confirmed-working G05
+  `ClientCommonNetworkHandlerMixin`, so it applies reliably in the remapped jar. The disconnect flow now shows
+  our screen from birth: no init hook, no re-entrancy, no `client.execute` deferral. A single INFO line fires
+  only on a real armed kick (never on ordinary disconnects) so the owner's end-test can confirm the path.
+  `DisconnectedScreenMixin` is kept as a harmless secondary fallback (one-shot `consume()` means only one of the
+  two ever fires). `CbKickInfo`/`CbKickScreen` content and the preview command are untouched (E2–E4 stay valid).
+- **TG5 §D — fast SP create/retexture burst → "Corrupt PNG".** The archived B3 diagnosis pinned it: a
+  `reloadResources()` reads a `slot_N.png` mid-write. The 2026-07-03 `writeAtomic` (temp + `ATOMIC_MOVE`) made
+  each *file* swap atomic, but the bug survived because `ResourcePackGenerator.regenerate()` **unconditionally
+  spawned a new `writeLoosePack` thread** — rewriting/`deleteStale`-ing the loose folder — even while a previous
+  regen's async `reloadResources()` was still **reading** that folder; the old `reloadInFlight` gate sat inside
+  `applyReload`, *after* the write had already happened, so it only prevented stacked reloads, not the
+  write↔read overlap. **Fix:** serialize the entire write→apply→reload cycle behind one `opInFlight` gate. A
+  regen that arrives while an op is running is coalesced into `pendingHash` (latest wins) and re-run by
+  `finishOp` once the op — including its async reload — fully completes, so a write and a reload-read can never
+  run at the same time. This also collapses a burst's reload storm. Gate mutations all happen on the client
+  thread (the Fabric play receiver + `finishOp` via `client.execute`), so the coalescing is race-free;
+  `WRITE_LOCK`/`writeAtomic` stay as defense-in-depth. Live-swap and §H sidecar paths preserved.
+
+## Group 31 (BuzzerGame) §D/E/F/G — solo stopwatch + physical screen + per-part resize + press FX BUILT · 2026-07-18 (🟡 built, pending in-game)
+
+The core solo-stopwatch feature on top of the §C feel fixes and the §B wand session. `compileJava` green,
+full jar built (`customblocks-1.0.0.jar`); all gates pass (staleTodoGate is report-only). Nothing ✅ — TG31
+D1–D9, E1–E8, F1–F6, G1–G3 are 🎯 awaiting in-game confirm.
+
+- **§D solo stopwatch flow.** `BuzzerSession.arm(targetTicks)` validates the target (requires a value; clamps to
+  the 0.5–60 s range) then drives a no-countdown press cycle through `onBuzz`: press 1 START (النتيجة climbs live
+  from 0.00, state RUNNING), press 2 STOP (freezes at the stopped value, state RESULTS), press 3 RESET (clears to
+  0.00 and re-arms, الهدف kept). `reset` returns to idle. The number formatter switches from `0.00` (one integer
+  digit) to `00.00` at 10 s+. The scrapped `stop` / `reveal` commands are gone from the solo surface (only
+  meaningful under the parked ranked-multiplayer §H).
+- **§E physical stand + screen (7-entity model).** `TimerDisplayVisual` now builds 3 stacked DISPLAY parts
+  (base / leg / screen, split out of the old single stand model at the original absolute coords so scale 1
+  reassembles the exact current stand) plus 4 TEXT_DISPLAY lines — a target line (الهدف) and a 1.5×-larger result
+  line (النتيجة), each mirrored on the player face and the camera face, glued flat to the black screen part.
+  Minecraft cannot shape/join Arabic at render time, so both words are drawn from **pre-shaped presentation-form
+  constants** (visual order) in the bundled `customblocks:timer_arabic` TTF (`font/arabtype.ttf`); the digits use a
+  `customblocks:led` **bitmap** font (`font/led_digits.png` + `led_dot.png`) for the glowing clock look, default
+  colour `#15FF00`. `/cb buzzergame textcolor <#hex>` recolors all screen text and `textsize <n>` scales it (clamp
+  up to 30×) on the aimed stand. Break / host-logout unlinks the stand and warns nearby players.
+- **§F per-part resize + rotate.** 3 render-only part items (`timer_part_base/leg/screen`, item models parented to
+  the block part models) + a `TimerPart` enum back the wand's Resize mode: shift-right-click a part selects it,
+  right-click grows, **sneak + left-click shrinks** (wired via `AttackBlockCallback` in `CustomBlocksMod`, since a
+  wand left-click otherwise just breaks). `TimerDisplayBlockEntity` holds per-part scales; the stacking geometry
+  lifts every part above a grown one so the stand stays assembled. The screen part scales its text with it.
+  `/cb buzzergame size <preset>` scales the whole stand (all parts + text) together; the existing Rotate mode
+  (5°/click, no block replace) is untouched.
+- **§G press FX (vanilla only).** Each press phase fires a distinct sound + particle combo from `BuzzerBlock`:
+  START = PLING + BELL rising cue + green HAPPY_VILLAGER burst; STOP = BASEDRUM + HAT sharp "locked" thud + a
+  bigger CRIT burst; RESET = a soft wooden-button click + a small CLOUD puff. Note-block `SoundEvents` use
+  `.value()`; every other constant stays a bare `SoundEvent` (rule documented at the call site).
+
+## Group 31 (BuzzerGame) §C block fixes — particles + near-instant break + spawn-on-place BUILT · 2026-07-18 (🟡 built, pending in-game)
+
+First slice of the solo-stopwatch rework: pure feel/rendering fixes, no game logic touched. Full jar built
+(`customblocks-1.0.0.jar`). Nothing ✅ — TG31 C1–C5 are 🟡 awaiting in-game confirm.
+
+- **Break particles were missing-texture magenta → real textures.** Break particles sample the block model's
+  `#particle` sprite, and neither model declared one. `models/block/buzzer.json` had a `textures` map with no
+  `particle` key; `models/block/timer_display.json` was an intentionally *empty* model (the stand is drawn by
+  display entities, block renders INVISIBLE), so it had no textures at all. Added `"particle":
+  "minecraft:block/red_concrete"` to the buzzer (its red dome is the block's identity) and `"particle":
+  "minecraft:block/polished_deepslate"` to the timer stand (matches the stand body texture in
+  `timer_display_stand.json`). The stand block stays INVISIBLE; only its break-particle sprite is affected.
+- **Near-instant survival break.** Lowered both block hardnesses in `BuzzerGameRegistry`: buzzer `1.5f → 0.2f`,
+  timer stand `2.0f → 0.2f` (blast resistance left at `6.0f`). With the METAL sound group the old hardness read
+  as a long metal-mining delay; `0.2f` breaks in a couple of hits so filming setups rearrange fast.
+- **Stand visual spawns on placement, not first tick (kills the one-tick flicker).** Previously the display
+  entities were spawned lazily inside `TimerDisplayBlockEntity.serverTick` on the first tick where
+  `!visual.complete()`, leaving a visible one-tick gap between the block appearing and its stand/screen. Added
+  `TimerDisplayBlockEntity.ensureSpawnedOnPlace(world, state)` — it seeds the yaw from the placed FACING and
+  runs the same spawn path, then primes the `last*` fields so the next `serverTick` makes no redundant re-push.
+  `TimerDisplayBlock.onPlaced` now calls it the moment the block is placed. The serverTick spawn branch stays as
+  the reload/fallback path (persisted entity UUIDs re-attach on chunk load, so no double-spawn).
+
+## Group 31 (BuzzerGame) item 1 — wand-owned session rebuild BUILT · 2026-07-18 (🟡 built, pending in-game)
+
+Owner-checkmarked G31 redesign. The round session moved off the scrapped admin-panel block onto the host's
+wand; `compileJava` green, full jar built. Nothing marked ✅ — B2 rows are 🎯 awaiting in-game retest.
+
+- **New session anchor.** `BuzzerSession` (round logic ported from the deleted `PanelSession`, minus all NBT —
+  it never persists) + `BuzzerSessionManager` (static, server-thread, `hostId→session` / `sessionId→session`
+  maps). A session is created on first wand use, keyed by the host UUID, and dies on logout. Links are stored
+  as `{id → BlockPos}` so logout/break cleanup + the near-game broadcast can reach the real blocks.
+- **Wand rewrite.** `BuzzerGameWand` LINK mode links the clicked buzzer/stand into `getOrCreate(player)`'s
+  session (no more SELECTED_PANEL); right-click air (Link) starts + reports the session; op gate removed
+  (anyone hosts; Resize/Rotate/Digits modes unchanged). Buzzer + stand BEs drop `panelPos`, keep only
+  `sessionId` (resolved via the manager; a stale link → no session → cleared lazily).
+- **Ticking + cleanup moved off the block.** `BuzzerSessionManager.tickAll` (END_SERVER_TICK) drives every
+  live session's clock and broadcasts near the host (the panel BE used to do this). DISCONNECT →
+  `onHostDisconnect` auto-unlinks every linked buzzer/stand and warns nearby players; break-cleanup retargeted
+  the same way (`RoundBroadcast.warnNearAny` dedups recipients).
+- **Commands retargeted.** `/cb buzzergame start|stop|reset|reveal` act on the CALLER'S OWN session (not a
+  looked-at panel), no op gate; `give panel` dropped (buzzer|wand|display only). The full `set <key> <value>`
+  + help-surface rewrite is item 2. The timer stand pulls its digits through `bySession` the same way.
+- **Panel fully deleted, no dead refs.** Removed `AdminPanelBlock`, `AdminPanelBlockEntity`, `PanelGui`,
+  `BuzzerPanelNet`, `PanelSession`, client `BuzzerPanelScreen`, `BuzzerPanelActionPayload`, the admin_panel
+  blockstate/models + lang key, `GuiMode.BUZZER_PANEL` (id 15 retired) + its `CustomBlocksClient` case, the
+  `PayloadRegistrar` receiver, and the creative-tab/registry entries. Every remaining `PanelSession` /
+  `AdminPanel` javadoc reference was re-pointed to `BuzzerSession`.
+
+## Group 32 TG32 full fix pass — root safety + B2 + D1/E11 restore + removals + D5/D8 + shared sauce visuals BUILT · 2026-07-17 (🟡 built, pending in-game)
+
+Owner-checkmarked fix pass over every open TG32 row. `compileJava` green. Nothing marked passed — all 🟥 awaiting owner retest.
+
+- **Root safety / D1 / E11 — crater engine rewritten.** New `TomatoCraterState` (`PersistentState`, one per world)
+  persists pending craters across restart. `TomatoCraterManager` now: counts each crater's delay down, then drains a
+  shared **128-block/tick** global budget (hard-bounded, no whole-crater-in-one-tick); a block in an unloaded chunk
+  waits (never force-loaded); a throwing position is isolated (`try/catch`, skipped); each crater's queue is ordered
+  **supports first / plants last** (E11 — soil/water before crops, crops carry their snapshot growth stage via full
+  BlockState); restore clears sauce or a blast-caused **flowing** fluid on the spot but leaves any player build /
+  source fluid / container in place (D1). First-snapshot-wins (per-world OWNED, rebuilt from the save) retained.
+- **B2 — guaranteed one-shot.** `TomatoCombat` registers `ServerLivingEntityEvents.AFTER_DAMAGE`: any non-exempt
+  entity the blast damaged-but-didn't-kill gets a next-tick bypassing lethal blow via the same tomato source (so the
+  credited/self death message still fires); stubborn boss → `kill()`. 30 `tomato_N` damage types tagged
+  `bypasses_armor` + `bypasses_effects` (new `data/minecraft/tags/damage_type/*.json`, merge-not-replace) so
+  armour/resistance/protection can't save a target. Exempt: shield-blockers (`blocked`), tamed pets, creative/
+  spectator/invulnerable. Radius/terrain/knockback/out-of-range untouched. `GUARANTEEING` ThreadLocal guards recursion.
+- **D5 reversal.** `SauceManager` underwater path lays NO sauce — only a hard-capped (≤40) red-dust + bubble burst.
+  The underwater clump placement + the 10-tick self-heal loop are deleted (was a top lag/crash suspect).
+- **C3 + D7 removed.** `TomatoEntity`: `damage()` coin-flip, `deflect()`, and the re-collision grace fields/logic
+  are gone (C1/C2 interception intact). `SauceManager`: rain-wash (`hasRain`) removed — weather has no effect.
+- **D8 slurp.** Full-hunger gate removed; each empty-hand click does `add(20,1.0)` + `setHealth(getMaxHealth())`
+  (both clamped → no overheal) and removes exactly one layer. No sneak, works at full hunger.
+- **D11 / D13 bounding.** Per-blast sauce hard-bounded (≤64 placements, field radius ≤6); D13 = one bounded downhill
+  spread of thin 1-layer patches then STOP (no per-tick spreading); 50/chunk FIFO cap retained.
+- **Shared sauce visuals.** Regenerated 64x crushed-tomato textures (block + splat/drip/debris, procedural via
+  `scratchpad/gen_sauce.py`); D3 drips run down and pool ~30s; D2 ~82% face coverage; E2 randomized left/right
+  prints; E6/E8 `SauceScreenOverlay` reworked to a fresh random **~90% scattered** cell layout (splashes + drips +
+  ~10% clear holes) for **10s**. Shield keeps the sauce-red tint (true per-fragment patches deferred as pure visual).
+
+## Group 32 pass — doc move + B8 + knockback→float + Phase D backbone + Phase C + Phase E server BUILT · 2026-07-17 (🟡 built, pending in-game)
+
+G32 Explosive Tomato build handoff. `compileJava` green (not a full jar yet).
+
+- **§F Admin Config GUI moved G32 → G27.** Removed the parked F rows + F section from `GROUP_32` /
+  `Testing_Guide_32`; landed them in `Testing_Guide_27` §G27.21 (PT1–PT3) + a note in
+  `GROUP_27_SCREENS.md` §G27.21b. Tomato config screen is now G27's `/cb config` migration, not G32's.
+- **B8 (nuke 12→20) marked passed.** `NUKE_POWER = 20.0` was already in code; only docs updated — §B → 9/9,
+  B8 into Passed History, `G32-NUKE-20` bug row cleared.
+- **Knockback retune boolean → float = 8.** `tomatoBlastKnockback` is now a tunable double (owner-locked 8),
+  clamped 0–64. `TomatoEntity.detonate` snapshots nearby velocities, lets the real explosion shove, then
+  rescales that delta by `knockback / 6.0` (6 = vanilla power-6 ref, so 8 is punchier; 0 cancels).
+- **Phase D "Mess" — server gameplay backbone BUILT.** New `com.customblocks.tomato` files: `SauceBlock`
+  (8-layer `LAYERS` block, slipperiness 0.995 via Settings, piston NORMAL, sneak-slurp eat 6-hunger, thick
+  ≥5-layer fall-damage cushion), `SauceRegistry` (block only, no item), `SauceManager` (blast splatter
+  deep-centre→thin-edge, underwater floating clumps ~1min, END_SERVER_TICK sweep: 15s dry / instant rain-wash
+  via `hasRain` / instant lava burn-off + steam, strict oldest-first 50/chunk FIFO cap). Config keys
+  `tomatoSauceDecaySeconds`=15, `tomatoSauceCapPerChunk`=50. Wired into `detonate()` + `onInitialize`.
+  Resources: `tomato_sauce` blockstate + 8 layer models + a 64× deep-red texture.
+- **Phase C "Deflect & Interception" BUILT** (all server-side, in `TomatoEntity`). `checkInterception()` runs
+  each tick over a tight box: another tomato → BOTH detonate (C2); any other projectile (arrow/snowball) →
+  flak detonation (C1). `damage()` override handles the C3 punch — a player melee hit is a pure 50/50:
+  `deflect()` (fling along the puncher's aim, generic not homing, hand them ownership, reset the 20s clock) or
+  `detonate()`. No new assets, no mixin.
+- **Phase E "Combat & Entities" — server slice BUILT** (new `TomatoCombat`). E5 pets: `ALLOW_DAMAGE` vetoes
+  tomato-blast damage to tamed `TameableEntity` (still sauced/slip). E3 hostiles: Slowness 255 + `setAiDisabled`
+  ~3s, a free-hit window, re-enabled by an END_SERVER_TICK sweep (leak-safe, cleared on stop). E4 villagers:
+  `getGossip().startGossip(thrower, MINOR_NEGATIVE, 25)` price-bump (natural decay) + angry particles + brief
+  Speed. E11 crops: `isCropLike` blocks (crop/stem/nether-wart) are left OUT of the crater restore, so a
+  blasted crop stays gone like TNT. E9/E10 death messages: 30 data-driven damage types
+  (`data/customblocks/damage_type/tomato_0..29` + 60 lang keys); `explosionDamageSource` picks one at random
+  and credits the thrower (dispenser owner=null → generic "was splattered"), with a vanilla-explosion fallback
+  so a blast never crashes on a missing type. Wired into `detonate()` + `onInitialize`.
+- **Still to build (client-visual pass only):** Phase D visuals (D2 wall/surface decals, D3 drips, D4
+  physics-chunk debris — need a splat packet + a client renderer, first `WorldRenderEvents` use), Phase E
+  visuals (E2 footprints, E6/E7 shield red-tint renderer mixin, E8 screen-overlay HUD mixin — needs a drip PNG).
+
+## Group 06 pass — G06-14 (4-5) + G06-1 + G06-18 + G06-17 Sym2 BUILT; G06-4/5 found already-built · 2026-07-16 (🟡 built, pending in-game)
+
+Worked the Group 06 handoff. First move each item through a repo audit before coding — the group doc turned
+out badly stale, so several "build this" items were already built. `gradlew build` green, jar rebuilt.
+
+- **G06-14 slices 4-5 (Recycle-Bin) BUILT.** Slice 3 (bulk + broken-cleanup routing) was already coded.
+  - **Slice 4 Restore:** now reuses the block's ORIGINAL still-reserved slot index via `restoreSnapshot`
+    (same as `/cb undo` of a delete) instead of a fresh number. So far placed copies still wearing slot_N
+    auto-revert to the real block, no slot leaks, and the chunk-scanner can self-terminate. `Deleted:`
+    markers heal back by customId (loaded now + far on chunk-load, survives restart).
+    **⚠️ This deviates from spec decision #5 ("fresh number")** — reuse is safer + no-leak; flip trivially if
+    the owner wants fresh numbers.
+  - **Slice 5 Empty:** frees the reserved slot (`DeletedSlots.remove`) + tombstones the id
+    (`MarkerTombstones`, new persisted set) so far markers go generic + never revive on same-name create.
+  - Marker heal/tombstone runs by iterating a chunk's BLOCK ENTITIES (sparse) on load — not a full-block
+    scan — so the old "forever scanner" tax is gone. Reserved slot # now stored per trash entry + shown in
+    the Trash GUI (`TrashManager.TrashEntry.slotIndex`, backfills -1 for old entries).
+  - **Not done:** old `RemovedBlock` registration left in place — removing a registered block risks breaking
+    existing world chunks; deferred to a separate safe cleanup.
+- **G06-1 instant Square swap BUILT.** The "Swapped to X" / "Already X." lines are action-bar overlays;
+  `ClientSwapPredictor` now shows them the same tick as the block paints (incl. the "Already" case it used
+  to skip). No dedupe gate needed — the action bar is one slot, so the server's later identical line just
+  refreshes it. Wording/colours mirror `ColorVariantService.swapPlaced` exactly.
+- **G06-18 + Area-drop BUILT.** Rainbow Rectangle is now pure per-face paint (`markArea`/`AreaSelection`/
+  sneak-corner removed). AREA also dropped from the Omni-Tool end-to-end (`OmniToolState.Mode`, `OmniToolItem`
+  dispatch, `OmniMenu` button) — that's the "Area dropped" piece of G06-16. `AreaSelection` left as dead code.
+- **G06-17 Symptom 2 (placement glow lag) BUILT.** Added `SlotBlock.CLIENT_GLOW_RESOLVER` + `resolveGlow`,
+  used in `getPlacementState`, wired client-side to `ClientSlotCache` glow (already synced) — mirrors the
+  existing `CLIENT_SOUND_RESOLVER` exactly. No new payload needed.
+- **G06-4 + G06-5 found ALREADY BUILT (doc stale).** `ColorHexSyncPayload` (Root A / 3c), `recolorVariants`
+  robust re-bake-from-source (Root B / 3b), `stripTrailingColorName` name fix (G06-5), `ColorLibrary.nearestName`
+  nearest-of-29, and a whole gradient/tone subsystem all exist. The doc's "verified 2026-06-24: no payload
+  syncs hexes" is false. Left extras (fixed-4 live-tint needs white art+model assets — pack-baked path already
+  works; free-text anvil rename) not built.
+- **Remaining (own sessions, not blasted out untested):** G06-17 Symptom 1 (held/dropped dynamic light —
+  client light-block, LambDynamicLights-style, needs iterative in-game testing), G06-6 Face mode (per-face
+  rotate/mirror/copy + scroll-wheel + pack emit), G06-16 Omni mode-additions (Delete/Paint/Eyedrop/Admin) +
+  config Screen (G27 Screen framework now exists, so unblocked).
 
 ## TG32 §B blast rework + A4 ride fix BUILT · 2026-07-15 (🟡 built, pending in-game)
 
@@ -277,8 +742,8 @@ entity**, our own render from real reference (nothing licensed), saved to `docs/
 reversed from "full kamikaze": **sneak dismounts you**, and a rider caught in the blast takes heavy damage but
 **survives** — bailing out in time is the skill.
 
-**Files:** `Group_04_Testing_Guide.md` · `GROUP_03_TESTING_GUIDE.md` · `Group_32_Testing_Guide.md` ·
-`Group_27_Testing_Guide.md` · `Group_07_Testing_Guide.md` · `Group_16_Testing_Guide.md` · `Bug_Id_Index.md` ·
+**Files:** `Testing_Guide_04.md` · `TESTING_GUIDE_03.md` · `Testing_Guide_32.md` ·
+`Testing_Guide_27.md` · `Testing_Guide_07.md` · `Testing_Guide_16.md` · `Bug_Id_Index.md` ·
 `GROUP_04_CHAT.md` · `GROUP_03_HUD_ESC.md` · `GROUP_32_EXPLOSIVE_TOMATO.md` · `GROUP_27_SCREENS.md` ·
 `GROUP_07_BULK_OPERATIONS.md` · `docs/mockups/tomato/`.
 
@@ -454,8 +919,8 @@ now blocks (not just warns) if source changed without a matching TG update. `cha
   there is no separate "edge mode" API in the codebase, "full" is only a block *shape*), off-thread, then ONE pack rebuild
   + sync + **ONE batch undo** (TEXTURE children, reversed by `HistoryCommands`), mirroring `/cb gradient`. 0° is refused.
 - **Docs (full pass).** **Test rows re-homed:** every Hub **screen** row (both tabs + shared chrome) moved out of G07 into
-  **`GROUP_27_TESTING_GUIDE.md` §T (T1–T23)**, next to the §G27.22/§G27.22b specs; the two inline checklists inside
-  `GROUP_27_SCREENS.md` were replaced by pointers (chrome checkmarks belong in a TG, never the spec). `GROUP_07_TESTING_GUIDE.md`
+  **`TESTING_GUIDE_27.md` §T (T1–T23)**, next to the §G27.22/§G27.22b specs; the two inline checklists inside
+  `GROUP_27_SCREENS.md` were replaced by pointers (chrome checkmarks belong in a TG, never the spec). `TESTING_GUIDE_07.md`
   **§B is now bulk-op BEHAVIOUR only** (19 rows: 10 ops incl. the new **Recolor** `BR`/`BRa`, locked skips, undo; old
   B1a/B19 retired with the filter builder + escalation). Also corrected: `GROUP_07_BULK_OPERATIONS.md` (new **§G07-5**
   rebuild section; 9→10 ops; 5→6 locked-skip ops; the stale "Health tab BUILT" + "IdReferenceRegistry BUILT" bullets
@@ -558,7 +1023,7 @@ BulkHealth}`, `network/payloads/SetAllActionPayload`, `client/gui/{SetAllScreen,
 `core/SlotManager`, `command/handlers/{BulkNet, BulkSnapshot, SetAllCommands}`, `network/payloads/BulkActionPayload`,
 `client/gui/{BulkReidState, BulkDraw, BulkWorkbenchView, BulkWorkbenchScreen, BulkHealthView, BulkFilterBuilder}`,
 `client/CustomBlocksClient`, `PayloadRegistrar`, `gui/GuiMode`; docs `GROUP_10_COLOR_IMAGE.md` (+§G10-BRH),
-`GROUP_07_BULK_OPERATIONS.md`, `GROUP_27_SCREENS.md` (§G27.22 built), `GROUP_07_TESTING_GUIDE.md`.
+`GROUP_07_BULK_OPERATIONS.md`, `GROUP_27_SCREENS.md` (§G27.22 built), `TESTING_GUIDE_07.md`.
 
 ---
 
@@ -593,7 +1058,7 @@ Files: `block/SlotBlock`, `client/CustomBlocksClient`, `client/gui/BulkDraw`, `c
 `client/gui/BulkOpsView`, `client/gui/BulkWorkbenchScreen`, `network/payloads/BulkActionPayload`,
 `command/handlers/BulkNet`; X3: new `command/handlers/BulkResult`, edited `BulkSnapshot` + the six apply cores
 (`BulkCommands`, `BulkCategoryCommands`, `BulkDuplicateCommands`, `BulkReidCommands`, `BulkFlagCommands`,
-`BulkExportCommands`); docs `GROUP_07_TESTING_GUIDE.md` (A2/S4/B12/B23/B24 + X3 bug row + banner),
+`BulkExportCommands`); docs `TESTING_GUIDE_07.md` (A2/S4/B12/B23/B24 + X3 bug row + banner),
 `GROUP_07_BULK_OPERATIONS.md` (corrected Not-built list + naming table). Compile-green (`compileJava`).
 
 ---
@@ -614,7 +1079,7 @@ Files: `block/SlotBlock`, `client/CustomBlocksClient`, `client/gui/BulkDraw`, `c
   Row A5a → 🎯 test-now (source-confirmed, like C4/C4a).
 
 Files: new `command/handlers/SetAllCommands`; edited `command/handlers/BulkSuggestions` (SETALL_ARGS),
-`command/CommandRegistrar` (register + import); docs `GROUP_07_TESTING_GUIDE.md` §S + backlog + A5a row.
+`command/CommandRegistrar` (register + import); docs `TESTING_GUIDE_07.md` §S + backlog + A5a row.
 
 ---
 
@@ -641,7 +1106,7 @@ Files: new `client/gui/BackupScreen`, `network/payloads/BackupActionPayload`; ed
 (displayLabel/friendlyTime/setProtected/rename/folderSize/humanSize/screenJson + BackupInfo fields),
 `command/handlers/BackupCommands` (openScreen + handleScreenAction, panic/recover cut), `gui/GuiMode`
 (BACKUP_SCREEN=17), `CustomBlocksMod` (payload register + receiver), `client/CustomBlocksClient` (dispatch);
-docs `GROUP_09_TESTING_GUIDE.md` §H/§N/§P + bugs table.
+docs `TESTING_GUIDE_09.md` §H/§N/§P + bugs table.
 
 ---
 
@@ -682,7 +1147,7 @@ Files: new `update/ServerJarInfo` / `update/UpdateHttpRoutes` / `update/VersionC
 `network/payloads/VersionHandshakePayload` / `client/update/UpdateController` / `client/update/JarUpdater` /
 `client/update/UpdateScreen`; edited `CustomBlocksConfig` / `CustomBlocksConfigStore` / `CustomBlocksMod`
 (register + JOIN send) / `network/ResourcePackServer` (init + routes + getDownloadUrl) / `client/CustomBlocksClient`
-(receiver + disconnect reset); docs `GROUP_20_EXTERNAL_INTEGRATIONS.md` §CS3 + `GROUP_20_TESTING_GUIDE.md` §K.
+(receiver + disconnect reset); docs `GROUP_20_EXTERNAL_INTEGRATIONS.md` §CS3 + `TESTING_GUIDE_20.md` §K.
 
 ---
 
@@ -775,7 +1240,7 @@ Next: Slice 2 — Dir-2 shell + Control Room naming + X1/X2/X4/X5 + polish.
 
 ## G07 — owner SP test pass logged in TG · 2026-07-10 (📝 docs only)
 
-Owner ran §A–§C solo. Marked results in `GROUP_07_TESTING_GUIDE.md` and filed detail in group doc §G07-4.
+Owner ran §A–§C solo. Marked results in `TESTING_GUIDE_07.md` and filed detail in group doc §G07-4.
 
 - **Pass (54 slots, SP+MP — owner said marks cover both):** most of §A/§B/§C. §D/§E untested.
 - **💔 fail/rework (5):** B3 (Rename `replace` UX), B9/B9a (Re-ID wants inline per-block id text boxes),
@@ -934,7 +1399,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
   `WAND`; `/cb buzzergame give wand` gives it; `give resizetool` removed. Wired into
   `AdminPanelBlock`/`BuzzerBlock`/`TimerDisplayBlock` `onUse`. Lang: one `buzzergame_wand` entry.
   ⚠️ Old `link_wand`/`resize_tool` items in any existing inventory become unknown-item on load (dev mod, fine).
-- **Docs:** `testing/GROUP_31_TESTING_GUIDE.md` new **§W** + reworked Setup / §C / §D2 to the wand; this log.
+- **Docs:** `testing/TESTING_GUIDE_31.md` new **§W** + reworked Setup / §C / §D2 to the wand; this log.
   Next: item 2 (rotate 5°). `gradlew build` pending.
 
 ---
@@ -981,7 +1446,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
   (regression — expected the "?" cube drop). **R2 ❔ needs discussion** — owner watched full particle
   suppression on break and wants some (unspecified) particles shown instead; not currently planned in
   §R-2 (that's sound stub + mining-speed only), so logged as open design ask, not a bug fix. SP untested.
-- Logged S6/R3/R2 in `GROUP_30_TESTING_GUIDE.md` Active Bugs + `BUG_ID_INDEX.md`.
+- Logged S6/R3/R2 in `TESTING_GUIDE_30.md` Active Bugs + `BUG_ID_INDEX.md`.
 - **G04 D2a–D2f (locked-block error wording + case-proof lock, slice 1) — ✅ passed in-game, SP + MP.**
   Moved out of Test-now into Passed Tests History; section D marked ✅ slice 1 passed.
 
@@ -1039,7 +1504,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
 - **TG:** rows `L1–L4` → on-scheme `D2a–D2f` (they're the promoted D2 slice); added **D2d**
   (variant tool blocked on locked) + **D2e** (case-insensitive lock) test rows; D2 parked ref updated.
 - Files: `LockManager.java`, `ColorVariantService.java`, `ColorToolService.java`,
-  `ManagementCommands.java`, `GROUP_04_TESTING_GUIDE.md`. Build green, `verifyTgUpdated` passed.
+  `ManagementCommands.java`, `TESTING_GUIDE_04.md`. Build green, `verifyTgUpdated` passed.
 - **NEXT:** owner in-game D2a–D2f (esp. D2d variant-block + D2e case).
 
 ---
@@ -1057,7 +1522,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
   Category Hub name/desc, Vault id, etc.) at once. No per-screen changes yet — that's step c.
 - **NOT built yet:** step b (`CbForm` helper), c (convert screens to it), d (HUD raw→themed widgets),
   e (build gate to stop future screens reintroducing it). Order: owner confirms `a` in-game → then d+e.
-- Doc note: `GROUP_27_TESTING_GUIDE.md` has a **duplicated test-now block** (two identical copies of
+- Doc note: `TESTING_GUIDE_27.md` has a **duplicated test-now block** (two identical copies of
   Fixes/C/K…). Flagged to owner; not silently rewritten. §M rows added to both copies to keep them in sync.
 - Test: §M (M1 `/cb create` Texture/AI hints; M2 `/cb category` Name/Description) — 🟥 not in-game.
 
@@ -1080,7 +1545,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
   brand/glyph). Routed all **16** locked sites through them: 12 already-canonical chat sites centralised,
   1 drifted chat (`TemplateCommands` `'x'…first`), 3 drifted hotbar (`SlotBlock:199` `'x'…first`,
   `ColorToolService` ×2 missing "Use"). Drift now structurally impossible.
-- **TG** (`GROUP_04_TESTING_GUIDE.md`): fixed the broken empty "Test now" section (owner's ask) → now holds
+- **TG** (`TESTING_GUIDE_04.md`): fixed the broken empty "Test now" section (owner's ask) → now holds
   runnable slice-1 rows L1–L4. Sections table D → 🛠️ building; D2 marked built.
 - **Build green** — compileJava + verifyFileSize/Mojibake/Sound/TgUpdated all pass; jar built.
 - **NEXT** — owner runs L1–L4 in-game (chat + hotbar locked wording identical). Then slice 2 = hotbar
@@ -1121,7 +1586,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
 > instruction ("everything, do every single thing correctly and prove it"). Owner picked the **real placed
 > block** approach (reuses the proven BlockEntity + BER pipeline; free persistence + sync) over a from-scratch
 > hologram. `gradlew build` green (verifyFileSize + verifyMojibake + verifySound + verifyTgUpdated). **Nothing
-> ✅ until the owner confirms in-game.** Tests: `docs/testing/GROUP_30_TESTING_GUIDE.md` §S (+ §Q for the pose
+> ✅ until the owner confirms in-game.** Tests: `docs/testing/TESTING_GUIDE_30.md` §S (+ §Q for the pose
 > number entry from the earlier build this day).
 
 - **New block + BE + registry (no item — command-spawned only):** `block/GuessShowcaseBlock` (INVISIBLE model
@@ -1154,7 +1619,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
 > Owner confirmed the mega-screen rebuild + pose-command removal (§N N1–N6) and the sharp/black fallback "?"
 > texture (§P P1–P2) **in-game**. Core A–P = **81/81**. Then built the first batch of the §10 "screen-level
 > slider controls" onto the Pose tab. `gradlew build` green (all gates incl. verifyTgUpdated). Tests:
-> `docs/testing/GROUP_30_TESTING_GUIDE.md` §Q. **Number entry NOT ✅ until the owner confirms in-game.**
+> `docs/testing/TESTING_GUIDE_30.md` §Q. **Number entry NOT ✅ until the owner confirms in-game.**
 
 - **✅ §N + §P confirmed in-game** — G30-11 tabbed mega-screen, G30-4 `/cb guess pose` removal (screen-only via
   `GuessPosePayload`), and G30-2b QuestionMark texture all pass. Flipped in TG + ID_MAP + group doc.
@@ -1176,7 +1641,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
 ## G30 · Guess Mode — QuestionMark fix + pose→screen + tabbed mega-screen BUILT · 2026-07-08 (🟡 build-green, NOT confirmed in-game)
 
 > Four ship-now items in one build. `gradlew build` green (verifyFileSize + verifyMojibake + verifySound +
-> verifyTgUpdated). **Nothing ✅ until the owner confirms in-game.** Tests: `docs/testing/GROUP_30_TESTING_GUIDE.md` §N + §P.
+> verifyTgUpdated). **Nothing ✅ until the owner confirms in-game.** Tests: `docs/testing/TESTING_GUIDE_30.md` §N + §P.
 
 - **G30-2b — QuestionMark texture fixed.** Regenerated `textures/misc/questionmark.png` at **512×512** (was
   64×64 → the blur/pixelation) with a **sharp red "?" on true `(0,0,0)` black**; **deleted** the old purple
@@ -1220,7 +1685,7 @@ No code touched (THE_CHECKMARK). Next: owner picks what to build first from §G0
 > multiblock-wall idea. Mockup approved first (green digits, prominent Rubik's-timer leg), then built on
 > the **resize-ready display-entity foundation** so items 2–4 (resize/rotate/LED) bolt on with no rebuild.
 > `gradlew build` green (verifyFileSize + verifyMojibake + verifySound + verifyTgUpdated pass). **Nothing
-> ✅ until the owner confirms in-game** (§2). Tests: `docs/testing/GROUP_31_TESTING_GUIDE.md` §D.
+> ✅ until the owner confirms in-game** (§2). Tests: `docs/testing/TESTING_GUIDE_31.md` §D.
 
 - **Approach:** placed block is INVISIBLE; all visuals are server-side display entities (no client code) —
   one ITEM_DISPLAY (custom stand model, vanilla textures) + two TEXT_DISPLAY digit panels (front/back),
@@ -1744,7 +2209,7 @@ not this build.
 — needs the GT-730 friend on the dedicated server (Golden Rule). The auto step-down detection (whether MC drops the
 pack list on an atlas-stitch failure at 256) is the one part that can only be proven in-game.
 
-**Next.** Friend runs `/cb lowres 256` on the dedicated server → test guide `GROUP_05_TESTING_GUIDE.md` §E (E1–E6).
+**Next.** Friend runs `/cb lowres 256` on the dedicated server → test guide `TESTING_GUIDE_05.md` §E (E1–E6).
 Separate task: cap/repair the rogue `slot_1281` 4088px texture server-side.
 
 </details>
@@ -1758,7 +2223,7 @@ Separate task: cap/repair the rogue `slot_1281` 4088px texture server-side.
 **Done**
 - **Reverted v3 Phase 2 (paste image/GIF link).** Owner: no links in guess mode. Stripped `/cb guess defaultblock link <url>` and `/cb guess <p> on <id> look link <url>` + handlers (`defaultLookSetLink`, `onIdLink`, `freshLookId`) and the `ImageDownloader` import from `GuessCommands`. Disguise looks are now **existing block ids only**. The shared `/cb create` rail (`CreationCommands.doCreate` + `AnimCommands.maybeCreateAnimated`'s `postApply`) was **left intact** — the creation studio uses it, it was never guess-only.
 - **Bundled QuestionMark fallback.** New `assets/customblocks/textures/misc/questionmark.png` (64×64, glossy red "?" on a dark cube, composited from the owner-supplied pngimg image at bundle time — not a runtime link). `GuessDisguise.MYSTERY` repointed to it; old `mystery.png` kept on disk for easy revert.
-- Docs: `GROUP_30_TESTING_GUIDE.md` (§J retired/reverted, K1–K3 → pass SP+MP, 100% 71/71) + `GROUP_30_GUESS_MODE.md` §1.
+- Docs: `TESTING_GUIDE_30.md` (§J retired/reverted, K1–K3 → pass SP+MP, 100% 71/71) + `GROUP_30_GUESS_MODE.md` §1.
 
 **Decisions**
 - "Bundled block" = the existing last-resort fallback texture (not a new SlotBlock) — minimal, no slot consumed, no SlotManager touch. Composited the transparent PNG onto an opaque dark cube so it renders solid, not see-through.
@@ -1952,7 +2417,7 @@ direction before building (per the ask-first-on-big-CustomBlocks rule). Test row
 **Verified.** `gradlew build` green — compile + `verifyFileSize`/`verifyMojibake`/`verifySound`/`verifyTgUpdated`
 all pass. Nothing in-game. Golden Rule: 🟢 built ≠ ✅ done.
 
-**Next.** Owner runs `GROUP_30_TESTING_GUIDE.md` §J (7 rows: default via link, per-round via link, GIF link
+**Next.** Owner runs `TESTING_GUIDE_30.md` §J (7 rows: default via link, per-round via link, GIF link
 plays live, broken-link safety, non-URL rejection, `lookN` id increments, status readout). Then the next v3
 slice (smooth pickup/put-down transition animation) — confirm the slice with the owner before writing code.
 
@@ -1986,7 +2451,7 @@ slice (smooth pickup/put-down transition animation) — confirm the slice with t
 - Look customization split into 2 phases per owner: **Phase 1 = id-based** (a look is an existing block id);
   **Phase 2 (next) = paste an image/GIF link** straight into `defaultblock`/`look` via the `/cb create` pipeline.
 
-**Verified.** ✅ **Owner confirmed in-game 2026-07-06** — `GROUP_30_TESTING_GUIDE.md` §I all 10 rows pass in
+**Verified.** ✅ **Owner confirmed in-game 2026-07-06** — `TESTING_GUIDE_30.md` §I all 10 rows pass in
 **both SP and MP** (default look, per-round override, precedence, fallback-to-"?", animated GIF look, status
 readout, deleted-look graceful fallback, relog persist, watcher-sees-real, reid-follows-rename). Same session
 the owner also ran the outstanding **singleplayer** rows for v2 core A–H — all pass — so **Group 30 is now 100%
@@ -2072,7 +2537,7 @@ and ship the real fix. TG §🔬 Diagnostic run has the steps + line meanings.
 
 **Next.** Owner retests Batch 2 in-game. Then (needs design discussion, not started): F5/F6 label spacing, K5 edithud v2, K6 CbToast revamp, CbScreen base-class extraction + port other screens.
 
-**Docs.** Screens group: new section `## G27-3` in [GROUP_27_SCREENS.md](docs/groups/GROUP_27_SCREENS.md). Testing guide: [GROUP_27_TESTING_GUIDE.md](docs/testing/GROUP_27_TESTING_GUIDE.md) — Batch-2 rows set 🎯 retest.
+**Docs.** Screens group: new section `## G27-3` in [GROUP_27_SCREENS.md](docs/groups/GROUP_27_SCREENS.md). Testing guide: [TESTING_GUIDE_27.md](docs/testing/TESTING_GUIDE_27.md) — Batch-2 rows set 🎯 retest.
 
 <a id="e-g30-v2-round1"></a>
 ## 2026-07-05 (G30 Guess Mode — v2 command redesign, Round 1: `on/off <blockid>` + `on/off all`, set+all-mode store, total per-block coverage, hardcoded "???"/"?") — 🟢 built (build green, all gates), NOT in-game
@@ -2314,7 +2779,7 @@ looks wrong, stop before trusting the rest. Then §B–H. Needs 2 players (an OP
 ## 2026-07-04 (G12 testing guide repopulated + verified against source — was a stale "not built" placeholder) — 📝 docs only, no code
 
 > Owner reported "group 12 not showing data" → the real symptom was
-> `docs/testing/GROUP_12_TESTING_GUIDE.md` itself: it still said "⏳ not built / 0 / 0" even
+> `docs/testing/TESTING_GUIDE_12.md` itself: it still said "⏳ not built / 0 / 0" even
 > though `docs/groups/GROUP_12_EXPORT_MARKETPLACE.md` records real in-game results from
 > 2026-06-21. First pass rewrote it from that group doc alone (model: GROUP_11 style) — owner
 > correctly called this out as not matching the other TGs' row format (missing Action/Expected/SP/MP
@@ -2347,7 +2812,7 @@ looks wrong, stop before trusting the rest. Then §B–H. Needs 2 players (an OP
 
 > First build step of the 2026-07-04 G27 master build order (GROUP_27_SCREENS.md corrections
 > section, step 1). Branch: `feat/g27-step1-redblack-frame`. **Nothing ✅ until the owner
-> confirms in-game** (CLAUDE.md §2). Tests: `docs/testing/GROUP_27_TESTING_GUIDE.md` §K.
+> confirms in-game** (CLAUDE.md §2). Tests: `docs/testing/TESTING_GUIDE_27.md` §K.
 
 - **Locked palette lands in `CbTheme`** (correction #1): ACCENT `#FF0000` exact (was the softer
   `#FF1744`), pure-black backgrounds (`DIALOG_BG` now `#000000`, new `PANEL_BG`), success flash
@@ -2846,7 +3311,7 @@ numbers expected). CP2 starts only after that confirmation.
 **Why:** owner wanted a singleplayer/multiplayer test-tracking split like GROUP_06 was already attempting, but GROUP_06's own attempt had drifted (stale "D (3/16)" active-banner entry that no longer matched reality — D had since split into an archived-passed slice and a not-yet-started planned slice, but the banner was never updated). Fixed GROUP_06 first, got sign-off, then rolled out everywhere.
 
 **Done:**
-- `GROUP_06_TESTING_GUIDE.md`: renamed `Alone`/`Server` columns → `SP`/`MP` (clearer terms), fixed the stale `D (3/16)` active-banner line to reflect current reality.
+- `TESTING_GUIDE_06.md`: renamed `Alone`/`Server` columns → `SP`/`MP` (clearer terms), fixed the stale `D (3/16)` active-banner line to reflect current reality.
 - **26 of the remaining 27 guides** (all except `GROUP_13`, currently mid-edit by another session — left untouched per owner instruction): every test-row table with a single `Status` column converted to separate `SP`/`MP` columns (existing result duplicated into both, since no guide tracked them separately before); added the `SP / MP` legend line to the 15 guides that gained new columns.
 - `TESTING_GUIDE_TEMPLATE.md` + `AGENTS.md`: SP/MP is now the documented standard (prohibition 9 — no single `Status` column on test-row tables).
 - `docs/testing/extra/testing_tools.py` `health_check()` extended with two more checks:
@@ -2886,7 +3351,7 @@ numbers expected). CP2 starts only after that confirmation.
 
 **Verified:** `.\gradlew.bat build --no-daemon` GREEN — compiles + all three gates (mojibake / sound / file-size) pass. That is all a green build proves. **NOT tested in-game; nothing here is ✅.**
 
-**Next:** owner runs the checkpoint-1 regression sweep — `docs/testing/GROUP_13_TESTING_GUIDE.md` §N (N1–N7: boot log shows 1448 slots; normal blocks place/recolour/glow/delete/create exactly as before; old Arabic word join untouched). Checkpoint 2 (pre-bake the 164 base slots) starts only after that confirmation.
+**Next:** owner runs the checkpoint-1 regression sweep — `docs/testing/TESTING_GUIDE_13.md` §N (N1–N7: boot log shows 1448 slots; normal blocks place/recolour/glow/delete/create exactly as before; old Arabic word join untouched). Checkpoint 2 (pre-bake the 164 base slots) starts only after that confirmation.
 
 ---
 
@@ -2944,7 +3409,7 @@ build spec). Summary of what's locked:
   first).
 - `docs/archive/FABLE_PROMPT_PHASE4_TEXT_BLOCKS.md` — one-line note added (unaffected, separate
   system).
-- `docs/testing/GROUP_13_TESTING_GUIDE.md` §A — reverted to its pre-session state (the sheet-specific
+- `docs/testing/TESTING_GUIDE_13.md` §A — reverted to its pre-session state (the sheet-specific
   language no longer applies); kept the useful unconfirmed finding about the 06-27 report (left-click
   vs right-click / missing-marker theory) since that's independent of which fix design is chosen.
 
@@ -3115,7 +3580,7 @@ build step 1.
 - **T7 Giphy** ❌ "web page, not an image" (×2). **Verified with WebFetch:** the giphy page exists but serves **no** `og:image`/`twitter:image`/`image_src` in static HTML (JS-rendered), so `LinkResolver.resolveImageUrl` correctly finds nothing. Not a bad link, not a crash. **Fix idea (needs owner sign-off):** giphy rule in `LinkResolver.directImageUrl` — trailing id after `-` → `https://media.giphy.com/media/<id>/giphy.gif`. Logged in G14 Active Bugs (T7-giphy).
 - **T9 pngwing** ⏳ pending — owner no longer has the link. UA-fallback fix ([2026-06-30 entry](#e-img-ua-fallback)) still unconfirmed in-game.
 
-**Separate finding (NOT a §T failure):** T2's cat rendered as a ragged white blob — that's colour-based **background removal** (on in owner's world config; fresh default is `none`) losing a photo's non-uniform light background, not the link-fixer. Investigation note logged in [GROUP_10_TESTING_GUIDE.md](docs/testing/GROUP_10_TESTING_GUIDE.md) §BG-X. Twin of the existing G14 §Q-fix2 "white blob beside the moon" open finding.
+**Separate finding (NOT a §T failure):** T2's cat rendered as a ragged white blob — that's colour-based **background removal** (on in owner's world config; fresh default is `none`) losing a photo's non-uniform light background, not the link-fixer. Investigation note logged in [TESTING_GUIDE_10.md](docs/testing/TESTING_GUIDE_10.md) §BG-X. Twin of the existing G14 §Q-fix2 "white blob beside the moon" open finding.
 
 **No code changed this session.** Docs only: G14 §T marked 7/9 + Active Bug row; G10 §BG-X investigation note.
 
@@ -3182,7 +3647,7 @@ Locked the new category-system direction under **G11** while preserving the curr
 
 **Locked decisions:** blocks can have multiple categories; one main category controls the visible badge; categories can start empty or with blocks; category creation must work from command and GUI; the Category tab lives inside `/cb create`; subcategories are unlimited but UI warns after two sub-levels; parent category views include child blocks; old/current categories migrate automatically; advanced in-game customization is in scope (icon/source, custom block icon, color, badge, description, templates, sort/reorder, hidden/locked, permissions, sounds, particles, auto-add rules, import/export payload); delete gets clear modes (category only, exclusive blocks only, all shown tree blocks, move blocks then delete).
 
-**Docs changed:** [GROUP_11_CATEGORY.md](docs/groups/GROUP_11_CATEGORY.md), [GROUP_11_TESTING_GUIDE.md](docs/testing/GROUP_11_TESTING_GUIDE.md), [ID_MAP.md](docs/Information/ID_MAP.md), [SWEEP_INDEX.md](docs/Information/SWEEP_INDEX.md).
+**Docs changed:** [GROUP_11_CATEGORY.md](docs/groups/GROUP_11_CATEGORY.md), [TESTING_GUIDE_11.md](docs/testing/TESTING_GUIDE_11.md), [ID_MAP.md](docs/Information/ID_MAP.md), [SWEEP_INDEX.md](docs/Information/SWEEP_INDEX.md).
 
 **Gate:** do not replace the current in-game category system from the mockup alone. Next build should be a small in-game `/cb create` Category tab/widget sample. After owner tests that in game, status remains **needs polishing after in-game test** until layout, wording, shortcuts, delete flow, and migration are reviewed.
 
@@ -3263,7 +3728,7 @@ Locked the new category-system direction under **G11** while preserving the curr
 
 **Verified:** `gradlew build --no-daemon` ✅ green on JDK 21 (verifyFileSize / verifyMojibake / verifySound); jar deployed to both mods folders (`.minecraft\mods` + `Desktop\MODS\mods`, old jars backed up `*.bak_pre_g10cv_*`). **✅ CONFIRMED IN-GAME 2026-06-29 — all 8 §CV checks pass** (create + 4-block hand-over + coloured names + one-undo + alias + Red-Square swap-compat + bad-link/clash safety).
 
-**Docs:** GROUP_10_TESTING_GUIDE.md §CV (8/8 ✅) + CHANGELOG.md + GROUP_10_COLOR_IMAGE.md §G10-CV "Entry points — command + GUI" (owner decided BOTH, GUI shares the slice-1 rail, design-discuss before building).
+**Docs:** TESTING_GUIDE_10.md §CV (8/8 ✅) + CHANGELOG.md + GROUP_10_COLOR_IMAGE.md §G10-CV "Entry points — command + GUI" (owner decided BOTH, GUI shares the slice-1 rail, design-discuss before building).
 
 **🔴 BUG FOUND IN TESTING (2026-06-29, owner) — `/cb redo` after undoing a create is broken** (shows purple/black textureless blocks). Owner hit it via CV but it is a **general redo-of-create** bug, NOT CV-specific — `/cb create x <link>` → `/cb undo` → `/cb redo` loses the texture too. **Cause (read from code):** undo of a CREATE op → `SlotManager.removeSilently` → `TextureStore.delete(index)` wipes the PNG off disk; the CREATE `Op` carries no texture bytes (unlike DELETE/TEXTURE ops), so redo (`applyForward` CREATE → `restoreSnapshot`) restores only slot metadata, never re-saves the pixels. redo-after-delete (DF1) works because the DELETE op stores the texture. **Planned fix (central, 0 caller changes):** on create-undo remove the slot but KEEP its texture on disk so redo's `restoreSnapshot` finds it. Marked 🔴 in GROUP_06 TG ("🔴 redo after a create", rows RC1/RC2) + GROUP_10 TG §CV. **Recommend fixing this BEFORE slice 2** (slice 2 pieces also create blocks → same broken redo).
 
@@ -3290,7 +3755,7 @@ Locked the new category-system direction under **G11** while preserving the curr
 
 **Note:** owner's follow-up showed dots still ringing the subject → root cause was *edge-attached* grain (the first pass only removed *isolated* specks); step 6 added to catch it. The baked **pngtree watermark** (grey-on-red, interior) is separate (colour-based `BackgroundRemover`), not a checker dot — out of scope. uranus has a small black notch on the upper-right limb = source checker baked over the planet edge, pre-existing.
 
-**Docs:** GROUP_10_COLOR_IMAGE.md §G10-6 v3 UPDATE block (steps 6/7 + numbers); GROUP_10_TESTING_GUIDE.md §G (G3 = explicit "no dots/speckle" check). **Next:** owner re-runs the two `/cb retexture` commands → expect solid black with **no dots** around the subject.
+**Docs:** GROUP_10_COLOR_IMAGE.md §G10-6 v3 UPDATE block (steps 6/7 + numbers); TESTING_GUIDE_10.md §G (G3 = explicit "no dots/speckle" check). **Next:** owner re-runs the two `/cb retexture` commands → expect solid black with **no dots** around the subject.
 
 <a id="e-g10-keyline-revert"></a>
 ## 2026-06-29 (G10 §C2 — BgRemove keyline + white-flip REVERTED to plain-black fill on dark subjects) — ✅ CONFIRMED IN-GAME ("its better")
@@ -3331,7 +3796,7 @@ Locked the new category-system direction under **G11** while preserving the curr
 
 **Verified:** ✅ owner confirmed in-game 2026-06-29 — `youtube` green variant shows green bands, not black.
 
-**Docs:** GROUP_10_COLOR_IMAGE.md §G10-3 banner + status updated (candidate #1 fixed; #2/#3 still open); GROUP_10_TESTING_GUIDE.md §H added (1/1 ✅).
+**Docs:** GROUP_10_COLOR_IMAGE.md §G10-3 banner + status updated (candidate #1 fixed; #2/#3 still open); TESTING_GUIDE_10.md §H added (1/1 ✅).
 
 </details>
 
@@ -3351,7 +3816,7 @@ Locked the new category-system direction under **G11** while preserving the curr
 - **Thin:** width `KEYLINE_FRACTION` 1.2% of short side, floor `KEYLINE_MIN_PX` 2 px (owner picked thin over medium).
 - **Untouched:** colour-variant / custom-fill path (`forcedFill` set) — no keyline there. Mode `none` still passes through.
 
-**Files:** [BackgroundRemover.java](src/main/java/com/customblocks/image/BackgroundRemover.java) (`process`, smart path — 498 ln, under gate) · [BgMask.java](src/main/java/com/customblocks/image/BgMask.java) (`dilateInto`). **Docs:** GROUP_10_COLOR_IMAGE.md §G10-4 · GROUP_07_TESTING_GUIDE.md C2.
+**Files:** [BackgroundRemover.java](src/main/java/com/customblocks/image/BackgroundRemover.java) (`process`, smart path — 498 ln, under gate) · [BgMask.java](src/main/java/com/customblocks/image/BgMask.java) (`dilateInto`). **Docs:** GROUP_10_COLOR_IMAGE.md §G10-4 · TESTING_GUIDE_07.md C2.
 
 **Build:** `./gradlew.bat build` → **BUILD SUCCESSFUL**, gates green (verifyFileSize / verifyMojibake / verifySound). Jar (8,578,755 B) deployed to `.minecraft\mods` + `OneDrive\Desktop\MODS\mods`. 🟢 ≠ done.
 
@@ -3616,7 +4081,7 @@ dreamstime moon at tol 20 (bg bakes clean), needs the owner's exact source image
 
 **Verified:** `gradlew.bat build` (JDK 21) **BUILD SUCCESSFUL in 26s** — verifyFileSize / verifyMojibake / verifySound all pass. Plus an **offline render check** (compiled `ImageResampler`+`ImageProcessor` standalone, ran on the real IAFC 128px): Lanczos output visibly sharper than bicubic; a transparent-disc test → corner alpha = 0 (no halo); `smallSourceNote` fires correctly. Build-green + offline-verified only — **NOT** in-game tested.
 
-**Test in-game:** new **§Q** checklist in [GROUP_14_TESTING_GUIDE](CustomBlocks-B/docs/testing/GROUP_14_TESTING_GUIDE.md) — Q1–Q6. Design in [GROUP_14_ANIMATION_VIDEO §5c](CustomBlocks-B/docs/groups/GROUP_14_ANIMATION_VIDEO.md).
+**Test in-game:** new **§Q** checklist in [TESTING_GUIDE_14](CustomBlocks-B/docs/testing/TESTING_GUIDE_14.md) — Q1–Q6. Design in [GROUP_14_ANIMATION_VIDEO §5c](CustomBlocks-B/docs/groups/GROUP_14_ANIMATION_VIDEO.md).
 
 **Next (if confirmed):** owner-side batch re-source of the ~242 old bases with `5_HD_PLUS_AI` (§5b / §P), and/or pick the next worst block for a round-2 test.
 
@@ -3679,8 +4144,8 @@ dreamstime moon at tol 20 (bg bakes clean), needs the owner's exact source image
 **Confirmed in-game (2026-06-27, MP):** §D-fix sweep **D2.5 + DF1–DF9 all ✅** — undo/redo, attribute setters (cmd + tools + bulk), shape, notes, category admin, and the 2nd-player check all update live, no rejoin. Also confirmed in this pass: hex system **B1–B4, B8–B10 ✅** (B2 works, chest UI rework still pending; B7 not yet tested).
 
 **🐞 Two NEW bugs found in MP this session (marked in their groups, NOT fixed):**
-1. **Shape hitbox stays a FULL cube on a dedicated server** → **G08**. `/cb setshape <id> carpet` shows the carpet model but the selection/hitbox box is a full cube. Cause: `SlotBlock.getOutlineShape`/`getCollisionShape` read the server-side `SlotManager`, which is **empty on a dedicated client** (client uses `ClientSlotCache`) → falls back to full. Dedicated-MP only; rejoin doesn't help. Fix = client-side shape lookup must read `ClientSlotCache`. (See [GROUP_08 TG](CustomBlocks-B/docs/testing/GROUP_08_TESTING_GUIDE.md) + spec.)
-2. **`/cb reid` fails on a case-mismatched old id** → **G25**. `/cb reid sfa1 sfa2` errors when the stored id's case ≠ typed. Cause: command resolves old id case-insensitively (`getById`) but passes the **typed** id to `reId`, whose `BY_ID.get(oldId)` is **exact** → null. Fix = pass `before.customId()` to `reId` (1 line). (See [GROUP_25 TG](CustomBlocks-B/docs/testing/GROUP_25_TESTING_GUIDE.md) + spec.)
+1. **Shape hitbox stays a FULL cube on a dedicated server** → **G08**. `/cb setshape <id> carpet` shows the carpet model but the selection/hitbox box is a full cube. Cause: `SlotBlock.getOutlineShape`/`getCollisionShape` read the server-side `SlotManager`, which is **empty on a dedicated client** (client uses `ClientSlotCache`) → falls back to full. Dedicated-MP only; rejoin doesn't help. Fix = client-side shape lookup must read `ClientSlotCache`. (See [GROUP_08 TG](CustomBlocks-B/docs/testing/TESTING_GUIDE_08.md) + spec.)
+2. **`/cb reid` fails on a case-mismatched old id** → **G25**. `/cb reid sfa1 sfa2` errors when the stored id's case ≠ typed. Cause: command resolves old id case-insensitively (`getById`) but passes the **typed** id to `reId`, whose `BY_ID.get(oldId)` is **exact** → null. Fix = pass `before.customId()` to `reId` (1 line). (See [GROUP_25 TG](CustomBlocks-B/docs/testing/TESTING_GUIDE_25.md) + spec.)
 
 **Next:** fix the two bugs above (G08 client shape read, G25 reid case) — owner to pick order — then slice 3 (route **bulk delete** through `DeletionService`, the "bulk delete leaves purple blocks" bug).
 
@@ -3717,7 +4182,7 @@ dreamstime moon at tol 20 (bg bakes clean), needs the owner's exact source image
 
 **Verified in-game (owner, 2026-06-27):** `/cb spawnmarker grass` → marker placed on looked-at face · grey block + red ✖ · floating `Deleted: grass` tag · look-HUD shows `Deleted: grass` · `/give … deleted_marker` → held name red "Deleted Marker". Screenshot confirms. Log clean: `registered 'deleted_marker' block + BlockEntity`, no marker exceptions, clean shutdown.
 
-**Owner note → pending tweak (do NOT rebuild just for this — fold into slice 2's jar):** held item name should be **green to match the look-HUD** (HUD label is green; item + tag are red). Recolor `DeletedMarkerItem` red→green next build. Tracked in `GROUP_06_TESTING_GUIDE.md` §D + `GROUP_06_TOOLS.md` §G06-14.
+**Owner note → pending tweak (do NOT rebuild just for this — fold into slice 2's jar):** held item name should be **green to match the look-HUD** (HUD label is green; item + tag are red). Recolor `DeletedMarkerItem` red→green next build. Tracked in `TESTING_GUIDE_06.md` §D + `GROUP_06_TOOLS.md` §G06-14.
 
 **Next:** build **slice 2** — shared `DeletionService`; route `/cb delete` + the Deleter through it so deleted copies become markers; retire the old `(Removed)` swap. (Owner approved continuing.)
 
@@ -3754,7 +4219,7 @@ dreamstime moon at tol 20 (bg bakes clean), needs the owner's exact source image
 - **Clearer chat counts:** "re-rendered from original / resized smaller / skipped / left as-is (no saved original)" — the confusing "upscaled" bucket is gone.
 - **Fixed stale `/cb config texturesize` message** (no longer says "animated blocks: re-create them").
 
-**Files:** `command/handlers/RetextureAllCommands.java` (backup + no-upscale + counts + header), `image/ImageProcessor.java` (`pngWidth`), `command/handlers/ConfigCommands.java` (message). Testing guide: `GROUP_14_TESTING_GUIDE.md` Slice 1d (S-1..8).
+**Files:** `command/handlers/RetextureAllCommands.java` (backup + no-upscale + counts + header), `image/ImageProcessor.java` (`pngWidth`), `command/handlers/ConfigCommands.java` (message). Testing guide: `TESTING_GUIDE_14.md` Slice 1d (S-1..8).
 
 **Honest limit:** this stops *future* blur and makes retextureall reversible. The 1007 already blurred can't be auto-recovered (no original, no prior backup) — only re-creating them from their image links. **Owner has NOT built or tested this yet (owner asked: no build now).**
 
@@ -3782,7 +4247,7 @@ dreamstime moon at tol 20 (bg bakes clean), needs the owner's exact source image
 
 **Done — docs only (no code, per owner "document everything first"):**
 - **Spec:** `GROUP_06_TOOLS.md` → new **§G06-14** (full design, why old system is scrapped, files new/changed/removed, 5 build slices). Old G06-2 `(Removed)` decision block marked ⛔ SUPERSEDED (kept for history).
-- **Testing guide:** `GROUP_06_TESTING_GUIDE.md` — §O marked ⛔ superseded; status/next-action/crosswalk point to G06-14 (💬 designed, not built; tests written per slice when built).
+- **Testing guide:** `TESTING_GUIDE_06.md` — §O marked ⛔ superseded; status/next-action/crosswalk point to G06-14 (💬 designed, not built; tests written per slice when built).
 - **Trash spec:** `GROUP_09_BACKUP_SAFETY.md` §6 — trash is now the recovery half of G06-14.
 - **ID map:** `ID_MAP.md` — G06-2/G06-3/G05-2 → redesigned into G06-14; added G06-13 + G06-14; G09-2 cross-ref.
 
@@ -3927,7 +4392,7 @@ returns clean, SP + server both). Slice 1 closed. Owner then flagged the broader
 
 **Fix v2 (in-game test #1 found a real bug):** friendly screen fired + config healed 1300->1500 (disk write confirmed in `.minecraft\config\customblocks\config.json`). But on a SAME-SESSION retry (owner clicked Back to Server List, did NOT fully restart), the raw "Received 400 registry entries unknown" (= 200 slots, block+item) kick leaked. Root cause: the mixin compared `needed` against `CustomBlocksConfig.maxSlots`, which the heal had already raised to 1500 in memory — while the block registry was still frozen at 1300 from launch. So `needed(1500) <= local(1500)` falsely passed and Fabric's raw kick ran. Fix: `RegistrySyncHealMixin` now compares the server count against the LIVE registry (`Registries.BLOCK.getIds()` scan for `customblocks:slot_N`), never the mutable config field. Same-session retries now keep the friendly "restart" screen instead of leaking raw. Healer + mixins.json unchanged (mixin-only edit). Rebuilt green.
 
-**Update — Phase B RETIRED 2026-06-27 (owner: "ok lets not do b"):** before building the server handshake, traced the real join path against the source and found Phase B **cannot** improve on Phase A and risks regressing it. Four reasons: (1) registry frozen at launch → no server message adds `slot_N` mid-session → the one restart is unavoidable either way; (2) the kick fires in the CONFIG phase, but every payload this mod sends goes out on the PLAY `JOIN` hook (`CustomBlocksMod.java:279`) — *after* config — so an under-provisioned client is already disconnected before any handshake could reach it (the locked `playS2C` line was unreachable); (3) sending in the config phase means racing Fabric's own registry-sync task — lose the race and the raw kick leaks → a *regression* risk; (4) only a client already running CustomBlocks-B can hit this mismatch, and every such client already carries the Phase A mixin → Phase B has essentially no audience. Net: best case = same as A, worst case = bug returns. Marked retired in `GROUP_21_CONFIG_GUI.md` §9.4/§9.7 + `GROUP_21_TESTING_GUIDE.md` §5 (CS-5/CS-6 / G21.20-21 void). `ConfigSyncPayload`-as-general-broadcaster is a possible *future, unrelated* cleanup, not a kick fix.
+**Update — Phase B RETIRED 2026-06-27 (owner: "ok lets not do b"):** before building the server handshake, traced the real join path against the source and found Phase B **cannot** improve on Phase A and risks regressing it. Four reasons: (1) registry frozen at launch → no server message adds `slot_N` mid-session → the one restart is unavoidable either way; (2) the kick fires in the CONFIG phase, but every payload this mod sends goes out on the PLAY `JOIN` hook (`CustomBlocksMod.java:279`) — *after* config — so an under-provisioned client is already disconnected before any handshake could reach it (the locked `playS2C` line was unreachable); (3) sending in the config phase means racing Fabric's own registry-sync task — lose the race and the raw kick leaks → a *regression* risk; (4) only a client already running CustomBlocks-B can hit this mismatch, and every such client already carries the Phase A mixin → Phase B has essentially no audience. Net: best case = same as A, worst case = bug returns. Marked retired in `GROUP_21_CONFIG_GUI.md` §9.4/§9.7 + `TESTING_GUIDE_21.md` §5 (CS-5/CS-6 / G21.20-21 void). `ConfigSyncPayload`-as-general-broadcaster is a possible *future, unrelated* cleanup, not a kick fix.
 
 **CS-4 / G21.19 ✅ (owner in-game 2026-06-27):** client 1500 > server 1450 → joined clean, no kick, no prompt. Closes the safe-direction box. **D13 / §9 fully CLOSED with Phase A alone** (CS-1..4 all pass; Phase B retired).
 
@@ -4002,7 +4467,7 @@ PNGs: green fill `#1E8C1E` → `#098C01` (max channel **140→140**, i.e. still 
 `verifySound`). Jar `build/libs/customblocks-1.0.0.jar` rebuilt. 🟢 build green = compiles only; tint math traced
 numerically on the real item PNGs (above). Green icon brightness **NOT** in-game confirmed yet.
 
-**Test checklist** (same pass): `GROUP_06_TESTING_GUIDE.md` **§B row 4c** — `/cb config hex green #10FF01` → the
+**Test checklist** (same pass): `TESTING_GUIDE_06.md` **§B row 4c** — `/cb config hex green #10FF01` → the
 green Square/Triangle **icon** goes bright green (not just its name). Update the **client** jar. Re-check red/yellow
 still correct. Glint + recolour-all marked ✅ this entry.
 
@@ -4034,7 +4499,7 @@ which misses (old hex ≠ actual painted bg). Hence "only new ones worked".
 
 **Verified:** `.\gradlew.bat build` → **BUILD SUCCESSFUL** (13s), 3 gates pass. Jar rebuilt. 🟢 compiles only.
 
-**Test checklist:** `GROUP_06_TESTING_GUIDE.md` §B note #3 (round-2) — place older `_green` blocks, `green #1133FF`
+**Test checklist:** `TESTING_GUIDE_06.md` §B note #3 (round-2) — place older `_green` blocks, `green #1133FF`
 → Yes → both old + new go blue. Glint: update **client** jar, grab a fresh tool. **NOT done** — owner tests.
 
 ---
@@ -4065,7 +4530,7 @@ swap is invisible.) Preset tools never glinted — only the `/cb customcolor` pa
 
 **Verified:** `.\gradlew.bat build` → **BUILD SUCCESSFUL** (16s), 3 gates pass. Jar rebuilt. 🟢 compiles only.
 
-**Test checklist:** `GROUP_06_TESTING_GUIDE.md` §B note #3 (use a **clearly different** colour to see it, e.g.
+**Test checklist:** `TESTING_GUIDE_06.md` §B note #3 (use a **clearly different** colour to see it, e.g.
 `green #1133FF`) + glint note. **NOT done** — owner installs jar + tests on the server. Item-art tint already ✅.
 
 ---
@@ -4106,8 +4571,8 @@ apart; use 2+ empty blocks to keep two words independent.
 compiles only. Back-mirror traced by hand against the دحل break case (front + back both read د-right/ل-left);
 tint math traced numerically (`#EE3333` art → `#FF0000` now gives `(238,0,0)`, not `(238,51,51)`).
 
-**Test checklist** (same pass): `GROUP_13_TESTING_GUIDE.md` **§Q** (Q1–Q4 back-mirror, O1 marked ✅) ·
-`GROUP_06_TESTING_GUIDE.md` **§B row 4b** (icon now a clean recolour).
+**Test checklist** (same pass): `TESTING_GUIDE_13.md` **§Q** (Q1–Q4 back-mirror, O1 marked ✅) ·
+`TESTING_GUIDE_06.md` **§B row 4b** (icon now a clean recolour).
 
 **✅ CONFIRMED IN-GAME 2026-06-26** — §Q (back-mirror after breaking the middle letter) PASS, owner: "PERFECT,
 exactly clear finally"; §B-4b (tool icon re-tint) PASS, owner: "also perfect". Both fixes closed.
@@ -4203,7 +4668,7 @@ reuse still allowed). So the leftover lingers (#7) and any reuse / colour-Square
 in `CustomBlocksMod`; undo drops the index.
 
 **Docs written this pass:** `GROUP_06_TOOLS.md` (G06-2 → ✅ Decisions block + G06-3 cross-ref) ·
-`ID_MAP.md` (G06-2/G06-3/G05-2 → 🛠️ building) · `GROUP_06_TESTING_GUIDE.md` (new **§O**, 10 rows;
+`ID_MAP.md` (G06-2/G06-3/G05-2 → 🛠️ building) · `TESTING_GUIDE_06.md` (new **§O**, 10 rows;
 §L marked ⛔ superseded; status/sections/crosswalk updated).
 
 **Built (additive):** `block/RemovedBlock.java` (shared placeholder + register) · `core/DeletedSlots.java`
@@ -4238,7 +4703,7 @@ instantly), #4/#5 (recreate doesn't bleed), #7 (no colour-Square flashing), #10 
 
 **Verified:** `.\gradlew.bat build` BUILD SUCCESSFUL in 42s — compile clean, all gates pass (`verifyFileSize`/`verifyMojibake`/`verifySound`). 🟢 build green = compiles only.
 
-**Test:** `GROUP_06_TESTING_GUIDE.md` §K row K7 added (dedicated server: square-swap a placed variant → no flicker, no old/deleted flash). NOT done until the owner confirms on their dedicated server.
+**Test:** `TESTING_GUIDE_06.md` §K row K7 added (dedicated server: square-swap a placed variant → no flicker, no old/deleted flash). NOT done until the owner confirms on their dedicated server.
 
 **Next after confirm:** G13-23 (Arabic attrs), then C4 (G06-4 re-bake).
 
@@ -4259,7 +4724,7 @@ cube to close a hairline gap.
   faces), do NOT strip faces. Per [[feedback_preview_images_before_jar]] — preview before any jar.
 
 **G06-5 §N confirmed ✅ (owner tested N1–N9, all pass).** De-bracketed names, nearest-preset naming, hex-free
-ids, idempotent boot migration — all correct. Marked ✅ 9/9 in `GROUP_06_TESTING_GUIDE.md` §N.
+ids, idempotent boot migration — all correct. Marked ✅ 9/9 in `TESTING_GUIDE_06.md` §N.
 
 **G06-6 filed (regression from G06-5).** Custom-colour (`/cb customcolor #FF1493`) Square swaps are no longer
 instant — they round-trip the server. **Cause (proven):** `ShapeToolItem.swapColourKey` returns the tool's
@@ -4328,7 +4793,7 @@ guessed double-flip. `AnimSlotBER` (animated slot blocks) left alone — gaps we
 
 **Verified:** `.\gradlew.bat build` → **BUILD SUCCESSFUL** (21s), 3 gates pass. 🟢 build green = compiles only.
 
-**Test checklist** same pass → `docs/testing/GROUP_13_TESTING_GUIDE.md` **§O** (O1 gaps · O2 ghost faces · O3
+**Test checklist** same pass → `docs/testing/TESTING_GUIDE_13.md` **§O** (O1 gaps · O2 ghost faces · O3
 stale bars · O4 back-face verify · O5 item icon).
 
 **NOT done** — owner batch-tests §N + §O in-game. Next after confirm: the **content migration** (G13-20 steps
@@ -4365,7 +4830,7 @@ repro to pick the candidate. `setglow`/recolor on Arabic (G13-23) still `instanc
 **Verified:** `.\gradlew.bat build` → **BUILD SUCCESSFUL** (21s), 3 gates pass (verifyFileSize/Mojibake/Sound).
 🟢 **build green = compiles only.**
 
-**Test checklist** written same pass → `docs/testing/GROUP_13_TESTING_GUIDE.md` §N (4 rows: Deleter on Arabic
+**Test checklist** written same pass → `docs/testing/TESTING_GUIDE_13.md` §N (4 rows: Deleter on Arabic
 letter · Deleter on slot block unchanged · neighbour re-flow after delete · locked slot refused).
 
 **NOT done** — owner tests §N in-game before anything is ✅. Next after confirm: the tiny-gaps **seam fix**
@@ -4395,7 +4860,7 @@ code there. Renames update the server/cache, never the local list → "can't edi
 **Verified:** `.\gradlew.bat build` SUCCESSFUL — compile clean, all gates pass (`verifyFileSize`/`verifyMojibake`/
 `verifySound`). 🟢 build green = compiles only.
 
-**Test checklist:** `GROUP_06_TESTING_GUIDE.md` §M **row 6** added (remote item name/lore = server truth; rename
+**Test checklist:** `TESTING_GUIDE_06.md` §M **row 6** added (remote item name/lore = server truth; rename
 updates the held item live). M2 → 🟡 (texture ok; item-name was the failure). M4/M5 guidance + 2b disclosure noted in §M.
 
 **NOT done** — owner re-tests §M rows 2 + 6 on the server. Next after confirm: **G06-5** (drop brackets + nearest-
@@ -4431,7 +4896,7 @@ the create/delete → client path against live code before writing anything. **T
 **Verified:** `.\gradlew.bat build` SUCCESSFUL twice (after 2a, after 2b) — compile clean, all gates pass
 (`verifyFileSize`/`verifyMojibake`/`verifySound`). 🟢 **build green = compiles only.**
 
-**Test checklist written** same pass → `GROUP_06_TESTING_GUIDE.md` **§M** (5 rows: hex-variant HUD live · texture
+**Test checklist written** same pass → `TESTING_GUIDE_06.md` **§M** (5 rows: hex-variant HUD live · texture
 no-rejoin · delete clears HUD live · rapid create/delete/create · LAN 2nd-player). L3 note now points to §M.
 
 **NOT done** — owner tests 2a+2b together in-game (§M) before anything is ✅. Next after confirm: **G06-5**
@@ -4451,7 +4916,7 @@ no-rejoin · delete clears HUD live · rapid create/delete/create · LAN 2nd-pla
 Owner ran the G06 testing guide and reported results; recorded them + reworded unclear tests, filed every
 finding into the right group doc.
 
-**Marked in `GROUP_06_TESTING_GUIDE.md`:**
+**Marked in `TESTING_GUIDE_06.md`:**
 - **§K INSTANT swaps — 4/6.** Row1 (instant swap SP+MP) ✅ perfect · Row2 ✅ (msg too long → defer to G04-1) ·
   Row4 ✅ for normal/variant blocks · Row5 ✅ swap instant · Rows **3 + 6 reworded** (owner didn't understand) → re-test.
 - **§J cleaner hotbar — 4/4 ✅.** Owner wants NO brackets around the colour (`Vart (Green)` → `Vart Green`).
@@ -4498,7 +4963,7 @@ does NOT heal pre-existing on-disk collisions, does NOT touch G06-1 action-bar.
 
 **Build:** `.\gradlew.bat build` → **BUILD SUCCESSFUL**, 3 gates pass (verifyFileSize 494/500 / verifyMojibake / verifySound).
 
-**Not done until owner tests in-game.** Checklist added to `docs/testing/GROUP_06_TESTING_GUIDE.md` §K
+**Not done until owner tests in-game.** Checklist added to `docs/testing/TESTING_GUIDE_06.md` §K
 (K1 collision · K2 restart-persist · K3 no capacity break). Next: step 2 (Deleter block-refresh + fast remove-sync).
 
 ---
@@ -4572,7 +5037,7 @@ Marked ✅ across testing guide, group verdict table, and memory.
 **Additive:** 2 new files + small inserts into `CommandRegistrar`, `AchievementManager`, `MainMenu`,
 `OnboardingManager`. No existing behavior changed.
 
-**Not done until owner tests in-game.** Test steps for all 3 are in `Reports/GROUP_23_TESTING_GUIDE.md`
+**Not done until owner tests in-game.** Test steps for all 3 are in `Reports/TESTING_GUIDE_23.md`
 (🎯 Test now section). ⚠️ Book test needs deleting `config/customblocks/players.json` first (owner already
 welcomed). Hologram give-hint still left as-is per owner.
 
@@ -4669,7 +5134,7 @@ rail, so they were left out of this additive-only pass.
 **S1 in-game results (owner tested):** ①②③④⑤ ✅ pass · ⑥ ❌ — animated/GIF upload errors
 ("Upload failed — check vaultEndpoint and that the worker is reachable") while **static** upload (④) works on
 the **same** worker → animated-specific bug, cause TBD (mod vs worker payload size). Marked **5 / 6** in
-`Reports/GROUP_20_TESTING_GUIDE.md`.
+`Reports/TESTING_GUIDE_20.md`.
 
 **S2 (conflict screen):** owner will NOT test the current cut — wants a full redesign first. Brainstormed the
 whole redesign via UI; **all decisions locked** and written to `GROUP_27_SCREENS.md §G27.17` (red chrome,
@@ -4712,7 +5177,7 @@ routed to Group 19**. So I did NOT re-document those. Net-new captured = the 2 s
 
 **Files touched (docs only):** `GROUP_23_PLAYER_EXPERIENCE.md` (scope-split banner, §3 tutorial + §8 gallery →
 pointers, test table marks screen tests ➡️ G27), `GROUP_27_SCREENS.md` (+ new §G27.16, additive, fenced),
-`Reports/GROUP_27_TESTING_GUIDE.md` (+ §G27.16 screen-test section). Build untouched.
+`Reports/TESTING_GUIDE_27.md` (+ §G27.16 screen-test section). Build untouched.
 
 **Next:** owner picks build order. Suggested slice 1 = screen-free onboarding (book → samples → hints → tips) +
 achievement engine; the 2 screens build later under Group 27. New `OpenGuiPayload` kinds needed: `TUTORIAL`,
@@ -4789,7 +5254,7 @@ if the owner wants gold.
 
 Build green (compile + verifyFileSize/Mojibake/Sound). **NOT done** until the owner triggers a clash in-game and
 confirms the screen + all four actions + `/cb undo`. Redo of Override / Rename Mine compound batches is
-best-effort (noted in the testing guide). Next: owner runs §2 of `GROUP_20_TESTING_GUIDE.md`.
+best-effort (noted in the testing guide). Next: owner runs §2 of `TESTING_GUIDE_20.md`.
 
 <a id="e11"></a>
 ## 2026-06-22 (Group 27 §G27.6.P — Slice A unit 2: P12 tabs + P13 fields + P11 action bar) — 🟡 BUILD-GREEN + deployed, awaiting owner test (test WITH unit 1)
@@ -4835,7 +5300,7 @@ ConfigApply, StepperMenu, SubChestMenu, BookSfx, FieldIcon) unchanged. Old page/
 Spec D12 + testing-guide §1 updated to the tab layout.
 
 **Verified:** `gradlew build` green (compile + verifyFileSize/Mojibake/Sound). **NOT done** — owner
-re-runs Core test §1 (now tab-based) in `Reports/GROUP_21_TESTING_GUIDE.md`. **Next:** owner test ->
+re-runs Core test §1 (now tab-based) in `Reports/TESTING_GUIDE_21.md`. **Next:** owner test ->
 then phase 5.
 
 <a id="e13"></a>
@@ -4871,7 +5336,7 @@ old-key migration (D5 / G21.15) still deferred — the GUI never needs config.js
 names are cosmetic; do it in ph.7 cleanup along with deleting the dead `ConfigMenu.java`.
 
 **Verified:** `gradlew build` green (compile + verifyFileSize/Mojibake/Sound). **NOT done** — owner
-must run the **Core test** in `Reports/GROUP_21_TESTING_GUIDE.md` §1 in-game (D11 test point). **Next
+must run the **Core test** in `Reports/TESTING_GUIDE_21.md` §1 in-game (D11 test point). **Next
 after confirm:** phase 5 (✦ shift-reset, find, filter, quick-toggle apply, live tooltips, reset-all),
 phase 6 (presets), phase 7 (Coming-Soon polish + key migration + cleanup + final build).
 
@@ -4894,7 +5359,7 @@ build phases 1–4 → owner core test → phases 5–7 → final test.
 **Docs written:**
 - `docs/Finale Fix/GROUP_21_CONFIG_GUI.md` — full design rewrite (decisions, shape, settings registry,
   field inventory, polish/power/helpers, 7-phase build order, reuse map, acceptance tests G21.1–G21.15).
-- `docs/Finale Fix/Reports/GROUP_21_TESTING_GUIDE.md` — created (template v4; all ⏳ not built; Core test
+- `docs/Finale Fix/Reports/TESTING_GUIDE_21.md` — created (template v4; all ⏳ not built; Core test
   laid out for the owner after phases 1–4).
 
 **Phase 1 (foundation) — DONE, build-green:** new package `com.customblocks.config`.
@@ -4967,7 +5432,7 @@ Owner tested the 2026-06-22 Group-14 jar in-game: **command rename `/cb animatio
 other 5 studio fixes (re-skin undo, new-GIF-keeps-settings, GIF-hide-bg-picker, preview cross-fade,
 source-link-visible) did **not** pass → owner declared the studio screen "kinda unprofessional" and asked to
 **defer them as a screen-polish pass + brainstorm more.** Ran a 3-round UI question interview. Decisions locked
-into **`GROUP_27_SCREENS.md §G27.6.P`** + tests into **`GROUP_27_TESTING_GUIDE.md` (§ Studio Polish Pass)**;
+into **`GROUP_27_SCREENS.md §G27.6.P`** + tests into **`TESTING_GUIDE_27.md` (§ Studio Polish Pass)**;
 G14 testing guide status updated to point here. **Nothing built yet — decisions only.**
 
 Locked: **P1** neon-red+black theme `#FF1744` (⚠️ conflicts with the gold standard — scope studio-only vs
@@ -5055,7 +5520,7 @@ the spinning preview from the current frame into the next by how far through the
 
 **Verified:** `.\gradlew.bat build` → **BUILD SUCCESSFUL**; `verifyFileSize`/`verifyMojibake`/`verifySound`
 all pass. **Build-green only — NOT done** (Golden Rule: needs owner in-game confirm). Tests itemised in
-`Reports/GROUP_14_TESTING_GUIDE.md` §"Bucket 1 polish".
+`Reports/TESTING_GUIDE_14.md` §"Bucket 1 polish".
 
 **Honesty flags:** slices 1–3 are logic/state (high confidence). Slice 4's cross-fade is **GL render** — it
 compiles and the maths is straightforward, but the actual on-screen blend needs the owner's eyes. The in-world
@@ -5068,7 +5533,7 @@ cap). High-risk blind GL; build green, flag clearly as "compiles only — your e
 ## 2026-06-21 (Group 14 · Step 2 — real-clock ms timing + retexture undo) — ✅ OWNER-CONFIRMED in-game ("works better than before")
 
 **Update 2026-06-21:** owner tested → "it now works better than before." Step 2 (speed) + Step 2b (retexture
-undo) marked ✅ PASSED in `GROUP_14_TESTING_GUIDE.md` §7. Caveat: Esc-pause-freeze (S2-3) + long `wardenn`
+undo) marked ✅ PASSED in `TESTING_GUIDE_14.md` §7. Caveat: Esc-pause-freeze (S2-3) + long `wardenn`
 clip (S2-4) weren't itemized in the report — flagged to re-confirm if either misbehaves. **Next = Step 3
 (quality pass): mipmaps ON (kills distance speckle), per-frame = block texturesize sharpness, texture POOL +
 current-frame-only upload (bounded VRAM), raise the 256-frame cap, far-block LOD, off-screen pause. Not built.**
@@ -5149,7 +5614,7 @@ GUI; (2) **`&l` bold** (and other format codes) didn't stick on the lore.
 exception from the lore code.)
 
 **Result:** G18 Rounds 1–6 ✅ passed; Round 7 (Share/Import) 🟡 partial — deferred until `vaultEndpoint` is set
-(lands with G20 Slice 1). `CHANGELOG.md` + `GROUP_18_TESTING_GUIDE.md` status updated to match.
+(lands with G20 Slice 1). `CHANGELOG.md` + `TESTING_GUIDE_18.md` status updated to match.
 
 **Next:** G18 closed bar Round 7. Queued build = G20 Slice 1 (vault block core — also unblocks G18 R7). Other
 open work: G14 **Step 3** (animation quality pass — not built), G19 Holograms / Phase-17 (need interviews).
@@ -5175,7 +5640,7 @@ Owner: "you can start now the fixing." Built **Step 1 only** (the retexture spot
 **Verified:** `.\gradlew.bat build` → **BUILD SUCCESSFUL in 51s**; gates `verifyFileSize` / `verifyMojibake` /
 `verifySound` all pass. **Build-green only — NOT done** (Golden Rule: needs owner in-game confirm).
 
-**Test (🎯 now):** `GROUP_14_TESTING_GUIDE.md` §7 Step 1 — **S1-1..S1-4** (retexture animated→new gif, animated→
+**Test (🎯 now):** `TESTING_GUIDE_14.md` §7 Step 1 — **S1-1..S1-4** (retexture animated→new gif, animated→
 static, static→gif, placed-copy reload). If any still scrambles → escalate to the fail-safe guard (§7.4 D-ii).
 
 **Next:** owner runs S1-1..S1-4 → confirms or reports. On confirm → Step 2 (real-clock timing). No Step 2 code
@@ -5211,9 +5676,9 @@ Read live code first (CreationCommands, StudioReskin, AnimCommands, VideoCommand
   paint, layered compositing+text, live web-feed, presets). Deprioritized: per-viewer targeted content.
   Honest overlaps noted (walls/live-data/redstone = G14 §7 Ph8–10; holograms = G19; cloud share = G20).
 
-**Docs touched:** `GROUP_14_ANIMATION_VIDEO.md` (banners + §7.4 grounding), `Reports/GROUP_14_TESTING_GUIDE.md`
+**Docs touched:** `GROUP_14_ANIMATION_VIDEO.md` (banners + §7.4 grounding), `Reports/TESTING_GUIDE_14.md`
 (banners + §6 header), deleted `Reports/GROUP_14_ATLAS_REVERT_HANDOFF.md`, `GROUP_27_SCREENS.md` (new §G27.15),
-`Reports/GROUP_27_TESTING_GUIDE.md` (Not-built entry).
+`Reports/TESTING_GUIDE_27.md` (Not-built entry).
 
 **Next:** owner OK → build **G14 Step 1 (retexture spot-fix)** only, build green, hand back for in-game test.
 The `/cb animation` hub (G27 §G27.15) stays a design dump until its own slice is locked. No code until then.
@@ -5266,7 +5731,7 @@ conflict+undo/redo · S3 backup sync · S4 signing+identity · S5 Discord events
 **Docs:** rewrote `GROUP_20_EXTERNAL_INTEGRATIONS.md` (full §🔒 D1–D14, 32-feature phased roadmap, security
 hard-truth + 4 layers, control plane, shipped Discord defaults table, config fields, 6-slice plan, parked list,
 **wave-3 brainstorm parked** = monetization/anti-grief/accessibility/performance). New
-`Reports/GROUP_20_TESTING_GUIDE.md` (6 slices ⏳ not-built, 27 planned tests, S4 flagged worker-dependent).
+`Reports/TESTING_GUIDE_20.md` (6 slices ⏳ not-built, 27 planned tests, S4 flagged worker-dependent).
 SWEEP_INDEX D-tracker G20 row → design locked.
 
 **Next:** owner OK → build **Slice 1 (vault block core)** only, hand back for in-game test. **No code until then.**
@@ -5311,7 +5776,7 @@ multi-block/vanilla/animated/placer · S4 presets+cap · S5 management · S6 bul
 S8 offhand projection.
 
 **Docs:** rewrote `GROUP_19_DISPLAY.md` (full locked spec, slice plan, parked list; **fixed stale G20.x
-numbering → G19.x**, the doc was titled G19 but used g20a/G20.1–9). New `Reports/GROUP_19_TESTING_GUIDE.md`
+numbering → G19.x**, the doc was titled G19 but used g20a/G20.1–9). New `Reports/TESTING_GUIDE_19.md`
 (template format, all 8 slices ⏳ not-built, 30 planned tests). SWEEP_INDEX D-tracker G19 row → design locked.
 
 **Next:** owner OK → build **Slice 1 (core)** only, hand back for in-game test. No code until then.
@@ -5389,7 +5854,7 @@ guide rewritten plain-language (rounds 1–4, copy-paste, "click X → see Y"). 
 `SlotBlock`, `ClientSlotCache`, `HudSync`, `CustomBlocksClient`, `NotesMenu`, `NoteCommands`,
 `BlockNotesManager`, `CloudVaultClient`, `LoreBook`. **NOT in-game tested.**
 
-**Next (owner — one test round, `Reports/GROUP_18_TESTING_GUIDE.md`):** §1 S1 (book GUI, lore, legacy,
+**Next (owner — one test round, `Reports/TESTING_GUIDE_18.md`):** §1 S1 (book GUI, lore, legacy,
 clear, migration, OP gate, restart) · §2 S2 (to-do add/toggle/delete) · §3 S3 (set+enable tooltip →
 `/cb give` → hover shows the line; disable hides it) · §4 S4 (Share posts a code; `/cb note import`;
 overwrite confirm). **S4 Share/import need a live vault worker** (`vaultEndpoint` in config) to test
@@ -5434,7 +5899,7 @@ G17 entirely (they're G25's feature; never built in G17).
 - Export structure alignment → **Issue 17.15**, own session.
 
 **Docs:** `GROUP_17_REGRESSIONS.md` — favorites/recent rows + tests G17.6–G17.8/G17.12 removed,
-verdict now 4 ✅ (G17.1–5, 9, 10, 11) and green. `Reports/GROUP_17_TESTING_GUIDE.md` — verdict green,
+verdict now 4 ✅ (G17.1–5, 9, 10, 11) and green. `Reports/TESTING_GUIDE_17.md` — verdict green,
 scorecards 4/4 + 3/3, §5 marked moved. `GROUP_25_*` — favorites/recent notes updated (moved, not yet
 built in code). No code change this session.
 
@@ -5463,7 +5928,7 @@ slices 2 + 3; one clean green build covering all three.
   looking at isn't a custom block.` `/cb delete <id>` unchanged. `CreationCommands` now 366 lines.
 - **Wiring:** `CommandRegistrar` registers `DeleteCommands` (after `CreationCommands`) and
   `GiveCommands` (after `UtilityCommands`).
-- **Docs:** `GROUP_17_REGRESSIONS.md` slice table + status, `Reports/GROUP_17_TESTING_GUIDE.md`
+- **Docs:** `GROUP_17_REGRESSIONS.md` slice table + status, `Reports/TESTING_GUIDE_17.md`
   (slice 2 §3 give, slice 3 §4 delete #, slice 1 marked confirmed).
 
 **Build:** `BUILD SUCCESSFUL` (clean build) — verifyFileSize / verifyMojibake / verifySound pass.
@@ -5519,7 +5984,7 @@ Decision: **keep** the 6-row board as-is, just **centre the tiles** so it doesn'
   footer (Back/Close) row 5 unchanged. Now a balanced block: blank row 1 above, footer below.
   Horizontal centring was already fine (cols 1-7, col 0/8 empty) — untouched. (Master can't drop to
   row 3 — sub-tiles would land in the footer row.) One-line change (the `MASTER` array).
-- **Docs** — `GROUP_16_DIAGNOSTICS.md` §Slice 5 board (layout note), `GROUP_16_TESTING_GUIDE.md`
+- **Docs** — `GROUP_16_DIAGNOSTICS.md` §Slice 5 board (layout note), `TESTING_GUIDE_16.md`
   §5 R2 (new check ①ᵇ centred tiles), `CHANGELOG.md`.
 
 **Build:** `BUILD SUCCESSFUL` (exit 0) — verifyFileSize / verifyMojibake / verifySound pass. **NOT in-game tested.**
@@ -5772,7 +6237,7 @@ broke). Reused `HistoryMenu.placeEntry` (extracted) for the mutation row so it r
 pass. Jar at `build/libs/customblocks-1.0.0.jar`. **NOT in-game tested** (build-green = compiles +
 gates only).
 
-**Next (owner test):** `docs/Finale Fix/Reports/GROUP_16_TESTING_GUIDE.md` §1 — make a block, force a
+**Next (owner test):** `docs/Finale Fix/Reports/TESTING_GUIDE_16.md` §1 — make a block, force a
 bad-URL retexture, `/cb diag` → 6-row chest opens; health hovers live + colour-coded; a red wool for
 the failed download (hover = time/you/action/error); click it → opens that block's editor; Row 5 shows
 recent mutations; Clear Incidents wipes rows 2–4 only; Refresh re-reads health. After confirm → slice 2
@@ -5800,7 +6265,7 @@ delete the off-atlas renderer; render all custom blocks via the vanilla atlas + 
 
 **Wrote:** `docs/adr/ADR-012-revert-to-atlas-mcmeta-rendering.md`; `docs/Finale Fix/Reports/
 GROUP_14_ATLAS_REVERT_HANDOFF.md` (exact file-by-file delete/flip plan + build-green slices + test
-checklist); banners on `GROUP_14_ANIMATION_VIDEO.md` + `GROUP_14_TESTING_GUIDE.md` (§6 marked superseded).
+checklist); banners on `GROUP_14_ANIMATION_VIDEO.md` + `TESTING_GUIDE_14.md` (§6 marked superseded).
 
 **Next:** new chat executes the handoff (Slice 1 = pack flip → owner confirms the muffle is gone in-game).
 
@@ -6079,7 +6544,7 @@ server round-trip flash. Add only if a brief flash still shows after Part A.
 
 **Next:** dev loads the deployed jar on the server, holds a letter item, places a lone letter + builds a 5–6
 letter word fast → should appear with no per-letter hitch / slow fill. Report whether any transparent flash
-remains (→ would mean build Part B). Tests in GROUP_13_TESTING_GUIDE §LAG.
+remains (→ would mean build Part B). Tests in TESTING_GUIDE_13 §LAG.
 
 <a id="e49"></a>
 ## 2026-06-20 (Group 06) — INSTANT colour-Square swaps via client prediction (build-green, awaiting in-game)
@@ -6149,7 +6614,7 @@ remapJar OK. Jar (8,238,749 B) deployed to `%APPDATA%\.minecraft\mods\` + `OneDr
 (customblocks-1.0.0.jar). **NOT in-game tested.**
 
 **Next:** owner replaces the jar with MC **closed**, then `/cb edithud` → run the 5 §G27.14 tests in
-`GROUP_27_TESTING_GUIDE.md` (pill default · shape+accent picker · old HUD loads w/ pill · template `{name} [{id}]`
+`TESTING_GUIDE_27.md` (pill default · shape+accent picker · old HUD loads w/ pill · template `{name} [{id}]`
 tracks the aimed block · token chips insert). Report pass/fail (a screenshot helps).
 
 <a id="e51"></a>
@@ -6315,7 +6780,7 @@ the block, so no persistence/sync. Static blocks are unaffected; the renderer (S
 remapJar OK. Jar deployed to `%APPDATA%\.minecraft\mods\` and `OneDrive\Desktop\MODS\mods\` (customblocks-1.0.0.jar).
 **NOT in-game tested.**
 
-**Next:** owner runs `GROUP_14_TESTING_GUIDE.md` §5 **Slice A** — place an animated block, break it, replace it,
+**Next:** owner runs `TESTING_GUIDE_14.md` §5 **Slice A** — place an animated block, break it, replace it,
 relog — confirm placement/breaking still behave normally (this proves the BlockEntity-on-every-block change is
 safe). **No muffle/crispness change expected yet** — that lands in Slice B (the AnimFrameCache + AnimSlotBER
 renderer + transparent placed model). If Slice A is clean in-game → build Slice B.
@@ -6351,7 +6816,7 @@ server creation code**. Legacy `aiApiKey`/`aiTextureEnabled` left in place (remo
 
 **Verified:** `gradlew build` green; verifyFileSize / verifyMojibake / verifySound pass; remapJar OK. Jar deployed
 to `%APPDATA%\.minecraft\mods\` and `Desktop\MODS\mods\` (customblocks-1.0.0.jar, ~10:39). **NOT in-game tested.**
-**Next:** owner runs `GROUP_15_TESTING_GUIDE.md` §1 (①–⑧) — needs internet on the server. `/cb ai glowing red crystal`.
+**Next:** owner runs `TESTING_GUIDE_15.md` §1 (①–⑧) — needs internet on the server. `/cb ai glowing red crystal`.
 
 <a id="e57"></a>
 ## 2026-06-20 (round 5) — Group 14: Phase 1b scrapped and redesigned from scratch; docs updated
@@ -6385,7 +6850,7 @@ size cap, or .mcmeta trick can escape Minecraft's block atlas mipmapping.
 **What stays unchanged:** atlas path for inventory/hand, `AnimationDecoder`, `AnimData`, all studio/command code.
 Placed animated block model becomes transparent — BER handles the placed visual.
 
-**Docs updated:** GROUP_14_ANIMATION_VIDEO.md (Phase 1b rewritten), GROUP_14_TESTING_GUIDE.md (new §5 added).
+**Docs updated:** GROUP_14_ANIMATION_VIDEO.md (Phase 1b rewritten), TESTING_GUIDE_14.md (new §5 added).
 **Build:** not started — owner confirms plan → delete screen_test cluster → build 3 files → in-game test.
 
 ---
@@ -6415,7 +6880,7 @@ Create = keep, Cancel = discard (nothing exists server-side until Create). Near-
 `aiApiKey`/`aiWorkerUrl`/`aiServerToken`/`aiTextureEnabled` config fields (touches the config GUI).
 
 **Docs:** rewrote `docs/Finale Fix/GROUP_15_AI_TEXTURES.md` (spec, status-free) to the studio-tab design;
-created `docs/Finale Fix/Reports/GROUP_15_TESTING_GUIDE.md` (template v4, 8 tests, 🔴 not-built banner).
+created `docs/Finale Fix/Reports/TESTING_GUIDE_15.md` (template v4, 8 tests, 🔴 not-built banner).
 
 **Verified:** nothing — no code written. **Next:** owner go-ahead → build the 5-step slice (AiCommands
 `/cb ai`, AI Section before Category, live-debounce generation via repurposed `AiTextureGenerator` URL
@@ -6627,7 +7092,7 @@ muffle bug itself (atlas overflow → mipmaps off for every block).
 not in-game shots.
 
 **Docs updated:** `docs/adr/ADR-008-hybrid-atlas-plus-own-texture-render.md` (new), `GROUP_14_ANIMATION_VIDEO.md`
-(header + §3 + §4 phase table + §5 reality check), `Reports/GROUP_14_TESTING_GUIDE.md` (screen_test reconciled,
+(header + §3 + §4 phase table + §5 reality check), `Reports/TESTING_GUIDE_14.md` (screen_test reconciled,
 new locked phases listed as not-built).
 
 **Next (build order, after owner OK):** Phase 1a decoder invert (small, immediate) → Phase 2 animated-only list
@@ -6730,7 +7195,7 @@ picker hit-testing out of `BlockCreationStudioScreen` (was 498/500) into a new `
 jar `build/libs/customblocks-1.0.0.jar` (8.2 MB) copied to `.minecraft\mods`. **Nothing confirmed
 in-game** — not DONE until the dev runs it.
 
-**Next:** dev tests `Reports/GROUP_14_TESTING_GUIDE.md` §1 (restart Minecraft to load the jar). On
+**Next:** dev tests `Reports/TESTING_GUIDE_14.md` §1 (restart Minecraft to load the jar). On
 confirmation → Phase 3 (timeline editor).
 
 ---
@@ -6783,7 +7248,7 @@ one tile → one layer, unaffected.) Rebuilt jar green.
 `CustomBlocksMod.java`, `block/ArabicLetterBlock.java` (R3.5); `block/ArabicLetterBlockEntity.java`,
 `block/ArabicJoinFlow.java`, `client/render/ArabicLetterBlockEntityRenderer.java` (R3.1 + R3.6);
 **deleted** `block/ArabicDirectionTool.java`.
-**Files (docs):** `Reports/GROUP_13_TESTING_GUIDE.md` (§R3 → all 6 test-now; verdict + at-a-glance),
+**Files (docs):** `Reports/TESTING_GUIDE_13.md` (§R3 → all 6 test-now; verdict + at-a-glance),
 `CHANGELOG.md`, this log.
 
 **Verified:** build green (compiles + 3 gates pass) and jar built — **nothing in-game yet.** Golden Rule:
@@ -6833,7 +7298,7 @@ low-risk ones in code, designed the 3 bigger ones with the dev. **No jar built y
 
 **Files (code):** `command/handlers/ArabicCommands.java`, `block/ArabicLetterBlock.java`,
 `arabic/ArabicMaker.java`, `gui/chest/WordChoiceMenu.java`.
-**Files (docs):** `GROUP_13_ARABIC.md` (Round 3 design), `Reports/GROUP_13_TESTING_GUIDE.md` (§R3 + at-a-glance),
+**Files (docs):** `GROUP_13_ARABIC.md` (Round 3 design), `Reports/TESTING_GUIDE_13.md` (§R3 + at-a-glance),
 `CHANGELOG.md`.
 
 **Verified:** nothing in-game yet — code edits only, jar not built. Golden Rule: not DONE until the dev confirms in-game.
@@ -6961,7 +7426,7 @@ into the group doc + testing guide only. Both extend `BlockCreationStudioScreen`
 
 **NOT done** — a plan, not code. Each slice needs in-game confirmation as it's built (Golden Rule).
 Full spec: `docs/Finale Fix/GROUP_27_SCREENS.md §G27.9 + §G27.10`; tests stub'd ⏳ in
-`docs/Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md`.
+`docs/Finale Fix/Reports/TESTING_GUIDE_27.md`.
 
 ---
 
@@ -7065,7 +7530,7 @@ overwhelming"). Build GREEN (all 3 gates), jar in `.minecraft\mods`. **NOT done*
 - **Persistence:** `AnimData.sharp` (default false); `SlotDataStore` writes it only when true, reads
   default false — old slots unaffected.
 - Files: `core/AnimData`, `core/SlotDataStore`, `image/AnimationDecoder`, `command/handlers/AnimCommands`.
-  Test: `docs/Finale Fix/Reports/GROUP_14_TESTING_GUIDE.md` §1.
+  Test: `docs/Finale Fix/Reports/TESTING_GUIDE_14.md` §1.
 
 ---
 
@@ -7217,7 +7682,7 @@ CustomBlocksClient (receiver + disconnect reset), CommandRegistrar (wire handler
 
 **Build:** `gradlew build --no-daemon` GREEN — verifyFileSize / verifyMojibake / verifySound pass; jar
 remapped → `build/libs/customblocks-1.0.0.jar`, copied to `.minecraft\mods\`. **NOT done** until the dev
-confirms in-game (see GROUP_13_TESTING_GUIDE §6).
+confirms in-game (see TESTING_GUIDE_13 §6).
 
 **Deferred from Step 2 (told the dev, small follow-ups):** the Config-**GUI** tile for the 3 labels (the
 command path fully works + proves the live-update mechanism); accepting a virtual id as give/search input
@@ -7591,7 +8056,7 @@ G27.1 / G27.2 / G27.3 / G27.4 / G27.5 must all be confirmed in-game first. The G
 after all confirmed → begin G27.6.
 
 **Verified:** nothing (design-only session). **Changed:** `GROUP_27_SCREENS.md` (§G27.6.X added),
-`GROUP_27_TESTING_GUIDE.md` (§6 rewritten for extended design).
+`TESTING_GUIDE_27.md` (§6 rewritten for extended design).
 
 ---
 
@@ -7811,7 +8276,7 @@ buildable screens, fixed the guide. **Green = compiles + gates pass — NOT done
   new create pipeline). Spec requires G27.1–G27.5 confirmed in-game first; deferred to its own session.
   No-arg `/cb create` is still unregistered (existing `/cb create <id> …` CLI untouched).
 
-**Testing guide fixed** (`GROUP_27_TESTING_GUIDE.md`): at-a-glance statuses corrected
+**Testing guide fixed** (`TESTING_GUIDE_27.md`): at-a-glance statuses corrected
 (🎯 §1–§4, 🟡 §5, ⏳ §6) + open-with commands; **`/cb recolor` → `/cb livecolor <id>`**; `/cb eyedrop`
 entry; §5 rewritten for the named-shape picker; §6 banner = NOT built (no-arg `/cb create` unregistered);
 "rebuild the jar first" note added; §1 Copy/undo claims corrected to match the build (undo in-session).
@@ -7882,7 +8347,7 @@ slot (id, name, cat, glow, hard, sound, shape, pass); codec unchanged (still the
 
 **Bug found (fix in rebuild):** `HudSync` joins id+name with a space but `ClientSlotCache` splits on the first space → names with spaces split wrong, one-word names dropped. Rebuild switches to structured per-slot JSON. `HudConfig` rewritten (flat fields → brick list) with auto-migration of old saved files to id+name bricks.
 
-**Spec:** `docs/Finale Fix/GROUP_27_SCREENS.md §G27.4`. **Tests:** `docs/Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md §4`. Build order: data model → renderer → editor UI → snap → colour picker → sync bricks → presets. One in-game test at the end (dev's call).
+**Spec:** `docs/Finale Fix/GROUP_27_SCREENS.md §G27.4`. **Tests:** `docs/Finale Fix/Reports/TESTING_GUIDE_27.md §4`. Build order: data model → renderer → editor UI → snap → colour picker → sync bricks → presets. One in-game test at the end (dev's call).
 
 ---
 
@@ -7897,7 +8362,7 @@ Full unified design language established for all CB `Screen` subclasses + Block 
 
 **G27.6 Block Creation Studio:** `/cb create` (no args) opens `BlockCreationStudioScreen`. Sidebar panel stack with breadcrumb navigation. Panels: Identity (ID + name validation), Texture (URL/Color/AI/Eyedrop tabs), Shape (presets + inline AABB editor), Attributes (sliders), Organize (category/favorite/draft/notes/blueprint). Center = 3D live preview always visible. Nothing leaves the screen. Session memory persists. Action bar: `[§aDraft] [§aCreate & Publish]`.
 
-Template: `client/gui/CbScreenTemplate.java`. Spec: `docs/Finale Fix/GROUP_27_SCREENS.md`. Tests: `docs/Finale Fix/Reports/GROUP_27_TESTING_GUIDE.md` (§1–§6).
+Template: `client/gui/CbScreenTemplate.java`. Spec: `docs/Finale Fix/GROUP_27_SCREENS.md`. Tests: `docs/Finale Fix/Reports/TESTING_GUIDE_27.md` (§1–§6).
 
 ---
 
@@ -8070,7 +8535,7 @@ an import/refresh tile. Thin + low-risk by design.
 - All in `ArabicCommands` (now ~270 lines, under 400). Old `word <text> <id> <name>` command removed.
 
 **Verify:** developer is testing Pass 3 + Pass 5 in-game now. Steps in the new v3 guide
-`docs/Finale Fix/Reports/GROUP_13_TESTING_GUIDE.md` (Pass 3 + 5 = TEST NOW; Pass 1+2 = passed).
+`docs/Finale Fix/Reports/TESTING_GUIDE_13.md` (Pass 3 + 5 = TEST NOW; Pass 1+2 = passed).
 
 **➡️ NEXT SESSION — Pass 4 (auto-join), the last Arabic piece.** Per ADR-003: `SlotBlock.FORM`
 IntProperty 0-3 (16→64 states for ALL blocks), `ServerPackGenerator` letter-only 4-variant branch,
@@ -8128,7 +8593,7 @@ Testing guide updated (Part C is now the 🎯 TEST NOW section). **Nothing DONE 
 ## 2026-06-15 (Group 26) — FIX A + FIX B — ✅ CONFIRMED IN-GAME (Part C next)
 
 Developer ran both in-game and confirmed: **"both pass."** FIX A + FIX B are ✅ DONE. Testing guide
-written (`docs/Finale Fix/Reports/GROUP_26_TESTING_GUIDE.md`, v3 template) and the group spec doc
+written (`docs/Finale Fix/Reports/TESTING_GUIDE_26.md`, v3 template) and the group spec doc
 reformatted to match the other groups. CHANGELOG updated (both under Fixed, confirmed 2026-06-15).
 Part C (named-texture mirror) is the only remaining piece — not built.
 
@@ -8291,7 +8756,7 @@ client reload, and skip the self-push for modded clients. Keep HTTP push for van
 **Still correct from the earlier entry (built + deployed, just not sufficient alone):** the server
 `AWAITING_FIRST_PACK` join-queue + send logs, and the client mixin that recognises our pack by name.
 
-**Docs corrected to match:** `Reports/GROUP_05_TESTING_GUIDE.md` §3 (now BLOCKED, root cause), §1
+**Docs corrected to match:** `Reports/TESTING_GUIDE_05.md` §3 (now BLOCKED, root cause), §1
 flagged for recheck; `GROUP_05_RESOURCE_PACK.md` status block; `CHANGELOG.md` (false "Fixed" line
 removed); `Finale Fix/PROGRESS_LOG.md`.
 
@@ -8328,7 +8793,7 @@ arrives.
 **Decision:** our pack is now **always silent** — `silentPack` no longer gates its prompt. Retires
 the "toggle off restores the dialog" test (G05.4 + the §1 toggle row).
 
-**Docs updated:** `Reports/GROUP_05_TESTING_GUIDE.md` §3 rewritten to the always-silent-on-join test;
+**Docs updated:** `Reports/TESTING_GUIDE_05.md` §3 rewritten to the always-silent-on-join test;
 `GROUP_05_RESOURCE_PACK.md` 2026-06-15 update + G05.4 retired; `CHANGELOG.md`.
 
 **Next:** developer reloads the world once and reports — textures present + silent? Send the new log
@@ -8348,7 +8813,7 @@ server delivered. If textures still don't show after a `Sent resource pack` line
 ## 2026-06-14 (later 16) — Round-2 results: items 2–4 PASS ✅ in-game; resource-pack join bug re-fixed (correct root cause) + moved to Group 05
 
 Developer tested round 2. **Items 2 (anvil inputs), 3 (unified `/cb category`), 4 (Export Bulk Choose +
-standard formats) all confirmed working in-game ✅** — marked in GROUP_11_TESTING_GUIDE (§R2–§R4 passed).
+standard formats) all confirmed working in-game ✅** — marked in TESTING_GUIDE_11 (§R2–§R4 passed).
 
 **Resource-pack join prompt — first fix was WRONG; re-fixed.**
 - The "later 15" per-player send dedupe did NOT fix the double prompt, and surfaced a worse bug:
@@ -8362,7 +8827,7 @@ standard formats) all confirmed working in-game ✅** — marked in GROUP_11_TES
   every world load. Each load rebuilds + sends exactly once; the per-player dedupe (kept) now collapses
   the JOIN-send vs. post-rebuild `sendToAll` race within a session. Edits change the hash → new id → send.
 - This is a **Group 05 (Silent Resource Pack)** concern, not Group 11. Test moved to
-  GROUP_05_TESTING_GUIDE §3. Build green, gates pass, jar deployed. **NOT yet in-game confirmed.**
+  TESTING_GUIDE_05 §3. Build green, gates pass, jar deployed. **NOT yet in-game confirmed.**
 
 **Next:** developer tests GROUP_05 §3 (one prompt on join · edits apply without rejoin · stable across
 reloads). If still wrong, send the join-window log lines (HTTP server live / Rebuilding / joined) + times.
@@ -8619,7 +9084,7 @@ and display-blocks are the later slices.)
 ## 2026-06-14 (later 10) — Group 10 marked PASSED in-game + client-screen cancel→back fix (build green)
 
 **Developer confirmed the whole of Group 10 + the Coloring redesign works in-game.** Marked all scorecards
-✅ in `GROUP_10_TESTING_GUIDE.md` and the verdict table in `GROUP_10_COLOR_IMAGE.md` (G10.3–G10.8 ✅;
+✅ in `TESTING_GUIDE_10.md` and the verdict table in `GROUP_10_COLOR_IMAGE.md` (G10.3–G10.8 ✅;
 G10.1/G10.2 dress = removed). resize/exportpng were already ✅.
 
 **Done — cancel/Esc returns to the previous menu (build green; gates pass — NOT in-game tested):**
@@ -8671,7 +9136,7 @@ all three gates pass (fileSize, mojibake, sound).** Jar in `build/libs/` only.
 GuiRouter, BgStudioSession, PaletteMenu, GradientPickerMenu, CustomColorMenu, MainMenu}`,
 `command/handlers/ColorImageCommands`, `core/SlotManager`.
 
-**TEST IN-GAME (developer):** see `Reports/GROUP_10_TESTING_GUIDE.md` (updated). Key flows: `/cb coloring`
+**TEST IN-GAME (developer):** see `Reports/TESTING_GUIDE_10.md` (updated). Key flows: `/cb coloring`
 hub, `/cb bgstudio` (no id) picker, `/cb tolerance 40` vs `/cb tolerance 40 <id>`, palette swatches showing up
 in bgstudio fill + gradient + custom colour, gradient GUI from `/cb gradient`.
 
@@ -8727,14 +9192,14 @@ gates pass (fileSize, mojibake, sound).** Jar in `build/libs/` only — **NOT in
   functionality (solid-colour overlay) was deemed "overkill and unnecessary" by the developer; Colour Variants
   + live recolour cover the same ground.
 - **`ColorsMenu` expanded** to 4 rows to fit the new Gradient Builder tile.
-- **Testing guide rewritten** — `GROUP_10_TESTING_GUIDE.md` §2 overhauled (dress → gradient GUI), §3 gains
+- **Testing guide rewritten** — `TESTING_GUIDE_10.md` §2 overhauled (dress → gradient GUI), §3 gains
   fill-colour tests (③-④), §5 rewritten for anvil flow + layout changes.
 
 **Files:** new — `gui/chest/{GradientPickerMenu,GradientSession}`. Rewritten — `gui/chest/{BgStudioMenu,
 PaletteMenu,ColorsMenu}`, `command/handlers/ColorImageCommands`. Edited — `gui/chest/{BgStudioSession,Nav,
-GuiRouter}`, `core/ColorToolService`, `image/BackgroundRemover`. Docs — `GROUP_10_TESTING_GUIDE.md`.
+GuiRouter}`, `core/ColorToolService`, `image/BackgroundRemover`. Docs — `TESTING_GUIDE_10.md`.
 
-**TEST IN-GAME (developer):** `Reports/GROUP_10_TESTING_GUIDE.md` — all sections. Key new tests:
+**TEST IN-GAME (developer):** `Reports/TESTING_GUIDE_10.md` — all sections. Key new tests:
 §2 ③-⑦ (gradient GUI + dress gone), §3 ③-④ (fill colour), §5 ①-⑥ (palette anvil + layout).
 
 ---
@@ -8780,7 +9245,7 @@ BgStudioSession,ColorVariantsMenu,ColorsMenu,PaletteMenu}`, `client/gui/{Recolor
 `command/handlers/ColorImageCommands`, `command/CommandRegistrar`, `network/ResourcePackServer`,
 `gui/GuiMode`, `gui/chest/{Nav,GuiRouter,EditorMenu}`, `client/CustomBlocksClient`, `CustomBlocksMod`.
 
-**TEST IN-GAME (developer):** `Reports/GROUP_10_TESTING_GUIDE.md` §3–§6 (plus re-confirm §2 dress/gradient if
+**TEST IN-GAME (developer):** `Reports/TESTING_GUIDE_10.md` §3–§6 (plus re-confirm §2 dress/gradient if
 not already). §6 needs the mod on your client (it does).
 
 **Note on §6 (client screens):** live recolour + eyedrop compile but are the least gate-coverable parts (no
@@ -8823,7 +9288,7 @@ developer-chosen.
 so redo-ing an undone gradient brings the blocks back textureless. Same as every other create; undo (the
 common path) is perfect. Not expanded this slice.
 
-**TEST IN-GAME (developer):** `Reports/GROUP_10_TESTING_GUIDE.md` §2 — `/cb dress` (G10.1/G10.2),
+**TEST IN-GAME (developer):** `Reports/TESTING_GUIDE_10.md` §2 — `/cb dress` (G10.1/G10.2),
 `/cb gradient` (G10.3), undo of each, and the bad-input refusals.
 
 ---
@@ -8855,7 +9320,7 @@ engine, GUI, AI, or live-preview needed). The heavier Group 10 features come in 
 - **Slice 4:** `/cb palette` (per-player) + exportpng HTTP `[download]` link.
 - **Later/hard:** AI background removal, live recolor slider, screen eyedrop (client-side — discuss first).
 
-**TEST IN-GAME (developer):** new `Reports/GROUP_10_TESTING_GUIDE.md` §1 — `/cb resize` (G10.6) and
+**TEST IN-GAME (developer):** new `Reports/TESTING_GUIDE_10.md` §1 — `/cb resize` (G10.6) and
 `/cb exportpng` (G10.5).
 
 ---
@@ -8882,7 +9347,7 @@ rebuild-from-source fix.
   duplicated.
 - New dests `BROKEN_CONFIRM`, `SAFETY`; router cases added.
 
-**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` §5 — the new bulk select / Fix-selected /
+**TEST IN-GAME (developer):** `TESTING_GUIDE_09.md` §5 — the new bulk select / Fix-selected /
 Delete-selected on `/cb showbrokenblocks`, and `/cb safety` opening the dashboard.
 
 **Slice 6 — DEFERRED by developer (2026-06-14).** Asked the two key questions before touching live
@@ -8923,7 +9388,7 @@ three gates pass.** Jar in `build/libs/` only.
 - Auto-fix only works when a source image was saved (normal for URL-created blocks). No-source blocks route
   to `/cb retexture`.
 
-**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` new **§5** — delete a texture file → `/cb
+**TEST IN-GAME (developer):** `TESTING_GUIDE_09.md` new **§5** — delete a texture file → `/cb
 showbrokenblocks` shows it → rebuild-from-source fix → `/cb safety` summary.
 
 **Next (after §5 passes):** Slice 6 — first-boot migration + move data to `config/customblocks/data/` (🔴
@@ -8969,7 +9434,7 @@ config polish items, then to push straight into the next slice. **Build green wi
 - Restoring when the id is taken / pool is full should fail cleanly with a chat message (not crash).
 - Bulk-deleting many blocks copies each to the trash — watch for any lag on a very large bulk delete.
 
-**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` — new **§4** (delete → `/cb deletedblocks` → restore
+**TEST IN-GAME (developer):** `TESTING_GUIDE_09.md` — new **§4** (delete → `/cb deletedblocks` → restore
 / pin / delete-forever), plus the config gate + auto-backup config tile. §2/§3 marked ✅.
 
 **Next (after §4 passes):** Slice 5 (`/cb showbrokenblocks` + `/cb safety`, 🟢 read-only), then Slice 6
@@ -9020,7 +9485,7 @@ tested.** Jar in `build/libs/` only — not copied to mods.
 - Creating a backup from the GUI reopens the list **after** the (async) save finishes, so the new backup
   appears without a manual refresh.
 
-**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` — updated §2 to `load`, new **§GUI** (open `/cb
+**TEST IN-GAME (developer):** `TESTING_GUIDE_09.md` — updated §2 to `load`, new **§GUI** (open `/cb
 backup`, create, tick + bulk-delete, right-click load) and **§3** (auto-backup fires + prunes).
 
 **Next (after these pass):** Slice 4 (`/cb deletedblocks` trash browser + pin).
@@ -9060,7 +9525,7 @@ pass. NOT in-game tested.** Jar at `build/libs/` only — not copied to mods.
 - `CustomBlocksConfig.load()` re-reads the restored config; a backup from a different maxSlots is an
   untested cross-version edge (same-version backups are fine).
 
-**TEST IN-GAME (developer):** `GROUP_09_TESTING_GUIDE.md` §2 (restore needs confirm · brings block back ·
+**TEST IN-GAME (developer):** `TESTING_GUIDE_09.md` §2 (restore needs confirm · brings block back ·
 safety copy auto-saved · cancel · recover · panic · delete · survives restart). **Test §1 too if not yet.**
 
 **Next (after §1+§2 pass):** Slice 3 (auto-backup timer + prune).
@@ -9073,7 +9538,7 @@ safety copy auto-saved · cancel · recover · panic · delete · survives resta
 Developer parked `shapepreview [id]` as **PARTIAL** (base works; textured `[id]` deferred — noted in
 `GROUP_08_SHAPES.md`) and moved to **Group 09 (Backup & Data Safety)** with a strong "be surgical" note.
 Group 09 is greenfield in -B and large/dangerous, so it's being built in **tested slices, safest first**
-(plan in `GROUP_09_TESTING_GUIDE.md`). Developer approved **starting with Slice 1 only**.
+(plan in `TESTING_GUIDE_09.md`). Developer approved **starting with Slice 1 only**.
 
 **Done — Slice 1 (build green; gates pass; NOT in-game tested):**
 - **`core/BackupManager.java`** (new) — point-in-time backups under `config/customblocks/backups/<name>/`:
@@ -9096,7 +9561,7 @@ first-boot migration + path move to `data/` (6, 🔴 highest risk).
 **Jar:** built to `build/libs/customblocks-1.0.0.jar` only — **not** copied to any mods folder
 (developer's instruction; build.gradle has no auto-deploy task anyway).
 
-**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_09_TESTING_GUIDE.md` §1 (G09.1–2: save named/
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/TESTING_GUIDE_09.md` §1 (G09.1–2: save named/
 auto, duplicate + bad-name refused, list). After it passes → Slice 2 (restore/panic) with extra care.
 
 ---
@@ -9204,7 +9669,7 @@ server owner is.
 Group 06 colour-variant "Triangle" — needs a design chat). New idea parked for discussion: a per-voxel
 **custom-shape sculpt tool** as an Omni-Tool mode (could grow into its own group) — see notes below / chat.
 
-**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_08_TESTING_GUIDE.md` (new) — shape commands
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/TESTING_GUIDE_08.md` (new) — shape commands
 (§1), shape editor GUI (§2), face commands/aliases (§3), face editor GUI (§4), shape preview (§5).
 
 **Next (after the above pass):** `bulkshape`; then discuss the triangle features.
@@ -9254,7 +9719,7 @@ proven reid/export rhythm: **command first → in-game test → then the GUI**. 
 - No-arg `/cb bulkreid` prints usage **this round** (the GUI doesn't exist yet); it will open the
   builder once the reid op is added to `BulkActionMenu`.
 
-**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` → new **§A2**
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/TESTING_GUIDE_07.md` → new **§A2**
 (pattern re-id · undo the batch · collision skipped · big-batch confirm · guards).
 
 **Next (after §A2 passes):** add the **reid** op to the Step1→Step2 GUI (thin front-end over this
@@ -9319,7 +9784,7 @@ export flow into a shared selector + one per-op action screen, and routed every 
   `BulkFilterMenu` (and their `BULK_PROPERTY`/`BULK_FILTER` routes). Safe to remove once the new flow
   passes in-game — flagged as a follow-up.
 
-**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` → new **§A1**
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/TESTING_GUIDE_07.md` → new **§A1**
 (every op through Step1→Step2: edit · delete · rename · category · duplicate · lock · favorite — export
 already ✅). Confirm each op's Step 2 controls work and Apply changes only the selected blocks.
 
@@ -9355,7 +9820,7 @@ NOT in-game tested — that's the handoff.**
   The old export branch in `BulkPropertyMenu` is left intact (just no longer the front door). All
   files under the §9.3 gates.
 
-**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` → new **§A0**
+**TEST IN-GAME (developer):** `docs/Finale Fix/Reports/TESTING_GUIDE_07.md` → new **§A0**
 (`/cb bulkexport` → Step 1 selection → Step 2 review/format/export, all 7 formats, green-concrete pick).
 
 **Next (after §A0 passes):** replicate the Step 1 → Step 2 flow to the other bulk ops, one at a time.
@@ -9414,7 +9879,7 @@ Developer asked for "advanced bulk + advanced search, one by one." Built the fir
 (previously left-click opened the editor). Documented in the Group 07 listgui test note.
 
 **TEST IN-GAME (developer):** the new 🎯 "listgui upgrades" section in
-`docs/Finale Fix/Reports/GROUP_07_TESTING_GUIDE.md` (search · multi-select · bulk-on-selection).
+`docs/Finale Fix/Reports/TESTING_GUIDE_07.md` (search · multi-select · bulk-on-selection).
 
 **Next (after this passes):** slice D — advanced search operators (compound filters: category +
 locked + name-contains, saved filters) + "more stuff", one by one.
@@ -9448,7 +9913,7 @@ wired reid into the block editor, synced the testing guide, and logged a chat-po
   `gui/chest/GuiRouter.java`, `command/handlers/ReIdCommands.java`. All under the §9.3 gates.
 
 **Docs synced:**
-- `docs/Finale Fix/Reports/GROUP_25_TESTING_GUIDE.md` (new) — reid command (☑️ passed 2026-06-13) +
+- `docs/Finale Fix/Reports/TESTING_GUIDE_25.md` (new) — reid command (☑️ passed 2026-06-13) +
   reid GUI (🎯 test now), in the v2 per-group format. Testing lives **per group**, not in the old
   V1 batch guide.
 - `docs/CHANGELOG.md` — reid marked verified + reid GUI added.
@@ -9656,7 +10121,7 @@ recolor(edge). A git checkpoint of the verified Group 07 work is also on the tab
 <a id="e144"></a>
 ## 2026-06-12 (GROUP 07 — ✅ VERIFIED IN-GAME, group closed)
 
-Developer ran the full `GROUP_07_TESTING_GUIDE.md` and **all of it passed**: every bulk op
+Developer ran the full `TESTING_GUIDE_07.md` and **all of it passed**: every bulk op
 (property · delete · rename · lock/unlock · favorite/unfavorite · category) as both command and
 dashboard, tab-complete everywhere, Dashboard 2.0 (frame/colours/sounds/previews/typed filters),
 Back→home fix, and the clickable command twin. Jar 09:11.
@@ -9788,7 +10253,7 @@ bulk dashboard.
 **Not changed:** all mutation paths (BulkCommands apply/delete/rename) untouched — GUI is still
 a thin front-end over the tested command backend.
 
-**Next:** developer runs the new "Test now" section in `GROUP_07_TESTING_GUIDE.md` (tab-complete
+**Next:** developer runs the new "Test now" section in `TESTING_GUIDE_07.md` (tab-complete
 + Dashboard 2.0). Then: lock/favorite dashboard tiles · reid · duplicate · move · export ·
 recolor(edge) · full hub · despeckle.
 
@@ -9870,7 +10335,7 @@ collapse to ONE rebuild. So batch delete + its undo each trigger a single pack r
 - Nothing committed since `df4d74e`. Don't commit unless asked.
 
 ### Next step
-Developer runs `GROUP_07_TESTING_GUIDE.md` §1 (bulk delete: toggle → filter → red Delete → undo
+Developer runs `TESTING_GUIDE_07.md` §1 (bulk delete: toggle → filter → red Delete → undo
 restores incl. texture; locked skipped; big batch confirm). Then: developer wants to **discuss
 background removal** before more bulk ops. After that, remaining bulk ops + full hub.
 
@@ -9945,7 +10410,7 @@ Developer tested slice 1: **functionality passes** ("everything else passes"), b
   (**15:13**, 4,655,064 bytes).
 - Nothing committed since the `df4d74e` checkpoint. Don't commit unless asked.
 
-### Next step — developer runs §1 of `GROUP_07_TESTING_GUIDE.md`
+### Next step — developer runs §1 of `TESTING_GUIDE_07.md`
 Open `/cb bulkproperty` → build a bulkproperty by clicking → Apply → check the one-line chat +
 hover + clickable Undo/Confirm. If pass → build the **bulkdelete** slice (command + GUI), then the
 rest of the bulk ops + a full hub.
@@ -10201,7 +10666,7 @@ next session, before anything else.**
 `image/ColorReplacer.java`, `network/ResourcePackServer.java`, `network/ServerPackGenerator.java`,
 `gui/chest/CbChestHandler.java`, `gui/chest/AnvilPrompt.java`, `core/TextureStore.java`,
 `command/handlers/FaceCommands.java` (new), `command/CommandRegistrar.java`,
-`item/RainbowRectangleItem.java`, `Reports/GROUP_06_TESTING_GUIDE.md` (§0d).
+`item/RainbowRectangleItem.java`, `Reports/TESTING_GUIDE_06.md` (§0d).
 
 ### Group 06 remaining after this
 M4 was the last core mechanic. Still open in the tracker: A eyedropper · B despeckle ·
@@ -10260,7 +10725,7 @@ hex variants → SlotDataStore + TextureStore like any block · pack → rebuilt
 `gui/chest/ConfigMenu.java`, `gui/chest/HexRecolorConfirmMenu.java`, `gui/chest/Nav.java`,
 `gui/chest/GuiRouter.java`, `command/handlers/HexCommands.java`, `core/ColorVariantService.java`,
 `item/ToolItems.java`, `client/CustomBlocksClient.java`, assets (2 textures, 2 models, lang),
-`Reports/GROUP_06_TESTING_GUIDE.md` (§0c).
+`Reports/TESTING_GUIDE_06.md` (§0c).
 
 ---
 
@@ -10347,7 +10812,7 @@ square lore rewritten.
 `core/ColorVariantService.java`, `item/ShapeToolItem.java` (renamed from `ShapeMarkerItem.java`),
 `item/ToolItems.java`, `item/package-info.java`, `CustomBlocksMod.java`,
 `core/MagicItemsManager.java`, `gui/chest/MagicMenu.java`, `gui/chest/RecolorConfirmMenu.java`,
-`command/handlers/ToolCommands.java`, `Reports/GROUP_06_TESTING_GUIDE.md` (new §0).
+`command/handlers/ToolCommands.java`, `Reports/TESTING_GUIDE_06.md` (new §0).
 
 ---
 
@@ -10361,7 +10826,7 @@ square lore rewritten.
 - **Retexture-all** — all 6 guide tests passed: confirm GUI + Info numbers, Yes batch (progress +
   complete chat, blocks visibly change), No keeps existing blocks, 0-block skip, source-sharpen vs
   upscale-only difference confirmed, direct `/cb retextureall <px>`.
-- `Reports/GROUP_06_TESTING_GUIDE.md` updated: §1 + §2 marked passed; squares issue flagged.
+- `Reports/TESTING_GUIDE_06.md` updated: §1 + §2 marked passed; squares issue flagged.
 
 ### Reported issue (developer)
 - **Squares still do the old tag/marking** (`[CB] <Colour> Square tagged …`, `ShapeMarkerItem`
@@ -10709,7 +11174,7 @@ read-only and existing `config.json` is pinned at 64). Mind pack size at 256.
 - `command/handlers/ConfigCommands.java` — `/cb tolerance`, `/cb config background`.
 - `CustomBlocksConfig.java` — `backgroundMode`, `backgroundTolerance`, `textureSize`.
 - `network/ServerPackGenerator.java` — block-model gen (the `render_type` for the transparency fork).
-- Specs/status: `Reports/GROUP_06_HANDOFF.md` (§6 M2/M3), `Reports/GROUP_06_TESTING_GUIDE.md`,
+- Specs/status: `Reports/GROUP_06_HANDOFF.md` (§6 M2/M3), `Reports/TESTING_GUIDE_06.md`,
   `Reports/_TESTING_GUIDE_TEMPLATE.md` (format standard for all guides).
 
 ### Build / run
@@ -10828,7 +11293,7 @@ Implemented Group 03 (source issues 17.4 HUD config, 17.6 HUD overlay, 17.7 ESC 
 - Cross-checked APIs against real source: `ClientSlotCache.get/populate`, `SlotBlock.getSlotIndex`,
   `CustomBlocksConfig.hudEnabled/save`, `Chat.info/success`, `OpenGuiPayload`/`HudStatePayload`
   shapes, `CustomBlocksMod` S2C registrations (HUD_EDITOR reuses the existing OpenGuiPayload).
-- Testing guide written: `docs/Finale Fix/Reports/GROUP_03_TESTING_GUIDE.md` (G03.1–G03.10).
+- Testing guide written: `docs/Finale Fix/Reports/TESTING_GUIDE_03.md` (G03.1–G03.10).
 
 ### NOT verified — read before testing
 - **Not compiled and not run.** The sandbox cannot build: no network, no cached Gradle 8.8

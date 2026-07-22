@@ -1,14 +1,14 @@
 /**
- * BuzzerBlockEntity.java — Group 31 (BuzzerGame) Phase 1 items 1 + 3.
+ * BuzzerBlockEntity.java — Group 31 (BuzzerGame) item 1 (wand-owned session rebuild, 2026-07-18).
  *
- * Per-buzzer identity + its link back to an admin panel. Holds a stable {@code buzzerId} (assigned on
- * placement) plus, once linked with the wand, the {@code panelPos} of its admin panel and the
- * {@code sessionId} that panel had at link time. A press looks up the panel at {@code panelPos} and only
- * routes into it when the session id still matches (so a broken/replaced panel cleanly falls back to the
- * standalone demo press). Positions/ids are the buzzer's only knowledge — the PanelSession stays the
- * single source of truth for the round (design lock).
+ * Per-buzzer identity + its link to a host's wand session. Holds a stable {@code buzzerId} (assigned on
+ * placement) plus, once linked with the wand, the {@code sessionId} of the host session it belongs to.
+ * A press resolves that id through {@link BuzzerSessionManager}; if the session is gone (host logged off,
+ * or the round was reset with a fresh id) the buzzer cleanly falls back to the standalone demo press.
+ * The session — not the buzzer — knows this buzzer's world position, so it stays the single source of
+ * truth for the round (design lock). {@code sessionId} is the buzzer's only link knowledge (no panel pos).
  *
- * Depends on: BuzzerGameRegistry (BlockEntityType)
+ * Depends on: BuzzerGameRegistry (BlockEntityType), BuzzerSessionManager
  * Called by:  BuzzerBlock (createBlockEntity, press routing, break-unlink), BuzzerGameWand (link), NBT
  */
 package com.customblocks.buzzergame;
@@ -27,9 +27,7 @@ public final class BuzzerBlockEntity extends BlockEntity {
     /** Stable id for this buzzer, assigned on placement. Links + per-round results key off it. */
     private UUID buzzerId = UUID.randomUUID();
 
-    /** The linked admin panel's position, or null if this buzzer isn't linked. */
-    private @Nullable BlockPos panelPos;
-    /** The linked session's id (guards against a replaced panel at the same spot). */
+    /** The host session this buzzer is linked to, or null if unlinked (resolved via BuzzerSessionManager). */
     private @Nullable UUID sessionId;
 
     public BuzzerBlockEntity(BlockPos pos, BlockState state) {
@@ -40,28 +38,22 @@ public final class BuzzerBlockEntity extends BlockEntity {
         return buzzerId;
     }
 
-    public @Nullable BlockPos getPanelPos() {
-        return panelPos;
-    }
-
     public @Nullable UUID getSessionId() {
         return sessionId;
     }
 
     public boolean isLinked() {
-        return panelPos != null && sessionId != null;
+        return sessionId != null;
     }
 
-    /** Bind this buzzer to a panel's session (called by the link wand). */
-    public void link(BlockPos panelPos, UUID sessionId) {
-        this.panelPos = panelPos == null ? null : panelPos.toImmutable();
+    /** Bind this buzzer to a host's wand session (called by the link wand). */
+    public void link(UUID sessionId) {
         this.sessionId = sessionId;
         markDirty();
     }
 
-    /** Forget the panel link (called when a link goes stale). */
+    /** Forget the session link (called on host logout, session reset, or break). */
     public void clearLink() {
-        this.panelPos = null;
         this.sessionId = null;
         markDirty();
     }
@@ -70,7 +62,6 @@ public final class BuzzerBlockEntity extends BlockEntity {
     protected void writeNbt(NbtCompound nbt, RegistryWrapper.WrapperLookup lookup) {
         super.writeNbt(nbt, lookup);
         nbt.putUuid("buzzerId", buzzerId);
-        if (panelPos != null) nbt.putLong("panelPos", panelPos.asLong());
         if (sessionId != null) nbt.putUuid("sessionId", sessionId);
     }
 
@@ -80,7 +71,6 @@ public final class BuzzerBlockEntity extends BlockEntity {
         if (nbt.containsUuid("buzzerId")) {
             buzzerId = nbt.getUuid("buzzerId");
         }
-        panelPos = nbt.contains("panelPos") ? BlockPos.fromLong(nbt.getLong("panelPos")) : null;
         sessionId = nbt.containsUuid("sessionId") ? nbt.getUuid("sessionId") : null;
     }
 

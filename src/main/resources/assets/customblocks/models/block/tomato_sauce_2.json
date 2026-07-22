@@ -1,0 +1,15 @@
+{
+  "textures": { "particle": "customblocks:block/tomato_sauce", "s": "customblocks:block/tomato_sauce" },
+  "elements": [
+    { "from": [0, 0, 0], "to": [16, 4, 16],
+      "faces": {
+        "down":  { "texture": "#s", "cullface": "down" },
+        "up":    { "texture": "#s" },
+        "north": { "texture": "#s" },
+        "south": { "texture": "#s" },
+        "west":  { "texture": "#s" },
+        "east":  { "texture": "#s" }
+      }
+    }
+  ]
+}

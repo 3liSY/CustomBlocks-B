@@ -98,6 +98,15 @@ public class CustomBlocksMod implements ModInitializer {
             com.customblocks.core.DeletedSlots.addAll(freedLegacy);
             LOGGER.info("[CustomBlocks] Migrated {} legacy freed slot(s) into the permanent deleted set.", freedLegacy.size());
         }
+        // G06-C self-heal (2026-07-19): a slot that is assigned to a LIVE block must never sit in the
+        // permanent deleted set, or the DeletedPlacementSweeper turns every placement of that live block
+        // into a "Deleted: <name>" marker. This scrubs any such stale index off the set on boot (repairs
+        // historical delete+restore damage AND anything the FreedSlots migration just re-imported live).
+        // Runs AFTER the migration on purpose. Idempotent — a no-op once the set is clean.
+        int reHealed = com.customblocks.core.DeletedSlots.reconcileLive(
+                idx -> com.customblocks.core.SlotManager.getBySlot("slot_" + idx) != null);
+        if (reHealed > 0) LOGGER.info("[CustomBlocks] G06-C: un-retired {} live slot(s) wrongly marked deleted "
+                + "(their placements will heal back into the real block).", reHealed);
         // Group 26 / FIX A: clean legacy display names (underscores -> spaces) once on boot.
         // Idempotent — a no-op once every name is already clean.
         int cleaned = SlotManager.migrateDisplayNames();
@@ -132,6 +141,8 @@ public class CustomBlocksMod implements ModInitializer {
         com.customblocks.block.DeletedMarkerRegistry.register();
         // Group 31 (BuzzerGame) Phase 1 — the buzzer block + BlockEntity + BlockItem.
         com.customblocks.buzzergame.BuzzerGameRegistry.register();
+        // Group 34 (Wheel of Fortune) — the wheel hub block + BlockEntity (spins a survival-item prize wheel).
+        com.customblocks.wheel.WheelBlockRegistry.register();
         // Group 30 · G30-8b — the Guess-mode Showcase display block + BlockEntity (op-spawned, no item).
         com.customblocks.block.GuessShowcaseRegistry.register();
         // Group 32 Phase A — the Explosive Tomato: the mod's FIRST custom entity type, its item, and the
@@ -141,6 +152,18 @@ public class CustomBlocksMod implements ModInitializer {
         // Group 32 §B — the 3 splat sounds (random pick per blast) + the in-memory crater-restore sweep.
         com.customblocks.tomato.TomatoSounds.register();
         com.customblocks.tomato.TomatoCraterManager.init();
+        // Group 32 Phase D ("Mess") — the sauce block + its server-side lifecycle (drying, rain-wash, lava
+        // burn-off, 50-per-chunk FIFO cap). Spawned by the blast; no item, no crash-prone custom renderer.
+        com.customblocks.tomato.SauceRegistry.register();
+        com.customblocks.tomato.SauceManager.init();
+        // Group 32 client-visual slice (owner-locked 2026-07-17) — the sauce particle TYPES (decals/drips/debris,
+        // spawned server-side + forwarded to clients) and the SauceVisuals server side (per-blast decals + the
+        // footprint-trail sweep + the E8 direct-hit screen signal). Client factories live in CustomBlocksClient.
+        com.customblocks.particle.SauceParticles.register();
+        com.customblocks.tomato.SauceVisuals.init();
+        // Group 32 Phase E ("Combat") server side — pet-immunity veto, hostile-stun release sweep, the 30 random
+        // death-message damage types (+ self-kill pool) wired to the blast, and the custom ~90s villager anger decay.
+        com.customblocks.tomato.TomatoCombat.init();
         // Group 30 · G30 §R (R2) — the "?"-textured break/dig debris particle (shown to a flagged holder
         // instead of the real block particles, which would leak the answer). Client factory in CustomBlocksClient.
         com.customblocks.particle.MysteryParticles.register();
@@ -154,6 +177,7 @@ public class CustomBlocksMod implements ModInitializer {
         registerToolsTab();
         registerArabicJoinTab();
         com.customblocks.buzzergame.BuzzerGameRegistry.registerTab(); // Group 31 — dedicated BuzzerGame tab
+        com.customblocks.wheel.WheelBlockRegistry.registerTab(); // Group 34 — dedicated Wheel of Fortune tab
         CommandRegistrar.register();
 
         // Resource-pack HTTP server: start with the world, rebuild the pack, stop on shutdown.
@@ -201,9 +225,12 @@ public class CustomBlocksMod implements ModInitializer {
                                     ver, dl, sha, CustomBlocksConfig.autoUpdateEnabled));
                 }
             }
-            // Dedicated server + modded client: stream the pack files (no-op on integrated host /
-            // for vanilla clients — beginSync self-gates on isDedicated + canSend). Group 05 remote fix.
-            com.customblocks.network.packsync.PackSyncService.beginSync(handler.player);
+            // Group 05 §F — fold any pending offline /cblowres name-override into this player's UUID record
+            // (and refresh their stored name on a rename) BEFORE the sync picks their resolution.
+            com.customblocks.core.LowResPlayers.bindOnJoin(handler.player.getUuid(), handler.player.getGameProfile().getName());
+            // Dedicated server + modded client: gate on the §I compatibility handshake, then stream the pack
+            // files (no-op on integrated host / for vanilla clients — self-gates on isDedicated + canSend).
+            com.customblocks.network.packsync.PackSyncService.onJoinAttempt(handler.player);
             HudSync.sendTo(handler.player);
             // Group 30 — tell the joining client the current guess-mode set (their own blinding + everyone's pose).
             com.customblocks.network.GuessSync.sendTo(handler.player);
@@ -213,11 +240,41 @@ public class CustomBlocksMod implements ModInitializer {
         // Drop the player's pack-send history so a later rejoin gets exactly one prompt again.
         ServerPlayConnectionEvents.DISCONNECT.register((handler, server) -> {
             ResourcePackServer.forget(handler.player.getUuid());
-            com.customblocks.network.packsync.PackSyncService.forget(handler.player.getUuid());
+            com.customblocks.network.packsync.PackSyncService.onDisconnect(handler.player.getUuid());
+            com.customblocks.core.OmniToolState.clearCopy(handler.player.getUuid()); // drop the Omni Copy clipboard
+            // Group 31 (BuzzerGame) — the wand-owned session dies on host logout: auto-unlink every linked
+            // buzzer/timer stand and warn remaining players near them.
+            com.customblocks.buzzergame.BuzzerSessionManager.onHostDisconnect(handler.player);
         });
         // Group 05 remote fix: drive the throttled pack-file stream once per server tick.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
                 com.customblocks.network.packsync.PackSyncService::tick);
+        // Group 31 (BuzzerGame) — drive every wand-owned session's round clock once per server tick (the
+        // old admin-panel block used to tick its own session; there is no block now).
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
+                com.customblocks.buzzergame.BuzzerSessionManager::tickAll);
+        // Group 06 §I3 — keep the Omni-Tool Copy-mode paste prompt on the hotbar (re-send before it fades)
+        // while the player holds the tool in Copy mode with a live clipboard.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
+                com.customblocks.item.OmniToolItem::tickCopyPrompts);
+        // Group 31 (BuzzerGame) I4/I5 — the stand's hitboxes are server-side INTERACTION entities tracking the
+        // floating/tilted/scaled parts. Route right-click (select/resize/rotate/link) and left-click (break the
+        // whole stand, or shrink in Resize+sneak) on those part entities to the wand.
+        net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) ->
+                hand == net.minecraft.util.Hand.MAIN_HAND
+                        ? com.customblocks.buzzergame.BuzzerGameWand.onPartInteract(player, world, entity, false)
+                        : net.minecraft.util.ActionResult.PASS);
+        net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) ->
+                com.customblocks.buzzergame.BuzzerGameWand.onPartInteract(player, world, entity, true));
+        // Group 34 (Wheel of Fortune) — the wheel is display entities only, so its click surfaces are
+        // INTERACTION entities too. Right-click any of them spins the wheel; left-click the centre takes it
+        // down. Registered after the BuzzerGame listeners, which PASS on anything that is not a stand part.
+        net.fabricmc.fabric.api.event.player.UseEntityCallback.EVENT.register((player, world, hand, entity, hitResult) ->
+                hand == net.minecraft.util.Hand.MAIN_HAND
+                        ? com.customblocks.wheel.WheelBlock.onWheelInteract(player, world, entity, false)
+                        : net.minecraft.util.ActionResult.PASS);
+        net.fabricmc.fabric.api.event.player.AttackEntityCallback.EVENT.register((player, world, hand, entity, hitResult) ->
+                com.customblocks.wheel.WheelBlock.onWheelInteract(player, world, entity, true));
 
         LOGGER.info("[CustomBlocks] Registered {} slot blocks (slot_0 to slot_{}).",
                 maxSlots, maxSlots - 1);

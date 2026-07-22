@@ -68,7 +68,7 @@ public class CustomColorToolItem extends Item implements ColorSwapTool {
     public static ItemStack createStack(Item item, int rgb, String shape) {
         rgb &= 0xFFFFFF;
         String hex = String.format(Locale.ROOT, "#%06X", rgb);
-        String label = ColorLibrary.nameForHex(hex) != null ? ColorLibrary.nameForHex(hex) : hex;
+        String label = ColorLibrary.nearestName(rgb);
         ItemStack stack = new ItemStack(item, 1);
 
         NbtCompound nbt = new NbtCompound();

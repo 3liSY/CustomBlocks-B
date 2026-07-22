@@ -1,349 +1,174 @@
-# Group 18 — Block Metadata: Notes
+# Group 18 - Block Lore
 
-> 🔁 **REVAMP v2 — Note → "Lore" (owner interview 2026-06-21, 2nd pass).** The 3-tab Book GUI below
-> (Lore / To-Do / Hover Tooltip) was built (build-green, never in-game confirmed) but the owner found it
-> confusing. It is **superseded** by the single-screen **Lore** feature in the next section. Everything from
-> "🔒 Locked Decisions" downward is kept for history — **build the REVAMP v2 section, not it.**
->
-> ⛔ **STAGING SYSTEM SCRAPPED (sweep 2026-06-21).** Per SWEEP_INDEX §A the entire draft/publish/staging
-> system (`draft`/`drafts`/`publish`/`stage`/`release`/`staging`/`resume`) is **removed**. G18 is **notes only**
-> now. The staging spec (§3–§6) and tests G18.8–G18.14 are struck below for history; do not build them.
->
-> **UI medium audit (2026-07-09):** NotesMenu (Lore GUI) → **Screen, not built.** Real multi-line text
-> field(s) instead of an anvil-per-line edit. See `docs/UI_MEDIUM_GUIDE.md`.
->
-> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 9 (Notes) build-verified.
->
-> **Objective:** Rework the note system into a full Book GUI with three tabs (Lore, To-Do, Hover Tooltip).
->
-> **Source issues:** 17.12 (note UX), P5 (Note rework into Book GUI)
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
+> Group 18 gives a CustomBlock one clear editable Lore feature: saved lines that appear on its item hover when enabled.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_18.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## 🔁 REVAMP v2 — Note → "Lore" (owner interview 2026-06-21, 2nd pass)
-
-> **Status: 🟢 BUILT — build-green, awaiting in-game confirm (2026-06-21).** All 5 revamp slices
-> (R-S1…R-S5) are built and the jar compiles with all gates passing. The first-pass 3-tab Book GUI has
-> been removed. Nothing here is ✅ done until the owner confirms it in-game (CLAUDE.md §2).
-
-### Why revamp
-
-The first-pass note crammed **three** separate things into one menu, and the owner found it confusing:
-
-| First-pass tab | What it was | Where it showed | Problem |
-|---|---|---|---|
-| Lore (book) | long text | **only inside the menu** | the player never saw it on the block |
-| Hover Tooltip | short line | on the item when hovered | the *real* hover text — but a 2nd, separate box |
-| To-Do | checklist | menu only | rarely used |
-
-The owner wrote in **Lore** expecting it on hover, but hover read **Tooltip** — two text boxes, only one
-showed on the item. The book-and-quill was also clunky. And "lore" is **Minecraft's own word** for the gray
-italic lines under an item's name on hover — exactly the thing wanted. So the feature is **renamed and
-collapsed to one concept: Lore = the hover lines.**
-
-### Locked decisions (revamp — override the first-pass D1–D10)
-
-| # | Decision |
-|---|---|
-| R1 | **Rename Note → Lore.** "Lore" = the vanilla term for item hover text; matches what it does. |
-| R2 | **`/cb lore <id>` is primary**; **`/cb note <id>` is kept as an alias** (old habit still works). |
-| R3 | **Lore = a list of lines** shown on the block item on hover (gray italic, vanilla style). Merges the old Lore + Tooltip into ONE thing. |
-| R4 | **Anvil for all typing** (each line ≤ 50 chars, the anvil cap). **The writable book is removed entirely** (reverses first-pass D1). |
-| R5 | **Per-line edit:** click a line = edit it in an anvil; right-click = delete it. "+ Add line" opens a fresh anvil. |
-| R6 | **One On/Off toggle** for the whole lore. Off hides the item lines even though the text stays saved (first-pass D4 semantics, applied to the whole note). |
-| R7 | **To-Do is CUT** (reverses first-pass D2). Removed entirely — menu, data, and code. |
-| R8 | **Tabs removed.** Only lore remains, so the menu is a **single screen** (no tab row). |
-| R9 | **Share / import KEPT** (first-pass D6/D7 unchanged): the Share button uploads to the cloud vault → posts a share code in chat; `/cb note import <id> <code>` imports with confirm-before-overwrite. Dormant until `vaultEndpoint` is set. |
-| R10 | **`&` colour codes kept** (first-pass D3) in lore lines — rendered in the menu and on the item. |
-| R11 | **Quick-add + clear kept:** `/cb lore <id> <text>` adds one line; `/cb lore <id> clear` wipes all lines and sets it Off. |
-| R12 | **OP only** (first-pass D8 unchanged). |
-| R13 | **Entry points:** `/cb lore <id>` + a **Lore** button in the block Editor menu (first-pass D9, renamed). |
-
-### Data model change
-
-- `NoteData` becomes **`List<String> lines` + `boolean enabled`**. The old `lore` / `todo` / `tooltip` /
-  `tooltipEnabled` fields are removed.
-- **Migration (auto, on first load):** old `tooltip` line + old `lore` (split on newlines) become the new
-  `lines`; `enabled` = old `tooltipEnabled` **OR** (the block had any lore). **Old To-Do items are dropped** —
-  the only data loss, because To-Do is being removed. Legacy flat `{id:"text"}` notes still fold into one line.
-- `notes.json` shape changes to `{ "lines": [...], "enabled": true }` per id. Share JSON uses the same shape;
-  old shared codes auto-migrate through the same parse path.
-
-### Menu — single screen (no tabs) — moved to G27
-
-Full screen spec moved to `GROUP_27_SCREENS.md` §G27.33 (2026-07-12). G18 keeps the data model, migration,
-and item-hover sync below.
-
-### Slice plan (revamp — build order; careful 1-by-1, owner tests at the end)
-
-| Slice | Scope |
-|---|---|
-| **R-S1 — Data** | `NoteData` = lines + enabled · migrate old lore/tooltip/todo (To-Do dropped) · `BlockNotesManager` reads/writes/setters · share JSON keeps working |
-| **R-S2 — Item hover** | block item shows ALL lore lines (multi-line), synced to other players (`HudSync` / `ClientSlotCache` / `SlotBlock.appendTooltip`) |
-| **R-S3 — Menu** | single-screen Lore: line list (add / edit / delete via anvil) + On/Off + Share + Done · **delete the book (`LoreBook`) and all To-Do code** |
-| **R-S4 — Commands** | `/cb lore` primary + `/cb note` alias · quick-add one line · `clear` · import kept |
-| **R-S5 — Docs** | this section + the testing guide + CHANGELOG + PROGRESS_LOG |
-
-> Each slice ends 🟢 build-green only. ✅ done needs the owner's in-game confirm (CLAUDE.md §2).
-
-### What's cut vs kept
-
-- **Cut:** To-Do (tab, data, code) · the writable book (`LoreBook`) · the tab row · the separate "Lore vs Tooltip" split.
-- **Kept:** Share / import (vault) · the On/Off toggle · `&` colours · `/cb lore <id> <text>` quick-add · `clear` · the OP gate · the Editor-menu button · auto-migration of old data.
-
-### Files this will touch (planned)
-
-- **Rewrite:** `core/NoteData.java`, `gui/chest/NotesMenu.java` (→ single screen), `command/handlers/NoteCommands.java`.
-- **Edit:** `core/BlockNotesManager.java` (model + migration + `activeLore`), `block/SlotBlock.java`,
-  `network/HudSync.java`, `client/ClientSlotCache.java`, `client/CustomBlocksClient.java`,
-  `command/CommandRegistrar.java` / `ManagementCommands.java` (`/cb lore` + `/cb note` alias),
-  `gui/chest/EditorMenu.java` (button label Note → Lore).
-- **Delete:** `gui/chest/LoreBook.java` (book flow gone).
-
----
-
-## 🔒 Locked Decisions (owner interview 2026-06-21) — ⛔ SUPERSEDED by REVAMP v2 above
-
-> Surveyed the live code first, then a 3-round owner interview. **Nothing built this pass — design only.**
-> These decisions override anything below them. Reality corrections are read from code, not guessed.
-
-**Reality corrections (read, not guessed):**
-- **Storage is flat today.** `BlockNotesManager` is `Map<String,String>` (id→one text) → `notes.json` flat
-  (`core/BlockNotesManager.java`). The 3-field model (Lore / To-Do list / Tooltip+enabled) is **new**; old
-  flat notes **auto-migrate into Lore** on first load (safe, non-destructive).
-- **Anvil input caps ~50 chars** (`gui/chest/AnvilPrompt.java`, `MAX_LENGTH=50`; vanilla rename box limit).
-  500-char Lore is **not possible** via anvil → Lore uses a **writable book** instead.
-- **No item tooltip injection exists.** `SlotBlock.SlotItem` only overrides `getName` (no `appendTooltip`).
-  Item-hover (G18.4) needs the tooltip text **synced to the client** — names already sync via
-  `SlotBlock.CLIENT_NAME_RESOLVER` → ClientSlotCache; the tooltip needs the **same wiring** = heaviest piece.
-- **CloudVaultClient.upload() is a stub** (returns null, Phase-14 TODO). Share must **implement** upload
-  against the assumed worker contract (mirror `uploadCategory`). Vault endpoint ≠ server host, so no §A leak.
-- **Notes are ungated today** (registered on root, no `.requires`). Decision below adds an OP gate.
-- **Cleanup flag:** `draft`/`publish`/`drafts` still registered (`ManagementCommands.java:76-88`) — part of
-  the **scrapped staging system (§A)**. Remove during this group (dead code).
+## Purpose
 
-**Locked decisions:**
+Block metadata should be understandable at a glance. Lore is the vanilla-style item-hover text a creator expects, not a confusing collection of separate note, tooltip, and to-do concepts. It remains editable, can be hidden without loss, and later can be shared safely through Vault.
 
-| # | Decision |
-|---|---|
-| D1 | **Lore input = writable book.** Lore tab opens a real book-and-quill (multi-page, handles 500+ chars, fits the "Book GUI" theme). |
-| D2 | **To-Do = toggle + right-click delete.** Left-click flips an item done/undone (both ways); right-click removes it. Up to 20 items, added via anvil. |
-| D3 | **Color codes honored.** `&a`/`&l`/`&c` etc. render as real color/format in the GUI **and** on the item tooltip (`&`→`§` convert). |
-| D4 | **Tooltip = text + explicit on/off toggle.** Off hides the item line even if text is saved; `clear` sets it off. |
-| D5 | **Item-hover tooltip is in scope** as its **own slice** (S3) — client sync + `SlotItem.appendTooltip`. |
-| D6 | **Share = vault upload + import (full round-trip).** Implement `upload()`; Share posts a share code/link in chat. Import = `/cb note import <id> <code>`. |
-| D7 | **Import overwrite = confirm first.** If the target block already has a note, ask before replacing (reuse the `BulkConfirm` hold pattern). |
-| D8 | **Permissions = OP only.** Opening/editing/sharing the Notes GUI requires operator. |
-| D9 | **Entry points = `/cb note <id>` + a Notes button in the block Editor menu** (`EditorMenu`). |
-| D10 | **Pace = one slice at a time**, in-game confirm between each (CLAUDE.md §4). |
+G18 owns Lore data, migration, item hover synchronization, commands, and import semantics. G27 owns the final Lore Screen.
 
----
+## Ownership
 
-## 🧱 Slice Plan (build order — confirm each in-game before the next) — ⛔ SUPERSEDED by REVAMP v2
+| Owns | Does not own |
+| --- | --- |
+| Lore lines, enabled state, migration, persistence, and hover synchronization | Lore Screen layout and text-editing UX: G27 |
+| `/cb lore` command and `/cb note` compatibility alias | Vault transport and remote service: G20 |
+| Lore share/import data format and overwrite confirmation | General item name/tooltip infrastructure beyond Lore data |
+| Editor Lore entry-point behavior | Retired staging/draft workflow |
 
-| Slice | Scope | Covers |
-|---|---|---|
-| **S1 — Lore core** | New structured note model + flat-note **migration** + `notes.json` rework (atomic) · 3-tab chest **shell** (Lore / To-Do / Hover Tooltip + Save) · **Lore tab via writable book** · color-code render · legacy `/cb note <id> <text>` → Lore + tip · `clear` wipes all 3 · OP gate · Notes button in Editor menu · remove dead `draft`/`publish`/`drafts` | G18.1, G18.2, G18.6, G18.7, G18.5(partial) |
-| **S2 — To-Do tab** | Add item (anvil) · left-click toggle done/undone · right-click delete · up to 20 · persist | G18.3 |
-| **S3 — Tooltip tab + sync** *(heaviest)* | Tooltip text + Enable toggle · **client sync** of tooltip text · `SlotItem.appendTooltip` → line shows on item hover · color codes | G18.4 |
-| **S4 — Share + import** | Implement `CloudVaultClient.upload()` · Share button uploads note → share code/link in chat · `/cb note import <id> <code>` with confirm-before-overwrite | (new — not in original G18.1–.7) |
+## Direction
 
-> Persistence across restart (G18.5) is verified continuously, not a standalone slice.
-> **Each slice ends `🟢 build-green` only — `✅ done` needs the owner's in-game confirm (CLAUDE.md §2).**
+Each block has one Lore record: an ordered list of lines plus an enabled flag. Enabled Lore appears beneath the item name in Minecraft-style formatting; disabling it hides the lines without deleting them. `/cb lore` is the primary command and `/cb note` remains a compatibility alias.
 
----
+The final editor is a real G27 Screen with proper text fields. It calls the same data/command services, rather than rebuilding Lore logic in UI code.
 
-## What this group restores / changes
+## Locked Decisions
 
-| Area | Old behavior | New behavior |
-|---|---|---|
-| Note storage | `/cb note <id> [text\|clear]` — plain text only | Multi-tab Book GUI: Lore, To-Do, Hover Tooltip |
-| Note GUI | None | Chest GUI — `/cb note <id>` |
-| Note sharing | None | "Share" button in Note GUI |
-| ~~Draft/staging system~~ | ~~draft/publish/stage/release/staging/resume~~ | ⛔ **SCRAPPED — removed entirely (SWEEP_INDEX §A)** |
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-21 | Note is renamed to Lore. | One concept replaces separate note, tooltip, and hover fields. |
+| 2026-06-21 | Lore stores multiple ordered lines and one enabled flag. | Item hover can show useful multi-line metadata without a second tooltip feature. |
+| 2026-06-21 | `/cb lore` is primary and `/cb note` is an alias. | Existing habit works while new documentation is clear. |
+| 2026-06-21 | `&` formatting codes render in editor and item hover. | Existing colored/formatted Lore remains expressive. |
+| 2026-06-21 | Lore editing is operator-only. | Block metadata cannot be edited by ordinary players. |
+| 2026-06-21 | Quick-add and clear remain command shortcuts. | `/cb lore <id> <text>` adds one line; `clear` removes lines and disables Lore. |
+| 2026-06-21 | Share/import retains confirmation before overwrite. | A remote code cannot silently replace a block's existing Lore. |
+| 2026-07-09 | Lore uses a G27 Screen with real text fields. | Anvil-per-line and the old book/chest GUI are not the end state. |
+| 2026-07-12 | To-Do, writable book, tabs, and staging/draft behavior are removed. | No retired data/menu/command path remains active. |
 
----
+## Feature Plan
 
-## What this group covers
+### A. Lore Data and Migration
 
-| Feature | Commands |
-|---|---|
-| Note Book GUI | `/cb note <id>` |
-| Note lore | Lore tab — multi-line description |
-| Note to-do | To-Do tab — checkable items |
-| Note tooltip | Hover Tooltip tab — item hover text |
-| Legacy note commands | `/cb note <id> <text>` / `/cb note <id> clear` (still work) |
-| Note storage | `config/customblocks/data/notes.json` |
-| ~~Staging commands~~ | ⛔ **SCRAPPED** — `stage`/`release`/`staging`/`draft`/`publish`/`drafts`/`resume` removed |
+**Player outcome**
 
----
+Existing notes become useful Lore without losing readable text, while intentionally removed To-Do data does not reappear as confusing lines.
 
-## Implementation Requirements — ⛔ SUPERSEDED by REVAMP v2 (kept for history)
+**Experience**
 
-### 1. Note Book GUI
+- A block stores ordered Lore lines and whether they are visible.
+- Existing flat notes migrate to one Lore line.
+- Older tooltip and multi-line Lore merge into a sensible line list.
+- Existing To-Do items are intentionally dropped because the feature is removed.
+- Malformed old data leaves the server running and creates an actionable diagnostics finding.
 
-`/cb note <id>` opens a chest GUI styled as an open book. Three tabs in the top row:
+**Requirements**
 
-| Tab | Slot icon | Content |
-|---|---|---|
-| Lore | Written Book | Freeform description, supports `&` color codes, max 500 chars |
-| To-Do | Paper | Checkable task list, up to 20 items |
-| Tooltip | Name Tag | Short hover text shown on block item in inventory (max 100 chars) |
+- `notes.json` uses a `{ lines, enabled }` record per block.
+- Migration is idempotent and atomic.
+- Legacy shared Lore codes pass through the same parser/migration route.
+- Clear removes lines and disables the record without leaving orphan data.
 
-**Input methods (per Locked D1/D2/D4):** Lore = **writable book** (book-and-quill, handles 500 chars). To-Do
-items + Tooltip text = **anvil** (short, fits the ~50-char cap). "Save" slot commits. "Share" button uploads
-the note to the cloud vault (D6) and posts a share code in chat — vault endpoint, not the server host (no §A leak).
+**Boundary**
 
-### 2. Note Legacy Compatibility
+This migration preserves Lore text where possible. It does not recreate To-Do or staging features.
 
-`/cb note <id> <text>` — still works. Sets the Lore tab. Shows tip: `"Tip: Use /cb note <id> for the full Notes editor."`
+### B. Item Hover and Commands
 
-`/cb note <id> clear` — still works. Clears all three tabs.
+**Player outcome**
 
-### 3–6. ~~Staging Area~~ — ⛔ SCRAPPED
+Lore appears correctly on every recipient's item hover and is easy for an operator to add, edit, hide, or clear.
 
-The entire staging system (terminology, pack-behavior exclusion, staging chest GUI, messaging) is
-**removed** per SWEEP_INDEX §A. Macros + the existing pack debounce cover the "avoid pack thrash" need.
-No `stage`/`release`/`staging`/`draft`/`publish`/`drafts`/`resume` commands. Original spec deleted.
+**Experience**
 
----
+- All enabled lines render in order beneath the block item name.
+- Formatting codes render as formatting, not raw clutter.
+- Toggling off hides Lore while retaining the saved lines.
+- `/cb lore <id>`, quick-add, and clear work with `/cb note` as a compatibility alias.
+- The Editor Lore button opens the same Lore surface.
 
-## Setup
+**Requirements**
 
-```
-/cb create g18a NoteTest
-/cb create g18b StagingTest1
-/cb create g18c StagingTest2
-```
+- Lore data synchronizes through the normal client cache/tooltip route for dedicated clients.
+- `SlotBlock.appendTooltip` reads the current synced Lore without client-side server-map assumptions.
+- Commands validate block ID and operator permission before mutation.
+- A missing block cannot create orphan Lore data.
 
----
+**Boundary**
 
-## Test G18.1 — Note Book GUI opens
+G18 controls Lore lines and visibility only; it does not take over block naming or unrelated item tooltip behavior.
 
-```
-/cb note g18a
-```
+### C. Lore Screen and Sharing
 
-**Expected:** Chest GUI opens styled as a book. Three tabs: Lore, To-Do, Hover Tooltip. Save and Share slots visible.
+**Player outcome**
 
-**Pass:** Chest GUI opens with 3 tabs.
-**Fail:** Text output only, or old single-text behavior.
+Operators can edit lines naturally in a Screen and later share/import a Lore record without exposing a server address or overwriting data accidentally.
 
----
+**Experience**
 
-## Test G18.2 — Lore tab save and read
+- The G27 Lore Screen lists, adds, edits, deletes, and toggles lines with real text input.
+- Share has an honest unavailable state until Vault is configured.
+- Import creates or updates Lore only after the required overwrite confirmation.
+- Old shared data upgrades into the current line model on import.
 
-In Note GUI → Lore tab → Edit → type: `This block is the entrance arch.` → confirm → Save.
+**Requirements**
 
-`/cb note g18a` — re-open.
+- The Screen calls G18 data services and preserves navigation/unsaved-state behavior according to G27 rules.
+- Vault codes use the remote Vault endpoint, never a Minecraft server host/IP.
+- Invalid codes leave existing Lore unchanged and report a human-readable result.
 
-**Expected:** Lore tab shows saved text.
+**Boundary**
 
-**Pass:** Text saved and displayed.
-**Fail:** Text lost.
+G18 owns Lore content format. G20 owns remote Vault transport and credentials.
 
----
+## Cross-Group Contracts
 
-## Test G18.3 — To-Do tab
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G04 | Human feedback | Lore errors and confirmations use shared clear message rules. |
+| G16 | Diagnostics | Malformed migration/import can create diagnostic evidence without crashing. |
+| G20 | Vault | G20 transports Lore codes; G18 validates and applies the Lore payload. |
+| G27 | Lore Screen | G27 hosts editing; G18 remains the data/command source of truth. |
+| G28 | History | Lore mutation exposes normal reversible boundaries where supported. |
 
-In Note GUI → To-Do tab → Add item → type `Add texture` → Add another → `Set glow level`.
+## Technical Contract
 
-**Expected:** Two unchecked items visible.
+- `NoteData` is an ordered list of lines plus an enabled flag, persisted atomically under the shared data directory.
+- Legacy flat/lore/tooltip records parse through one migration path; To-Do fields are intentionally discarded.
+- Server Lore state synchronizes to clients before `SlotBlock.appendTooltip` renders it.
+- `/cb lore` and `/cb note` invoke the same validated operator-gated handlers.
+- Share/import uses the current Lore JSON shape, confirms overwrite, and never exposes a server host/IP.
+- G27 controls only presentation and calls G18 services for every mutation.
 
-Click "Add texture" slot.
+## Deferred Scope
 
-**Expected:** Item shows as checked/completed.
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-**Pass:** Items added and checkable.
-**Fail:** Items not added, or click does nothing.
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Final Lore Screen | G27 owns its Screen implementation. | G27 with G18 |
+| Lore share/import | Requires configured and verified Vault transport. | G20 with G18 |
+| Richer Lore editing options | Needs a stable Screen/editor model first. | G18 with G27 |
 
----
+</details>
 
-## Test G18.4 — Hover Tooltip tab
+## Superseded Decisions
 
-In Note GUI → Hover Tooltip tab → Edit → type: `Main entrance block.` → Enable → Save.
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
-`/cb give g18a` — hover the item in inventory.
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-21 | Notes, a separate tooltip, and To-Do tabs coexist. | One Lore line list supplies item hover text. |
+| 2026-06-21 | Lore uses a writable book and tabbed chest flow. | The end state is a single G27 Screen. |
+| 2026-06-21 | Staging/draft commands are part of G18. | They are removed entirely. |
+| 2026-07-09 | An anvil-per-line flow is the intended editor. | Proper Screen text fields are the intended editor. |
 
-**Expected:** Extra tooltip line: "Main entrance block."
+</details>
 
-**Pass:** Tooltip visible on item.
-**Fail:** No extra tooltip line.
+## References
 
----
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_18.md) · [All Groups](README.md)
 
-## Test G18.5 — Notes persist across restart
-
-Restart server. `/cb note g18a`.
-
-**Expected:** All three tabs retain their data.
-
-**Pass:** Data persisted.
-**Fail:** Any tab empty after restart.
-
----
-
-## Test G18.6 — Legacy note command
-
-```
-/cb note g18a This is a legacy note.
-```
-
-**Expected:** Lore tab updated. Tip message shown suggesting the GUI.
-
-**Pass:** Lore updated, tip shown.
-**Fail:** Command rejected or no update.
-
----
-
-## Test G18.7 — Clear note
-
-```
-/cb note g18a clear
-```
-
-`/cb note g18a` → all tabs empty, tooltip disabled.
-
-**Pass:** All data cleared.
-**Fail:** Any tab retains data.
-
----
-
-## Tests G18.8–G18.14 — ⛔ SCRAPPED (staging removed)
-
-All staging tests (`stage`/`draft`/`staging`/`release`/`publish`, pack-exclusion, `[staging]` tag) are
-**removed** per SWEEP_INDEX §A. Skip. G18 scope = notes (G18.1–G18.7) only.
-
----
-
-## Group 18 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G18.1 | Note Book GUI opens with 3 tabs | ⬜ |
-| G18.2 | Lore tab saves and reads correctly | ⬜ |
-| G18.3 | To-Do items add and check | ⬜ |
-| G18.4 | Hover tooltip visible on item | ⬜ |
-| G18.5 | All note data persists after restart | ⬜ |
-| G18.6 | Legacy note command still works | ⬜ |
-| G18.7 | Clear removes all note data | ⬜ |
-| ~~G18.8–G18.14~~ | ~~staging tests~~ | ⛔ SCRAPPED — staging system removed (§A) |
-
-**Group 18 passes when the notes Book GUI works in-game (G18.1–G18.7).**
-
-If anything shows ❌ — paste:
-1. The exact command or GUI action
-2. What appeared vs what was expected
-3. Whether a pack rebuild appeared in `latest.log` when not expected
-
----
-
-## Cleanup
-
-```
-/cb delete g18a
-/cb delete g18b
-/cb delete g18c
-```
+- [G04 Communication](GROUP_04_Communication.md)
+- [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)
+- [G20 External Integrations](GROUP_20_EXTERNAL_INTEGRATIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [G28 Create Studio](GROUP_28_CREATE_STUDIO.md)
+- [Pre-template Group 18 snapshot](../archive/group-migration-2026-07-18/GROUP_18_NOTES_STAGING.md)

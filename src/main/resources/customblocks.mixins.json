@@ -7,11 +7,16 @@
     "AbstractBlockStateMixin",
     "BipedArmPoseMixin",
     "ItemDisguiseMixin",
+    "ShapedItemMixin",
     "ParticleDisguiseMixin",
     "ClientCommonNetworkHandlerMixin",
     "HudRenderMixin",
+    "ShieldSauceTintMixin",
     "RegistrySyncHealMixin",
-    "ScreenInvoker"
+    "ScreenInvoker",
+    "ChatClickFxMixin",
+    "DisconnectScreenFactoryMixin",
+    "DisconnectedScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

@@ -132,7 +132,6 @@ public final class FieldIcon {
             case "cloud_sharing":         return f.asBool() ? Items.ENDER_EYE : Items.ENDER_PEARL;
             case "background_strength":   return Items.GLASS_BOTTLE;
             case "background_removal":    return Items.BLACK_DYE;
-            case "typo_correction":      return Items.NAME_TAG;
             case "history_mode":          return Items.REPEATER;
             case "auto_backup_interval":  return Items.CLOCK;
             case "auto_backup_keep":      return Items.BARREL;

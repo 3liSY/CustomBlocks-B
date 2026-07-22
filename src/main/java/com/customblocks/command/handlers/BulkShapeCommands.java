@@ -14,7 +14,7 @@
  * rail /cb setshape uses). No-arg /cb bulkshape prints usage (the Bulk Workbench has no shape op).
  *
  * Depends on: BlockShapes, BulkScope, SlotManager (setShape), LockManager, UndoManager, BulkConfirm,
- *             BulkChat, ResourcePackServer, HudSync, FeedbackFx, Chat
+ *             BulkChat, HudSync, FeedbackFx, Chat
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
@@ -30,7 +30,6 @@ import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.UndoManager;
 import com.customblocks.network.HudSync;
-import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.CommandManager;
@@ -109,7 +108,8 @@ public final class BulkShapeCommands {
             Chat.error(src, "No shapes changed" + why + ".");
             return;
         }
-        ResourcePackServer.updatePack(); // the model changed for every block — ONE debounced rebuild
+        // G08 §B — no pack rebuild: a static slot's pack output no longer depends on its shape, so even a
+        // bulk shape change is data-only. The HudSync push below re-meshes every client once.
         UndoManager.recordBatch(BulkConfirm.actor(src), children, "bulk-shape " + shape + " (" + changed.size() + ")");
         HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD shape value updates live for all players (one push)
 

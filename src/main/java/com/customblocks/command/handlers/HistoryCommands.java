@@ -23,6 +23,7 @@ import com.customblocks.core.SoundFx;
 import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotLighting;
 import com.customblocks.command.Chat;
+import com.customblocks.core.FaceRotations;
 import com.customblocks.core.FavoritesManager;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
@@ -231,9 +232,10 @@ public final class HistoryCommands {
                 ResourcePackServer.updatePack();
             }
             case MODIFY -> restoreMeta(src, op.before());
-            case SHAPE -> { // restore the old shape, then rebuild the pack so the model reverts too
+            case SHAPE -> { // G08 §B: shape is data-only and no pack byte depends on it — restoring it
+                // must NOT push a pack, or undo would prompt a reload the change itself never did.
                 restoreMeta(src, op.before());
-                ResourcePackServer.updatePack();
+                HudSync.broadcast(src.getServer()); // carries the restored shape → client re-mesh
             }
             case TEXTURE -> { // pixels were replaced → put the old texture back + rebuild the pack
                 TextureStore.save(op.before().index(), op.texture());
@@ -247,6 +249,7 @@ public final class HistoryCommands {
             case REID -> // id was changed old→new → change it back new→old (reId is its own inverse)
                     SlotManager.reId(op.after().customId(), op.before().customId());
             case FLAG -> setFlag(src, op.flag(), !op.flag().on()); // flag was set to `on` → put it back to !on
+            case FACE_ROTATE -> { FaceRotations.set(op.faceRot().index(), op.faceRot().face(), op.faceRot().oldQ()); ResourcePackServer.updatePack(); HudSync.broadcast(src.getServer()); } // restore pre-rotate turn + rebuild model; F2: sync packed rot so §B shaped blocks re-mesh on MP
             case BATCH -> { // revert every child of the bulk op as a single step
                 if (op.children() != null) {
                     for (UndoManager.Op child : op.children()) applyInverse(src, child);
@@ -269,9 +272,9 @@ public final class HistoryCommands {
                 ResourcePackServer.updatePack();
             }
             case MODIFY -> restoreMeta(src, op.after());
-            case SHAPE -> { // re-apply the new shape + rebuild the pack
+            case SHAPE -> { // G08 §B — data-only, no pack push (see the undo branch above).
                 restoreMeta(src, op.after());
-                ResourcePackServer.updatePack();
+                HudSync.broadcast(src.getServer()); // carries the re-applied shape → client re-mesh
             }
             case TEXTURE -> { // re-apply the new texture + rebuild the pack
                 TextureStore.save(op.after().index(), op.textureAfter());
@@ -285,6 +288,7 @@ public final class HistoryCommands {
             case REID -> // re-apply the id change old→new
                     SlotManager.reId(op.before().customId(), op.after().customId());
             case FLAG -> setFlag(src, op.flag(), op.flag().on()); // re-apply the flip the op recorded
+            case FACE_ROTATE -> { FaceRotations.set(op.faceRot().index(), op.faceRot().face(), op.faceRot().newQ()); ResourcePackServer.updatePack(); HudSync.broadcast(src.getServer()); } // re-apply the rotate + rebuild model; F2: sync packed rot so §B shaped blocks re-mesh on MP
             case BATCH -> { // re-apply every child of the bulk op as a single step
                 if (op.children() != null) {
                     for (UndoManager.Op child : op.children()) applyForward(src, child);
@@ -316,7 +320,9 @@ public final class HistoryCommands {
         if (owner != null) WidgetSync.push(owner);
     }
 
-    /** Restore a metadata snapshot, then refresh placed-block lighting (glow may differ). */
+    /** Restore a metadata snapshot, then refresh placed-block lighting (glow may differ). Shape is
+     *  data-driven (SlotData) + read live by the block, so a SHAPE undo/redo only needs the snapshot
+     *  restore here plus a pack rebuild at the call site (G08 revert 2026-07-20). */
     private static void restoreMeta(ServerCommandSource src, SlotData d) {
         SlotManager.restoreSnapshot(d);
         SlotLighting.applyToPlaced(src.getServer(), d.index(), d.glow());
@@ -338,6 +344,11 @@ public final class HistoryCommands {
         }
         if (op.kind() == UndoManager.Kind.FLAG) { // carries no snapshot — the id is on the payload
             return op.label() + " " + (op.flag() == null ? "?" : op.flag().id());
+        }
+        if (op.kind() == UndoManager.Kind.FACE_ROTATE) { // no snapshot — index+face live on the payload
+            UndoManager.FaceRot fr = op.faceRot();
+            if (fr == null) return op.label() + " ?";
+            return "rotate " + fr.face() + " " + ((undo ? fr.oldQ() : fr.newQ()) * 90) + "°";
         }
         SlotData ref = op.before() != null ? op.before() : op.after();
         String id = ref != null ? ref.customId() : "?";

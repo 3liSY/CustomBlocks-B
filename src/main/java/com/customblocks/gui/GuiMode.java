@@ -25,7 +25,7 @@ public enum GuiMode {
     RECORD_OVERLAY(12), // Group 29 Build B - Record Overlay Studio/actions (client-local)
     CATEGORY_HUB(13),   // Group 27 Category Hub — full red+black category manager (client screen)
     GUESS_SETTINGS(14), // Group 30 §10 / G30-4 — shared Guess Settings screen (Pose tab: sliders + live dummy)
-    BUZZER_PANEL(15),   // Group 31 item 4 — BuzzerGame admin panel screen (control + settings + link list)
+    // id 15 retired — the Group 31 BuzzerGame admin panel Screen was scrapped for the wand-owned session (2026-07-18)
     BULK_WORKBENCH(16), // Group 07 — Bulk Operations Hub (Catalog · Console · Health tabs; replaces the chest bulk flow)
     BACKUP_SCREEN(17),  // Group 09 §G09-A4 — Backup Screen (list · restore · delete · rename · protect; replaces the chest backup menu)
     SETALL_SCREEN(18);  // Group 07 — Set All Screen (/cb setall on a dedicated screen: setting + value → apply to every block)

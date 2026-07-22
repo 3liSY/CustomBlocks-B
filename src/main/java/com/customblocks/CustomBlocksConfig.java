@@ -64,15 +64,6 @@ public final class CustomBlocksConfig {
      *  they stay see-through. Client-side visual; pushed to clients on join + on /cb config transparent. */
     public static volatile boolean transparentBackground = false;
 
-    // ── Group 04 — chat & command communication ──────────────────────────────
-
-    /**
-     * Typo correction for unknown /cb subcommands:
-     * "smart" (default) = suggest only when confident · "always" = suggest the closest
-     * match even on weaker hits · "off" = plain unknown-command message, no suggestion.
-     */
-    public static volatile String didYouMean = "smart";
-
     // ── Phase 13 — AI (legacy key fields; removal deferred to G15.7) ──────────
     /** API key for AI texture/command features (leave empty to disable). */
     public static volatile String aiApiKey = "";
@@ -232,14 +223,34 @@ public final class CustomBlocksConfig {
     /** Explosion power. TNT is 4.0; the tomato is hotter at 6.0 (a "nuke"-named tomato jumps to 12.0). */
     public static volatile double tomatoBlastPower = 6.0;
 
-    /** Whether the blast throws entities. The knockback is the point of the weapon — on by default. */
-    public static volatile boolean tomatoBlastKnockback = true;
+    /**
+     * Knockback STRENGTH as a tunable float (owner-locked 8.0, 2026-07-17 — was a boolean on/off). The blast
+     * still throws entities off a real vanilla explosion; this rescales that imparted push. 6.0 = the normal
+     * blast power = an unscaled "vanilla" TNT-style shove, so 8.0 is punchier than a same-power vanilla blast;
+     * 0.0 cancels knockback entirely. Clamped 0–64 on load.
+     */
+    public static volatile double tomatoBlastKnockback = 8.0;
 
     /** Whether the blast sets fire. Off: the tomato leaves a crater and a bad mood, not a wildfire. */
     public static volatile boolean tomatoBlastFire = false;
 
     /** How long (seconds) a crater waits before it restores to the original terrain (in-memory anti-grief). */
-    public static volatile int tomatoRestoreSeconds = 15;
+    public static volatile int tomatoRestoreSeconds = 5;
+
+    /**
+     * How long (seconds) a sauce puddle lasts before it dries out and fades (Phase D, config-tunable). Default
+     * dropped 15 → 5 (owner-locked 2026-07-17) so the ENTIRE splash field dries in the same window the crater
+     * restores — a puddle can no longer outlive the block it is sitting on and block that block's restore.
+     */
+    public static volatile int tomatoSauceDecaySeconds = 5;
+
+    /** Max sauce puddles kept per chunk; past this the OLDEST is evicted first (Phase D, strict FIFO). */
+    public static volatile int tomatoSauceCapPerChunk = 50;
+
+    // ── Group 31 — BuzzerGame timer stand ─────────────────────────────────────
+    /** Spawn size a freshly placed timer stand starts at (×). Shipped ×1.3 (2026-07-19 lock); the owner
+     *  changes it in-game with {@code /cb buzzergame size <n> setdefault}. Clamped 0.1–5.0 on load. */
+    public static volatile float timerDefaultScale = 1.3f;
 
     private CustomBlocksConfig() {} // static-only
 
@@ -259,12 +270,5 @@ public final class CustomBlocksConfig {
         if (v.startsWith("#")) v = v.substring(1);
         if (!v.matches("[0-9a-fA-F]{6}")) return fallback;
         return "#" + v.toUpperCase(java.util.Locale.ROOT);
-    }
-
-    /** Clamp a didYouMean value to one of: smart / always / off (unknown → smart). */
-    public static String normalizeDidYouMean(String raw) {
-        if (raw == null) return "smart";
-        String v = raw.trim().toLowerCase(java.util.Locale.ROOT);
-        return ("always".equals(v) || "off".equals(v)) ? v : "smart";
     }
 }

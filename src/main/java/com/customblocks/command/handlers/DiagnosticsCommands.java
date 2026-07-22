@@ -10,10 +10,6 @@
  */
 package com.customblocks.command.handlers;
 
-import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-
-import com.customblocks.network.payloads.ClearLogsPayload;
-
 import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.DiagReport;
@@ -83,31 +79,10 @@ public final class DiagnosticsCommands {
                 .then(CommandManager.literal("link")
                         .executes(DiagnosticsCommands::reportLink)));
 
-        // G04-4 — /cb clearlogs: tidy away YOUR OWN [CB] spam, leaving real player chat alone.
-        root.then(CommandManager.literal("clearlogs")
-                .executes(DiagnosticsCommands::clearLogs));
     }
 
-    /**
-     * Clear this player's [CB] chat lines — and only those.
-     *
-     * Chat history lives on the client, so the server genuinely cannot do this itself; all it can do is
-     * ask. The client's CbChatMirror keeps a shadow copy of incoming chat and rebuilds the chat box
-     * without our lines. That is also why this is a per-player command: it tidies the screen of whoever
-     * ran it, and nobody else's.
-     */
-    private static int clearLogs(CommandContext<ServerCommandSource> ctx) {
-        ServerCommandSource src = ctx.getSource();
-        if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
-            Chat.error(src, "Run /cb clearlogs as a player — it clears your own chat box.");
-            return 0;
-        }
-        ServerPlayNetworking.send(p, new ClearLogsPayload());
-        // Sent AFTER the payload would be pointless — the client clears, then this arrives and is the
-        // only [CB] line left standing. That is intentional: it confirms the command worked.
-        Chat.success(src, "Cleared the [CB] lines from your chat. Player chat is untouched.");
-        return 1;
-    }
+    // /cb clearlogs — SCRAPPED (owner-locked 2026-07-15). The command, its ClearLogsPayload, the
+    // client-side CbChatMirror surgery and the HelpTopics entry were all removed; do not reintroduce.
 
     /** Tab-complete currently-online player names (for /cb audit <player>). */
     private static final SuggestionProvider<ServerCommandSource> PLAYER_NAMES = (ctx, b) -> {

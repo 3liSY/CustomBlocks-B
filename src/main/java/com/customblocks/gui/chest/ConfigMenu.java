@@ -66,14 +66,6 @@ public final class ConfigMenu {
                 "§aClick §7→ switch mode §8(clears history)"),
                 (p, b, a) -> GuiRouter.runAndReopen(p, "config undomode", MenuKey.of(Dest.CONFIG)));
 
-        // ── Did-you-mean (editable: cycles via /cb config didyoumean cycle) ──
-        m.set(24, Icons.glint(Items.NAME_TAG, "§a§lTypo Correction §f→ §e" + CustomBlocksConfig.didYouMean,
-                "§7Suggests the right command when a",
-                "§7/cb subcommand is mistyped.",
-                "§7smart §8= only confident hits §7· always §8= closest match §7· off",
-                "§aClick §7→ cycle mode"),
-                (p, b, a) -> GuiRouter.runAndReopen(p, "config didyoumean cycle", MenuKey.of(Dest.CONFIG)));
-
         // ── Silent pack (editable: toggles via /cb config silentpack) ──────
         m.set(25, Icons.glint(CustomBlocksConfig.silentPack ? Items.LIME_DYE : Items.GRAY_DYE,
                 "§a§lSilent Pack §f= " + (CustomBlocksConfig.silentPack ? "§aON" : "§cOFF"),

@@ -37,6 +37,7 @@ import com.customblocks.command.handlers.ColorImageCommands;
 import com.customblocks.command.handlers.ColorVariantCommands;
 import com.customblocks.command.handlers.ConfigCommands;
 import com.customblocks.command.handlers.CreationCommands;
+import com.customblocks.command.handlers.DebugCommands;
 import com.customblocks.command.handlers.DeleteCommands;
 import com.customblocks.command.handlers.DiagnosticsCommands;
 import com.customblocks.command.handlers.FaceCommands;
@@ -46,6 +47,7 @@ import com.customblocks.command.handlers.GuiCommands;
 import com.customblocks.command.handlers.HelpCommands;
 import com.customblocks.command.handlers.HexCommands;
 import com.customblocks.command.handlers.HistoryCommands;
+import com.customblocks.command.handlers.LowResCommands;
 import com.customblocks.command.handlers.PaletteCommands;
 import com.customblocks.command.handlers.RecordOverlayCommands;
 import com.customblocks.command.handlers.ImageToolCommands;
@@ -69,6 +71,7 @@ import com.customblocks.command.handlers.TomatoCommands;
 import com.customblocks.command.handlers.ToolCommands;
 import com.customblocks.command.handlers.TrashCommands;
 import com.customblocks.command.handlers.UtilityCommands;
+import com.customblocks.command.handlers.WheelCommands;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.tree.LiteralCommandNode;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
@@ -139,6 +142,8 @@ public final class CommandRegistrar {
             GuessCommands.register(root); // Group 30 — /cb guess <player> ... (op-only party guess mode)
             BuzzerGameCommands.register(root); // Group 31 — /cb buzzergame ... (BuzzerGame minigame)
             TomatoCommands.register(root); // Group 32 — /cb tomato <targets> [amount] | all (OP level 2)
+            WheelCommands.register(root); // Group 34 — /cb wheel place|spin|list (Wheel of Fortune)
+            DebugCommands.register(root); // §G04-5 — hidden /cb debug kick <cause> (OP-only; kick-screen preview)
             // DidYouMean's greedy catch-all MUST be appended after every real literal —
             // Brigadier prefers literals, so this only fires for unknown subcommands.
             DidYouMean.appendFallback(root);
@@ -152,6 +157,9 @@ public final class CommandRegistrar {
             // subcommand would otherwise fail as an unknown command (only "/customblock" worked).
             dispatcher.register(CommandManager.literal("cb").redirect(node)
                     .executes(ChestGuiCommands::openDashboard));
+            // Group 05 §F — /cblowres lives on its OWN root (not under /cb): the old client-side command
+            // owned this root; the server now owns it and chooses each player's pack resolution.
+            LowResCommands.register(dispatcher);
         });
     }
 }

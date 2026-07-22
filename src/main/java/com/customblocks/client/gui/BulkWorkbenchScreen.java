@@ -41,7 +41,6 @@ import static com.customblocks.client.gui.BulkWorkbenchView.contentBottom;
 public final class BulkWorkbenchScreen extends Screen {
 
     static final int TAB_BROWSE = 0, TAB_BULK = 1;
-    static final int MAX_CONDS = 3;                       // kept for BulkFilterBuilder / NL matching
     private static final long SWEEP_MS = 900L;            // §G27.22b Execute sweep duration
 
     private final BulkWorkbenchView view = new BulkWorkbenchView();
@@ -63,8 +62,8 @@ public final class BulkWorkbenchScreen extends Screen {
     String exportFormat = "json";
     String lockMode = "lock", favMode = "favorite";
     int recolorHue = 0;                                      // §G27.22b Recolor hue (degrees)
-    // The NL bar still builds a single filter to SELECT blocks; the tab itself no longer has a filter builder.
-    private final BulkFilterBuilder fb = new BulkFilterBuilder(r -> { if (r == 1) rebuild(); });
+    // The tab has no filter builder and the server only ever receives an explicit id list (§G07-B rip, 2026-07-20).
+    String browseCategory;  // §G07-B2: Blocks List Category ▾ filter, combines with browseFilter (AND)
 
     boolean confirmOpen;
     private boolean draggingScroll;   // A2: a list scrollbar thumb is being dragged
@@ -74,13 +73,13 @@ public final class BulkWorkbenchScreen extends Screen {
     private String browseFilter = "all";   // §G27.22 filter chip: all | fav | locked | selected
     private String browseSort = "name";    // §G27.22 Sort ▾: name | id | newest | color
     private boolean sortOpen;              // §G27.22 Sort ▾ dropdown is open
+    boolean categoryOpen;                  // §G07-B2 Category ▾ dropdown is open
     private boolean executing;             // §G27.22b Execute sweep is animating
     private long executeStart;
     private int executeN;
 
-    // §G07-4 history + toast, NL command bar, and the Bulk-actions companion — split to hold the ≤500-line cap.
+    // §G07-4 history + toast, and the Bulk-actions companion — split to hold the ≤500-line cap.
     private final BulkHistoryOverlay hist = new BulkHistoryOverlay();
-    private final BulkNlBar nl = new BulkNlBar();
     private final BulkConsoleInput con = new BulkConsoleInput(this);
 
     // Text-field contents live here (not the widgets): init() rebuilds the widgets on op change without wiping input.
@@ -180,13 +179,13 @@ public final class BulkWorkbenchScreen extends Screen {
     String browseFilter() { return browseFilter; }
     String browseSort() { return browseSort; }
     boolean sortOpen() { return sortOpen; }
+    boolean categoryOpen() { return categoryOpen; }
     boolean histOpen() { return hist.histOpen(); }
-    String nlPreview() { return nl.preview(); }
     int undoHistSize() { return hist.undoSize(); }
+    String browseCategory() { return browseCategory; }
     List<BulkWorkbenchModel.PreviewRow> preview() { return previewCache; }
     BulkWorkbenchModel.PreviewRow previewFor(String id) { return previewById.get(id); }
     List<String> scopeIds() { return scopeCache; }
-    BulkFilterBuilder fb() { return fb; }
     void clearExcluded() { excluded.clear(); }
     int executeCount() { return executeN; }
     float executeProgress() {
@@ -206,12 +205,9 @@ public final class BulkWorkbenchScreen extends Screen {
     // ── layout ───────────────────────────────────────────────────────────────
     void rebuild() { clearChildren(); init(); }
 
-    void addNlField(CbTextField f) { addDrawableChild(f); }  // package seam for BulkNlBar (addDrawableChild is protected)
-
     @Override
     protected void init() {
         field(width - 190, 12, 150, 16, "§8search…", 48, search, v -> { search = v; view.resetScroll(); ops.resetScrolls(); });
-        nl.build(this, textRenderer, width);   // §G07-4 always-visible NL command bar (parse on Enter)
         if (tab != TAB_BULK) return;            // only Bulk Actions has op controls
 
         switch (opIndex) {
@@ -324,6 +320,11 @@ public final class BulkWorkbenchScreen extends Screen {
             if (setSort(mx, my)) return true;
             sortOpen = false; // a click elsewhere closes it, then still lands below
         }
+        // The Category ▾ menu (§G07-B) overlays too — resolve it next.
+        if (categoryOpen) {
+            if (con.pickCategory(mx, my)) return true;
+            categoryOpen = false;
+        }
         // The "Select ▾" dropdown (4 options) overlays the grid — resolve it next.
         if (selAllOpen) {
             if (BulkDraw.in(mx, my, view.rSelScreen)) { CbUiSounds.click(); ticked.addAll(view.pageIds()); selAllOpen = false; return true; }
@@ -345,7 +346,10 @@ public final class BulkWorkbenchScreen extends Screen {
         if (BulkDraw.in(mx, my, view.rChipFav))    { setFilter("fav"); return true; }
         if (BulkDraw.in(mx, my, view.rChipLocked)) { setFilter("locked"); return true; }
         if (BulkDraw.in(mx, my, view.rChipSel))    { setFilter("selected"); return true; }
-        if (BulkDraw.in(mx, my, view.rSort)) { CbUiSounds.click(); sortOpen = !sortOpen; return true; }
+        if (view.rChipCategory != null && BulkDraw.in(mx, my, view.rChipCategory)) {
+            CbUiSounds.click(); categoryOpen = !categoryOpen; sortOpen = false; selAllOpen = false; return true;
+        }
+        if (BulkDraw.in(mx, my, view.rSort)) { CbUiSounds.click(); sortOpen = !sortOpen; categoryOpen = false; return true; }
 
         if (BulkDraw.in(mx, my, view.rSelAll) && !view.allMatchingIds().isEmpty()) { CbUiSounds.click(); selAllOpen = !selAllOpen; return true; }
         if (BulkDraw.in(mx, my, view.rClearSel)) { CbUiSounds.click(); ticked.clear(); return true; }
@@ -479,15 +483,9 @@ public final class BulkWorkbenchScreen extends Screen {
             if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) { confirmOpen = false; startExecute(); return true; }
             return true;
         }
-        if (nl.isFocused(getFocused()) && (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER)) {
-            nl.onEnter(this);
-            return true;
-        }
         if (key == GLFW.GLFW_KEY_ESCAPE && !(getFocused() instanceof CbTextField)) { close(); return true; }
         return super.keyPressed(key, scan, mods);
     }
-
-    void applyNl(BulkNlParser.Nl n) { con.applyNl(n); }   // NL bar → Bulk Actions state (via the actions companion)
 
     @Override
     public void removed() { cube.dispose(); super.removed(); }   // §G27.22: release the cube atlases (render thread)

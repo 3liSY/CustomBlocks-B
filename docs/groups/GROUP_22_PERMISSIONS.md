@@ -1,274 +1,174 @@
-# Group 22 — Permissions System
+# Group 22 - Permissions
 
-> ## ⏸️ DEFERRED 2026-06-22 — come back later (owner's call)
->
-> Not started. Spec was read, design questions were answered, then the owner chose to **park
-> this group and resume later**. Everything below in this banner is **already decided** — when we
-> resume, do NOT re-ask; pick up at "Resume here".
->
-> **Decisions locked (owner-confirmed 2026-06-22):**
-> 1. **Rollout = slice first, then roll out.** Build engine + config + denied message, wire a small
->    test slice (`create`=edit, `list`=use, `backup`=admin), owner confirms in-game, THEN wire all.
-> 2. **Tier mapping = walk the full list together.** Proposed map below is owner-reviewable, not yet
->    confirmed. Owner stopped before ruling on the 8 judgment calls.
-> 3. **Denied UX = clean message, command stays visible.** `"You don't have permission to use this
->    command."` via an **in-execute check** (NOT `.requires()`, which would hide the node and give
->    vanilla "Unknown command"). Commands stay tab-completable for all; they just refuse to run.
-> 4. **Test env = vanilla OP only (no LuckPerms).** Verify the 3-tier OP fallback + config tier
->    changes. Skip Test G22.3 (LuckPerms node) until/unless LuckPerms is installed.
->
-> **Build facts found:** `fabric-permissions-api` is present but **commented out** in `build.gradle`
-> (~line 57: `me.lucko:fabric-permissions-api:0.3.1`) — uncomment to enable. Group 21 Config GUI
-> already has a `Cat.PERMISSIONS` tab with a "coming with Group 22" placeholder
-> (`ConfigRegistry.java` ~line 334) — the 3 tier fields slot in there. Handlers each build literals
-> inline (`root.then(CommandManager.literal("x")...)`) across ~55 files — in-execute checks need a
-> shared helper so we don't edit hundreds of `executes`.
->
-> ### Resume here — proposed tier map (owner reviews, then we build)
-> One node per top-level subcommand: `customblocks.command.<name>`. Fallback OP: use=0, edit=2, admin=4.
->
-> - **🟢 USE (OP 0):** list · search · categories · help · welcome · give · favs · locked ·
->   shapelist · shapepreview · menu · dashboard · listgui · blockslist
-> - **🟡 EDIT (OP 2):** create · rename · dupe · retexture · delete · reid · setglow · sethardness ·
->   setsound · setcollision · setcategory · setshape · clearshape · shapeeditor · paintface · setface ·
->   clearface · clearallfaces · animation · resize · exportpng · gradient · gradientpick · bgstudio ·
->   tolerance · coloring · colors · livecolor · eyedrop · customcolor · recolorvariants · omni · brush ·
->   chisel · rectangle · deleter · template · palette · category · gui · editor · edithud · facechangegui ·
->   magicitems · editmagicitems
-> - **🔴 ADMIN (OP 4):** all bulk* (bulkgui bulkhub bulkproperty bulkdelete bulkrename bulkcategory
->   bulkduplicate bulkexport bulkreid bulklock bulkunlock bulkfavorite bulkunfavorite) · confirm · cancel ·
->   config · backup · backupgui · recover · safety · showbrokenblocks · trash · deletedblocks · diag ·
->   incidents · audit · cache · report · reload · rp · sync · unsuppress · admingui · lock · unlock ·
->   vault · discord
->
-> **8 open judgment calls (owner had NOT ruled when deferred):**
-> 1. lock/unlock → admin (guess) or edit?
-> 2. fav → use (guess) or edit?
-> 3. undo/redo → edit (guess) or use?
-> 4. note/lore → edit (guess) or use?
-> 5. ai → edit (guess) or admin?
-> 6. export/exportblock/importblock/importfolder → edit (guess) or admin?
-> 7. particles/sounds/feedback → admin (guess) or use?
-> 8. arabic → edit (guess) or use?
+> Group 22 gives each `/cb` action a clear permission rule, with LuckPerms-aware nodes when available and understandable vanilla-operator fallback everywhere else.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_22.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. LuckPerms (or Fabric Permissions API) installed on test server (or vanilla OP fallback test only).
->
-> **Objective:** Restore the LuckPerms / Fabric Permissions API integration with per-command permission nodes. When LuckPerms is absent, fall back to vanilla OP level checks using a 3-tier scheme.
->
-> **Source issues:** Q7 (Permissions System), Decision §F (LuckPerms + Fabric Permissions API, vanilla OP fallback)
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing. Test both with and without LuckPerms if possible.
+## Purpose
 
----
+CustomBlocks needs permissions that work for a public server without making ordinary commands disappear from chat suggestions. Players should be able to browse and use allowed commands, while changes, bulk work, backups, and diagnostics have predictable server-owner control.
 
-## What this group restores
+G22 owns the shared permission engine, permission-node naming, vanilla fallback tiers, and command mapping. It is deliberately paused until the remaining command classification choices are resolved; the stored design is ready to resume without reopening decisions that are already settled.
 
-| Area | Old CustomBlocks | New CustomBlocks-B | This Group |
-|---|---|---|---|
-| LuckPerms integration | Existed with per-command nodes | Missing — all commands OP-only or unrestricted | Restored |
-| Permission nodes | `customblocks.command.create` etc. | Not present | Fully wired per-command nodes |
-| 3-tier fallback | Old had granular OP-level scheme | No fallback at all | 3-tier: use / edit / admin → vanilla OP levels |
-| Config | `permissionFallback*` OP-level fields | Not present | 3-tier config in Permissions tab (Group 21) |
+## Ownership
 
----
+| Owns | Does not own |
+| --- | --- |
+| Permission checks, nodes, tier mapping, and clean denial behavior | Command behavior and feature-specific validation in each owning Group |
+| Fabric Permissions API integration and vanilla OP fallback | Permissions Screen layout and setting editing: G27 |
+| `use`, `edit`, and `admin` fallback configuration fields | Server member/rank management inside LuckPerms |
+| Resource-pack control command access rules | Resource-pack build and delivery behavior: G05 |
 
-## What this group covers
+## Direction
 
-| Feature | Area |
-|---|---|
-| Permission nodes | One node per `/cb` command |
-| 3-tier fallback | use = OP 0, edit = OP 2, admin = OP 4 |
-| LuckPerms auto-detect | If present, use it; if absent, use vanilla OP |
-| Config | Permission tier settings via Group 21 Config GUI |
+Every top-level `/cb` action receives one permission node in the form `customblocks.command.<name>` and one fallback tier. The API checks a node where a permissions provider exists, otherwise it uses configurable vanilla OP levels: `use=0`, `edit=2`, and `admin=4` by default.
 
----
+A denied command stays visible and tab-completable. Its execution performs a shared check and responds with exactly `You don't have permission to use this command.` This prevents a normal authorization decision from looking like an unknown command or a server error.
 
-## Implementation Requirements
+## Locked Decisions
 
-### 1. Permission Architecture
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-22 | Build a small permission slice before wiring every command. | The first implementation proves `list` as use, `create` as edit, and `backup` as admin. |
+| 2026-06-22 | Use one node per top-level subcommand. | Permissions remain discoverable and do not require a separate custom syntax. |
+| 2026-06-22 | Use Fabric Permissions API when available, with vanilla OP fallback. | LuckPerms-style nodes and standalone servers share one permission call site. |
+| 2026-06-22 | Default fallback tiers are use 0, edit 2, and admin 4. | Server owners can choose more open or restricted fallback values without changing nodes. |
+| 2026-06-22 | Denial happens inside command execution. | Commands stay visible/tab-completable and show the agreed human message. |
+| 2026-06-22 | Vanilla OP fallback is the first required test environment. | LuckPerms-specific checks wait until a server has it installed. |
+| 2026-07-12 | Permissions settings use the G27 Screen framework. | G22 owns the fields and behavior, not a competing settings UI. |
 
-CustomBlocks uses the **Fabric Permissions API** (`me.lucko:fabric-permissions-api`) as the abstraction layer:
-- If LuckPerms is installed: LuckPerms nodes are evaluated automatically through the API.
-- If LuckPerms is absent: Fabric Permissions API falls back to vanilla OP level checks.
+## Feature Plan
 
-This means zero extra code paths — one check handles both cases.
+### A. Shared Permission Engine
 
-### 2. Permission Nodes
+**Player outcome**
 
-All nodes follow the pattern `customblocks.command.<subcommand>`.
+Players receive a short clear refusal only when they attempt an action they are not allowed to use.
 
-**Tier assignment:**
+**Experience**
 
-| Tier | Description | Default vanilla OP level | Example nodes |
-|---|---|---|---|
-| `use` | View, browse, give, search, favs | OP level 0 (all players) | `customblocks.command.list`, `.give`, `.search`, `.favs`, `.help` |
-| `edit` | Create, delete, modify, import/export | OP level 2 | `customblocks.command.create`, `.delete`, `.setglow`, `.retexture`, `.template` |
-| `admin` | Bulk ops, config, backup, diagnostics | OP level 4 | `customblocks.command.bulkdelete`, `.config`, `.backup`, `.diag`, `.lock` |
+- Command discovery and tab completion remain available to every player.
+- Denied use produces one friendly message, with no stack trace or vanilla unknown-command response.
+- Allowed commands continue into their existing validation and error messaging normally.
 
-### 3. Fallback Scheme — 3 Tiers in Config
+**Requirements**
 
-Config fields (in Permissions tab via Group 21):
-| Field | Default | Description |
-|---|---|---|
-| `permissionTierUse` | 0 | Vanilla OP level for "use" tier commands |
-| `permissionTierEdit` | 2 | Vanilla OP level for "edit" tier commands |
-| `permissionTierAdmin` | 4 | Vanilla OP level for "admin" tier commands |
+- Restore the `fabric-permissions-api` dependency and centralize permission evaluation in a reusable helper.
+- The helper accepts the concrete command node and fallback tier, then chooses provider evaluation or vanilla OP level.
+- Avoid copying fragile authorization checks through dozens of inline command handlers.
+- Permission denial is normal control flow and must not create noisy logs.
 
-Server ops can lower these (e.g., set `permissionTierEdit = 0` to allow all players to create blocks).
+**Boundary**
 
-### 4. Denied Command Message
+The engine decides whether a command may begin. It does not replace command-specific input, ownership, lock, or safety validation.
 
-When a player runs a command they don't have permission for:
-`"You don't have permission to use this command."`
+### B. Command Tiers and Fallback Configuration
 
-No stack trace. No exception. Clean message.
+**Player outcome**
 
----
+Server owners can understand who may browse, edit, or administer CustomBlocks and adjust the three fallback levels for their server.
 
-## Setup
+**Experience**
 
-*(With LuckPerms — skip to vanilla OP tests if LuckPerms not available.)*
+- Use covers viewing, browsing, help, search, and other non-mutating player actions.
+- Edit covers creation and intentional content changes.
+- Admin covers bulk operations, server configuration, backup/recovery, diagnostics, and disruptive resource-pack controls.
 
-Create a test player account (or use `/lp user` commands) with no extra permissions.
+**Requirements**
 
----
+- Store `permissionTierUse`, `permissionTierEdit`, and `permissionTierAdmin` as validated vanilla OP levels.
+- Give every registered top-level command exactly one node and one tier before mass wiring begins.
+- Keep the final command map in this Group and the executable coverage in its Testing Guide.
+- G27 exposes the three fields in its Permissions settings area without becoming the source of permission policy.
 
-## Test G22.1 — Non-OP player blocked from edit commands
+**Boundary**
 
-As a player with no OP and no LuckPerms nodes:
+Tiers are fallback policy, not a separate rank system. LuckPerms or another provider remains responsible for granting/revoking named permissions.
 
-```
-/cb create g22a PermTest
-```
+### C. Incremental Rollout
 
-**Expected:** `"You don't have permission to use this command."`
+**Player outcome**
 
-**Pass:** Command denied with clean message.
-**Fail:** Command executes, error message is ugly/stacktrace, or wrong command blocked.
+The permission system arrives without a large, hard-to-debug change across every command at once.
 
----
+**Experience**
 
-## Test G22.2 — Non-OP player can use view commands
+- The first slice shows the full use/edit/admin contrast using familiar commands.
+- Server owners can test fallback levels before integrating a permission provider.
+- Resource-pack pause, resume, and sync are protected as administrative controls when wired.
 
-As same non-OP player:
+**Requirements**
 
-```
-/cb list
-/cb search PermTest
-```
+- First wire `list`, `create`, and `backup`; validate denial, access, tier override, and clean logs.
+- Then apply the approved map systematically to remaining command families.
+- With LuckPerms installed, a named permission can grant the exact command without unintentionally granting unrelated admin access.
+- `/cb rp pause`, `/cb rp resume`, and `/cb sync` use the admin tier; sync retains its three-second warning before a pack push.
 
-**Expected:** Both commands execute (list shows blocks, search shows results). These are "use" tier (OP level 0).
+**Boundary**
 
-**Pass:** View commands work for non-OP players.
-**Fail:** View commands also blocked.
+The full rollout waits for the unresolved command classifications below. No broad permission rewrite should guess those policy decisions.
 
----
+## Cross-Group Contracts
 
-## Test G22.3 — LuckPerms node grants permission
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G05 | Resource-pack controls | Pause, resume, and sync are admin-tier actions; their pack behavior remains owned by G05. |
+| G09 | Backup and recovery | Backup/recovery commands use the admin tier while G09 retains their safety behavior. |
+| G12 | Export and import | Final export/import tier selection must preserve G12 and G20 workflows. |
+| G13 | Arabic blocks | Final Arabic command tier selection follows its editing/use behavior without changing Arabic data rules. |
+| G15 | AI textures | Final AI tier selection protects cost/safety without changing G15 generation behavior. |
+| G16 | Diagnostics | Diagnostic, audit, and feedback administration commands use the approved owner tier. |
+| G17 | History and favourites | Undo/redo and favourite command classifications must match their actual mutation behavior. |
+| G27 | Settings Screen | G27 presents G22's three fallback fields and never duplicates node evaluation. |
 
-*(Skip if LuckPerms not installed.)*
+## Technical Contract
 
-Grant the permission `customblocks.command.create` to the test player via LuckPerms.
+- Nodes use `customblocks.command.<subcommand>` consistently for every top-level command.
+- A single shared helper invokes Fabric Permissions API when present and vanilla OP fallback when it is not.
+- Default fallback values are `use=0`, `edit=2`, and `admin=4`; configuration validates permitted vanilla OP levels.
+- Permission checks run inside execution, so `.requires()` does not hide an unavailable command from completion/discovery.
+- The command map is finalized before broad wiring, and each command has one tier rather than layered accidental checks.
 
-```
-/lp user <testplayer> permission set customblocks.command.create true
-```
+## Deferred Scope
 
-As the test player:
-```
-/cb create g22a PermTest
-```
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-**Expected:** Command succeeds.
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Final tier for lock/unlock | It still needs the owner to choose admin or edit. | G22 |
+| Final tier for favourites | It still needs the owner to choose use or edit. | G22 with G17 |
+| Final tier for undo/redo and note/lore | Their player-facing policy remains undecided. | G22 with G17/G18 |
+| Final tier for AI, export/import, feedback controls, and Arabic | These cost, safety, and editing boundaries need an explicit owner decision. | G22 with G12/G13/G15/G16 |
+| LuckPerms verification environment | The first rollout validates vanilla fallback; provider testing waits for a server installation. | G22 |
 
-**Pass:** Node grants access correctly.
-**Fail:** Still denied despite node grant.
+</details>
 
----
+## Superseded Decisions
 
-## Test G22.4 — Vanilla OP fallback (no LuckPerms)
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
-*(Only if LuckPerms is not installed.)*
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-22 | Commands could use only raw OP checks or inconsistent unrestricted access. | Every mapped command uses one named node and fallback tier. |
+| 2026-06-22 | Denied commands could be hidden with `.requires()`. | Commands remain visible and issue the agreed in-execution message. |
+| 2026-07-12 | Permissions fields belonged to the old Group 21 configuration UI. | G27 owns their Screen presentation. |
 
-OP the test player at level 2: `/op <player>` or set OP level via server config.
+</details>
 
-```
-/cb create g22a PermTest
-```
+## References
 
-**Expected:** Command succeeds (OP level 2 = "edit" tier by default).
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_22.md) · [All Groups](README.md)
 
-**Pass:** Vanilla OP fallback works.
-**Fail:** Denied despite OP level 2.
-
----
-
-## Test G22.5 — Admin tier requires higher level
-
-As OP level 2 player (edit tier only):
-
-```
-/cb backup save test
-```
-
-**Expected:** Denied — `"You don't have permission to use this command."` (Backup is admin tier, requires OP level 4.)
-
-**Pass:** Admin commands require higher permission.
-**Fail:** Admin commands accessible at edit tier.
-
----
-
-## Test G22.6 — Config tier change takes effect
-
-Via Config GUI (Group 21), Permissions tab: change `permissionTierEdit` from 2 to 0.
-
-As a non-OP player:
-```
-/cb create g22b PermTest2
-```
-
-**Expected:** Command succeeds — edit tier now accessible to all.
-
-Restore `permissionTierEdit = 2` after test.
-
-**Pass:** Tier change applies correctly.
-**Fail:** Still denied after tier lowered.
-
----
-
-## Group 22 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G22.1 | Non-OP blocked from edit commands | ⬜ |
-| G22.2 | Non-OP can use view commands | ⬜ |
-| G22.3 | LuckPerms node grants access | ⬜ |
-| G22.4 | Vanilla OP fallback works | ⬜ |
-| G22.5 | Admin tier requires higher OP | ⬜ |
-| G22.6 | Config tier change applies | ⬜ |
-
-**Group 22 passes when permission nodes are enforced correctly with both LuckPerms and vanilla OP fallback.**
-
-If anything shows ❌ — paste:
-1. The player's OP level and LuckPerms nodes (if any)
-2. The exact command tried
-3. What happened vs what was expected
-
----
-
-## Migrated Commands (from Group 02 Extinction)
-
-With the deprecation of Group 02, the following administrative commands have been fully transferred to Group 22's scope.
-- **`/cb rp pause` & `/cb rp resume`**: Explicitly restricted to Server OPs (Admin Tier) only. 
-- **`/cb sync`**: When pushing the resource pack to all connected clients, the server will display a 3-second on-screen title announcement warning players of the incoming lag spike before pushing the pack.
-
----
-
-## Cleanup
-
-```
-/cb delete g22a
-/cb delete g22b
-```
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G09 Backup and Recovery](GROUP_09_BACKUP_SAFETY.md)
+- [G12 Export and Marketplace](GROUP_12_EXPORT_MARKETPLACE.md)
+- [G13 Arabic and Text Blocks](GROUP_13_ARABIC.md)
+- [G15 AI Textures](GROUP_15_AI_TEXTURES.md)
+- [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)
+- [G17 History, Give, Delete, and Search](GROUP_17_REGRESSIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 22 snapshot](../archive/group-migration-2026-07-18/GROUP_22_PERMISSIONS.md)

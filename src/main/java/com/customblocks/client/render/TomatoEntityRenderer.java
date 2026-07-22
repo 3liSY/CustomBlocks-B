@@ -59,30 +59,22 @@ public class TomatoEntityRenderer extends EntityRenderer<TomatoEntity> {
         // The whole billboard: rotate the quad by the CAMERA's rotation, so its face is always square to the
         // viewer. dispatcher.getRotation() is the same source the vanilla item renderer uses for this.
         matrices.multiply(dispatcher.getRotation());
-
-        // §B fuse tell: for the ~0.5s before it blows, the tomato SWELLS and strobes WHITE like primed TNT —
-        // the rider's visible bail cue. The fuse value is synced from the server (TomatoEntity.getFuse()).
-        int fuse = entity.getFuse();
-        float scale = SIZE;
-        int overlay = OverlayTexture.DEFAULT_UV;
-        if (fuse > 0) {
-            float t = (TomatoEntity.FUSE_TICKS - fuse) / (float) TomatoEntity.FUSE_TICKS; // 0 → 1 across the fuse
-            scale = SIZE * (1f + 0.5f * t);                                                // swell up to 1.5x
-            if (fuse % 2 == 0) overlay = OverlayTexture.packUv(OverlayTexture.getU(0f), OverlayTexture.getV(true)); // white flash
-        }
-        matrices.scale(scale, scale, scale);
+        matrices.scale(SIZE, SIZE, SIZE); // fixed size — no fuse swell (fuse removed, owner-locked 2026-07-15, B1)
 
         MatrixStack.Entry e = matrices.peek();
         Matrix4f m = e.getPositionMatrix();
+        int overlay = OverlayTexture.DEFAULT_UV;
         // NoCull: the quad is one-sided geometry, and a billboard must never vanish when the maths puts the
         // camera a hair behind it.
         VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(TEXTURE));
 
-        // A unit quad centred on the entity's origin. (0,0) of the texture is its top-left.
-        vert(vc, m, e, light, overlay, -0.5f,  0.5f, 0f, 1f); // bottom-left
-        vert(vc, m, e, light, overlay,  0.5f,  0.5f, 1f, 1f); // bottom-right
-        vert(vc, m, e, light, overlay,  0.5f, -0.5f, 1f, 0f); // top-right
-        vert(vc, m, e, light, overlay, -0.5f, -0.5f, 0f, 0f); // top-left
+        // A unit quad centred on the entity's origin. v is FLIPPED vs the naive mapping (A1, G32-A1-FLIP-ICON):
+        // after the camera rotation the +y vertex lands at the TOP of the screen, so the texture TOP (v=0) must
+        // go there — the old mapping put v=1 on it and the tomato rendered upside-down.
+        vert(vc, m, e, light, overlay, -0.5f,  0.5f, 0f, 0f); // top-left
+        vert(vc, m, e, light, overlay,  0.5f,  0.5f, 1f, 0f); // top-right
+        vert(vc, m, e, light, overlay,  0.5f, -0.5f, 1f, 1f); // bottom-right
+        vert(vc, m, e, light, overlay, -0.5f, -0.5f, 0f, 1f); // bottom-left
 
         matrices.pop();
         super.render(entity, yaw, tickDelta, matrices, vcp, light);

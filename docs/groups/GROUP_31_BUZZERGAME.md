@@ -1,229 +1,287 @@
-# Group 31 — BuzzerGame (was TimerChallenge)
+# Group 31 - BuzzerGame
 
-> **Status:** Phase 1 items 1-2-3-5-6 built (🟢, awaiting in-game confirm on C/E/F — see
-> [GROUP_31_TESTING_GUIDE.md](../testing/GROUP_31_TESTING_GUIDE.md)). **Redesign locked 2026-07-07** after a
-> full Q&A session with the developer covering command simplification, the admin panel GUI, ranked
-> Duel/Party reveal, and a full replacement of the old "multiblock wall" idea with a compact physical
-> stand display. No code written yet for anything in this redesign — see **Build order** below for what's
-> next.
-> **Source:** ported + rewritten from `Active_Projects/TimerChallenge` (~40% done standalone Fabric mod,
-> mod-id `timerchal`, package `com.timerchal`). Treat that repo as reference-only, like old `CustomBlocks/`.
-> **Commands (trimmed 2026-07-07):** `/cb buzzergame give buzzer|panel|wand`, `start`, `stop`, `reset`,
-> `reveal`, `help`. That's the whole command tree now — `mode`, `game`, `target`, `countdown`, `falsestart`,
-> `state`, and the debug-only `advance` stepper are all **removed**; every one of them becomes a click in
-> the admin panel GUI instead (see **Admin panel — command trim + GUI** below). One handler,
-> `BuzzerGameCommands.java`, registered from `CommandRegistrar` like every other `*Commands.java`.
-> **Registry namespace:** absorbed into CB-B's main namespace (`customblocks:buzzer`, etc), not a separate `buzzergame:` namespace.
-> **Item access — all three work, no conflict:** dedicated BuzzerGame creative-tab entry, vanilla
-> `/give @s customblocks:buzzer` (they're real registered Items, not slot-system SlotItems, so
-> `/cb give` doesn't apply), and `/cb buzzergame give <buzzer|panel|wand>` as a convenience wrapper.
+> Group 31 owns a filmable buzzer/stopwatch minigame: a pressable buzzer block and a physical timer stand whose screen shows an Arabic target and a live result, hosted from a wand with no GUI.
 
-## What this is
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_31.md) · [All Groups](README.md)
 
-A YouTube-style buzzer/stopwatch minigame built as CB-B blocks: a **buzzer** block players press,
-a compact **physical stand display** that shows the countdown (see Physical timer display below —
-replaces the original multiblock-wall idea), and an **admin panel** block the host uses to run the
-show. Two game formats:
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
-- **Precision Stop** — timer counts UP visibly (both player and cameraman side), player buzzes once,
-  distance to a target time decides the winner. Timer keeps counting past target if nobody buzzes —
-  no hard cutoff.
-- **Reaction Race** — 3-2-1-GO countdown (length configurable, on/off toggle), first buzz after GO wins.
-  False-start (early buzz) rule is configurable: disqualify / time penalty / ignore.
+---
 
-v1 modes: **SOLO, DUEL, PARTY**. TEAM is deferred but buzzer→team assignment is designed to be fully
-custom via the admin panel from day one (not colored blocks).
+## Purpose
 
-## Session architecture — linking
+BuzzerGame is a YouTube-style reflex game built out of CustomBlocks pieces. A host places a buzzer and a timer stand, links them with a wand, sets a target time, and a player tries to start and stop the buzzer as close to that target as possible. The screen speaks Arabic to the host's audience: a target line and a live result line.
 
-**Central session object, one per admin panel** (`PanelSession`) is the single source of truth.
-Buzzers and screens store only their session's UUID and look everything else up through the session —
-not mutual cross-references. This was picked specifically to avoid desync bugs.
+The Group exists so the minigame reuses the mod's real strengths — custom blocks, server-side display entities, and the bundled Arabic renderer — instead of being a bolt-on. It owns only the game's blocks, wand, session, and screen; it borrows the Arabic font and any future cloud sync from the Groups that own those.
 
-- **Linking method:** dedicated link wand item. Click admin panel first, then click each buzzer/screen
-  to bind it to that session.
-- **Break handling:** if a linked buzzer/screen is broken mid-session, the session auto-removes it from
-  its link list and warns the host (on panel/screen), round continues if still playable.
-- **Panel = session root:** breaking the admin panel destroys the whole session (in-progress round,
-  links, session-local scoreboard). Already-synced global scoreboard entries are unaffected.
-- **No distance limit** on linking — once linked, works from anywhere loaded.
-- **Multiple sessions run fully independently and concurrently** — no cross-talk between different
-  admin panels.
-- **Mode-based start validation:** SOLO needs 1 buzzer, DUEL needs 2, PARTY needs 2+. Admin panel
-  blocks Start and shows why if unmet.
+## Ownership
 
-## Reveal flow (game-show pacing for filming)
+| Owns | Does not own |
+| --- | --- |
+| The `customblocks:buzzer` block, the `customblocks:timer_display` stand, the `customblocks:buzzergame_wand`, and the `/cb buzzergame` command tree | Arabic glyph shaping and the bundled `arabtype` font pipeline: G13 |
+| The in-memory host session, buzzer press routing, and the solo stopwatch round logic | Player-facing chat and hotbar routing helpers: G04 |
+| The timer stand's server-side display entities and the on-screen Arabic/LED rendering, resize, and rotate | A future global scoreboard sync endpoint: G20 |
+| The buzzer state a future HUD indicator would read | HUD overlay surface: G03 |
 
-Display freezes each buzzer's raw stopped time on buzz, but hides who's closest/winner. Host presses
-**Reveal** to show the result — deliberate drama for video, not auto-instant reveal.
+## Direction
 
-**Ranking rule (Duel and Party share the same formula — Duel is just a 2-person Party):**
-- Precision Stop → closest-to-target first, worst last.
-- Reaction Race → fastest first, slowest last.
-- A disqualified (false-started, DQ rule) buzzer is **not** ranked — it's listed separately at the
-  bottom as "Disqualified: <name>".
-- Chat gets **one line per rank** (`1st: Alex — 4.20s`, `2nd: Sam — 4.55s`, ...).
-- The big on-screen title stays just the winner's name (`Alex wins!`); the subtitle adds the runner-up
-  (`2nd: Sam`); the rest of the ranked list is chat-only.
-- Colors switch from the old gold/green to the CB-B brand (red/black/lime, not gold) for reveal
-  text/titles, matching the rest of the mod.
-- This is real scoring work (not yet built — Solo-only single-winner exists today), tracked as build
-  item **G** below. Lower priority than the physical display, but **not deferred** — still in scope.
+One buzzer, one screen, one host. The host runs `start` with a target in seconds; the screen shows the target and result lines in RTL — number on the left, Arabic word on the right (`<target> : الهدف`, `0.00 : النتيجة`). The player presses the buzzer to start the result climbing, presses again to freeze it, presses a third time to clear back to `0.00` and try again. The number reads like a stopwatch — hundredths of a second, brand-green on a black screen. The stand is resizable part-by-part with the wand, and everything is instant: a press must register with no perceptible delay, the way recoloring a block is instant.
 
-## Admin panel — command trim + GUI
+Multiplayer ranking (Duel and Party), reaction-race timing, and a dramatic host-run reveal are intentionally out of the current build and parked as a later quality-of-life pass.
 
-> **Screen spec moved 2026-07-12** — full spec (buttons, settings items, link-list sub-screen) now lives
-> in `GROUP_27_SCREENS.md` §G27.28. G31 keeps the trimmed command list (top of this doc), round/session
-> logic, and everything below (buzzer block, physical timer display, sound/VFX). Built 2026-07-10 per
-> `GROUP_31_TESTING_GUIDE.md` line 6 — the old "not built yet" wording above predated that build.
+## Locked Decisions
 
-Access: **op / admin-panel-permission only** for all control actions. Regular players can only press
-buzzers. Team assignment (v1-ready, TEAM mode itself deferred) stays a documented future addition to the
-GUI — not scoped into the current redesign pass.
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-07-18 | Solo stopwatch is the only live game mode. | Duel, Party, reaction-race, false-start rules, and ranked reveal are parked; the session is always solo and those paths stay dormant/unreachable. |
+| 2026-07-18 | `start` requires a target value (`5`, `5s`, `5.5`, `5.5s`), range 0.5–60s. | Bare `start` is rejected with a clear error; the value becomes the on-screen `الهدف`. |
+| 2026-07-18 | The buzzer press cycle is start → freeze → clear. | Press 1 starts `النتيجة` counting from `0.00`, press 2 freezes it, press 3 resets to `0.00` and re-arms. No countdown, no auto-stop. |
+| 2026-07-18 | The `reveal` command and the action-bar timer are removed; `stop` is removed. | The physical screen is the only readout; `reset` returns the screen to a single idle `0.00`. |
+| 2026-07-18 | Screen Arabic labels are baked to white bitmap-font glyphs (Path B), not drawn as MC text. | The pre-shaped-constant approach failed in-game (I1): MC re-runs bidi on every line, reversing the visual-order glyphs and garbling the number. The two fixed words `الهدف` / `النتيجة` are baked once via Java2D `TextLayout` (correct shaping, same engine as `ArabicWordRenderer`) into a `customblocks:timer_label` bitmap font; PUA codepoints are bidi-neutral and white glyphs still tint with `textcolor`. Numbers stay in the `customblocks:led` bitmap font. Supersedes the pre-shaped `arabtype` text approach. |
+| 2026-07-18 | One timer stand per session. | Multi-screen sync is dropped from the current scope. |
+| 2026-07-18 | The stand is resized part-by-part with the wand. | Base, leg, screen, and whole-stand each resize independently; the model is split into separate display entities so a lower part growing lifts the parts above it. |
+| 2026-07-18 | Text colour and text size are per-stand and fully customizable. | `/cb buzzergame textcolor <#hex>` (default `#15FF00`) and `/cb buzzergame textsize <n>` (up to 30×) act on the stand under the crosshair. |
+| 2026-07-18 | The session is wand-owned and in-memory. | Using the wand starts/owns a host session; it is never persisted and dies on host logout, unlinking every linked block. |
+| 2026-07-19 | Baked label PNGs must stay ≤256 px in both dimensions. | MC's font-atlas page is 256×256; a wider glyph is dropped and renders as a tofu box (the 351/360 px labels failed, I1). Re-bake smaller. |
+| 2026-07-19 | Screen text layout is RTL: number on the left, Arabic word on the right (`5.00 : الهدف`). | Reads correctly right-to-left for an Arabic viewer; supersedes the word-left mockup. |
+| 2026-07-19 | The screen keeps its −22.5° tilt; text is glued with full 3D tilt-correct placement. | Offset along the true tilted face-normal (with a vertical component) and separate the two lines along the tilted local-up axis, not world-Y. Fixes the persistent float-off (I2). |
+| 2026-07-19 | Per-part hitboxes are server-side **interaction entities** that track each rendered part. Three parts: **neck, base, screen**. Each box re-fits its visual on every resize step (tracks the visual exactly, may overlap neighbors). | The invisible block's voxel can't leave its cell, so it never matched the floating/tilted/scaled visual; interaction entities (custom size, follow the parts) make select/rotate/link land on the part you see (I4). |
+| 2026-07-19 | Resize is **per-part independent** (screen ×2 grows only the screen), step **×0.1** per wand action, range **×0.1 – ×5.0** per part. | Delivers the owner's "size neck only / base only" ask; fine step for dialing, wide bounds for freedom. |
+| 2026-07-19 | Breaking = attack (left-click) any visible part → the whole stand breaks instantly. | Routed through the part interaction entities, not by mining the invisible voxel; fixes the "slow/bugged" break feel (I5/C2). |
+| 2026-07-19 | Cooler LED screen: green bloom + faint "ghost 8" unlit segments behind the lit digits + a blinking colon (~1 Hz). **No scanlines** — plain dark glass (owner picked option C). | Authentic LED-clock look; bloom = a dim backing `TEXT_DISPLAY` layer, colon blinks on the tick. Scanline glass dropped to keep digits crisp. |
+| 2026-07-19 | Redraw `led_digits.png` to clean 7-segment glyphs — current "5" is malformed (top bar stops short, cols 3–16 instead of full 3–20; other digits also inconsistent). | Owner saw the "5" missing pixels top/bottom; the baked sheet's bars aren't full-width. Rebuild all 10 as uniform 7-segment. |
+| 2026-07-19 | The Arabic screen label is green-tinted to match the LED (baked PNG is white → recolor to green on bake). | One theme color; word + digits read as one lit display. |
+| 2026-07-19 | Default placed stand size is ×1.3, and the owner can change it in-game via a trailing `setdefault`: `/cb buzzergame size <scale> setdefault` persists that scale as the spawn default; the plain form stays a one-off. Widen the numeric `size` arg bound from ×0.4–3.0 to **×0.1–5.0** to match the resize range. | Easy no-file default knob; hangs off the existing `size` subcommand (BuzzerGameCommands.java:81). |
+| 2026-07-19 | The plain-text digit style is dropped — LED only. | The wand's Digit-style mode and the LED↔plain toggle (test E9) are removed; wand modes become Link / Resize / Rotate. |
+| 2026-07-19 | The one-frame place flicker (C5/I6) is accepted as a minor regressed QoL item. | Server-side display entities render one default frame before the transform syncs; not worth blocking the pass. Tracked, not fixed now. |
+| 2026-07-19 | Wand **Rotate** mode = yaw only, 45° steps (8 facings), whole stand. | Simple snappy decor placement; no pitch (keeps the screen upright at its fixed −22.5°). |
+| 2026-07-19 | `/cb buzzergame textcolor` and `textsize` stay, acting on the **LED digits** only (label stays locked green). `textsize` scales digits inside the screen (ghost-8 scales with them), separate from part resize. | Per-stand non-green screens + digit scaling still wanted even with LED-only. |
+| 2026-07-19 | **Both** label words — `الهدف` (target) and `النتيجة` (result) — get the same re-bake: ≤256px, green-tinted, RTL. | Consistent; the result screen (shown while counting) must not stay broken. |
+| 2026-07-19 | Ghost-8 uses a dim shade of the current `textcolor` (red digits → faint red ghosts). | Cohesive display at any custom color. |
+| 2026-07-19 | `textsize` auto-caps so digits never overflow the glass — clamps to the screen face regardless of the 30× arg. | Always looks clean; no digits spilling past the screen. |
+| 2026-07-19 | Wand part-select on overlapping boxes picks the part **nearest the crosshair** surface. | Intuitive — you select what you're aiming at. |
+| 2026-07-19 | **Visual look approved by owner** (flat in-world mockup): deepslate base + neck, red-trim head, lime accent, green LED `5.00` with bloom + blinking colon, green RTL `الهدف` label, plain dark glass. The whole third-pass design is now locked; nothing left to decide, ready for a build session. | Signed off from PIL mockups (true −22.5° tilt + real bloom only render in-game); this is the target the build reproduces. |
 
-## Buzzer block
+## Open Issues & Fixes (2026-07-19 second test pass)
 
-- Physical model: half-dome game-show buzzer (see design mockup — red dome, black base), 1×1 footprint.
-- **Multiple size/model variants** planned (low-profile flat, standard dome, tall dome), on top of the
-  existing recolorable dome+base (reuses `pressedColor`-style customization already in
-  `BuzzerBlockEntity`).
-- Anti-spam debounce: **on by default**, configurable off, in addition to existing `lockFirstPress`
-  round-lock logic.
-- No redstone in/out.
-- Optional floating name-tag (text display entity) per buzzer — player name/color, fully
-  toggle/customizable, off by default complexity-wise but wanted for filming.
+The 2026-07-18 I1–I8 batch was retested in-game 2026-07-19. **§G (all press FX) confirmed; §A/§B still
+confirmed; D1/D2, E5–E8, F5 confirmed.** The screen, hitbox, break, and flicker fixes did **not** hold and
+are re-root-caused below into the third fix pass (design agreed with the owner 2026-07-19). Per-row status
+lives in the [Testing Guide](../testing/Testing_Guide_31.md); this table is the design record.
 
-## Physical timer display — replaces the old "multiblock wall" idea entirely (redesigned 2026-07-07)
+| ID | Area | Symptom (2026-07-19) | Root cause | Third-pass fix |
+| --- | --- | --- | --- | --- |
+| I1 | E screen | Label still a tofu rectangle; LED numbers fine | Baked label PNGs are 351/360 px wide — wider than MC's 256 px font-atlas page → glyph dropped | Re-bake both words ≤256 px; RTL layout (number left, word right); shared baseline with the LED line |
+| I2 | E screen | Screen text still floats off the tilted glass | The forward offset is XZ-only and ignores the −22.5° tilt's vertical component; line separation uses world-Y not the tilted up-axis | Full 3D glue: offset along the true face-normal, separate lines along the tilted local-up |
+| I4 | C/F hitbox | Can't select/resize one part, or reliably click/rotate the stand | The invisible block's voxel is clamped to its cell and can't match the floating/tilted/scaled display entities | Spawn a server-side **interaction entity** per part (base/leg/screen) that tracks the rendered part; wand select/rotate/link raycast those |
+| I5 | C feel | Stand break still reads slow | Crosshair lands on the floating visual, not the small voxel (strength is already 0.05) | Break via the part interaction entities: attack any part → whole stand breaks |
+| I6 | C feel | One-frame place flicker persists | Display entity shows a default frame before the transform syncs | Accepted minor (regressed QoL); not fixed this pass |
+| — | E screen | — (new, agreed polish) | — | Cooler LED: bloom + ghost-8 segments + blinking colon + scanline glass; drop the plain-text digit style; default size ×1.3 |
+| I3 | D flow | D3–D8 unreadable | Blocked by the broken screen (I1/I2), not a logic fault | Re-verify once the screen renders |
+| I7 | F wand | Hotbar label still wants a rework | — | Short glanceable label (Polish) |
+| I8 | G FX | — | — | ✅ confirmed 2026-07-19 |
 
-The original plan was a big resizable multiblock wall. The developer instead wants a **compact
-standalone stand display** — think a "cooler version of a Rubik's-cube-competition timer": a small
-object with an angled screen face on a short dark stand, glowing digits, not a room-sized wall. This
-fully replaces the wall — there is no separate "big wall" mode.
+## Feature Plan
 
-- **What it is technically:** a real placeable block (like the buzzer/panel) whose block entity owns
-  a linked display entity (block-display/item-display, Minecraft's freely-transformable decorative
-  entity type) for the actual visual — this is what makes live resizing/rotation possible without
-  rebuilding anything.
-- **Both faces readable** — front (player side) and back (camera side) both show the digits, same
-  requirement as the old wall had, just on a compact object instead of a big double-sided wall.
-- **Facing:** faces the direction you were looking when you placed it (sign-style). A right-click
-  rotate action lets you fix the angle afterward without breaking and replacing it.
-- **Digit rendering — both techniques get built, switchable per-display in settings:**
-  1. Built-in glowing text-display (fast, colorable, uses Minecraft's font).
-  2. Custom baked LED/7-segment-style textures per digit, swapped as the number changes — the closer
-     match to the reference photo.
-  A settings toggle on the display switches between the two anytime. Only **one visual style** (the
-  CB-B default red/black/lime look) ships built for now — the old idea of 4 selectable styles
-  (7-segment / retro LCD / sleek pixel / flip-style) becomes a later "add more styles" polish pass, not
-  part of this build.
-- **Resize — a live tool, not a number-entry GUI:** hold/use the resize tool and **move your cursor to
-  preview the size changing pixel-by-pixel in real time** (blueprint/ghost-preview style), plus quick
-  Small/Medium/Large presets to jump to a rough size first. Nothing saves while you're dragging the
-  preview — it only locks in on a final confirm click. The interactive click-box scales along with the
-  visual (a shrunk display has a small click area, a huge one has a big click area), not a fixed hitbox.
-- **Multiple displays per panel are allowed** — link as many stand displays to one panel as you want
-  (same wand flow as buzzers: click panel, then click the display), e.g. one facing the players and
-  one facing the camera. All linked displays sync the same live digits; each display's size/rotation is
-  independent (a placement property, not shared game state).
-- **Breaking a linked display** behaves like breaking a buzzer: auto-unlinks from the panel and warns
-  the host in chat.
-- **Frame customization (custom photo/logo/GIF on the frame, from the CustomBlocks crossover idea)** —
-  fixed default look for now; the frame image/GIF crossover is a later polish item, not part of this
-  build.
-- Display precision: **hundredths of a second** (e.g. `47.03s`), unchanged from the original spec.
-- **Idle-state display:** a settings toggle picks what shows before a round starts — **default is all
-  zeros**, with a custom idle GIF/logo as an alternative option the host can switch to (pulled forward
-  from the original "later crossover" idea into a day-one settings toggle, since it's just a toggle on
-  top of work already being done).
+### A. Buzzer block and press detection
 
-## Sound & VFX
+**Player outcome**
 
-- Real game-show SFX (buzzer honk, countdown ticks, win fanfare) sourced from royalty-free libraries
-  (freesound.org / Pixabay Audio), converted to `.ogg`, wired as normal CB sound events.
-- Every sound **independently toggleable** in settings.
-- Particle burst on buzzer press; bigger burst/fireworks on winner reveal. Toggleable.
-- Announcements (title/actionbar): **near-game broadcast only** by default, radius configurable — not
-  server-wide.
+A player can obtain, place, and press a game-show buzzer, and every press is reliably attributed to the presser with no perceptible delay.
 
-## Scoring & persistence
+**Experience**
 
-Two scoreboards:
+- The buzzer is a half-dome game-show block (red dome, black base) with a 1×1 footprint; the dome visibly pops on press and auto-releases.
+- Pressing gives immediate audio/visual feedback; spam-clicking is debounced so a press is never double-counted.
+- A press must register instantly, matching the responsiveness of the block-recolor tools.
 
-1. **Session-local** — wiped on server restart or by a reset command.
-2. **Global** — never auto-wiped.
+**Requirements**
 
-Global scoreboard syncs to CB-B's **existing Cloudflare Worker** (`cloudflare/worker.js`, Group 20 vault)
-via a **new small KV-backed endpoint** — reusing existing cloud infra rather than building new plumbing.
-Purpose: pull stats after filming for video reference. **No live OBS overlay** for now (revisit later
-if wanted).
+- The buzzer is a real registered block/item in the `customblocks` namespace (obtainable via `/give`, the creative tab, and `/cb buzzergame give buzzer`).
+- Anyone can place it — no operator gate.
+- Break near-instant so filming setups are quick to rearrange.
+- Break particles use a real particle texture, not the missing-texture magenta.
 
-Rewards are **cosmetic only** — no item/XP/command payouts on win.
+**Boundary**
 
-## CustomBlocks crossover (v1)
+The buzzer carries no redstone in/out and owns no round logic — it only routes a press into the host session.
 
-Ties BuzzerGame into CB-B's actual core feature (image/GIF → block) instead of being a plain,
-disconnected minigame:
+### B. Wand-owned session
 
-- **Display frame/background:** the stand display's frame can be any custom image/GIF loaded through
-  CB-B's existing image-to-block tool, not just a flat color. **Deferred** (see Physical timer display
-  section above) — fixed default look ships first.
-- **Buzzer skin:** the buzzer dome can be retextured with any photo/logo/face via the same CB-B tool.
-- **Idle-screen custom GIF:** before a round starts (session IDLE), a settings toggle on the display
-  switches between all-zeros (default) and a custom GIF/logo — pulled forward into day-one scope, see
-  Physical timer display section above.
+**Player outcome**
 
-Deferred for later: win-reveal celebration image/GIF pop.
+A host holds one wand, starts a session by using it, and links a buzzer and a timer stand into that session; the session cleans itself up when the host leaves.
 
-## Explicitly decided against / deferred
+**Experience**
 
-- No redstone integration.
-- No separate `/tc` command tree — everything under `/cb buzzergame`.
-- Win-reveal celebration custom image/GIF (deferred, not v1).
-- Arabic localization: English first, Arabic backfilled later (existing `ar_sa.json` in the old repo is
-  reference only, not synced yet).
-- Live OBS overlay integration.
-- Cross-server global leaderboard merge (only relevant if run on multiple servers later).
-- **Extra digit visual styles** (retro LCD / sleek pixel / flip-style) beyond the one default CB-B
-  red/black/lime look — later "add more styles" polish pass.
-- **Display frame custom image/GIF** (the crossover idea above) — later polish, fixed look ships first.
-- **Named size/style presets** for the display (save a full setup, reuse later) — not re-confirmed in
-  the 2026-07-07 redesign session; still a documented later polish item, not in current scope.
-- **Team assignment GUI** — designed, still deferred; not scoped into the current admin-panel-GUI pass.
+- Right-clicking the wand in the air starts/owns the caller's session and reports what is linked.
+- Sneak + right-click air cycles the wand mode (Link, Resize, Rotate).
+- In Link mode, clicking a buzzer or a stand links it into the caller's session.
+- If a linked block is broken, or the host logs off, everything unlinks and nearby players are warned.
 
-## Build order — grouped by what actually depends on what, priority-ordered per the 2026-07-07 session
+**Requirements**
 
-Test in-game and get developer confirmation before moving to the next item (CLAUDE.md §2/§4). Each
-item gets its own checklist rows in
-[GROUP_31_TESTING_GUIDE.md](../testing/GROUP_31_TESTING_GUIDE.md) as it's built — nothing is ✅ until
-the developer confirms it in-game. **One item at a time (CLAUDE.md §4) — do not batch these.**
+- The session lives in memory keyed by the host's UUID; multiple hosts run fully independent sessions.
+- No admin gate — anyone can host.
+- Links store the block position so logout/break cleanup can reach the real blocks.
 
-**Already built (🟢, awaiting in-game confirm on C/E/F):** buzzer block + press detection, admin panel +
-`PanelSession` state machine, link wand + linking, Precision Stop (Solo), Reveal + Reaction Race +
-false-start rules — all still using the **old** command set for now, until the items below land.
+**Boundary**
 
-**Next up — physical stand display first (developer's stated main feature), then admin panel GUI:**
-1. Stand display — static version: custom block + block entity + a linked block-display entity for
-   the model, default facing-on-place, both faces show digits, text-display digit technique only
-   (fastest path to something real), fixed default size, wand-linkable to a panel (screens re-enabled
-   in the link flow once this exists), auto-unlink + warn on break. No resize tool yet.
-2. Stand display — live resize tool: S/M/L presets + real-time drag-to-scale preview, confirm-to-lock,
-   click-box scales with the visual.
-3. Stand display — right-click rotate after placement.
-4. Stand display — custom baked LED-texture digit mode + the settings toggle to switch between that
-   and the text-display technique.
-5. Admin panel GUI shell: right-click panel opens the 4-row branded chest screen; Start/Stop/Reset
-   (confirm-if-live)/Reveal buttons wired to the same logic the remote commands use; trim
-   `/cb buzzergame` down to `give`/`start`/`stop`/`reset`/`reveal`/`help`.
-6. Admin panel GUI settings: Mode/Format/Countdown/False-start cycle items, Target-time
-   cycle-or-type-exact, status book item, grey-out + hover-hint on invalid-state buttons.
-7. Admin panel GUI link list: linked-count button → auto-numbered list screen → unlink-with-confirm.
-8. DUEL/PARTY ranked-list reveal (ranking formula, DQ-separated, per-rank chat lines, brand colors) —
-   see Reveal flow section above.
+There is no placed control block and no persistence; disconnect is the only cleanup trigger.
 
-**Later polish (deferred, unchanged from before):** sound/VFX pass, scoreboards (session-local + global
-+ Cloudflare Worker endpoint), extra digit styles, display frame image/GIF crossover, named
-size/style presets, team assignment GUI.
+### C. Block fixes and instant feel
 
-> **For the next chat picking this up:** read this whole doc plus
-> `docs/testing/GROUP_31_TESTING_GUIDE.md` first. Start with item 1 above only. Do not skip ahead —
-> CLAUDE.md §4 "max 5 items in any plan, ideally 1" still applies.
+**Player outcome**
+
+Placing and breaking both blocks feels immediate, and breaking them shows correct particles.
+
+**Experience**
+
+- Both blocks break near-instantly.
+- The timer stand's display entities appear the moment it is placed, with no one-tick flicker.
+- Break particles match each block's material instead of showing magenta/black.
+
+**Requirements**
+
+- Add a `particle` texture to the buzzer and timer-stand models.
+- Lower block strength so survival breaking is near-instant.
+- Spawn the stand's display entities on placement rather than on the first block-entity tick.
+
+**Boundary**
+
+This area is purely feel/rendering fixes; it changes no game logic.
+
+### D. Solo stopwatch flow
+
+**Player outcome**
+
+A host arms a target and a player uses one buzzer to try to hit it.
+
+**Experience**
+
+- `/cb buzzergame start <value>` arms the round: the screen shows `<target> : الهدف` and `0.00 : النتيجة` (RTL, number left / word right).
+- Buzzer press 1 starts `النتيجة` climbing live; press 2 freezes it; press 3 clears to `0.00` and re-arms.
+- `/cb buzzergame reset` clears the target and returns the screen to a single idle `0.00`.
+- Each press has a distinct sound and particle: a start cue, a sharp stop cue, and a soft reset cue.
+
+**Requirements**
+
+- `start` requires a value in 0.5–60s (`N`, `Ns`, decimals); reject bare or out-of-range input with a `[CB]` error.
+- An `ARMED` session state sits between `start` and the first press (target shown, clock idle); the clock only advances while running.
+- The result reads in hundredths, `0.00` under ten seconds and `00.00` at ten seconds or more.
+- Command feedback uses the G04 chat/hotbar contract (`Chat.success`/`error`/`info`, hotbar `Chat.tool*`).
+
+**Boundary**
+
+No countdown, no multiplayer scoring, no reveal — those are parked (see Deferred Scope).
+
+### E. Physical timer stand and screen
+
+**Player outcome**
+
+The stand shows a readable, brand-styled Arabic target and a live result, and the host can recolor and resize the text.
+
+**Experience**
+
+- The stand is a real placeable block that is itself invisible; its look is server-side display entities, so it stays freely resizable and rotatable.
+- Both faces are readable (player side and camera side).
+- Arabic labels are cursive and correct; the numbers use the glowing LED clock font; `النتيجة` is the larger line.
+- `/cb buzzergame textcolor <#hex>` recolors the LED digits (default `#15FF00`; the ghost-8 follows a dim shade of it — the Arabic label stays locked green); `/cb buzzergame textsize <n>` scales the digits up to 30× (auto-capped to the glass); both target the stand under the crosshair.
+
+**Requirements**
+
+- Arabic labels are the two fixed words `الهدف` and `النتيجة`, both re-baked ≤256px, green-tinted, to bitmap-font glyphs (Path B, via Java2D `TextLayout`) and shown as bidi-neutral PUA glyphs — MC cannot be trusted to render Arabic text without reversing/garbling it (I1).
+- Numbers render in the `customblocks:led` bitmap font (digits and dot only), redrawn to clean uniform 7-segment glyphs, with a green bloom + faint ghost-8 unlit segments and a blinking (~1 Hz) colon for an authentic LED-clock look; plain dark glass, no scanlines.
+- The digit/label panels are anchored onto the tilted screen face (full 3D tilt-correct glue) and scale with the screen; layout is RTL (number left, Arabic word right, e.g. `5.00 : الهدف`).
+- LED is the only digit style; the plain-text toggle is dropped.
+
+**Boundary**
+
+Only one stand links per session; custom frame images/GIFs and the idle logo/GIF are deferred.
+
+### F. Per-part resize and rotate
+
+**Player outcome**
+
+The host can grow or shrink the base, the leg, the screen, or the whole stand independently, and turn it to any angle.
+
+**Experience**
+
+- In wand Resize mode, shift-right-clicking a part of the stand (base, neck, or screen) selects it by where the crosshair lands; on overlapping boxes the part nearest the crosshair wins.
+- Right-click grows the selected part one ×0.1 step; sneak + left-click shrinks it; chat reports the part and its new size. Per-part range is ×0.1–×5.0, applied independently (screen ×2 grows only the screen).
+- Growing a lower part lifts the parts above it so the stand stays assembled.
+- Text scales with the screen part, and with the whole stand when the whole stand is scaled.
+- `/cb buzzergame size small|medium|large|<scale>` (numeric ×0.1–5.0, optional trailing `setdefault` to persist the spawn default) still scales the whole stand; wand Rotate mode turns the whole stand in yaw 45° steps (8 facings).
+
+**Requirements**
+
+- The stand model is split into base/neck/screen sub-models, each its own display entity, repositioned relative to each other on resize.
+- Part scales clamp to ×0.1–5.0; text scale auto-caps to the glass (the 30× arg is accepted but clamped so digits never overflow the screen); a per-part server-side interaction entity tracks each rendered part so select/rotate/link/break land on the part you see.
+- The persisted display-entity handles and NBT expand to cover the split parts and both text lines.
+
+**Boundary**
+
+The blueprint-style live cursor-drag preview from the earlier spec is replaced by discrete stepping; a live preview is not part of this scope.
+
+## Cross-Group Contracts
+
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G03 | Buzzer state | A future HUD indicator reads real BuzzerGame session state; G31 does not invent player-visible HUD data. |
+| G04 | Chat and hotbar routes | G31 sends all player-facing text through the G04 `Chat.*` helpers and never hand-builds a prefix, glyph, or hotbar colour. |
+| G13 | Arabic font and shaping | G31 reuses the bundled `arabtype` font and G13's shaping knowledge for its screen labels; it does not fork a second Arabic font. |
+| G20 | Cloud scoreboard | A future global scoreboard reuses the existing Cloudflare Worker vault endpoint rather than new plumbing. |
+
+## Technical Contract
+
+- The buzzer and timer stand are real registered blocks/items in the `customblocks` namespace, not slot-system items, so vanilla `/give` works.
+- The timer-stand block renders `INVISIBLE`; its entire visual is server-side `ITEM_DISPLAY`/`TEXT_DISPLAY` entities driven from the block entity, which is what makes live resize and rotate possible.
+- The host session is in-memory, keyed by host UUID, never persisted, and destroyed on host logout (which unlinks every linked block).
+- Screen Arabic labels are green-tinted bitmap-font glyphs (≤256px each) in the `customblocks:timer_label` provider, baked once from the logical strings via Java2D `TextLayout` (correct shaping/joining). MC's TTF renderer neither shapes Arabic nor leaves pre-shaped glyphs alone — it re-runs bidi and reverses/garbles them (I1) — so the labels are images, not text; PUA codepoints keep them bidi-neutral. The label colour is baked green; `textcolor` tints only the LED digits. Numbers use the `customblocks:led` bitmap font (0–9 and `.` only), redrawn to uniform 7-segment glyphs.
+- One timer stand links per session.
+- Note-block `SoundEvents` constants use `.value()`; all other sound constants stay bare.
+- Resize is applied through display-entity transform scale; part scales stay within a modest cap and text scale clamps to 30×, with the block click-box tracking the rendered size.
+
+## Deferred Scope
+
+<details><summary>Future ideas outside this Group's current plan</summary>
+
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Duel / Party multiplayer with ranked reveal | Parked as a later quality-of-life pass; solo ships first. | G31 |
+| Reaction-race format + false-start rules | Depends on the parked multiplayer path. | G31 |
+| Host-run dramatic `reveal` | Removed from the solo flow; only meaningful with ranked multiplayer. | G31 |
+| Global scoreboard synced to the Cloudflare Worker | Cloud plumbing is later polish, not core gameplay. | G31 with G20 |
+| Real custom `.ogg` game-show SFX | Vanilla sound combos ship first; sourced audio comes later. | G31 |
+| Baked LED-texture digit mode | The text-display LED font covers the current look. | G31 |
+| Idle logo/GIF, custom frame image/GIF, named size presets | Fixed default look ships first. | G31 |
+| Team mode and custom team assignment | Waits until TEAM mode is actually scoped. | G31 |
+
+</details>
+
+## Superseded Decisions
+
+<details><summary>Historical decisions kept only so old work does not return</summary>
+
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-07-18 | Countdown + reaction/precision formats with a host-run ranked reveal | Solo stopwatch: `start <value>` arms a target, the buzzer press cycle drives one result, no reveal. |
+| 2026-07-18 | Firjar TTF for the on-screen Arabic | `arabtype` with pre-shaped constants; Firjar cannot render connected Arabic in Minecraft. |
+| 2026-07-18 | Pre-shaped constants drawn as MC text in the `arabtype` font | Baked white bitmap-font glyphs (Path B): MC re-runs bidi on any Arabic line and reverses/garbles the pre-shaped glyphs (I1), so labels ship as images, not text. |
+| 2026-07-18 | Multiple linked displays per session | One timer stand per session. |
+| 2026-07-18 | Whole-stand-only resize with a live drag-preview tool | Per-part resize with discrete wand stepping; whole-stand `size` command kept. |
+| 2026-07-07 | A placed admin panel block owns the session | The session is wand-owned and in-memory. |
+| 2026-07-07 | Multiblock timer wall | Compact single-block stand rendered by display entities. |
+
+</details>
+
+## References
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_31.md) · [All Groups](README.md)
+
+- [G03 HUD System and ESC Integration](GROUP_03_HUD_ESC.md)
+- [G04 Communication](GROUP_04_Communication.md)
+- [G13 Arabic](GROUP_13_ARABIC.md)
+- [G20 External Integrations](GROUP_20_EXTERNAL_INTEGRATIONS.md)
+- Source: `Active_Projects/TimerChallenge` (reference-only original standalone mod)
+- [Pre-template Group 31 snapshot](../archive/group-migration-2026-07-18/GROUP_31_BUZZERGAME.md)

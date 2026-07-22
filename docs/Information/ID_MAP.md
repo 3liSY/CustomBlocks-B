@@ -278,7 +278,7 @@ Every legacy Arabic ID, reconciled into one `G13-n` sequence. Overlaps merged.
 | G06-3 | Delete-then-create scrambles placed blocks (slot recycling) | FX-04 | 💬 redesigned → **G06-14**; reserve-not-retire kills recycling |
 | G06-4 | Hex-change system rework — colour tools + variant repaint | FX-09 | 💬 designed → GROUP_06 |
 | G06-5 | Color-variant names compound wrong ("Block Yellow (Green)") | FX-11 | 🔍 diagnosed — build with G06-4 |
-| G06-6 | Per-face actions — Omni-Tool "Face" mode (rotate/mirror/copy) | FX-21 | 💬 designed → GROUP_06 |
+| G06-6 | Omni-Tool Face mode — 90-degree clicked-face image rotation plus later action backlog | FX-21 | ⏳ designed core; extra actions need discussion → GROUP_06 |
 | G06-7 | Block drops customization — per-block drop control | FX-24 | 💬 designed → GROUP_06 |
 | G06-8 | Held-block dynamic glow | 17.8 · Dec §7 | ❔ |
 | G06-9 | Dedicated creative tools tab | 17.9 · Dec §8 | ❔ |
@@ -346,6 +346,7 @@ Every legacy Arabic ID, reconciled into one `G13-n` sequence. Overlaps merged.
 | G27-5 | Screen-side GUI commands (`listgui/menu/undogui/redogui/editor`) | Group L (screen side) | ❔ — chest part folds to G02 |
 | G27-6 | Animation tab / timeline editor screen | §G27.15 (absorbs G14 `AnimBlockScreen`) | 💬 designed → GROUP_27 |
 | G27-7 | Tutorial screen + Achievements gallery screen | §G27.16 (absorbs G23 screens) | 💬 designed → GROUP_27 |
+| G27-8 | Shared block-browser Filters menu + combinable `Animated` filter + `/cb animation` handoff | new 2026-07-18 | ⏳ designed; menu details need discussion → GROUP_27 |
 
 > **Note:** G27 also uses internal section IDs **`§G27.1 … §G27.16`** for its individual screens. Like the
 > `G##.N` *test* IDs, these section numbers are a separate axis (a screen-build outline) and are **not**

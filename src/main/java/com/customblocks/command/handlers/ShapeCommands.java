@@ -17,7 +17,7 @@
  * /cb clearshape AND the Shape Editor screen) broadcasts the slot cache so the HUD shape value
  * refreshes live for every player — no rejoin.
  *
- * Depends on: SlotManager/SlotData, BlockShapes, LockManager, UndoManager, ResourcePackServer, Chat
+ * Depends on: SlotManager/SlotData, BlockShapes, LockManager, UndoManager, HudSync, Chat
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
@@ -32,7 +32,6 @@ import com.customblocks.core.UndoManager;
 import com.customblocks.gui.chest.GuiRouter;
 import com.customblocks.gui.chest.Nav;
 import com.customblocks.network.HudSync;
-import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.command.CommandSource;
@@ -126,8 +125,12 @@ public final class ShapeCommands {
         SlotData after = SlotManager.setShape(id, shape);
         if (after == null) { Chat.error(src, "Couldn't set the shape of \"" + id + "\"."); return 0; }
         UndoManager.recordShape(actor(src), before, after);
-        ResourcePackServer.updatePack(); // the model changed — rebuild so the new shape shows
-        HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD shape value updates live for all players
+        // G08 §B (2026-07-21) — NO pack rebuild. Nothing a static slot emits into the pack depends on its
+        // shape any more (ServerPackGenerator.staticShapeModelJson), so there is nothing to re-emit and the
+        // player is never interrupted by a resource-pack reload. The HudSync push below carries the new
+        // shape to every client, which re-meshes the world so placed blocks change form immediately
+        // (ClientSlotCache). Collision + outline already read the shape live from SlotData.
+        HudSync.broadcast(src.getServer()); // carries the new shape → client re-mesh + live HUD value
 
         if (shape.equals(BlockShapes.DEFAULT)) {
             Chat.success(src, "Cleared the shape of \"" + id + "\" — back to a full block. Undo with /cb undo.");

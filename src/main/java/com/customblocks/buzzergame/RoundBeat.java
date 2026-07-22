@@ -2,13 +2,12 @@
  * RoundBeat.java — Group 31 (BuzzerGame) Phase 1 items 5-6.
  *
  * A single "thing that just happened this tick" that the round clock hands back to the broadcaster:
- * an optional big on-screen title (e.g. "3", "2", "1", "GO!"), an optional subtitle, a sound cue, and
- * whether the session's state changed (so the block entity knows to persist). Keeps {@link PanelSession}
- * free of any world/packet code — it just describes the beat; {@link RoundBroadcast} turns it into
- * titles/sounds for nearby players.
+ * an optional big on-screen title (e.g. "3", "2", "1", "GO!"), an optional subtitle, a sound cue, and a
+ * {@code stateChanged} flag. Keeps {@link BuzzerSession} free of any world/packet code — it just describes
+ * the beat; {@link RoundBroadcast} turns it into titles/sounds for nearby players.
  *
  * Depends on: (none)
- * Called by:  PanelSession (produces), RoundBroadcast (consumes), AdminPanelBlockEntity (stateChanged)
+ * Called by:  BuzzerSession (produces), RoundBroadcast (consumes)
  */
 package com.customblocks.buzzergame;
 
@@ -24,7 +23,7 @@ public record RoundBeat(String title, String subtitle, Sound sound, boolean stat
         return new RoundBeat(String.valueOf(n), null, Sound.TICK, false);
     }
 
-    /** The GO moment — countdown just ended, clock starts. State changed → persist. */
+    /** The GO moment — countdown just ended, the clock starts. */
     public static RoundBeat go() {
         return new RoundBeat("GO!", null, Sound.GO, true);
     }

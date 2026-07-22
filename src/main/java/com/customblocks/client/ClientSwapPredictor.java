@@ -29,6 +29,9 @@
  *   - mirrors the LIGHT (glow) blockstate property (clamped 0..15) → no relight flash;
  *   - predicts HITS only: if the target variant does not exist it paints nothing and lets the
  *     server speak ("make it with the Triangle first") — no wrong guess, no flicker;
+ *   - G06-1: also shows the "Swapped to X" / "Already X." action-bar line the SAME tick as the paint
+ *     (instead of after the round-trip). The action bar is a single slot, so the server's later
+ *     identical line just refreshes it — no double-render, no explicit dedupe gate needed;
  *   - never cancels the interaction (returns PASS) so the server round-trip is untouched — this
  *     does NOT reintroduce the "client-side skip delay on tools" pitfall (CLAUDE.md §7).
  *
@@ -41,10 +44,12 @@
 package com.customblocks.client;
 
 import com.customblocks.block.SlotBlock;
+import com.customblocks.command.CbFmt;
 import com.customblocks.core.ColorVariantService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.item.ColorSwapTool;
+import net.minecraft.text.Text;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.event.player.UseBlockCallback;
@@ -94,9 +99,12 @@ public final class ClientSwapPredictor {
         Integer targetIdx = ClientSlotCache.indexForId(targetId);
         if (targetIdx == null && "black".equals(key)) // Black Square → base block fallback (server mirror)
             targetIdx = ClientSlotCache.indexForId(ColorVariantService.stripColourSuffix(cur.id()));
-        if (targetIdx == null || targetIdx == slot.getSlotIndex()) return; // miss / already that colour → defer
+        if (targetIdx == null) return; // miss → no wrong guess, let the server speak
         ClientSlotCache.Entry t = ClientSlotCache.getEntry(targetIdx);
+        String name = (t == null ? cur.name() : t.name());
+        if (targetIdx == slot.getSlotIndex()) { hotbarAlready(name); return; } // G06-1: instant "Already X."
         paint(world, pos, targetIdx, t == null ? 0 : t.glow());
+        hotbarSwapped(name); // G06-1: instant "Swapped to X" at the same tick as the paint
     }
 
     /** Singleplayer / LAN host: mirror swapPlaced off the in-process SlotManager (the live truth there). */
@@ -106,8 +114,32 @@ public final class ClientSwapPredictor {
         SlotData target = SlotManager.getById(ColorVariantService.variantId(cur.customId(), key));
         if (target == null && "black".equals(key)) // Black Square falls back to the base block (server mirror)
             target = SlotManager.getById(ColorVariantService.stripColourSuffix(cur.customId()));
-        if (target == null || target.index() == slot.getSlotIndex()) return; // miss / already that colour → defer
+        if (target == null) return; // miss → no wrong guess, let the server speak
+        if (target.index() == slot.getSlotIndex()) { hotbarAlready(target.displayName()); return; } // G06-1: "Already X."
         paint(world, pos, target.index(), SlotManager.glowFor(target.index()));
+        hotbarSwapped(target.displayName()); // G06-1: instant "Swapped to X"
+    }
+
+    // ── G06-1: instant hotbar feedback ────────────────────────────────────────
+    // The colour Square's "Swapped to X" / "Already X." lines are action-bar overlays (Chat.hotbar →
+    // sendMessage(text, true)). Predicting them here shows the line the same tick as the block paints,
+    // instead of after the server round-trip. NO dedupe gate is needed: the action bar is a single slot,
+    // so the server's later IDENTICAL line simply refreshes it — invisible to the player. The strings
+    // mirror ColorVariantService.swapPlaced's exact wording + CbFmt colours so there is no flicker.
+
+    /** Instant "Swapped to <name>" — mirrors Chat.toolSuccess("Swapped to", name). */
+    private static void hotbarSwapped(String name) {
+        overlay(Text.literal(CbFmt.TOOL_OK + "Swapped to " + CbFmt.VALUE + name));
+    }
+
+    /** Instant "Already <name>." — mirrors Chat.tool("Already " + name + "."). */
+    private static void hotbarAlready(String name) {
+        overlay(Text.literal(CbFmt.TOOL_NEUTRAL + "Already " + name + "."));
+    }
+
+    private static void overlay(Text text) {
+        net.minecraft.client.MinecraftClient mc = net.minecraft.client.MinecraftClient.getInstance();
+        if (mc != null && mc.inGameHud != null) mc.inGameHud.setOverlayMessage(text, false);
     }
 
     /** Paint the predicted target block (carrying its glow) at {@code pos}; no-op if it isn't registered. */

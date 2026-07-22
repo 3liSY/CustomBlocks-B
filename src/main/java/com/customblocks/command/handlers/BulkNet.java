@@ -3,7 +3,7 @@
  *
  * Receives {@link BulkActionPayload} from the Workbench, validates it, hops to the server thread, and calls
  * {@link BulkApply} for that op with STRUCTURED arguments (never a re-parsed command string), then pushes a
- * fresh snapshot back so the open Screen refreshes in place. Modelled on BuzzerPanelNet.
+ * fresh snapshot back so the open Screen refreshes in place. Modelled on the other Screen net bridges.
  *
  * Trust model: this accepts a packet from any client, so nothing here trusts the payload. The op must be a
  * known code, the scope is re-resolved server-side by BulkScope, and locked blocks are skipped inside the

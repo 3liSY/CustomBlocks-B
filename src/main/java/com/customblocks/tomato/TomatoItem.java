@@ -17,6 +17,7 @@
 package com.customblocks.tomato;
 
 import com.customblocks.command.Chat;
+import net.minecraft.component.DataComponentTypes;
 import net.minecraft.entity.player.PlayerEntity;
 import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.item.Item;
@@ -26,6 +27,7 @@ import net.minecraft.item.ProjectileItem;
 import net.minecraft.sound.SoundCategory;
 import net.minecraft.sound.SoundEvents;
 import net.minecraft.stat.Stats;
+import net.minecraft.text.Text;
 import net.minecraft.util.Hand;
 import net.minecraft.util.TypedActionResult;
 import net.minecraft.util.math.Direction;
@@ -65,6 +67,7 @@ public class TomatoItem extends Item implements ProjectileItem {
 
         if (!world.isClient) {
             TomatoEntity tomato = new TomatoEntity(world, user);
+            applyCustomName(tomato, stack); // B7 name hovers in flight · B8 "nuke" → power 12 (both live on the entity)
             tomato.setVelocity(user, user.getPitch(), user.getYaw(), 0.0F,
                     ride ? RIDE_SPEED : THROW_SPEED, ride ? 0.0F : THROW_DIVERGENCE);
 
@@ -95,7 +98,23 @@ public class TomatoItem extends Item implements ProjectileItem {
 
     @Override
     public ProjectileEntity createEntity(World world, Position pos, ItemStack stack, Direction direction) {
-        return new TomatoEntity(world, pos.getX(), pos.getY(), pos.getZ());
+        TomatoEntity tomato = new TomatoEntity(world, pos.getX(), pos.getY(), pos.getZ());
+        applyCustomName(tomato, stack); // a dispenser can fire a named / "nuke" tomato too
+        return tomato;
+    }
+
+    /**
+     * Copy an anvil-given custom name from the thrown STACK onto the ENTITY, and make it hover.
+     * The thrown-item entity does NOT inherit the stack's name on its own, so without this a named tomato
+     * shows nothing mid-air (B7) and a "nuke"-named tomato never triggers TomatoEntity.isNuke() (B8). We copy
+     * only a real custom name — never the default "Explosive Tomato" — so an unnamed throw stays label-free.
+     */
+    private static void applyCustomName(TomatoEntity tomato, ItemStack stack) {
+        Text name = stack.get(DataComponentTypes.CUSTOM_NAME);
+        if (name != null) {
+            tomato.setCustomName(name);
+            tomato.setCustomNameVisible(true);
+        }
     }
 
     @Override

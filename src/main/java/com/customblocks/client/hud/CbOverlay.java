@@ -43,5 +43,6 @@ public final class CbOverlay {
 
         HudWidgetRenderer.render(ctx, mc, look);
         CbFlash.render(ctx, mc);
+        ChatFx.render(ctx, mc);   // §G04-4 chip click-feedback: sparks + floating result toasts
     }
 }

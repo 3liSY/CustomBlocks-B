@@ -1,518 +1,197 @@
-# Group 25 — Block Management Extras & Identity Operations
+# Group 25 - Block Management and Identity Operations
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 3 (Core Commands) and Phase 7 (Tools) build-verified.
->
-> **Objective:** Restore all block identity manipulation commands (reid, swapid, swapname, duplicate alias) and all block management extras (custom drops, Block Finder GUI, HD PNG export from editor, tab icon). All operations must be undoable and tab-complete correctly.
->
-> **Source issues:** Group K (reid, swapid, swapname, duplicate alias), R2 (DropConfigManager), R4 (BlockFinder GUI + export PNG), Group M (settabicon)
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
+> Group 25 makes advanced block management safe and direct: rename or swap identity, target the block in front of or held by a player, and manage block-specific extras without losing attached data.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_25.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## UI medium audit (2026-07-09)
+## Purpose
 
-ReIdMenu (the "change a block's id" GUI, picker + anvil) → **Screen, not built.** Real text field instead
-of the anvil-rename workaround. See `docs/UI_MEDIUM_GUIDE.md`.
+Block IDs, names, attachments, and world placements are connected data. Management actions need to preserve that connection, refuse unsafe collisions, and participate in the same undo history as normal editing. Players also need a faster way to point at or hold a block instead of constantly retyping its ID.
 
-## 🐞→🟢 FIXED 2026-06-27 (G25-2, awaiting in-game) — `/cb reid` failed on a case-mismatched old id
+G25 owns those identity operations and focused management extras. Its Screen entries route through G27; its history behavior consumes G17; its special Arabic target handling stays safely separated from normal `SlotData` operations.
 
-`/cb reid sfa1 sfa2` errored *"Couldn't change the id…"* when the stored id differed only in case from what
-you typed (stored `Sfa1`, typed `sfa1`). The pre-check resolved case-insensitively (`SlotManager.getById`) but
-the rename passed the **typed** old id to `SlotManager.reId`, whose `BY_ID.get(oldId)` is **exact** → null.
+## Ownership
 
-- **Fix:** `ReIdCommands.reid` now resolves the stored id once (`before.customId()`) and uses it for the lock
-  check, the `reId` call, and all messages; a pure case-change of the same id is allowed too. `reId` itself
-  kept exact (the command feeds it the exact id). Same family as Group 26 FIX B — this path just missed it.
+| Owns | Does not own |
+| --- | --- |
+| ReID, swap ID/name, duplicate alias, identity-state migration, and universal block references | Shared undo/redo implementation: G17 |
+| Typed `#` looked-at and `!` held block resolution | Arabic block data/rendering: G13 |
+| Custom drops, finder data/actions, tab icon configuration, and management-only exports | Block editor and ReID Screen presentation: G27 |
+| Favourites, recent blocks, edit-history requirements, and magic-item handoff | The original command/asset behavior each referenced feature owns |
 
----
+## Direction
 
-## What this group restores / adds
+Identity operations are deliberate, atomic changes. ReID changes an ID without losing the block's name, asset, lock/favourite/lore state, or placed references. Swaps preserve the block data that belongs to each original block. All mutable operations have one understandable history entry.
 
-### Identity Operations
+Existing-block commands gain one safe target language: `#` for the custom block a player is looking at and `!` for the custom block in hand. The resolver understands ordinary slots and Arabic auto-join letters as different types, so an unsupported Arabic action explains itself rather than falling into an unsafe slot-data path.
 
-| Area | Old CB | New CB-B | This Group |
-|---|---|---|---|
-| `/cb reid` | Rename block ID without changing display name | Missing | Restored |
-| `/cb swapid` | Swap IDs of two blocks | Missing | Restored |
-| `/cb swapname` | Swap display names of two blocks | Missing | Restored |
-| `/cb duplicate` | Alias for `/cb dupe` | Missing (only `/cb dupe`) | Restored |
+## Locked Decisions
 
-### Block Management Extras
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-21 | ReID, swap ID, swap name, and duplicate are atomic, undoable identity operations. | Identity changes preserve or exchange only the data their operation promises. |
+| 2026-06-21 | `/cb duplicate` is the full alias for `/cb dupe`. | Both automatic copy IDs and a chosen new ID follow one duplicate behavior. |
+| 2026-06-21 | Every existing-block command can accept `#` or `!`; create cannot. | Block targeting is consistent without pretending a new block already exists. |
+| 2026-06-21 | `#` uses ten-block vision through fluids/entities and can resolve an item-frame block; `!` prefers main hand then offhand. | Target shortcuts match how players actually aim and hold blocks. |
+| 2026-06-21 | Arabic targets are typed and opt-in per action. | Arabic letters may be deleted/recoloured through safe existing paths; unsupported operations refuse cleanly. |
+| 2026-06-27 | ReID resolves the stored ID once before mutation. | Typed case differences cannot make a valid stored ID fail halfway through ReID. |
+| 2026-07-09 | ReID and management UI are Screens. | G27 provides real text inputs and editor surfaces, not anvil/chest workarounds. |
 
-| Area | Old CB | New CB-B | This Group |
-|---|---|---|---|
-| Custom drops | `DropConfigManager` — blocks drop custom items | `DropConfigManager` stub | Fully wired |
-| Block Finder | `BlockFinder` — find placed instances in world | Missing | Chest GUI |
-| PNG export from editor | Not in editor GUI | Group 10 has `/cb exportpng` cmd | Also as button in Block Editor GUI |
-| `/cb settabicon` | Set custom creative tab icon from URL | Missing | Restored |
-| Drop config slot | Not in editor | Not in editor | Added to Block Editor chest GUI |
-| Drop persistence | `config/customblocks/data/drop_config.json` | Not present | Restored |
+## Feature Plan
 
----
+### A. Identity Operations
 
-## What this group covers
+**Player outcome**
 
-| Feature | Commands |
-|---|---|
-| Re-ID | `/cb reid <old-id> <new-id>` |
-| Swap IDs | `/cb swapid <id1> <id2>` |
-| Swap names | `/cb swapname <id1> <id2>` |
-| Duplicate alias | `/cb duplicate <id> [new-id]` |
-| Set custom drop | `/cb setdrop <id> <item-id> [amount]` |
-| Clear custom drop | `/cb cleardrop <id>` |
-| Block Finder | `/cb find <id>` |
-| Set tab icon | `/cb settabicon <url>` (owner = G25, decision C 2026-06-21; removed from G06) |
-| Export PNG (editor) | Button in Block Editor chest GUI |
+An operator can change or exchange an identity without accidentally losing the block behind it.
 
----
+**Experience**
 
-## Consolidated ownership (sweep 2026-06-21)
+- `/cb reid <old-id> <new-id>` changes only the ID and reports a clear taken/missing/locked reason when it cannot proceed.
+- `/cb swapid` exchanges IDs while names, textures, attributes, and attached state remain with their original block data.
+- `/cb swapname` exchanges display names only.
+- `/cb duplicate <id> [new-id]` follows `/cb dupe`, producing a collision-free copy name when one is not supplied.
 
-These features were **specced in other group docs but belong here** per SWEEP_INDEX §A/§B. Ownership moved to
-G25; the listed docs keep only a cross-ref. (Specs not duplicated — see the source doc for original detail.)
+**Requirements**
 
-| Feature | Commands | Moved from | Notes |
-|---|---|---|---|
-| Magic items | `/cb magicitems`, `/cb editmagicitems` | G02 | RESTORE; `editmagicitems` gets a **full revamp** (not a port) — §A |
-| Block edit history | `/cb history` | G02 | G02 built the chest-GUI surface; the mutation-log **feature** is owned here (decision A) |
-| Favorites | `/cb favorite <id>` (primary), `/cb fav` (alias), `/cb unfavorite <id>` | G17 | Feature owned here. Fully moved out of G17 2026-06-21 (former tests G17.6–G17.8 land here). Currently only `/cb fav` toggle + `/cb favs` exist in code — `favorite`/`unfavorite` not built yet. |
-| Recent blocks | `/cb recent` | G17 | Recently-used list (text + chest GUI link). Fully moved out of G17 2026-06-21 (former test G17.12). Not built in code yet. |
+- Resolve case-insensitive lookup to the exact stored ID before lock checks, mutation, and messages.
+- Migrate slot, texture, placements, favourite, lock, lore/note, and comparable attached state during ReID.
+- Reject collisions before mutation and create one G17-compatible undo/redo record for each atomic operation.
+- ReID Screen routes invoke the same server operation as commands and return safely to the originating editor.
 
-> ⚠️ These four need their full test specs written into G25 when they're built (currently only stubs/notes
-> elsewhere). Do **not** assume they're tested — they inherit ⬜ until in-game confirmed.
+**Boundary**
 
----
+Identity operations do not invent new block content or change visual editor layout. G27 owns the Screen and each feature owner remains responsible for validating its own stored fields.
 
-## Implementation Requirements
+### B. Universal Block References
 
-### 1. `/cb reid <old-id> <new-id>`
+**Player outcome**
 
-Changes block ID without touching display name, texture, or attributes. `<new-id>` must not already exist. All placed world instances update automatically. Undoable.
+A player can use `#` for a nearby looked-at CustomBlock or `!` for a held CustomBlock in every command that acts on an existing block.
 
-Errors: "ID 'newid' is already taken." / "No block with ID 'oldid'."
+**Experience**
 
-### 2. `/cb swapid <id1> <id2>`
+- Suggestions include normal IDs and `#`, making the shortcut discoverable.
+- `#` reaches ten blocks, passes through fluids/entities, and can read a CustomBlock contained by an item frame.
+- `!` uses main hand first and automatically falls back to offhand.
+- Console, spectator, execute-as, empty-hand, and no-target situations produce one useful target error.
+- Arabic letters are recognized as a target rather than misidentified as a missing block.
 
-Swaps IDs of two blocks. Display names, textures, and attributes stay with their original blocks. World placements update. Undoable as single atomic action.
+**Requirements**
 
-### 3. `/cb swapname <id1> <id2>`
+- `BlockRefArgumentType` accepts a normal ID, `#`, or `!` where a command expects an existing block.
+- `BlockTarget.resolve` returns typed `SLOT`, `ARABIC`, or friendly error results; commands opt into Arabic behavior explicitly.
+- Slot commands receive unchanged `SlotData` after resolution; Arabic delete uses the normal world break/join-flow path and Arabic recolour reuses `ShapeToolItem.recolorArabicLetter`.
+- Unsupported Arabic actions stop before reaching `SlotData` code and say the letter can only be deleted or recoloured.
 
-Swaps display names only. IDs and all attributes unchanged. Undoable.
+**Boundary**
 
-### 4. `/cb duplicate <id> [new-id]`
+`/cb create` stays excluded. `#` and `!` are not valid ordinary IDs, and G25 does not broaden Arabic operations beyond their explicitly safe paths.
 
-Alias for `/cb dupe`. Same behavior. Auto-generates `<id>_copy` if no `[new-id]` given (increments to `_copy_2` etc. on collision).
+### C. Drops and Management Surfaces
 
-### 5. Custom Drop System
+**Player outcome**
 
-`/cb setdrop <id> <minecraft-item-id> [amount]` — configures the block's drop on break.
+An operator can configure a custom drop, find placed blocks, export a block texture from its editor, and set a persistent creative-tab icon.
 
-Example: `/cb setdrop g25a diamond 3` — block drops 3 diamonds when broken.
+**Experience**
 
-Default (no custom drop set): block drops nothing.
+- `/cb setdrop <id> <item-id> [amount]` and `cleardrop` set or remove the intentional break drop.
+- Finder results show loaded placements with location, dimension, and distance; an authorized operator can refresh, page, and teleport.
+- An editor export produces the same private download route as `/cb exportpng <id>`.
+- `/cb settabicon <url>` updates a saved icon that returns after restart.
 
-Custom drops override vanilla drop behavior. Undoable.
+**Requirements**
 
-`/cb cleardrop <id>` — removes custom drop, block drops nothing again.
+- Persist custom drops under `config/customblocks/data/drop_config.json`; no configured custom drop means no custom drop.
+- Drop changes validate item IDs/amounts, are undoable, and use the same data through command and G27 editor routes.
+- Scan loaded chunks asynchronously, with explicit result count/pagination and admin-gated teleport.
+- Save exported PNGs under `cloud_exports` with sender-only download links; store the tab image at `textures/tab_icon.png` after safe image retrieval/validation.
 
-**Drop config slot in Block Editor:** In the Block Editor chest GUI (Group 02), a "Custom Drop" slot shows the current drop item (empty glass if none). Click → anvil GUI to set item ID and amount.
+**Boundary**
 
-**Persistence:** `config/customblocks/data/drop_config.json`
+G25 provides management behavior and data. G27 owns editor/finder/ReID Screen layout, while G10 remains the primary PNG export feature owner.
 
-### 6. Block Finder GUI
+### D. Consolidated Management Requirements
 
-`/cb find <id>` — scans all loaded chunks async. Opens a chest GUI:
-- Each slot = one placed instance. Hover: coordinates (X, Y, Z), dimension, distance from player.
-- Click → teleport to that location (admin/OP 4 permission required).
-- "Refresh" slot re-scans. "Total count" slot shows total found.
-- Results paginated in groups of 27.
+**Player outcome**
 
-### 7. Export PNG from Block Editor
+Related management actions eventually live in one clearly owned area rather than disappearing between old Groups.
 
-Block Editor chest GUI gets an "Export PNG" slot. Click → saves `config/customblocks/cloud_exports/<id>.png` and provides a `[download]` chat link. Same as `/cb exportpng <id>` from Group 10, accessible directly from the editor.
+**Experience**
 
-### 8. `/cb settabicon`
+- Favourites have explicit favourite, toggle alias, unfavourite, and list behavior rather than only an ambiguous toggle.
+- Recent blocks expose useful recently used content without silently becoming a second dashboard system.
+- Block edit history and magic items have their scope written before a large implementation begins.
 
-`/cb settabicon <url>` — downloads the image and uses it as the icon for the "CustomBlocks" blocks creative tab. Stored at `config/customblocks/textures/tab_icon.png`. Reapplies on restart.
+**Requirements**
 
----
+- Define full interaction and test contracts before building favourites, recent, mutation log, or magic-item revamp work.
+- Reuse G17 history where an action is undoable; do not create competing edit records.
+- Route any future Screen surface through G27 and respect G22 permission policy.
 
-## Setup
+**Boundary**
 
-```
-/cb create g25a DropTest
-/cb create g25b IdentityA
-/cb create g25c IdentityB
-/cb create g25d FinderTest
-```
+This is ownership consolidation, not permission to assume the features exist or have passed testing. Their detailed build work stays deferred until an owner walkthrough sets the contract.
 
-Place `g25d` in at least 3 different locations in the world.
+## Cross-Group Contracts
 
----
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G06 | Tools and delete | Universal targeting complements normal tools; delete routes retain their existing safety behavior. |
+| G10 | PNG export | Editor export calls the same protected export/download behavior as G10. |
+| G13 | Arabic letters | Typed targets never treat Arabic letter entities as `SlotData`; only approved delete/recolour paths run. |
+| G17 | Undo/redo and search | Atomic identity changes and macro/history consumers share the normal history model. |
+| G22 | Permissions | Finder teleport and management actions apply the approved command tiers. |
+| G27 | Screen framework | ReID, editor, and finder interfaces call G25 services rather than duplicating data logic. |
 
-## Test G25.1 — Reid changes ID only
+## Technical Contract
 
-```
-/cb reid g25b g25b_renamed
-```
+- ReID resolves the exact stored ID once, then applies lock checks, state migration, mutation, and messages against that exact key.
+- `BlockRefArgumentType` and `BlockTarget.resolve` are the single parsing/resolution path for existing-block command targets.
+- `BlockTarget` separates normal `SlotData` from Arabic world-block targets and returns user-facing errors centrally.
+- `#` supports a ten-block raycast through fluids/entities and item-frame content; `!` resolves main hand before offhand.
+- Identity operations record one shared undo/redo entry and must migrate referenced attached state atomically.
+- Custom drops, finder data, export artifacts, and tab icon files use stable persisted locations; client Screen code never mutates them directly.
 
-**Expected:** `Block "g25b" renamed to ID "g25b_renamed". Display name unchanged: "IdentityA".`
+## Deferred Scope
 
-`/cb list` — `g25b` gone, `g25b_renamed` with name "IdentityA".
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-**Pass:** ID changed, name preserved.
-**Fail:** Error, or display name also changed.
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Favourites, recent blocks, edit history, and magic-item revamp | They need full interaction/test contracts, not just an ownership move. | G25 with G17/G27 |
+| Additional Arabic-target actions | Each must be independently proved safe for Arabic letter data. | G25 with G13 |
+| Finder support for unloaded chunks | Current finder contract is loaded-chunk scanning; persistent world indexing is separate work. | G25 future slice |
+| ReID/editor/finder visual polish | The behavior is here, but visual interaction belongs to the unified Screen system. | G27 |
 
----
+</details>
 
-## Test G25.2 — Reid conflict check
+## Superseded Decisions
 
-```
-/cb reid g25c g25d
-```
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
-**Expected:** `ID "g25d" is already taken. Choose a different ID.`
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-21 | Only `/cb delete #` accepted a looked-at block. | Every existing-block command uses the central typed target resolver. |
+| 2026-06-21 | Arabic letters could flow through ordinary slot-ID mutation paths. | Arabic targets are explicitly typed and only approved actions may run. |
+| 2026-06-27 | ReID could mutate using the casing typed by the player. | ReID uses the resolved stored ID, fixing case-mismatch failure. |
+| 2026-07-09 | ReID input could use an anvil or chest interaction. | G27 provides a proper Screen with real text input. |
 
-**Pass:** Conflict rejected cleanly.
-**Fail:** Error/crash or silent swap.
+</details>
 
----
+## References
 
-## Test G25.3 — Reid is undoable
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_25.md) · [All Groups](README.md)
 
-```
-/cb undo
-```
-
-**Expected:** `g25b_renamed` reverts to ID `g25b`.
-
-**Pass:** Undo restores original ID.
-**Fail:** Undo doesn't affect ID changes.
-
----
-
-## Test G25.4 — Swap IDs
-
-```
-/cb swapid g25b g25c
-```
-
-**Expected:**
-- `g25b` now has display name "IdentityB".
-- `g25c` now has display name "IdentityA".
-- IDs are swapped, names stayed with blocks.
-
-**Pass:** IDs swapped, names with blocks.
-**Fail:** Error or display names also swapped.
-
----
-
-## Test G25.5 — Swap IDs is undoable
-
-```
-/cb undo
-```
-
-**Expected:** `g25b` = "IdentityA", `g25c` = "IdentityB".
-
-**Pass:** Single undo reverts swap.
-**Fail:** Undo doesn't work on swaps.
-
----
-
-## Test G25.6 — Swap names
-
-```
-/cb swapname g25b g25c
-```
-
-**Expected:** `g25b` displays "IdentityB". `g25c` displays "IdentityA". IDs unchanged.
-
-**Pass:** Names swapped, IDs unchanged.
-**Fail:** IDs also swapped.
-
----
-
-## Test G25.7 — Swap names is undoable
-
-```
-/cb undo
-```
-
-**Expected:** Names revert — `g25b` = "IdentityA", `g25c` = "IdentityB".
-
-**Pass:** Undo restores names.
-**Fail:** Undo doesn't work on name swaps.
-
----
-
-## Test G25.8 — Duplicate alias
-
-```
-/cb duplicate g25b
-```
-
-**Expected:** Creates `g25b_copy` with identical attributes.
-
-```
-/cb duplicate g25c my_custom_copy
-```
-
-**Expected:** Creates `my_custom_copy`.
-
-**Pass:** Both forms work.
-**Fail:** Command not found.
-
----
-
-## Test G25.9 — Set custom drop
-
-```
-/cb setdrop g25a diamond 2
-```
-
-**Expected:** `Custom drop for "g25a" set to: diamond ×2.`
-
-**Pass:** Drop configured.
-**Fail:** Command missing.
-
----
-
-## Test G25.10 — Custom drop fires on break
-
-Give `g25a`, place it, break it.
-
-**Expected:** 2 diamonds drop.
-
-**Pass:** Correct drops.
-**Fail:** No drops or wrong item.
-
----
-
-## Test G25.11 — Drop persists after restart
-
-Restart server. Break another placed `g25a`.
-
-**Expected:** Still 2 diamonds.
-
-**Pass:** Drop config persisted.
-**Fail:** No drops after restart.
-
----
-
-## Test G25.12 — Clear custom drop
-
-```
-/cb cleardrop g25a
-```
-
-Place and break `g25a`.
-
-**Expected:** No drops.
-
-**Pass:** Drop removed.
-**Fail:** Drops still fire.
-
----
-
-## Test G25.13 — Drop slot in Block Editor
-
-```
-/cb editor g25a
-```
-
-**Expected:** "Custom Drop" slot visible in Block Editor GUI. Click → anvil GUI to set item ID and amount.
-
-**Pass:** Slot present, anvil opens.
-**Fail:** No drop slot.
-
----
-
-## Test G25.14 — Block Finder GUI
-
-```
-/cb find g25d
-```
-
-**Expected:** Chest GUI with ≥3 placement slots. Hover shows coordinates + distance. Total count slot shows total.
-
-**Pass:** GUI with placements found.
-**Fail:** Text output only, or empty GUI.
-
----
-
-## Test G25.15 — Block Finder teleport
-
-Click one placement slot.
-
-**Expected:** Player teleports to that block's location.
-
-**Pass:** Teleport fires.
-**Fail:** Nothing on click.
-
----
-
-## Test G25.16 — Export PNG from Block Editor
-
-```
-/cb editor g25a
-```
-
-Click "Export PNG" slot.
-
-**Expected:** `Texture exported → cloud_exports/g25a.png` with `[download]` link.
-
-**Pass:** File created, link in chat.
-**Fail:** Slot missing or export fails.
-
----
-
-## Test G25.17 — Set tab icon
-
-```
-/cb settabicon https://i.imgur.com/example.png
-```
-
-**Expected:** `Creative tab icon updated.` CustomBlocks creative tab shows custom icon.
-
-**Pass:** Tab icon changed.
-**Fail:** Command missing or icon unchanged.
-
----
-
-## Group 25 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G25.1 | Reid changes ID, preserves name | ⬜ |
-| G25.2 | Reid rejects conflicting ID | ⬜ |
-| G25.3 | Reid is undoable | ⬜ |
-| G25.4 | Swap IDs — names stay with blocks | ⬜ |
-| G25.5 | Swap IDs is undoable | ⬜ |
-| G25.6 | Swap names — IDs unchanged | ⬜ |
-| G25.7 | Swap names is undoable | ⬜ |
-| G25.8 | Duplicate alias (auto and custom ID) | ⬜ |
-| G25.9 | Custom drop configured | ⬜ |
-| G25.10 | Custom drop fires on break | ⬜ |
-| G25.11 | Drop persists after restart | ⬜ |
-| G25.12 | Clear drop removes drops | ⬜ |
-| G25.13 | Drop slot in Block Editor GUI | ⬜ |
-| G25.14 | Block Finder GUI shows placements | ⬜ |
-| G25.15 | Finder teleports to location | ⬜ |
-| G25.16 | Export PNG from Block Editor | ⬜ |
-| G25.17 | Tab icon updated via URL | ⬜ |
-
-**Group 25 passes when all identity operations and block management extras work in-game.**
-
-If anything shows ❌ — paste:
-1. Exact command typed
-2. What happened vs expected
-3. Last 20 lines of `latest.log`
-
----
-
-## Cleanup
-
-```
-/cb delete g25a
-/cb delete g25b
-/cb delete g25b_renamed
-/cb delete g25c
-/cb delete g25d
-/cb delete g25b_copy
-/cb delete my_custom_copy
-```
-(Break any placed `g25d` instances in the world.)
-
----
-
-## G25-1 · `#` ("the block I'm looking at") in EVERY block command
-
-> 🔍 diagnosed — do G04-2 first; `BlockRefArgumentType` needs real command tree that G04-2 builds
-
-> *"# should be in all sub subcommands … currently /cb delete # exists which deletes the block ur
-> looking at, but i want it for ALL commands that delete retexture, etc, like /cb retexture # (link)"*
-> *"and another subidea is i want ! instead of # for held block"*
-
-**Symptom** — `#` is a shortcut meaning *"the custom block my crosshair is on"* (raycast ~10 blocks). `!` is a shortcut meaning *"the custom block in my hand"*.
-They work for **one** command only — `/cb delete #`. The developer wants them everywhere a block is targeted,
-so `/cb retexture # <link>`, `/cb rename !`, `/cb color #`, `/cb shape !`, etc. all aim at the looked-at or held
-block instead of forcing them to type the id.
-
-**Decisions (developer, this session):**
-- **Coverage = EVERY block command** that targets an *existing* block — retexture, rename, dupe, reid,
-  shape, color, glow/hardness/sound + the other attributes, note, anim, give, lock/unlock, open-GUI,
-  face, blueprint, cloud, etc. **Only `/cb create` is excluded** (you're making a new block — nothing to
-  look at yet). One consistent rule across the whole `/cb` tree.
-- **Arabic auto-join letters included too** — but only via a *verified, no-risk* path (see below). Quote:
-  *"second option but i want a verified and optimal way that doesnt oppose and risks or problems."*
-- **Edge Cases Locked (developer, this session):**
-  - **`#` Range:** 10 blocks (easier to edit ceilings).
-  - **`!` Hand Priority:** Checks Main Hand first; if empty, seamlessly falls back to Offhand.
-  - **Pierce Entities & Fluids:** `#` raycast pierces right through water, lava, cows, and zombies to hit the block behind them.
-  - **Item Frames:** Looking at an Item Frame reads the item inside it. If it's a CustomBlock, `#` targets it!
-  - **Spectator / Execute As:** `/execute as @p` and Spectator mode are fully supported.
-  - **Collisions:** A block can literally NEVER be named `#` or `!` because Brigadier's `StringArgumentType.word()` strictly forbids it for `/cb create`. Collisions are mathematically impossible.
-
-**Why it's only in delete today** — two real reasons:
-
-1. **`#` doesn't parse as a normal argument.** Every other block command reads its id as
-   `StringArgumentType.word()`, and Brigadier's unquoted-word reader **does not allow `#`**
-   (`isAllowedInUnquotedString` permits only `0-9 A-Z a-z _ - . +`). `/cb delete #` only works because
-   `DeleteCommands` registers `#` as a **separate `literal("#")` branch** (`DeleteCommands.java:47`),
-   not as the id arg. So `/cb retexture #` today just errors: `#` is rejected before the handler runs.
-2. **The raycast helper is private to delete.** `lookedAtCustom(player)` (`DeleteCommands.java:83`) casts
-   the looked-at block to `SlotBlock` and returns its `SlotData`; it lives only in `DeleteCommands` and
-   returns `null` for anything that isn't a `SlotBlock` (incl. Arabic auto-join letters).
-
-**The real risk to avoid (why "naive `#` everywhere" is dangerous)** — Arabic **auto-join letter blocks
-have NO `SlotData`, NO `customId`, NO texture file.** They're a plain world block + `ArabicLetterBlockEntity`
-holding `letter` / `form` / `color` (one of 4 bundled: black/red/green/yellow), drawn live by a BER
-(ADR-005, no pack). Almost every `/cb` block command resolves `SlotManager.getById → SlotData → mutate`.
-If `#` just handed "the Arabic block" into those pipelines, they'd **NPE or silently corrupt** (there's no
-slot to retexture/reid/shape). That mismatch is exactly the "opposition / risk" the developer flagged.
-
-**Fix — one shared resolver + typed targets + opt-in per command (verified, no-crash):**
-
-1. **`BlockRefArgumentType`** (new) replaces `argument("id", word())` everywhere. It accepts a normal id
-   **or** `#`, and its tab-complete suggests existing ids **plus `#`** (so the shortcut is discoverable).
-   One mechanical swap per command; `/cb delete #`'s existing literal can fold into it.
-2. **`BlockTarget.resolve(src, raw)`** (new, central) returns a small typed result:
-   - **`SLOT(SlotData)`** — a normal custom block. From `#` raycast hitting a `SlotBlock`, **or** any typed
-     id via `getById`. All existing slot commands work **unchanged**.
-   - **`ARABIC(BlockPos, ArabicLetterBlockEntity)`** — `#` raycast hit an auto-join `ArabicLetterBlock`.
-   - **error states** (not looking at a custom block · console/no player · id not found) → the resolver
-     prints one friendly `Chat.error` and the command returns 0. No duplicated error text per command.
-3. **Each command opts in to Arabic** — the safety guarantee:
-   - **`delete #`** on Arabic → break the world block (it's an ordinary block; `ArabicJoinFlow` already
-     re-flows neighbours on break). Reuse the normal break path.
-   - **`color #`** on Arabic → call the **existing, proven** `recolorArabicLetter(player, world, pos)` —
-     the exact mechanic the colour **Square** already uses (`ShapeToolItem.java:77`). Only the 4 bundled
-     colours apply. Zero new render risk.
-   - **every other command** (retexture, rename, reid, dupe, shape, glow, note, anim, give, …) → an Arabic
-     target gives a **clean, friendly refusal**, e.g. *"That's an Arabic auto-join letter — it has no
-     texture/id to retexture. You can delete or recolour it."* **It never reaches the SlotData pipeline,
-     so it can't crash or corrupt.** ← this is the "verified, no-risk" path the developer asked for.
-
-So Arabic is accepted as a **target** everywhere (no "that block doesn't exist" confusion), but unsupported
-operations **refuse politely instead of mangling data**. New Arabic-capable ops (beyond delete/recolor) can
-be added later one at a time, each explicitly — never by accident.
-
-| Fact | Detail |
-|---|---|
-| `#` today | `DeleteCommands.java:47` — `literal("#")` branch, delete only |
-| Raycast | `DeleteCommands.java:83` `lookedAtCustom`, REACH = 6.0, `SlotBlock`→`SlotData`, null for non-slot |
-| Why `#` won't ride the id arg | Brigadier unquoted-word excludes `#` (`word()` rejects it) |
-| Commands taking an existing-block id | ~20: rename, dupe, retexture, reid, shape×3, note, attributes×5, anim, blueprint, give, face, template, chestgui, cloud, colorimage, imagetool, management(lock/unlock), arabic |
-| Excluded | `/cb create` (new id, nothing to look at) |
-| Arabic block has no | `SlotData` / `customId` / texture file → can't retexture/reid/shape |
-| Proven Arabic recolor path | `ShapeToolItem.recolorArabicLetter(player, world, pos)` (Square tool, `:77`) |
-| Coverage decision | **Every** existing-block command (developer) |
-| Arabic decision | Include, but only via opt-in safe path (developer: "verified and optimal … no risk") |
-
-**Touches (when built):** new `BlockRefArgumentType` + `BlockTarget` (resolver) · `DeleteCommands`
-(fold its `#` literal in) · every handler taking `argument("id", word())` (swap arg type + `getById` →
-`BlockTarget.resolve`) · reuse `ShapeToolItem.recolorArabicLetter` + `ArabicJoinFlow` break path.
-**Related:** G06-2/G06-3 (delete rail) · G13-20 (Arabic consolidation — more Arabic ops may join later).
-**Scope:** Both — raycast + commands are server-side; identical SP & MP.
+- [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
+- [G10 Colour and Image Tools](GROUP_10_COLOR_IMAGE.md)
+- [G13 Arabic and Text Blocks](GROUP_13_ARABIC.md)
+- [G17 History, Give, Delete, and Search](GROUP_17_REGRESSIONS.md)
+- [G22 Permissions](GROUP_22_PERMISSIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 25 snapshot](../archive/group-migration-2026-07-18/GROUP_25_BLOCK_MANAGEMENT_EXTRAS.md)

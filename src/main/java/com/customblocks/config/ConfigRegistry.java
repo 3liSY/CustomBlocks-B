@@ -101,11 +101,6 @@ public final class ConfigRegistry {
                 Cat.GENERAL, 1,
                 () -> CustomBlocksConfig.silentPack, v -> CustomBlocksConfig.silentPack = v,
                 true, false, false));
-        f.add(ConfigField.enumField("typo_correction", "Typo correction",
-                "When a /cb command is misspelled: smart suggests only when confident, always suggests the closest, off says nothing.",
-                Cat.GENERAL, 1,
-                () -> CustomBlocksConfig.didYouMean, v -> CustomBlocksConfig.didYouMean = CustomBlocksConfig.normalizeDidYouMean(v),
-                "smart", new String[]{"smart", "always", "off"}, false, false));
         f.add(ConfigField.bool("auto_category", "Auto category",
                 "When creating a block, suggest a category from its name (a clickable hint, never forced).",
                 Cat.GENERAL, 1,

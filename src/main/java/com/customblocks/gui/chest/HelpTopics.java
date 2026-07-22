@@ -71,7 +71,6 @@ public final class HelpTopics {
 
             new Category("Faces", Items.OAK_SIGN, "Paint each side of a block separately", List.of(
                     new Topic("setface", "/cb setface <id> <face> <imageUrl>", "Texture one face of a block"),
-                    new Topic("paintface", "/cb paintface <id> <face> <color>", "Fill one face with a solid colour"),
                     new Topic("clearface", "/cb clearface <id> <face>", "Reset one face to the base texture"),
                     new Topic("clearallfaces", "/cb clearallfaces <id>", "Reset every face to the base texture"),
                     new Topic("facechangegui", "/cb facechangegui <id>", "Open the per-face editor GUI"))),
@@ -179,7 +178,8 @@ public final class HelpTopics {
             new Category("Games", Items.NOTE_BLOCK, "Party modes built on custom blocks", List.of(
                     new Topic("guess", "/cb guess <player>", "Guess Mode — disguise players as blocks"),
                     new Topic("buzzergame", "/cb buzzergame", "BuzzerGame — quiz buzzers, timer and panel"),
-                    new Topic("tomato", "/cb tomato <targets> [amount]", "Hand out Explosive Tomatoes (sneak + throw to ride)"))),
+                    new Topic("tomato", "/cb tomato <targets> [amount]", "Hand out Explosive Tomatoes (sneak + throw to ride)"),
+                    new Topic("wheel", "/cb wheel", "Wheel of Fortune - place the wheel, right-click it to spin"))),
 
             new Category("Safety & Backup", Items.SHIELD, "Backups and broken-block repair", List.of(
                     new Topic("backup", "/cb backup", "Save, list and restore backups"),
@@ -194,7 +194,6 @@ public final class HelpTopics {
                     new Topic("incidents", "/cb incidents", "Review logged errors (or /cb incidents <code>)"),
                     new Topic("report", "/cb report", "Write a diagnostics report to disk"),
                     new Topic("cache", "/cb cache", "Inspect and clear the texture cache"),
-                    new Topic("clearlogs", "/cb clearlogs", "Clear [CB] lines from your own chat"),
                     new Topic("reload", "/cb reload", "Reload blocks from disk"),
                     new Topic("rp pause", "/cb rp pause", "Pause resource-pack rebuilds"),
                     new Topic("rp resume", "/cb rp resume", "Resume resource-pack rebuilds"),
@@ -223,7 +222,8 @@ public final class HelpTopics {
             "cancel",       // the No half of the same
             "unsuppress",   // internal: un-hide a GUI that was suppressed
             "spawnmarker",  // dev-only marker used to test block placement
-            "sourcewall"    // Group 14 TEMPORARY re-source command; removed when that job is done
+            "sourcewall",   // Group 14 TEMPORARY re-source command; removed when that job is done
+            "debug"         // §G04-5 hidden dev command: /cb debug kick <cause> (kick-screen preview)
     );
 
     /** Look up a category by name (case-insensitive), or null. */

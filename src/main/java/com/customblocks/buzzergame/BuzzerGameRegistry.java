@@ -8,10 +8,11 @@
  * and the dedicated BuzzerGame creative tab are the two convenience paths on top of it.
  *
  * Mirrors {@link com.customblocks.block.DeletedMarkerRegistry}. Call {@link #register()} once for the
- * block/item/BE, then {@link #registerTab()} for the creative tab, both from CustomBlocksMod.onInitialize.
- * Later G31 phases add the admin panel + timer screen blocks here alongside the buzzer.
+ * blocks/items/BEs + the wand, then {@link #registerTab()} for the creative tab, both from
+ * CustomBlocksMod.onInitialize. Registers the buzzer, the timer stand, and the session-owning wand — the
+ * old admin panel block was scrapped for the wand-owned session (G31 redesign 2026-07-18).
  *
- * Depends on: BuzzerBlock, BuzzerBlockEntity, CustomBlocksMod
+ * Depends on: BuzzerBlock, BuzzerBlockEntity, TimerDisplayBlock, TimerDisplayBlockEntity, BuzzerGameWand, CustomBlocksMod
  * Called by:  CustomBlocksMod.onInitialize (register + registerTab)
  */
 package com.customblocks.buzzergame;
@@ -46,10 +47,6 @@ public final class BuzzerGameRegistry {
     public static BlockItem ITEM;
     public static BlockEntityType<BuzzerBlockEntity> BLOCK_ENTITY;
 
-    public static AdminPanelBlock ADMIN_PANEL;
-    public static BlockItem ADMIN_PANEL_ITEM;
-    public static BlockEntityType<AdminPanelBlockEntity> ADMIN_PANEL_ENTITY;
-
     public static TimerDisplayBlock TIMER_DISPLAY;
     public static BlockItem TIMER_DISPLAY_ITEM;
     public static BlockEntityType<TimerDisplayBlockEntity> TIMER_DISPLAY_ENTITY;
@@ -57,12 +54,24 @@ public final class BuzzerGameRegistry {
     /** The central BuzzerGame wand — link + resize + more, mode-cycled (op-only). Replaces the old link wand + resize tool. */
     public static BuzzerGameWand WAND;
 
-    /** Register the buzzer + admin panel blocks, their BlockItems, and BlockEntityTypes (main namespace). */
+    /** Render-only part items (item F): each is the ItemStack a stand-part ITEM_DISPLAY renders. Not in any
+     *  tab, not obtainable — they exist purely so the base/leg/screen can be shown + resized independently. */
+    public static Item TIMER_PART_BASE;
+    public static Item TIMER_PART_LEG;
+    public static Item TIMER_PART_SCREEN;
+
+    /** Render-only label items (item E, rev 2026-07-19): the two fixed Arabic words الهدف / النتيجة, each a flat
+     *  green quad rendered by an ITEM_DISPLAY glued to the screen. Replaces the old customblocks:timer_label
+     *  bitmap font (I1) so the labels never fight MC bidi / the 256px atlas page / a PUA-codepoint match again. */
+    public static Item TIMER_LABEL_TARGET;
+    public static Item TIMER_LABEL_RESULT;
+
+    /** Register the buzzer + timer stand blocks, their BlockItems, and BlockEntityTypes (main namespace). */
     public static void register() {
         Identifier buzzerId = Identifier.of(CustomBlocksMod.MOD_ID, "buzzer");
         BLOCK = new BuzzerBlock(AbstractBlock.Settings.create()
                 .mapColor(MapColor.BRIGHT_RED)
-                .strength(1.5f, 6.0f)
+                .strength(0.2f, 6.0f) // near-instant survival break (G31 §C); resistance kept
                 .sounds(BlockSoundGroup.METAL)
                 .nonOpaque());
         Registry.register(Registries.BLOCK, buzzerId, BLOCK);
@@ -71,21 +80,11 @@ public final class BuzzerGameRegistry {
         BLOCK_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE, buzzerId,
                 FabricBlockEntityTypeBuilder.create(BuzzerBlockEntity::new, BLOCK).build());
 
-        Identifier panelId = Identifier.of(CustomBlocksMod.MOD_ID, "admin_panel");
-        ADMIN_PANEL = new AdminPanelBlock(AbstractBlock.Settings.create()
-                .mapColor(MapColor.BLACK)
-                .strength(2.0f, 6.0f)
-                .sounds(BlockSoundGroup.METAL));
-        Registry.register(Registries.BLOCK, panelId, ADMIN_PANEL);
-        ADMIN_PANEL_ITEM = new BlockItem(ADMIN_PANEL, new Item.Settings());
-        Registry.register(Registries.ITEM, panelId, ADMIN_PANEL_ITEM);
-        ADMIN_PANEL_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE, panelId,
-                FabricBlockEntityTypeBuilder.create(AdminPanelBlockEntity::new, ADMIN_PANEL).build());
-
         Identifier displayId = Identifier.of(CustomBlocksMod.MOD_ID, "timer_display");
         TIMER_DISPLAY = new TimerDisplayBlock(AbstractBlock.Settings.create()
                 .mapColor(MapColor.BLACK)
-                .strength(2.0f, 6.0f)
+                .strength(0.05f, 6.0f) // true one-hit break (I5): the block is INVISIBLE so there's no crack
+                                       // overlay to sell a 0.2 mine — drop hardness to read as instant like the buzzer
                 .sounds(BlockSoundGroup.METAL)
                 .nonOpaque());
         Registry.register(Registries.BLOCK, displayId, TIMER_DISPLAY);
@@ -98,10 +97,26 @@ public final class BuzzerGameRegistry {
         WAND = new BuzzerGameWand(new Item.Settings().maxCount(1));
         Registry.register(Registries.ITEM, wandId, WAND);
 
-        CustomBlocksMod.LOGGER.info("[CustomBlocks] G31 Phase 1: registered 'buzzer' + 'admin_panel' blocks + BlockEntities + 'buzzergame_wand'.");
+        // Render-only stand-part items (item F) — no tab, no recipe; only ever rendered by display entities.
+        TIMER_PART_BASE = registerPart("timer_part_base");
+        TIMER_PART_LEG = registerPart("timer_part_leg");
+        TIMER_PART_SCREEN = registerPart("timer_part_screen");
+
+        // Render-only Arabic-label items (item E, rev 2026-07-19) — the two screen words as flat quads.
+        TIMER_LABEL_TARGET = registerPart("timer_label_target");
+        TIMER_LABEL_RESULT = registerPart("timer_label_result");
+
+        CustomBlocksMod.LOGGER.info("[CustomBlocks] G31: registered 'buzzer' + 'timer_display' blocks + BlockEntities + 'buzzergame_wand' + stand parts.");
     }
 
-    /** Register the dedicated BuzzerGame creative tab (buzzer + admin panel; more blocks later). */
+    /** Register one render-only stand-part item under {@code customblocks:<name>}. */
+    private static Item registerPart(String name) {
+        Item item = new Item(new Item.Settings());
+        Registry.register(Registries.ITEM, Identifier.of(CustomBlocksMod.MOD_ID, name), item);
+        return item;
+    }
+
+    /** Register the dedicated BuzzerGame creative tab (buzzer + timer stand + wand). */
     public static void registerTab() {
         Registry.register(Registries.ITEM_GROUP, BUZZERGAME_TAB,
                 FabricItemGroup.builder()
@@ -109,7 +124,6 @@ public final class BuzzerGameRegistry {
                         .icon(() -> new ItemStack(ITEM))
                         .entries((displayContext, entries) -> {
                             entries.add(ITEM);
-                            entries.add(ADMIN_PANEL_ITEM);
                             entries.add(TIMER_DISPLAY_ITEM);
                             entries.add(WAND);
                         })

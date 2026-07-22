@@ -1,191 +1,163 @@
-# Group 24 — Macros
+# Group 24 - Macros
 
-> ⛔ **SCRIPTS SCRAPPED (sweep 2026-06-21).** Per SWEEP_INDEX §A, `script`/`scriptgui`/`run` are **removed** —
-> the macro system covers these needs. §3–§4 and tests G26.6–G26.9 are struck below; do not build them.
-> 🔧 **Toggle renamed:** the macro on/off toggle is now `/cb macro on` / `/cb macro off` (the bare `/cb on` /
-> `/cb off` collided with the G03 HUD toggle — decision D, 2026-06-21).
->
-> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 13 (Macros) build-verified.
->
-> ⚠️ **UI medium audit (2026-07-10):** Screen-migration decision locked mod-wide — `MacroListScreen` STAYS
-> Screen-based. Earlier "must be chest-based" direction below was backwards vs. the mod-wide Screen
-> migration and is reverted. Do not convert it to a chest GUI.
->
-> **Objective:** Improve the existing macro recorder/player system (Screen-based GUI, step labels, single-undo batch).
->
-> **Source issues:** existing Phase 13 macro system improvements needed
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
+> Group 24 lets operators record and replay repeatable CustomBlocks actions as a simple saved macro, with one understandable undo for the whole run.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_24.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## What this group restores / improves
+## Purpose
 
-| Area | Old CustomBlocks | New CustomBlocks-B | This Group |
-|---|---|---|---|
-| Macro record | `/cb macro record <name>` | Working | Preserved |
-| Macro play | `/cb macro play <name>` | Working | Preserved |
-| Macro GUI | `/cb gui macros` — `MacroListScreen` (screen-based) | Screen-based | Keep Screen-based |
-| Macro on/off | `/cb macro on` / `/cb macro off` — toggle macro system | Missing | Restored (renamed from `/cb on`/`/cb off`) |
-| ~~Script GUI / `script` / `run`~~ | ~~extended macro with conditions/loops~~ | ⛔ **SCRAPPED (SWEEP_INDEX §A)** | — |
+Macros are a lightweight shortcut for repeating known CustomBlocks work. They should be simple to record, clear to review, safe to undo as one intended action, and easy to switch off when an operator needs to stop automation.
 
----
+G24 owns macro data and execution. G27 owns the MacroList Screen so macros fit the unified interface. It does not grow into a separate programming or scripting system.
 
-## What this group covers
+## Ownership
 
-| Feature | Commands |
-|---|---|
-| Macro record | `/cb macro record <name>` |
-| Macro add step | `/cb macro add <cmd>` |
-| Macro stop | `/cb macro stop` |
-| Macro play | `/cb macro play <name>` |
-| Macro list | `/cb macro list` |
-| Macro delete | `/cb macro delete <name>` |
-| Macro GUI | `/cb gui macros` → `MacroListScreen` (Screen-based) |
-| Macro toggle | `/cb macro on` / `/cb macro off` |
-| ~~Script GUI / run~~ | ⛔ **SCRAPPED** — `scriptgui`/`script` removed (§A) |
+| Owns | Does not own |
+| --- | --- |
+| Macro record, add-step, stop, play, list, delete, persistence, and global toggle | MacroList Screen visual layout: G27 |
+| Readable stored step labels and macro-run undo batching | Individual command behavior within each recorded step |
+| Disabled-state messaging and toggle semantics | G03 HUD on/off commands |
+| Plain macros only | Conditions, loops, scripts, script GUI, and `run` commands |
 
----
+## Direction
 
-## Implementation Requirements
+A macro remains a named ordered list of normal CustomBlocks actions. An operator can record or add steps, stop, inspect the saved macro, play it, and remove it. Each macro run is treated as one user intention in history rather than a confusing chain of separate undo entries.
 
-### 1. Macro System (Existing — Improvements)
+`/cb macro on` and `/cb macro off` are the only global controls. The old bare on/off route is reserved for HUD behavior. The macro interface remains a Screen managed by G27, while the server retains authority over stored macro data and execution.
 
-The Phase 13 macro system is functional. Improvements needed:
-- **Macro GUI stays Screen-based**: `MacroListScreen` is kept as-is (Screen, not chest).
-- **Macro step names**: Each step in the macro should have a descriptive label (auto-generated from the command).
-- **Macro undo**: Running a macro pushes one undo entry for the entire batch.
+## Locked Decisions
 
-### 2. `/cb macro on` and `/cb macro off`
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-21 | Macros remain plain recorded/addable command sequences. | Conditions, loops, scripts, `scriptgui`, and `run` are not built. |
+| 2026-06-21 | Macro controls are `/cb macro on` and `/cb macro off`. | G03 HUD controls keep bare `/cb on` and `/cb off` without a command collision. |
+| 2026-06-21 | Playing one macro creates one undo entry. | One `/cb undo` reverses the intended macro batch. |
+| 2026-07-10 | Macro management stays Screen-based. | G27 owns `MacroListScreen`; no chest conversion is introduced. |
 
-Global toggle for the macro system (renamed from bare `/cb on`/`/cb off` — collided with G03 HUD toggle):
-- `/cb macro on` — enables all macro recording and playback (default state).
-- `/cb macro off` — disables all macro recording and playback. Running `/cb macro play` while off shows: `"Macro system is disabled. Use /cb macro on to re-enable."`
+## Feature Plan
 
-### 3–4. ~~Script GUI / persistence~~ — ⛔ SCRAPPED
+### A. Macro Lifecycle
 
-`scriptgui`/`script`/`run` (conditional/loop "extended macro") **removed** per SWEEP_INDEX §A. Plain macros
-(record → add → play, single-undo batch) cover the use case. Original script spec deleted.
+**Player outcome**
 
-### 5. Macro GUI (Screen-Based) — moved to G27
+An operator can save a repeatable sequence and understand exactly which macro is being run or changed.
 
-`/cb gui macros` opens `MacroListScreen` — full spec moved to `GROUP_27_SCREENS.md` §G27.24 (2026-07-12,
-screen-content consolidation). G24 owns the macro record/play/list/delete *logic* (§1 above); the screen
-chrome is G27's.
+**Experience**
 
----
+- `/cb macro record <name>`, `add`, `stop`, `play`, `list`, and `delete` cover the full lifecycle.
+- Each stored step has a readable label generated from its command, not an unexplained raw internal record.
+- Missing macro names and invalid steps fail clearly before unexpected world changes occur.
+- Saved macros survive the expected server persistence cycle.
 
-## Setup
+**Requirements**
 
-```
-/cb create g26a MacroTest
-/cb create g26b MacroTarget
-```
+- Store named macros as ordered command/action records with stable readable summaries.
+- Validate a macro name and each step before it becomes executable.
+- Preserve ordering exactly during replay and report the step that cannot run.
+- Keep deletion deliberate and remove the saved macro from subsequent list/play results.
 
----
+**Boundary**
 
-## Test G26.1 — Macro record and play (existing)
+Macros coordinate existing commands. They do not introduce an alternate command language, conditional logic, loops, or arbitrary code execution.
 
-```
-/cb macro record test-macro
-/cb macro add /cb setglow g26a 8
-/cb macro add /cb setglow g26b 4
-/cb macro stop
-/cb macro play test-macro
-```
+### B. Toggle and Safe Batch History
 
-**Expected:** g26a has glow 8, g26b has glow 4.
+**Player outcome**
 
-**Pass:** Macro plays both steps correctly.
-**Fail:** Steps not executed, or only one step fired.
+An operator can pause macro activity globally and undo a completed macro in one clear step.
 
----
+**Experience**
 
-## Test G26.2 — Macro is a single undo entry
+- While disabled, recording and playback follow one obvious disabled rule and playback says `Macro system is disabled. Use /cb macro on to re-enable.`
+- Re-enabling restores ordinary macro behavior without changing recorded content.
+- A successful macro run appears as one history item that names the macro and its step count.
 
-```
-/cb undo
-```
+**Requirements**
 
-**Expected:** Both glow changes reverted in one undo. `Undid macro "test-macro" (2 steps).`
+- The global toggle is persisted/available consistently across recording and playback paths.
+- Macro execution records one G17-compatible undo batch, with matching redo behavior.
+- A failed step reports its cause and must not corrupt prior history or create a misleading successful batch.
+- Bare `/cb on` and `/cb off` never mutate macro state.
 
-**Pass:** Single undo reverts the whole macro.
-**Fail:** Multiple undos required.
+**Boundary**
 
----
+Macro history is a consumer of the shared undo system. G17 owns the underlying multi-undo behavior and history policy.
 
-## Test G26.3 — Macro GUI is Screen-based
+### C. G27 MacroList Screen Handoff
 
-```
-/cb gui macros
-```
+**Player outcome**
 
-**Expected:** `MacroListScreen` opens. "test-macro" visible as a row. Sub-menu on click: Play, Edit, Delete, Info. "Record New" control at top.
+The macro list feels like the rest of CustomBlocks while exposing the same server-owned macro actions.
 
-**Pass:** Screen opens, all elements present.
-**Fail:** Chest GUI opens instead, or elements missing.
+**Experience**
 
----
+- `/cb gui macros` opens the G27 MacroList Screen.
+- A macro row can expose Play, Edit, Delete, and Info, with a clear Record New route and empty state.
+- Screen actions produce exactly the same saved data and validation outcomes as macro commands.
 
-## Test G26.4 — `/cb macro off` disables macros
+**Requirements**
 
-```
-/cb macro off
-/cb macro play test-macro
-```
+- G27 routes every Screen action to G24 services; it does not duplicate macro persistence or execute client-trusted steps.
+- Macro list/detail data includes the name, step count, readable labels, and availability needed by the Screen.
+- Screen deletion/recording remains subject to the same permission and disabled-state checks as commands.
 
-**Expected:** `"Macro system is disabled. Use /cb macro on to re-enable."`
+**Boundary**
 
-**Pass:** Macro system disabled, correct message.
-**Fail:** Macro runs despite `/cb macro off`.
+G24 does not define Screen chrome or navigation standards. Those remain G27 responsibilities.
 
----
+## Cross-Group Contracts
 
-## Test G26.5 — `/cb macro on` re-enables macros
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G03 | HUD controls | Macro on/off remains namespaced under `/cb macro` and cannot collide with HUD controls. |
+| G16 | Diagnostics | A failed macro step reports a readable command/step cause without noisy server errors. |
+| G17 | Undo/redo | One successful macro run is represented by one shared history batch. |
+| G22 | Permissions | Macro commands and Screen actions follow their final permission tier. |
+| G27 | MacroList Screen | G27 owns visual UI; G24 owns every stored action and validation rule. |
 
-```
-/cb macro on
-/cb macro play test-macro
-```
+## Technical Contract
 
-**Expected:** Macro plays again.
+- A macro is a persisted named ordered sequence with generated readable step labels.
+- Playback evaluates server-side commands/actions in order and uses one shared undo/redo batch per successful run.
+- Macro enablement is checked before recording or playback and never shares the bare HUD toggle route.
+- G27 receives macro metadata and invokes G24 server services; client UI does not own macro execution or persistence.
+- Script, `scriptgui`, and `run` command registrations remain absent by design.
 
-**Pass:** Re-enabled correctly.
-**Fail:** Still disabled after `/cb macro on`.
+## Deferred Scope
 
----
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-## Tests G26.6–G26.9 — ⛔ SCRAPPED (scripts removed)
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Conditional or looping scripts | The approved product is intentionally a simple macro recorder/player. | Separate automation design |
+| Arbitrary command/script execution | It needs a new safety and permission model and is not a macro extension. | Separate automation design |
+| Macro sharing/import | It needs a safe transport and permission contract beyond local macro usefulness. | G24 with G20 |
 
-Script GUI / add-step / run / saved-script tests are **removed** per SWEEP_INDEX §A (`scriptgui`/`script`/`run`
-scrapped). Skip. G24 scope = macros only.
+</details>
 
----
+## Superseded Decisions
 
-## Group 24 Verdict
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
-| Test | Description | Result |
-|---|---|---|
-| G26.1 | Macro record and play | ⬜ |
-| G26.2 | Macro is single undo entry | ⬜ |
-| G26.3 | Macro GUI is Screen-based | ⬜ |
-| G26.4 | `/cb macro off` disables macros | ⬜ |
-| G26.5 | `/cb macro on` re-enables macros | ⬜ |
-| ~~G26.6–G26.9~~ | ~~script GUI / run~~ | ⛔ SCRAPPED — scripts removed (§A) |
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-21 | Bare `/cb on` and `/cb off` could toggle macros. | Macro controls are namespaced to avoid the HUD collision. |
+| 2026-06-21 | Script GUI, script steps, and run commands could extend macros. | Those features are scrapped; plain macros are the complete scope. |
+| 2026-07-10 | Macro management could become a chest interface. | It remains a G27 Screen. |
 
-**Group 24 passes when macros work correctly in-game with the Screen-based GUI.**
+</details>
 
-If anything shows ❌ — paste:
-1. The exact commands typed
-2. Which steps executed vs expected
-3. Last 20 lines of `latest.log`
+## References
 
----
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_24.md) · [All Groups](README.md)
 
-## Cleanup
-
-```
-/cb delete g26a
-/cb delete g26b
-/cb macro delete test-macro
-```
+- [G03 HUD and Escape](GROUP_03_HUD_ESC.md)
+- [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)
+- [G17 History, Give, Delete, and Search](GROUP_17_REGRESSIONS.md)
+- [G22 Permissions](GROUP_22_PERMISSIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 24 snapshot](../archive/group-migration-2026-07-18/GROUP_24_MACROS.md)

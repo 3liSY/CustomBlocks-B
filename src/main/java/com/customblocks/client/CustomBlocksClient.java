@@ -69,9 +69,6 @@ public class CustomBlocksClient implements ClientModInitializer {
         // Restore persisted HUD settings (position / scale / color / opacity / visibility).
         HudConfig.load();
 
-        // G05-5 — restore the weak-GPU friend's per-server low-res choice (used by the pack sync on join).
-        com.customblocks.client.lowres.LowResState.load();
-
         // Group 29 - local Shorts framing overlay (capture-invisible native window + fallback).
         CaptureOverlayManager.init();
 
@@ -94,9 +91,18 @@ public class CustomBlocksClient implements ClientModInitializer {
         // G08 — same seam for the block SHAPE: on a dedicated server the client's SlotManager is empty, so
         // the outline/collision box fell back to a full cube even when the block was set to carpet/slab/etc.
         // The synced shape is in ClientSlotCache ("shape" field); SlotBlock.resolveShape reads it back here.
-        com.customblocks.block.SlotBlock.CLIENT_SHAPE_RESOLVER = idx -> {
+        com.customblocks.block.SlotGeometryData.CLIENT_SHAPE_RESOLVER = idx -> {
             ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
             return e == null ? null : e.shape();
+        };
+
+        // G08 §B — same seam for the block's FACE ROTATIONS. The runtime shape mesh draws non-full shapes
+        // client-side and never reads the pack's model JSON, where the G06 §G quarter-turns used to be
+        // baked, so without this a shaped block loses its face rotations on a dedicated server. The value
+        // is packed 2-bits-per-face in Direction order (FaceRotations.packed); resolveFaceRot reads it.
+        com.customblocks.block.SlotGeometryData.CLIENT_FACEROT_RESOLVER = idx -> {
+            ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
+            return e == null ? null : e.rot();
         };
 
         // S4 — same seam for the block SOUND: footstep/break/place sounds play client-side, but on a dedicated
@@ -105,6 +111,14 @@ public class CustomBlocksClient implements ClientModInitializer {
         com.customblocks.block.SlotBlock.CLIENT_SOUND_RESOLVER = idx -> {
             ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
             return e == null ? null : e.sound();
+        };
+
+        // G06-17 — same seam for block GLOW: on a dedicated server the client predicts a placement with an
+        // empty SlotManager, so the block was briefly unlit ("light appears late"). The synced glow is in
+        // ClientSlotCache ("glow"); resolveGlow reads it so the predicted placement is lit immediately.
+        com.customblocks.block.SlotBlock.CLIENT_GLOW_RESOLVER = idx -> {
+            ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
+            return e == null ? null : e.glow();
         };
 
         // Group 30 (Guess Mode) — a flagged holder's OWN client shows "???" for any block flagged for them
@@ -165,11 +179,6 @@ public class CustomBlocksClient implements ClientModInitializer {
                     case RECORD_OVERLAY -> CaptureOverlayActions.handle(context.client(), data);
                     case CATEGORY_HUB   -> context.client().setScreen(new com.customblocks.client.gui.CategoryHubScreen());
                     case GUESS_SETTINGS -> context.client().setScreen(new com.customblocks.client.gui.GuessSettingsScreen());
-                    case BUZZER_PANEL   -> {
-                        // Refresh the open admin panel in place, or open it fresh (Group 31 item 4).
-                        if (context.client().currentScreen instanceof com.customblocks.client.gui.BuzzerPanelScreen s) s.refresh(data);
-                        else context.client().setScreen(new com.customblocks.client.gui.BuzzerPanelScreen(data));
-                    }
                     case BULK_WORKBENCH -> {
                         // Group 07 §G07-3: refresh the open Workbench in place (an Apply must never close it),
                         // or open it fresh. data = the BulkSnapshot JSON.
@@ -222,13 +231,16 @@ public class CustomBlocksClient implements ClientModInitializer {
                 context.client().execute(() -> context.client().setScreen(
                         new net.minecraft.client.gui.screen.ChatScreen(payload.text()))));
 
-        // ClearLogsPayload → wipe only this client's [CB] chat lines (Group 04 §G04-4). Chat history is
-        // client-side, so the server can only ask; CbChatMirror does the surgery. Must run on the
-        // client thread — hence client.execute.
-        CbChatMirror.register();
+        // KickPreviewPayload → §G04-5 dev tool: /cb debug kick <cause> opens the unified kick screen
+        // on demand (no real disconnect), so every cause + Copy Report is testable without a crash.
         ClientPlayNetworking.registerGlobalReceiver(
-                com.customblocks.network.payloads.ClearLogsPayload.ID, (payload, context) ->
-                        context.client().execute(CbChatMirror::clearCbLines));
+                com.customblocks.network.payloads.KickPreviewPayload.ID, (payload, context) ->
+                        context.client().execute(() -> {
+                            var mc = context.client();
+                            mc.setScreen(new com.customblocks.client.kick.CbKickScreen(
+                                    com.customblocks.client.kick.CbKick.forCause(payload.cause()),
+                                    () -> mc.setScreen(null)));   // Back → resume the game (still connected)
+                        }));
 
         // WidgetSyncPayload → the one signal feeding the 3 HUD widgets (Group 03). The server is
         // authoritative for every value in it; the client only draws.
@@ -300,16 +312,28 @@ public class CustomBlocksClient implements ClientModInitializer {
         // files → buffer chunks → write → silent reload. (Integrated host still uses RegenPack above.)
         ClientPlayNetworking.registerGlobalReceiver(
                 com.customblocks.network.payloads.PackManifestPayload.ID, (payload, context) ->
-                        com.customblocks.client.packsync.ClientPackReceiver.onManifest(context.client(), payload.gz()));
+                        com.customblocks.client.packsync.ClientPackReceiver.onManifest(context.client(), payload.session(), payload.gz()));
         ClientPlayNetworking.registerGlobalReceiver(
                 com.customblocks.network.payloads.PackFilePayload.ID, (payload, context) ->
                         com.customblocks.client.packsync.ClientPackReceiver.onFile(
-                                context.client(), payload.path(), payload.index(), payload.count(), payload.data()));
+                                context.client(), payload.session(), payload.path(), payload.index(), payload.count(), payload.data()));
         ClientPlayNetworking.registerGlobalReceiver(
                 com.customblocks.network.payloads.PackDonePayload.ID, (payload, context) ->
-                        com.customblocks.client.packsync.ClientPackReceiver.onDone(context.client(), payload.hash()));
+                        com.customblocks.client.packsync.ClientPackReceiver.onDone(context.client(), payload.session(), payload.hash()));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) ->
                 com.customblocks.client.packsync.ClientPackReceiver.reset());
+        // Group 05 §I — on join, declare our pack-sync protocol + build so the server only streams a
+        // manifest we can decode; a version mismatch gets a friendly message instead of silent magenta.
+        ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> {
+            if (!ClientPlayNetworking.canSend(com.customblocks.network.payloads.PackHelloPayload.ID)) return;
+            String ver = net.fabricmc.loader.api.FabricLoader.getInstance()
+                    .getModContainer("customblocks")
+                    .map(m -> m.getMetadata().getVersion().getFriendlyString())
+                    .orElse("unknown");
+            ClientPlayNetworking.send(new com.customblocks.network.payloads.PackHelloPayload(
+                    com.customblocks.network.packsync.PackSyncProtocol.PROTOCOL_VERSION,
+                    ver + "/p" + com.customblocks.network.packsync.PackSyncProtocol.PROTOCOL_VERSION));
+        });
 
         // HudStatePayload → update + persist HUD visibility so the renderer reflects the toggle
         ClientPlayNetworking.registerGlobalReceiver(HudStatePayload.ID, (payload, context) ->
@@ -327,6 +351,35 @@ public class CustomBlocksClient implements ClientModInitializer {
         net.minecraft.client.render.block.entity.BlockEntityRendererFactories.register(
                 com.customblocks.block.AnimSlotRegistry.BLOCK_ENTITY,
                 com.customblocks.client.render.AnimSlotBER::new);
+
+        // G08 §J — batched per-placement rotation for DIRECTIONAL slot shapes (stairs). Wraps only those
+        // slots' baked models so the chunk mesher rotates the stair to its placed facing/half — no per-frame
+        // BlockEntityRenderer draw (which craters FPS in bulk). Every non-directional block is untouched.
+        com.customblocks.client.render.SlotModelPlugin.register();
+
+        // Hardening (2026-07-23) — the off-atlas texture caches keep a NEGATIVE entry for any slot whose
+        // image/sidecar was not readable at first touch (AnimFrameCache.NOT_ANIMATED, StaticFrameCache's
+        // NOT_OFFATLAS / ICON_NOT_READABLE). Our managed pack paths (ClientPackReceiver, ResourcePackGenerator)
+        // already clear these after their own reload, but a VANILLA reload — F3+T, the video-settings pack
+        // toggle, or ANOTHER mod's reloadResources() — bypasses those paths, so a stale first-touch miss would
+        // stay pinned and the slot would render its plain/full-cube fallback until the next managed reload.
+        // (Root cause of the shaped-icon "full cube" regression: the icon first drew during the integrated
+        // server's pack regen, before slot_N.png finished writing, caching a false NOT_ANIMATED.) Clear both
+        // caches on EVERY client resource reload so a first-touch miss can never stick. Synchronous listener:
+        // runs on the render thread during the reload apply phase — required, since clear() destroys GL textures.
+        net.fabricmc.fabric.api.resource.ResourceManagerHelper.get(net.minecraft.resource.ResourceType.CLIENT_RESOURCES)
+                .registerReloadListener(new net.fabricmc.fabric.api.resource.SimpleSynchronousResourceReloadListener() {
+                    @Override
+                    public net.minecraft.util.Identifier getFabricId() {
+                        return net.minecraft.util.Identifier.of(CustomBlocksMod.MOD_ID, "offatlas_cache_invalidator");
+                    }
+                    @Override
+                    public void reload(net.minecraft.resource.ResourceManager manager) {
+                        com.customblocks.client.render.AnimFrameCache.clear();
+                        com.customblocks.client.render.StaticFrameCache.clear();
+                        com.customblocks.client.render.ShapedItemIcon.resetDebugSeen();
+                    }
+                });
 
         // Animated ITEM icons also render off-atlas (a frame grid can't sit on the atlas). The pack gives every
         // animated slot a builtin/entity item model, which routes its icon to this one shared renderer; static
@@ -362,6 +415,24 @@ public class CustomBlocksClient implements ClientModInitializer {
                 com.customblocks.particle.MysteryParticles.MYSTERY_BREAK,
                 com.customblocks.client.render.MysteryBreakParticle.Factory::new);
 
+        // Group 32 client-visual slice — the three sauce particle factories (decals/footprints, wall drips,
+        // tomato-chunk debris). The server spawns them; these draw them. Keep in step with SauceParticles.
+        net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry.getInstance().register(
+                com.customblocks.particle.SauceParticles.SAUCE_SPLAT,
+                com.customblocks.client.render.SauceParticleFx.SplatFactory::new);
+        net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry.getInstance().register(
+                com.customblocks.particle.SauceParticles.SAUCE_DRIP,
+                com.customblocks.client.render.SauceParticleFx.DripFactory::new);
+        net.fabricmc.fabric.api.client.particle.v1.ParticleFactoryRegistry.getInstance().register(
+                com.customblocks.particle.SauceParticles.SAUCE_DEBRIS,
+                com.customblocks.client.render.SauceParticleFx.DebrisFactory::new);
+
+        // Group 32 §E8 — a direct blast hit paints the screen-edge sauce drip overlay (SauceScreenOverlay,
+        // drawn from HudRenderMixin). One-shot per hit; the overlay dries on its own wall-clock timer.
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.SauceHitPayload.ID, (payload, context) ->
+                        context.client().execute(() -> SauceScreenOverlay.trigger(payload.intensity())));
+
         // Group 32 — the Explosive Tomato's renderer. MANDATORY, not cosmetic: an EntityType with no renderer
         // hard-crashes the client the instant one spawns. G32-TEXTURE (2026-07-15) swapped FlyingItemEntityRenderer
         // (which draws the extruded ITEM MODEL — a red slab with visible edges) for a camera-facing billboard of
@@ -377,10 +448,8 @@ public class CustomBlocksClient implements ClientModInitializer {
         // Register the three CustomBlocks key bindings (toggle HUD / menu / HUD editor).
         CbKeybinds.register();
 
-        // G05-5 — client-side "/cblowres [256|128|off]" so a non-op weak-GPU friend can shrink the pack.
-        // Own root (NOT a /cb subcommand): a client child under "cb" would make Fabric's client dispatcher
-        // shadow the whole /cb tree and reject every server /cb command client-side (see LowResClientCommand).
-        com.customblocks.client.command.LowResClientCommand.register();
+        // Group 05 §F — /cblowres is now a SERVER command (resolution is server-authoritative); the old
+        // client-side command + client-only downscale were retired 2026-07-19.
 
         // Inject the two CustomBlocks buttons into the vanilla pause/ESC menu.
         ScreenEvents.AFTER_INIT.register((client, screen, scaledWidth, scaledHeight) ->

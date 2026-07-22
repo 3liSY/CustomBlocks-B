@@ -7,7 +7,7 @@
  * fastest reaction for Reaction Race) — the raw time is frozen on buzz but hidden until the host reveals.
  *
  * Depends on: (none)
- * Called by:  PanelSession (records on buzz, reads at reveal)
+ * Called by:  BuzzerSession (records on buzz, reads at reveal)
  */
 package com.customblocks.buzzergame;
 

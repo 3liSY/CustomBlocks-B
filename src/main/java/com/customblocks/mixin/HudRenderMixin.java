@@ -11,6 +11,7 @@
 package com.customblocks.mixin;
 
 import com.customblocks.client.HudRenderer;
+import com.customblocks.client.SauceScreenOverlay;
 import com.customblocks.client.hud.CbOverlay;
 import com.customblocks.client.capture.CaptureOverlayFallbackRenderer;
 import net.fabricmc.api.EnvType;
@@ -34,6 +35,10 @@ public class HudRenderMixin {
         // ride THIS injection — the one we already own — rather than adding mixins or (never) rewriting
         // vanilla chat. See CbOverlay.
         CbOverlay.render(context);
+        // Group 32 §E8 — the screen-edge sauce drip after a direct blast hit rides this same seam.
+        SauceScreenOverlay.render(context);
+        // Group 05 §E12 — the dedicated-server pack sync progress panel (bytes/%, rate, ETA, retry, resumed).
+        com.customblocks.client.packsync.SyncProgressOverlay.render(context);
         CaptureOverlayFallbackRenderer.render(context);
     }
 }

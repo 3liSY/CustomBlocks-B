@@ -8,7 +8,7 @@
  * Only meaningful for the Reaction Race format; Precision Stop simply ignores pre-GO presses.
  *
  * Depends on: (none)
- * Called by:  PanelSession (onBuzz), RoundConfig, BuzzerGameCommands (falsestart verb)
+ * Called by:  BuzzerSession (onBuzz), RoundConfig, BuzzerGameCommands (falsestart verb)
  */
 package com.customblocks.buzzergame;
 

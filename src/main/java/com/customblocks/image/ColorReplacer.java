@@ -80,6 +80,47 @@ public final class ColorReplacer {
         return write(out);
     }
 
+    /**
+     * Recolour a BAKED variant's flat background to {@code newRgb} WITHOUT flood-fill (Group 06 §C
+     * no-source fallback). A variant made through {@code createVariant}/{@code recolorVariants} has a
+     * flat fill background (its transparent padding was filled, and its detected bg was flooded, to one
+     * hex), so the four corners ARE that fill — we sample them instead of trusting the old config hex.
+     * Every pixel within {@code tol} of that fill is swapped to {@code newRgb}; nothing floods, so design
+     * pixels away from the fill are mathematically untouched (CLAUDE.md §7) — no second-pass peel/fringe
+     * to eat the art. Returns {@code null} (→ caller counts it "unchanged, retexture it") when there is no
+     * flat background to swap: corners disagree (a full-bleed design, no bg), any corner is transparent,
+     * the fill already equals {@code newRgb}, or no pixel matched. This replaces the fragile re-run of the
+     * full BgRemove flood pipeline on an already-baked PNG.
+     */
+    public static byte[] recolorFlatBg(byte[] png, int newRgb, int tol) throws Exception {
+        BufferedImage img = read(png);
+        int w = img.getWidth(), h = img.getHeight();
+        int[] corners = {img.getRGB(0, 0), img.getRGB(w - 1, 0), img.getRGB(0, h - 1), img.getRGB(w - 1, h - 1)};
+        int br = corners[0] >> 16 & 0xFF, bgc = corners[0] >> 8 & 0xFF, bb = corners[0] & 0xFF;
+        for (int c : corners) {
+            if ((c >>> 24) < OPAQUE_MIN) return null;              // a transparent corner → no flat fill
+            int r = c >> 16 & 0xFF, g = c >> 8 & 0xFF, b = c & 0xFF;
+            if (Math.abs(r - br) > tol || Math.abs(g - bgc) > tol || Math.abs(b - bb) > tol) return null; // corners disagree → full-bleed design, skip
+        }
+        if ((corners[0] & 0xFFFFFF) == (newRgb & 0xFFFFFF)) return null; // fill already the target hex
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
+        int changed = 0;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int argb = img.getRGB(x, y);
+                int r = argb >> 16 & 0xFF, g = argb >> 8 & 0xFF, b = argb & 0xFF;
+                if (Math.abs(r - br) <= tol && Math.abs(g - bgc) <= tol && Math.abs(b - bb) <= tol) {
+                    argb = (argb & 0xFF000000) | (newRgb & 0xFFFFFF);
+                    changed++;
+                }
+                out.setRGB(x, y, argb);
+            }
+        }
+        return changed == 0 ? null : write(out);
+    }
+
+    private static final int OPAQUE_MIN = 200; // corner alpha floor: a flat fill is opaque
+
     private static BufferedImage read(byte[] png) throws Exception {
         BufferedImage img = ImageIO.read(new ByteArrayInputStream(png));
         if (img == null) throw new Exception("Could not read that texture.");

@@ -1,506 +1,283 @@
-# Group 08 — Shape System & Per-Face Textures
+# Group 08 - Shapes and Per-Face Textures
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 6 (Attributes) build-verified.
+> Group 08 makes a custom block look, collide, rotate, and keep its face-specific textures as the player expects.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_08_Done.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
+
+---
+
+## Purpose
+
+Shapes are real block behavior, not only a model choice. A slab, stair, pane, or pillar must have matching collision, outline, persistence, texture mapping, and placement direction. Per-face textures must keep their intended relative side when the block rotates.
+
+This Group owns shape and face-texture logic plus their commands. It does not own the Block Studio or advanced face-editor screen, image authoring, bulk orchestration, resource-pack transport, or recolor-tool variants.
+
+## Ownership
+
+| Owns | Does not own |
+| --- | --- |
+| Shape definitions, shape commands, collision, outline, persistence, and placement state | Screen framework and Block Studio surfaces: G27 |
+| Per-face texture storage, command behavior, and model mapping | Image authoring and source images: G10 |
+| Directional placement and rotated face mapping | Pack generation and distribution infrastructure: G05 |
+| Base shape preview | Bulk selection and confirmation: G07 |
+| Future custom-shape geometry contract | Recolor-tool variants: G06 |
+
+## Direction
+
+The shape value is a **per-block-definition property stored on `SlotData`**, not a Minecraft block-state property. With ~3100 registered slot blocks, adding shape/facing/half as block-states multiplied to ~3.97M block-states and OOM'd registration on boot (2026-07-20 locked decision), so the block carries only `LIGHT`. Collision and outline read the shape live via dynamic bounds. **§B (reload-free shape draw) is built and reload-free:** the pack emits ONE shape-INDEPENDENT (full-cube) model per static slot, and the client draws the slot's actual shape at chunk-bake time from `BlockShapes` boxes through the batched model wrap (`DirectionalSlotModel`/`SlotModelPlugin`), so `/cb setshape` is a `SlotData` write + client resync with **no pack push and no reload prompt** (a shape change triggers one client world re-mesh, no download). Per-placement orientation is stored on the existing `AnimSlotBlockEntity` (no block-state). §J (directional stairs, facing/half) is **built 2026-07-21** on that same wrap — the placed stair's baked mesh is rotated into the chunk mesh through the Fabric rendering API, NOT a per-frame `BlockEntityRenderer` — so it avoids the confirmed BER "not chunk-batched" FPS risk by construction. §B and §J both draw shape and hitbox from one `BlockShapes.orient` primitive, so they cannot desync.
+
+Each face texture belongs to the block's relative face, like a sticker attached to that face. Rotation therefore remaps face variables as well as geometry. Editor presentation lives in G27, while G08 keeps command and data behavior as the one shared foundation.
+
+## Locked Decisions
+
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-07-23 | **The client off-atlas texture caches never remember a NEGATIVE derived from an absent/partial pack file, and a resource-reload listener clears them on every reload.** | Kills the shaped/animated item-icon "full cube" leftover (§F3): a false "not animated / no off-atlas texture / no icon fallback" cached while the pack was still being (re)generated is no longer permanent. `AnimFrameCache`/`StaticFrameCache` distinguish TRANSIENT build failures (source absent/partial → retry next frame, self-heal) from STABLE ones (present + parsed but ineligible → cache), and `offatlas_cache_invalidator` — a `SimpleSynchronousResourceReloadListener` in `CustomBlocksClient` — drops both caches plus the temp debug gate on `F3+T` and any foreign `reloadResources()`. Confirmed steady-state static/atlas slots still cache on first touch (no per-frame churn). |
+| 2026-07-21 | **§B draws every static slot's shape at runtime through the batched model wrap; the pack emits one canonical, shape-independent model per slot.** | Locks the reload-free path. The pack's block model for a static slot is always the FULL-cube model (`cubeAllJson`/`cubeFacesJson`/`rotatedCubeJson`) and its item model is always the builtin/entity icon, so **no pack byte depends on shape** and `/cb setshape` becomes a `SlotData` write + client resync with no pack push and no reload prompt. The wrap emits geometry from `BlockShapes.boxes`/`stairBoxes` and samples each face's sprite off the wrapped full cube's baked quads, so §E per-face overrides carry over for free and `shape=full` is a literal pass-through. Scope is all 10 shapes including stairs + corners, so the pack stops shipping per-slot corner models. Face quarter-turns (G06 §G) sync to the client via `ClientSlotCache` behind a `CLIENT_FACEROT_RESOLVER` seam, matching `CLIENT_SHAPE_RESOLVER`. A shape change triggers a full client world re-mesh (one brief hitch, no download). |
+| 2026-07-21 | **§J per-placement stair facing/half is stored on the BlockEntity and drawn via a batched model wrap, never a `BlockEntityRenderer`.** | Avoids both failure modes at once: no facing/half block-states (so no OOM), and no per-frame BER draw (geometry bakes into the chunk mesh, so no FPS regression on weak hardware). `DirectionalSlotModel`/`SlotModelPlugin` wrap only slots whose current shape is directional; the drawn mesh and the collision box share `BlockShapes.orient`, so they cannot desync. Built 2026-07-21; owner-confirmed 2026-07-22 (TG8 §J). |
+| 2026-07-20 | **Shape, facing, and half are NOT block-state properties. Shape is data-driven (SlotData); the pack rebuilds on `/cb setshape`.** | Reverses the 2026-07-12 §B and 2026-07-11 §D block-state decisions. With ~3100 registered slot blocks, `LIGHT(16)×SHAPE(10)×FACING(4)×HALF(2)=1280` states each = **~3.97M block-states**, which OOM'd `SlotManager.registerAll` on boot (game died before any crash report). Only `LIGHT` stays a property (luminance must bake per-state). Per-placement stair orientation is deferred to a BlockEntity redesign (§D). Root cause in `PROGRESS_LOG.md` (2026-07-20). |
+| 2026-06-28 | Slot blocks use dynamic bounds and cached shape values. | Collision and outline update live instead of retaining an invisible full cube. |
+| 2026-07-11 | Accepted face names are `up`, `down`, `north`, `south`, `east`, and `west`. | Commands, storage, and models use one unambiguous six-face vocabulary. |
+| 2026-07-11 | Per-face textures stay attached to the relative face when a block rotates. | Model rotation remaps face texture variables, not only geometry. |
+| 2026-07-11 | Directional placement uses horizontal facing and top/bottom half only. | Vertical facing is excluded; stairs and slabs receive vanilla-like placement behavior. |
+| 2026-07-12 | Shape editor content belongs in the G27 Block Studio Shape section. | G08 retains logic and commands; a standalone ShapeEditorScreen does not return. |
+| 2026-07-12 | Advanced face editing belongs to G27.18's live cube selection design. | The small face-tile fold and legacy chest editor are not the final editor direction. |
+| 2026-07-12 | Shape changes use pre-baked variants and a blockstate update. | `/cb setshape` must not push a resource-pack reload prompt. |
+| 2026-07-12 | Existing worlds may default legacy blocks to north after orientation states are introduced. | Players may need to replace backwards existing placements; the disruption is accepted. |
+| 2026-07-18 | Omni-Tool face rotation turns only the clicked face image in saved 90-degree steps. | Face-image rotation is independent from block placement direction, geometry, and the rotations saved on the other five faces. |
+
+## Feature Plan
+
+### A. Shape Commands and Live Physics
+
+**Player outcome**
+
+Changing a block to a slab, stair, pane, pillar, or another supported shape changes both its visible model and its physical behavior.
+
+**Experience**
+
+- `setshape`, `addshape`, `removeshape`, `clearshape`, `shapelist`, and `shapepreview` use one shape vocabulary.
+- Supported shapes include full, bottom/top slab, thin, carpet, wall, pane, stairs, cross, pillar, and custom bounds.
+- A player can stand on a slab, move through the open parts of thin/pillar/pane/stairs, and select the actual outline.
+- Shape choice persists through restart and can be reversed through the normal history route.
+
+**Requirements**
+
+- `SlotData` persists the selected shape.
+- Slot block registration uses dynamic bounds; `BlockShapes` caches each named `VoxelShape` for inexpensive live lookup.
+- Dedicated clients resolve shape data from the synced client path when the local server map is absent.
+- Shape command tab completion exposes only supported shape names.
+
+**Boundary**
+
+G08 owns shape semantics. The Block Studio is only another front door to the same shape logic.
+
+### B. Reload-Free Shape Models
+
+> ⚠️ **Reverted 2026-07-20 (Scrapped).** The block-state `shape` property this section describes OOM'd registration at ~3100 blocks (see the 2026-07-20 locked decision). `/cb setshape` rebuilds + pushes the pack again. A reload-free approach would need per-slot render without a multiplied block-state (future BlockEntity design).
 >
-> **Objective:** Restore the full block shape system (slab, thin, carpet, wall, pane, stairs, cross, etc.) and per-face texture support (different image per face). Both must be accessible via commands and a Screen. The implementation must be clean — no junk or leftover broken behavior from the old version.
+> **2026-07-20 design (discussed, not built):** Every `SlotBlock` already carries a `BlockEntity` (`AnimSlotBlockEntity`, Group 14) and a client renderer (`AnimSlotBER`) that hand-draws the block instead of trusting a baked model — proven in production for animated/off-atlas textures and for Arabic per-placement facing (stored on the BE, synced via the normal BE update packet, zero block-states). Fabric's own docs confirm the design rule this Group hit: blockstates suit "a few hundred states at most"; anything near-infinite (our ~3100 slots × shape/facing combos) is a BlockEntity's job. The reload-free path is: keep shape on `SlotData` (unchanged), but instead of the pack baking a per-shape model, the slot's model emits the shape's box list (`BlockShapes.boxes(shape)` — the exact same coordinates already used for collision/outline) with the slot's live texture. `/cb setshape` becomes a data write + BE resync, no pack rebuild.
 >
-> **Source issues:** Group B (setshape, addshape, removeshape, clearshape, shapeeditor, shapelist, shapepreview, facechangegui, setface, clearface, clearallfaces, bulkshape) — `customtriangle`/`trianglemode` moved to `GROUP_06_TOOLS.md` 2026-07-11 (misfiled; they're recolor-tool features, not shapes)
+> **UPDATE 2026-07-21 (from building §J):** §J proved the render vehicle — do §B through the **batched model wrap** (`DirectionalSlotModel`/`SlotModelPlugin`, geometry baked into the chunk mesh), NOT an `AnimSlotBER` hand-draw. A `BlockEntityRenderer` draws every instance as its own call and craters FPS in bulk (~5 vs ~280 FPS in community benchmarks) — the exact GT 730 risk the owner rejected.
 >
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
+> **DESIGN LOCKED 2026-07-21 (owner, before build).** Five decisions, all verified against the code first:
+> 1. **Scope: all 10 shapes, full §E per-face.** One code path — no split where some shape changes reload and others do not. Stairs and their corners are included, so the pack stops emitting the 4 corner models per stairs slot and `DirectionalSlotModel` emits `BlockShapes.stairBoxes(shape)` directly.
+> 2. **Canonical pack model = today's FULL model.** `staticShapeModelJson` stops branching on shape. The wrapped full cube's 6 baked quads already carry the right sprite per face *including* §E overrides, so the wrap samples them instead of resolving texture Identifiers, and `shape=full` stays a byte-identical pass-through.
+> 3. **Item model is always the builtin/entity icon.** The old `plainFull` branch made the item JSON shape-dependent, which alone would have kept the reload prompt alive.
+> 4. **Face quarter-turns sync to the client.** `FaceRotations` is server-only today (baked into the model JSON as `uv`+`rotation`), so a runtime mesh cannot see it; without a sync, every non-full shape would silently lose G06 §G rotation on a dedicated server.
+> 5. **Shape change re-meshes the client world.** With no pack reload nothing invalidates existing chunk sections; a full re-mesh is correct by construction and needs no per-slot placement index.
 >
-> ⚠️ **UI medium audit (2026-07-10), updated 2026-07-11:** Shape editor is Screen-based — folded into the
-> G27 Block Studio Shape section (§4 below) and confirmed **built** 2026-07-11 (`/cb shapeeditor` opens
-> it for real; needs-retest, see G08.6). Face editor's target changed 2026-07-11: no longer folds into the
-> Shape section — see §5 for the reconciled call (`GROUP_27_SCREENS.md §G27.18`), still not built.
-
----
-
-## 🐞→🟢 FIXED 2026-06-28 (awaiting in-game) — shape hitbox was a FULL cube; pillar/thin/stairs/pane pushed the player
-
-`/cb setshape` rendered the right model but the **collision + selection box stayed a full cube** — the player
-was pushed out of pillar/thin/stairs/pane and couldn't stand in the open parts (slab only *looked* ok: you
-stand on top of a full cube).
-
-- **Root cause (the real one):** Minecraft **caches** a block's collision/outline VoxelShape once at
-  registration. Our shape is per-slot in `SlotData` (assigned later), not in the block state, so the cache
-  froze every slot at "full" and `SlotBlock.getOutlineShape`/`getCollisionShape` were **never re-consulted**.
-  (An earlier round added a client shape-seam `CLIENT_SHAPE_RESOLVER`/`resolveShape` for the dedicated client —
-  correct + needed, but it had no effect while the cache bypassed those methods.)
-- **Fix:** `.dynamicBounds()` on the slot block settings (`SlotManager.registerAll`) disables the shape cache,
-  so the shape is read **live** every query. `BlockShapes` now caches each shape's VoxelShape per-name
-  (`OUTLINE_CACHE`) so live evaluation stays cheap. Together with `resolveShape` (synced shape on a remote
-  client) and the G06 sweep (HudSync on `/cb setshape`), the hitbox is correct AND live for every player.
-- **Test:** TG §A (A1 stand-on-slab, A2 persist, A3 clear, A5 no-holes; + walk-through cross, no-push on
-  pillar/thin/stairs/pane) on a **dedicated server**.
-
----
-
-## 🔒 Locked 2026-07-12 (design only, not built) — G08-A1, setshape RP-reload prompt
-
-Owner MP test 2026-07-11: A1 passes (block becomes the shape, hitbox correct — see FIXED 2026-06-28 above)
-but `/cb setshape` pops the resource-pack reload screen. Owner wants the shape to apply instantly
-client-side with no reload prompt.
-
-**Root cause:** collision/outline is already live (`SlotBlock` reads shape straight off `SlotData`, no
-reload needed — that's why A2/A3/A5/A6 already pass). The reload is purely the **visual model**:
-`ServerPackGenerator` regenerates the block's model JSON for the new shape and `ResourcePackServer` pushes
-it as a new pack, which is what triggers the reload screen.
-
-**Fix direction (confirmed against Fabric docs — this is the vanilla-native pattern, same as
-stairs/slabs):** bake **all 10 shape model variants** into the block's pack **once**, at create/retexture
-time (same texture already in the pack, one model JSON per shape). Add a `shape` **BlockState property**
-that selects among the pre-baked models. `/cb setshape` then only writes the BlockState — the model is
-already shipped to the client, so it's a normal block-update packet, not a resourcepack push. Zero reload,
-ever, after the one-time bake.
-
-- **Cost:** pack generation does ~10x the model work at block-creation/retexture time (once), not on every
-  `setshape` call.
-- **Scope:** touches `ServerPackGenerator` (bake all variants instead of current shape only), block
-  registration (add the `shape` BlockState property), `ShapeCommands.applyShape` (write state, not
-  regenerate+push pack).
-
----
-
-## What this group restores
-
-| Area | Old CustomBlocks | New CustomBlocks-B | This Group |
-|---|---|---|---|
-| Block shapes | slab, thin, carpet, wall, pane, stairs, cross, full | Full block only | All shapes restored |
-| Shape editor GUI | `/cb shapeeditor <id>` opened chest GUI | Present in Phase 10 screen version | Screen-based (folded into G27 Block Studio) |
-| Shape list | `/cb shapelist` | Missing | Restored |
-| Shape preview | `/cb shapepreview <shape>` — shows shape in world | Missing | Restored |
-| Per-face textures | Different image on each face (up/down/north/south/east/west) | Single texture on all faces | Restored |
-| Face editor GUI | `/cb facechangegui <id>` | Missing | Restored |
-| Set face | `/cb setface <id> <face> <url>` | Missing | Restored |
-| Clear face | `/cb clearface <id> <face>` | Missing | Restored |
-| Clear all faces | `/cb clearallfaces <id>` | Missing | Restored |
-| Bulk shape | `/cb bulkshape <filter> <shape>` | Missing | Restored (depends on Group 07) |
-
----
-
-## What this group covers
-
-| Feature | Commands |
-|---|---|
-| Set shape | `/cb setshape <id> <shape>` |
-| Add shape | `/cb addshape <id> <shape>` |
-| Remove shape | `/cb removeshape <id> <shape>` |
-| Clear shape | `/cb clearshape <id>` |
-| Shape editor | `/cb shapeeditor` — **screen folded into Block Studio Shape section (G27 §G27.11, decision E)**; standalone `ShapeEditorScreen` retired. G08 owns the shape *logic/commands*; G27 owns the editor *screen* |
-| Shape list | `/cb shapelist` |
-| Shape preview | `/cb shapepreview <shape>` |
-| Set face texture | `/cb setface <id> <face> <url>` |
-| Clear face texture | `/cb clearface <id> <face>` |
-| Clear all faces | `/cb clearallfaces <id>` |
-| Face editor GUI | `/cb facechangegui <id>` |
-
----
-
-## Implementation Requirements
-
-### 1. Available Shapes
-
-| Shape name | Description |
-|---|---|
-| `full` | Default full block (1×1×1) |
-| `slab_bottom` | Bottom half-slab |
-| `slab_top` | Top half-slab |
-| `thin` | Thin vertical panel (like glass pane, no frame) |
-| `carpet` | 1/16-height ground layer |
-| `wall` | Wall post shape |
-| `pane` | Thin vertical panel with frame |
-| `stairs` | Stair shape (bottom-front quarter missing) |
-| `cross` | X cross (like flower) |
-| `pillar` | Tall thin pillar |
-| `custom` | Custom AABB bounding box (set via shape editor) |
+> Enabling facts confirmed in code: `/cb setshape` changes only `models/block/slot_N.json` (textures are keyed by slot, never by shape); the client already receives shape via `ClientSlotCache`/`CLIENT_SHAPE_RESOLVER`; animated and Arabic slots are already shape-agnostic (invisible model + BER) and are out of scope.
 
-Tab-complete for shape names on all shape commands.
+**Player outcome**
 
-### 2. Shape Persistence
+Changing shape is immediate and does not interrupt the player with a resource-pack reload prompt.
 
-Shape is stored in `SlotData`. On shape change:
-- Update the block's AABB collision/outline shape.
-- Trigger pack rebuild (models need updating).
-- Action is undoable.
+**Experience**
 
-### 3. Per-Face Textures
+- Changing among full, slab, stairs, pane, cross, and other supported shapes sends an ordinary block update.
+- Other players see the changed model through the same normal state update.
+- Create and retexture work may do the one-time model bake needed for later fast changes.
 
-Each block can have a different texture on each of 6 faces: `up`, `down`, `north`, `south`, `east`, `west`
-(`TextureStore.FACES` — the actual accepted names; **not** "top"/"bottom", fixed 2026-07-11).
+**Requirements — SUPERSEDED, do not build as written below**
 
-- If a face has no specific texture, it uses the block's default texture.
-- Face textures stored alongside the main texture in `config/customblocks/textures/slot_N_face_up.png` etc.
-- Face texture data stored in `SlotData`.
+> The four bullets below describe the reverted 2026-07-20 block-state approach — kept only as a historical record of what NOT to build. Current requirements are the 2026-07-20 BlockEntity design note above this section.
 
-> ⚠️ **Known gap, confirmed 2026-07-11 — planned, not built:** non-full shapes (stairs/slab/pillar/etc)
-> currently **ignore per-face textures entirely** — `ServerPackGenerator.shapeModelJson`/`element()` hardcode
-> the base texture on every face of every box, unlike the full-cube path (`cubeFacesJson`) which already
-> checks `TextureStore.hasFace` per face. Confirmed real gap (checked in code, not a regression — shape
-> models were simply never written to look at face overrides). **Planned fix (small, low-risk, mirrors
-> existing cube code):** in `shapeModelJson`, build the `textures` object the same way `cubeFacesJson`
-> does (`hasFace(index, face) ? base+"_"+face : base"` per face name); in `element(int[] b)`, replace the
-> hardcoded `"#all"` texture ref with `"#" + face` per face. No new systems needed. Not yet implemented —
-> build when this group is picked up.
+- ~~`ServerPackGenerator` emits all shape model variants for each block when its texture/model is prepared.~~
+- ~~The slot block state includes the shape property used to select those variants.~~
+- ~~`ShapeCommands.applyShape` changes the stored shape and block state without issuing a resource-pack push.~~
+- Existing collision and outline resolution continue to read the selected shape correctly. *(still true — unaffected by either approach)*
 
-### 4. Shape Editor — folded into Block Studio (G27)
+**Boundary**
 
-> **Ownership (sweep 2026-06-21, decision E):** the standalone `ShapeEditorScreen` is **retired**.
-> `/cb shapeeditor` now opens the **Block Studio Shape section**. G08 keeps the shape *commands/logic*
-> (`setshape`, `clearshape`, `bulkshape`, the RP-reload fix at G08-A1 above); the editor *screen* — full
-> spec, historical chest-GUI reference, and the still-open `GuiRouter` migration/dedupe bug — **moved to
-> `GROUP_27_SCREENS.md` §G27.11** (2026-07-12, screen-content consolidation).
+G08 defines which variants are required; G05 owns generated-pack delivery and reload mechanics.
 
-### 5. Face Editor — target is G27.18, not the Shape-section fold
+### C. Per-Face Textures
 
-> **Re-decided 2026-07-11 (reconciling 3 conflicting plans):** the 2026-07-09 "fold FaceEditorMenu into
-> the Shape section" idea below is **superseded**. The real target is `GROUP_27_SCREENS.md §G27.18`
-> ("Advanced Per-Face Customization") — click-to-select faces on the live 3D cube in the Studio, with
-> multi-select, copy, broken-link detection, per-face sound/light/physics. `§G27.10.G` (creation-time
-> per-face toggle in the Texture panel) is the near-term slice of the same feature, not a separate one.
-> None of the three are built yet; `/cb facechangegui` still runs the old `FaceEditorMenu` chat-prefill
-> chest GUI in the meantime.
+**Player outcome**
 
-**Current-in-code design (chest GUI, still live):** `/cb facechangegui <id>` opens a chest GUI with:
-- 6 face slots representing the block's 6 sides.
-- Left-click pre-fills a `/cb paintface <id> <face> ` chat command for the URL; right-click clears that face.
-- Current face texture shown via an enchant glint on painted slots.
-- "Clear all faces" action slot.
+Each of the six faces can carry an independent texture, clear back to the base texture, and keep the correct relative side after orientation changes.
 
-**Superseded target (small fold, do not build):** ~~the Block Studio Shape section gets 6 face tiles with
-drag-and-drop image support~~ — replaced by G27.18's cube click-to-select design.
+**Experience**
 
-### 6. Shape Preview
+- `setface`, `clearface`, and `clearallfaces` work for all six accepted face names.
+- An unset face uses the block's base texture.
+- Full cubes and non-full shapes use the same face-override rules.
+- A rotated block keeps its painted front, top, and other relative faces where the player expects them.
+- A face image can keep its own `0`, `90`, `180`, or `270` degree turn without rotating the block or another face.
 
-`/cb shapepreview <shape>` — spawns a temporary ghost block at eye level showing the shape for 5 seconds, then disappears.
+**Requirements**
 
----
+- Face assets use `slot_N_face_<face>.png` storage and matching `SlotData` metadata.
+- Full-cube and shape-model generation both resolve `TextureStore.hasFace` before falling back to the base texture.
+- Shape model elements use face-specific texture references rather than hardcoding `#all`.
+- Rotated model states remap face variables consistently with geometry rotation.
+- Saved face-image quarter-turns are keyed by block ID and face, persist through restart, and apply to full and shaped models.
 
-## Setup
+**Boundary**
 
-```
-/cb create g08a ShapeTest
-/cb retexture g08a https://i.imgur.com/example.png
-```
+G08 owns face data and model mapping. G10 owns how images are made or prepared before a face command applies them.
 
-Place `g08a` somewhere accessible.
+### D. Placement Direction and Halves
 
----
+> ⚠️ **Reverted 2026-07-20 (Scrapped).** The `HORIZONTAL_FACING` + `BLOCK_HALF` block-states this section requires were part of the ~3.97M block-state OOM (see the 2026-07-20 locked decision). Per-placement stair orientation is deferred to a BlockEntity-stored redesign; the block carries only `LIGHT`.
+>
+> **Built 2026-07-21 (batched BlockEntity path).** `facing`+`half` are stored as plain fields on `AnimSlotBlockEntity` (same discipline as `arabicFacing` — set on placement, written to NBT only when non-default, synced via the standard BE update packet). `SlotBlock.getPlacementState` captures them (vanilla stair rules) and `onPlaced` stamps the BE; `SlotBlock.getOutlineShape`/`getCollisionShape` read them via `world.getBlockEntity(pos)` and feed the already-written `BlockShapes.orient` math. Only `isDirectional(shape)` (stairs today) is touched — every symmetric shape ignores facing/half exactly as before, zero change. Visual rotation is a **batched model wrap** (`DirectionalSlotModel` + `SlotModelPlugin`): the slot's baked stair mesh is rotated into the chunk mesh through the Fabric rendering API using the BE's render data, so there is **no per-frame `BlockEntityRenderer` draw** — this is what avoids the confirmed BER FPS risk. The drawn mesh and the hitbox share one rotation primitive (`BlockShapes.orientPoint`/`orientDir`, the point form of the collision's `rotX180`/`rotY90cw`), so they cannot desync. Only slots whose current shape is directional are wrapped; every other block keeps its untouched vanilla model and render path. Built + owner-confirmed 2026-07-22 (TG8 §J: facing, half, corners, hitbox==visual, persistence, FPS).
 
-## Test G08.1 — Set shape (slab)
+**Player outcome**
 
-```
-/cb setshape g08a slab_bottom
-```
+Stairs face the player, top slabs and upside-down stairs honor the clicked half, and a face-painted block can be placed with a deliberate front.
 
-**Expected:** Block in world changes to bottom-slab shape. `Block g08a shape set to slab_bottom.`
+**Experience**
 
-**Pass:** Block renders as bottom slab. Collision matches slab shape.
-**Fail:** Block unchanged, error, or wrong collision.
+- Placement writes one horizontal facing and one top/bottom half state.
+- Shape hitboxes rotate with stairs and other directional shapes.
+- Full blocks may track orientation even when their base texture makes it visually neutral.
+- Old placements remain readable, defaulting to north until a player replaces them.
 
----
+**Requirements — SUPERSEDED, do not build as written below**
 
-## Test G08.2 — Shape persists after restart
+> The first three bullets below describe the reverted 2026-07-20 block-state approach — kept only as a historical record of what NOT to build. Current requirements are the 2026-07-20 BlockEntity design note above this section.
 
-Restart the server (or relog).
+- ~~`SlotBlock` carries `HORIZONTAL_FACING` and `BLOCK_HALF` state alongside existing state values.~~
+- ~~`BlockShapes` rotates collision and outline geometry from those states.~~
+- ~~Pack model variants apply the matching horizontal rotation and face-variable remapping.~~
+- Arabic compatibility work may simplify only after native rotation is available and verified. *(still true — unaffected by which approach ships)*
 
-**Expected:** `g08a` still renders as `slab_bottom`.
+**Boundary**
 
-**Pass:** Shape persisted.
-**Fail:** Reverted to full block.
+This is block placement behavior, not an Arabic-only workaround or a new image-editor feature.
 
----
+### E. Preview and Future Shape Tools
 
-## Test G08.3 — Clear shape
+**Player outcome**
 
-```
-/cb clearshape g08a
-```
+Players can quickly understand a shape before applying it and may later receive focused helpers for face direction or sculpting.
 
-**Expected:** `g08a` returns to full block shape.
+**Experience**
 
-**Pass:** Block renders as full block.
-**Fail:** Shape not cleared.
+- `/cb shapepreview <shape>` shows a temporary base shape and removes it automatically.
+- Future sculpting would use a dedicated live editor and one final history action rather than a loose tool mode.
 
----
+**Requirements**
 
-## Test G08.4 — Shape list
+- The base preview remains independent of a custom texture argument.
+- A custom sculptor, if revived, needs a separate geometry/performance design for smoothed visual mesh and collision before implementation.
 
-```
-/cb shapelist
-```
+**Boundary**
 
-**Expected:** Chat shows all available shape names with descriptions.
+The optional textured preview and sculptor are future work; neither may weaken the reliable base preview path.
 
-**Pass:** All shapes listed.
-**Fail:** Command missing or empty list.
+### F. Defects from the 2026-07-22 MP test pass — F1–F3 fixed, F4 parked
 
----
+Four defects were found in the 2026-07-22 MP (dedicated-server) test pass. F1 and F2 are fixed and owner-confirmed; F3 had a first fix on 2026-07-22 (pack-routing) and a follow-up fix on 2026-07-23 (a client texture-cache race — see below), and awaits a re-test; F4 is parked as §L. Root causes were verified against source. Test rows live in TG8 (J7/J8/J9, B5, B6).
 
-## Test G08.5 — Shape preview
+**F1 — Upside-down stair corners picked the wrong wedge (TG8 J8/J9). Fixed 2026-07-22, owner-confirmed.**
 
-```
-/cb shapepreview slab_top
-```
+- Symptom: a top-half (upside-down) stair corner drew/collided as the mirror of the correct piece — a mangled corner where two stairs meet on the ceiling.
+- Root cause: `StairConnection.compute` chooses `INNER_LEFT`/`INNER_RIGHT`/`OUTER_LEFT`/`OUTER_RIGHT` in the base (NORTH/bottom) frame. `BlockShapes.orient` renders a top half as `x:180 + y:180` = **180° about Z**, which negates X and Y but keeps Z — it preserves front/back (inner vs outer) and mirrors only left↔right. The 2026-07-21 J8 fix verified this for the straight stair only (left/right symmetric); the asymmetric corner wedges (`INNER_LEFT` = SW quadrant vs `INNER_RIGHT` = SE) landed on the wrong side.
+- Fix shipped: `StairConnection.topSwap` swaps the LEFT↔RIGHT result of the chosen corner (`INNER_LEFT↔INNER_RIGHT`, `OUTER_LEFT↔OUTER_RIGHT`) when `half == BlockHalf.TOP`; STRAIGHT is symmetric and untouched. Front/back classification and the `isDifferentOrientation` guard are unchanged (Z is preserved). Collision reads the same stored `StairShape` through the same `orient`, so hitbox stays `== visual` automatically.
 
-**Expected:** A ghost block appears at eye level showing a top-slab shape. Disappears after ~5 seconds.
+**F2 — Omni-Tool face rotation did nothing on a shaped block, MP only (TG8 B5). Fixed 2026-07-22, owner-confirmed.**
 
-**Pass:** Preview appears and disappears.
-**Fail:** Nothing appears, or ghost block persists.
+- Symptom: on a dedicated server, rotating a face of a non-full (shape) block with the Omni-Tool showed no change. Worked in single-player.
+- Root cause: `OmniToolItem.rotateFace` (and the undo/redo `FACE_ROTATE` cases in `HistoryCommands`) called `ResourcePackServer.updatePack()` but never `HudSync.broadcast(...)`. A full cube bakes its rotation into the pushed pack model (`FaceModelBuilder.rotatedCubeJson`), so it updated on the pack reload. A §B shaped block reads its rotation only from the synced packed value (`ClientSlotCache.rot` → `SlotGeometryData.resolveFaceRot`), which `rotateFace` never refreshed — so the remote client re-meshed with the stale rotation. SP works because `resolveFaceRot` reads `FaceRotations.packed` directly in-process.
+- Fix shipped: `OmniToolItem.rotateFace` and the undo/redo `FACE_ROTATE` restores now call `HudSync.broadcast(...)`, so `ClientSlotCache.rot` changes and `ClientSlotCache.geometryDiffers` triggers the world re-mesh.
 
----
+**F3 — Plain shaped item icon showed a FULL CUBE on a dedicated server (TG8 B6). Fix built 2026-07-22, MP re-test pending.**
 
-## Test G08.6 — Shape editor Screen 🎯 needs retest (verified built 2026-07-11)
+- Symptom: on a dedicated server a plain shaped block's item icon (hotbar, inventory, first-person hand) rendered as a full cube — for **every** shape, not just stairs — while the PLACED block still showed the shape. Single-player showed the shape correctly.
+- Root cause: the shaped icon was drawn only by `SlotItemRenderer`, a Fabric `DynamicItemRenderer` that fires **only** for a `builtin/entity` item model. That item model comes from the resource pack, which on a dedicated server is authored by the SERVER; when that routing doesn't reach the client the renderer never fires and the item falls back to its plain baked cube. The placed block was unaffected because its shape is drawn by the pack-independent `DirectionalSlotModel` wrap, which reads the synced `ClientSlotCache` shape. Single-player worked because the client writes its own loose pack. This is the same pack-authoring fragility Group 30 hit and fixed for the guess disguise (`ItemDisguiseMixin`). The earlier "wrong presentation angle" reading was only the SP-visible half of the problem — the real MP failure was that no shape drew at all.
+- Fix shipped (pack-independent, mirrors G30): `ShapedItemMixin` hooks `ItemRenderer.renderItem` at HEAD and `ShapedItemIcon.tryRender` draws the shape from the synced `ClientSlotCache` shape — the same `BlockShapes` boxes as the placed mesh and the hitbox — then cancels the vanilla draw. No pack byte is involved, so it can never no-op on a dedicated server. Gated to the plain shaped case: it defers guess (to `ItemDisguiseMixin`) and skips full / cross / animated / painted / rotated slots, so painted/rotated shaped slots keep their atlas cube icon (the standing §B trade). The stair icon's fixed presentation facing (EAST; flip to SOUTH if the step faces away) lives in `ShapedItemIcon`; `SlotItemRenderer`'s shaped branch was removed so there is one authority. The painted-slot gate is cached in `StaticFrameCache.hasPerFace` (cleared on resource reload).
 
-```
-/cb shapeeditor g08a
-```
+**F3 follow-up 2026-07-23 — the leftover was a client texture-cache race, not the pack routing.** A re-test still showed a full/flat icon for some slots even in **single-player** (the temp `SHAPED-ICON dbg` line logged `remote=false`), which the pack-routing fix above cannot explain. Diagnosis from that line: slot 244 (an animated grid slab) bailed at `tex==null` — both `AnimFrameCache.get` and `StaticFrameCache.getIconFallback` returned null — while a plain slot (678) drew fine. Cause: the integrated server regenerates and serves the resource pack right after world load, and `slot_244.png` was written ~26 s AFTER the icon first rendered. On that first render the png was ABSENT, so `AnimFrameCache.build` returned null and the slot was cached as `NOT_ANIMATED` — a false negative. The shaped-icon path then fell through its `BAIL animated` gate and died at `tex==null`. That negative was only ever cleared by a *following* managed reload (`ClientPackReceiver`/`ResourcePackGenerator` clear the caches in their reload `thenRun`); a manual `F3+T`, a video-settings pack toggle, another mod's `reloadResources()`, or a regen with no following reload left the false negative pinned — a permanent full cube until the next managed reload. The same trap applied to `StaticFrameCache`'s `NOT_OFFATLAS`/`ICON_NOT_READABLE` for static off-atlas and static shaped slots.
 
-**Expected (target, Screen-based):** the Block Studio Shape section (G27 §G27.11) opens with shape-selector
-tiles. Clicking "stairs" changes the block to stair shape.
+- Fix shipped 2026-07-23, two layers. (1) **Anti-poison caching:** `AnimFrameCache` and `StaticFrameCache` now classify a build failure as TRANSIENT (source model/png absent, unreadable, or partially written — pack mid-(re)generation) vs STABLE (present and parsed, but genuinely ineligible — an atlas model, a single static frame, or a grid slot the animated path owns). Only a STABLE verdict is remembered in `NOT_ANIMATED`/`NOT_OFFATLAS`/`ICON_NOT_READABLE`; a TRANSIENT one is not cached, so the slot is retried next frame and self-heals the instant the file lands — no reload required. A present-but-unreadable `.grid.json` is treated as transient too, so an animated slot whose sidecar has not finished writing is never mistaken for static; the `res.isEmpty()` bails cost only a resource lookup (no decode), so steady-state static/atlas slots still cache on first touch with no per-frame churn. (2) **Reload-proof invalidation:** a client `SimpleSynchronousResourceReloadListener` (`offatlas_cache_invalidator`, registered in `CustomBlocksClient`) clears both caches — and the temp `SHAPED-ICON dbg` once-per-slot gate — on EVERY resource reload, so `F3+T` or any foreign `reloadResources()` can no longer leave a stale entry that only the managed paths would have cleared. Together these make the shaped/animated icon independent of pack-regeneration timing and of which code triggered a reload. The temp `SHAPED-ICON dbg` logging in `ShapedItemIcon` stays for this one confirmation pass and can be removed once the owner confirms. Awaits owner re-test with `customblocks-1.0.0.jar`.
 
-**Pass:** Screen opens, shape selection works.
-**Fail:** Screen missing, selections don't apply, or command still opens the legacy chest GUI.
+**F4 — Vanilla block-behavior parity for non-stair shapes → §L, `Parked 💤 ✏️`.** Today only `stairs` is directional/connecting (`BlockShapes.isDirectional`). Owner scope (slab→full merge, wall/pane/fence connect, directional placement for all shapes, fence gates, trap/doors, waterlogging, redstone/pressure) is a large multi-shape build; needs its own design session before scoping. Recorded in Deferred Scope and TG8 §L.
 
----
+## Cross-Group Contracts
 
-## Test G08.7 — Set face texture
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G05 | Variant models and delivery | G08 supplies the needed state/model variants; G05 distributes the generated pack safely. |
+| G06 | Tool and face-action boundaries | G06 owns Omni-Tool gestures and action choice; G08 owns saved face transforms and their model mapping. |
+| G07 | Bulk shape | A future bulk-shape action uses G07 selection/confirmation and G08 mutation semantics. |
+| G10 | Face images | Image creation and preparation happen in G10 before G08 applies a face texture. |
+| G13 | Rotation compatibility | Native orientation may replace Arabic-specific facing work only after equivalent behavior is proven. |
+| G27 | Shape and face editors | G27 provides Block Studio's Shape section and advanced cube face selection; G08 owns the command/data contract. |
+| G28 | History | Shape and face mutations expose one normal reversible operation. |
 
-```
-/cb setface g08a up https://i.imgur.com/top_texture.png
-```
+## Technical Contract
 
-**Expected:** Top face of `g08a` gets a different texture. Other faces unchanged. Pack rebuilds.
+- Shapes are stored per block definition in `SlotData` and applied to placed blocks through slot block state plus live dynamic bounds.
+- `BlockShapes` is the single geometry source for collision, outline, preview geometry, and generated shape models.
+- The pack emits ONE shape-INDEPENDENT (full-cube) model per static slot; the client draws the slot's current shape at bake time from `BlockShapes` boxes (§B), so `/cb setshape` is a `SlotData` write + client resync with no pack push and no reload prompt (shape is data-driven, not a block-state — see the 2026-07-20 and 2026-07-21 locked decisions).
+- Face storage and model variables use exactly `up`, `down`, `north`, `south`, `east`, and `west`.
+- Face-image rotation is a per-face quarter-turn transform, separate from placement-facing and shape rotation.
+- A non-full model must resolve per-face overrides using the same fallback rule as a full cube.
+- Placement records only `LIGHT` (glow) as a block-state. Horizontal facing / top-bottom half are NOT block-state (reverted 2026-07-20 — the extra states OOM'd registration); per-placement stair rotation is stored on `AnimSlotBlockEntity` and drawn via a batched model wrap (§J, built 2026-07-21) — no block-state, no per-frame `BlockEntityRenderer` draw, and the drawn mesh shares `BlockShapes.orient` with the hitbox so they cannot desync.
+- G27 editor requests invoke the same G08 command/mutation behavior rather than a separate Screen-only implementation.
 
-**Pass:** Top face shows different texture.
-**Fail:** Error, or all faces changed.
+## Deferred Scope
 
----
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-## Test G08.8 — Clear single face
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Textured `/cb shapepreview <shape> [id]` | Base preview is sufficient; custom-texture display needs a separate rendering path. | G08 |
+| Custom Shape Sculptor | Needs a bounded geometry, smoothing, collision, and editing-performance design. | G08 with G06 and G27 |
+| Bulk shape | Depends on both final G08 mutation behavior and G07 bulk integration. | G07 with G08 |
+| §L Vanilla block-behavior parity | Parked, needs a design session (TG8 §L). Today only `stairs` is directional/connecting (`BlockShapes.isDirectional`); every other shape has no placement rotation or neighbour logic. Owner scope: slab→full merge, wall/pane/fence auto-connect, directional placement for all shapes, fence gates open/close, trap/doors, waterlogging, redstone/pressure behavior. Large multi-shape build — each behavior is its own slice with collision, model, state, and sync work. | G08 |
 
-```
-/cb clearface g08a up
-```
+</details>
 
-**Expected:** Top face reverts to the block's default texture.
+## Superseded Decisions
 
-**Pass:** Top face matches default texture.
-**Fail:** Face still shows the per-face texture.
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
----
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-07-11 | `customtriangle` and `trianglemode` lived with shapes. | They are recolor-tool variants owned by G06. |
+| 2026-07-11 | Face editor would be a small fold inside the Shape section. | Advanced face editing uses G27.18 live cube selection. |
+| 2026-07-12 | Shape editing used a standalone ShapeEditorScreen. | It opens G27 Block Studio's Shape section. |
+| 2026-07-12 | A shape change rebuilt and pushed the resource pack. | Tried pre-baked variants + a `shape` block-state (§B, built 2026-07-20), but at ~3100 blocks the block-state count OOM'd registration on boot — **reverted the same day**. A shape change rebuilds + pushes the pack again; shape is data-driven on `SlotData`. |
+| 2026-07-11 | Directional placement added `HORIZONTAL_FACING` + `BLOCK_HALF` block-states (§D/§J). | Reverted 2026-07-20 (part of the block-state OOM). Per-placement stair orientation is deferred to a BlockEntity-stored design; the block carries only `LIGHT`. |
+| 2026-07-11 | FaceGuide swaps the world block for a flattened guide cube. | §H FaceGuide is **removed entirely** (2026-07-21) — `/cb faceguide` and its code are deleted. There is no face-guide feature; face names are documented by `/cb setface` help. |
 
-## Test G08.9 — Set multiple faces
+</details>
 
-```
-/cb setface g08a up https://i.imgur.com/top.png
-/cb setface g08a down https://i.imgur.com/bottom.png
-/cb setface g08a north https://i.imgur.com/north.png
-```
+## References
 
-**Expected:** Three faces have unique textures. Three others use default.
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_08_Done.md) · [All Groups](README.md)
 
-**Pass:** Correct faces show their unique textures.
-**Fail:** Any face shows wrong texture.
-
----
-
-## Test G08.10 — Clear all faces
-
-```
-/cb clearallfaces g08a
-```
-
-**Expected:** All faces revert to the default texture. `Cleared all face overrides for g08a.`
-
-**Pass:** All faces show default texture.
-**Fail:** Some face overrides remain.
-
----
-
-## Test G08.11 — Face editor Screen ⏳ planned (target changed 2026-07-11 → `GROUP_27_SCREENS.md §G27.18`; not built, `/cb facechangegui` still opens the legacy chest GUI)
-
-```
-/cb facechangegui g08a
-```
-
-**Expected (target, Screen-based):** the Block Studio Shape section shows 6 face tiles. Clicking a face
-tile opens drag-and-drop image input (or a URL input). After providing an image/URL, that face updates.
-
-**Pass:** Screen opens, face image/URL input works.
-**Fail:** Screen missing, face tiles don't accept input, or command still opens the legacy chest GUI.
-
----
-
-## Group 08 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G08.1 | Set shape to slab | ⬜ |
-| G08.2 | Shape persists after restart | ⬜ |
-| G08.3 | Clear shape restores full block | ⬜ |
-| G08.4 | Shape list shows all shapes | ⬜ |
-| G08.5 | Shape preview appears and disappears | ⬜ |
-| G08.6 | Shape editor GUI works | ⬜ |
-| G08.7 | Set single face texture | ⬜ |
-| G08.8 | Clear single face reverts to default | ⬜ |
-| G08.9 | Multiple faces set independently | ⬜ |
-| G08.10 | Clear all faces restores defaults | ⬜ |
-| G08.11 | Face editor GUI opens URL input | ⬜ |
-
-**Group 08 passes when shapes and per-face textures both work in-game.**
-
-If anything shows ❌ — paste:
-1. The exact command typed
-2. What the block looked like vs what was expected
-3. Last 20 lines of `latest.log`
-
----
-
-## Cleanup
-
-```
-/cb delete g08a
-```
-
----
-
-## 💡 Future idea — Custom Shape Sculptor *(currently just an idea — not planned, not built)*
-
-> Captured 2026-06-13. A direction to explore **after** Group 08 is confirmed working in-game.
-> Nothing here is committed; it may become its own group later.
-
-**The wish:** a tool (likely an Omni-Tool mode) to "curve/shape any pixel of any custom block however I
-like" — freeform shaping instead of the fixed preset shapes.
-
-**The honest constraint:** Minecraft block models can't do **true curves**. A block model is
-axis-aligned cuboid "elements" only, with rotation limited to 22.5° steps on one axis. So "curving"
-isn't possible — but **freeform shaping out of voxels/boxes is**, and the foundation already exists:
-`BlockShapes` already turns a list of boxes into both the model elements *and* the collision union, so a
-sculptor just makes that list **data-driven** instead of hardcoded.
-
-**Two possible flavors:**
-- **Voxel sculptor** — treat the block as an 8×8×8 grid; each cell on/off. Add/carve cells to build any
-  blocky shape. Needs greedy-merging of cells into larger boxes for render performance.
-- **Box editor** — define a handful of arbitrary boxes (from/to + optional 22.5° tilt). Fewer pieces;
-  can fake "slanted" looks. Closer to Blockbench.
-
-**How the tool could work in-world:** `useOnBlock` already exposes the clicked face (`getSide()`) and the
-exact hit point (`getHitPos()`), so a `SCULPT` Omni-Tool mode could add a voxel where you right-click and
-carve the one you point at — live model + collision rebuild (debounced), one undo step per click.
-
-**Constraints to respect if we build it:** render perf (cap resolution at 8³, greedy-merge boxes);
-it edits the block *type* (all placed copies change, like shapes today); store the voxel mask on
-`SlotData` (compact bitset) with undo; v1 paints the base texture on every box (per-box texturing is a
-much bigger job — defer). The Group 08 `custom` AABB shape is the small seed of this.
-
-**Direction locked 2026-07-11 (still not built):** go straight for real smooth-feeling geometry, not the
-boxy voxel fallback — NoCubes-style: a mesh generator turns the on/off cell grid into both a smoothed
-visual AND a smoothed `VoxelShape` collision (proven approach, NoCubes ships this on 1.21). This is a
-real performance cost (NoCubes' own docs call the per-block mesh regen "wasteful") and a bigger build than
-the plain box-union shapes elsewhere in G08 — accepted tradeoff, owner's call.
-
-**Tool workflow (locked 2026-07-11):** new Omni-Tool "Sculpt Mode" → right-click a placed block → opens a
-live 3D sculpting screen (blown-up grid of cells) → click/drag to add/remove single cells (Minecraft
-place/break metaphor) → live NoCubes-style smoothing preview while you work → Apply commits one undo step
-for the whole session (not per-cell).
-
-**Cool-factor additions locked 2026-07-11:**
-- Sphere vs cube brush shape (round carves in one click vs blocky)
-- Mirror/symmetry mode (carve one side, other side auto-mirrors)
-- Per-block resolution choice (default 8×8×8; pick finer for a showpiece block, cost stays local to that block)
-- Multi-step undo history while sculpting, separate from the single Apply-time undo
-- Toggle: raw blocky grid view vs smoothed preview, so you can carve precisely then check the final look
-
-**Status:** direction + tool design locked, still idea-stage — no code written. Revisit after Group 08
-passes in-game; write a proper group spec before building.
-
----
-
-## 🧭 Planned — Face direction helper ("FaceGuide") *(idea, agreed — not built yet)*
-
-> Captured 2026-06-13. Replaces the confusing coloured-tile face editor as the way to learn "which
-> side is which." The face *editor* (paint/clear) stays; this is purely about **showing directions**.
-
-**Part 1 — a built-in FaceGuide block.** On load the mod auto-seeds one custom block (like it already
-seeds the built-in tools) with **N / E / S / W / UP / DOWN** painted on its six faces, so each face
-plainly states which world direction it is. It's a normal, placeable, usable custom block. The letter
-textures are **drawn in-code** (no download — offline-safe), using per-face textures (already supported).
-
-**Part 2 — inspect a placed block in place.** A toggle command (e.g. `/cb faceguide`): look at a custom
-block and run it → that block **temporarily** swaps to the FaceGuide appearance where it sits → run again
-(or look away) → it swaps back. No pack rebuild / reload prompt — it's a live block swap. Chat walks the
-player through it. **Safety:** the swap stores the original block and auto-restores after ~30s and on
-relog/disconnect, so a block can never get stuck looking like the guide.
-
-**Naming note:** call it `FaceGuide` / `/cb faceguide`, **not** "ShapePreview" — `/cb shapepreview`
-already exists for shapes, so reusing that name would confuse.
-
-**Locked 2026-07-11:**
-- **Visibility:** the swap is a real world block change, visible to every nearby player, not just the
-  one who ran the command — simplest to build, accepted tradeoff (anyone near the block during the ~30s
-  preview will see it flip to labels).
-- **Non-cube shapes:** if the target block has a shape (stairs/slab/etc), the preview temporarily
-  flattens it to a full cube so all 6 direction labels are visible at once, then restores the real shape
-  when the preview ends — same restore mechanism as the texture swap.
-
-**Status:** agreed direction, not built. Build as a Group 08 slice after the current work; front-end only
-where possible (per-face textures + a temp block-swap with restore).
-
----
-
-## 🧊 PARKED — Textured shape preview: `/cb shapepreview <shape> [id]` *(base works; `[id]` parked 2026-07-11)*
-
-> ⚠️ **Status: base `/cb shapepreview <shape>` (vanilla stand-in) works and passed in-game — unaffected,
-> keep using it.** The optional **`[id]`** argument (preview wearing a custom block's texture, no pack
-> reload) is **parked indefinitely** as of 2026-07-11 — owner call: not worth building right now, revisit
-> only if it becomes worth it later. Design kept below for reference if picked back up.
-
-> Captured 2026-06-13. Extends the working `/cb shapepreview <shape>` (which floats a vanilla stand-in
-> block) so you can preview a shape **wearing one of your custom block's textures**, with **no pack
-> rebuild / reload prompt**.
-
-**The trick:** the custom block's texture is already in the loaded pack as `customblocks:slot_N`. A
-`block_display` can show that block's model **transformed** (scale + translate) into a shape's box —
-and `summon` takes the transformation as NBT, so no code-side entity API and no rebuild. For each box in
-`BlockShapes.boxes(shape)` (the same source the collision/model use), summon one transformed copy of
-`slot_N`; auto-remove after 5s, exactly like the current preview.
-
-- Single-box shapes (slab/carpet/thin/wall/pillar): one transformed display — exact.
-- Multi-box (stairs/pane): one display per box.
-- `full`: the block at scale 1. `cross`: billboard — can't be made by transforming a cube; fall back to
-  the vanilla stand-in or just show `full` (decision when built).
-
----
-
-## 🧭 §G08.8 — Directional Placement (Rotation & Halves)
-
-> **Origin:** Owner brainstorm 2026-07-08 — *"when placing blocks edited with shapeeditor to stairs, its direction is fixed, and so does normal slotblocks, needs big discussion about their logic."*
-> 
-> **Phase:** G08 (Shapes). **Depends on:** `ServerPackGenerator` (G05).
-> 
-> **The Problem:** Right now, `SlotBlock` is completely agnostic to rotation. If you place a block with a "stairs" shape, or a full block with a TV screen texture on the front face, it just drops facing North. It behaves like a static monument because the game doesn't record which way you were looking.
-
-### The Solution: Full Vanilla Logic for Custom Blocks
-
-We are injecting full vanilla placement logic into **every** custom block. 
-When a player places a custom block, the server will now track:
-1. **Horizontal Facing:** (North, South, East, West) based on where the player is looking.
-2. **Block Half:** (Top, Bottom) based on whether the player clicked the top or bottom half of a block (used for upside-down stairs and top-slabs).
-
-Because every custom block shares the exact same core class (`SlotBlock`), this logic applies across the board:
-- **Shapes:** Stairs will finally face you. Clicking the top of a block places upside-down stairs or top-slabs.
-- **Per-face Textures:** A full block with a "Front" face texture will automatically rotate to face the player when placed.
-- **Normal full blocks:** Even a plain red block will technically track rotation, it just won't look any different.
-
-### Decisions & Impact
-
-| # | Decision |
-|---|---|
-| DP1 | **Horizontal Facing + Halves (Vanilla-Parity):** We are adding `Properties.HORIZONTAL_FACING` (4 states) and `Properties.BLOCK_HALF` (2 states) to `SlotBlock`. Combined with the existing 16 light levels, this gives each custom block 128 possible states. This is standard for Minecraft (redstone wire has 1,296) and is completely safe for performance. We are skipping vertical facing (Up/Down) to keep it sane. |
-| DP2 | **Dynamic Hitboxes:** The hardcoded hitboxes in `BlockShapes.java` will be rewritten to read the block's `FACING` and `HALF` state. If a stair block is facing East, its invisible physical steps will rotate East so players don't bump into air. |
-| DP3 | **Resource Pack Rotation:** `ServerPackGenerator` (in Group 05) will be updated. Instead of generating 1 static model state per block, it will generate 4 rotational states (using `"y": 90`, `"y": 180`, etc.) based on the block's `FACING`. |
-| DP4 | **The "Old World" Migration Rule:** This introduces a hard disruption for existing servers. Because old custom blocks didn't have a `FACING` property, when this update drops, Minecraft will default them to North. **Owner confirmed: This disruption is accepted.** It's worth it for the feature, and players will just need to break and replace any backwards stairs in their builds. |
-| DP5 | **Clean up Arabic (Bonus):** Currently, Arabic letters (Group 13) use a complex invisible workaround to face the right way because `SlotBlock` didn't support rotation. By giving all blocks native rotation, we can eventually delete the Arabic workaround and make the code much cleaner. |
-| DP6 | **Painted faces rotate with the block (confirmed 2026-07-11):** per-face textures are "sticker-glued" — a face painted while the block was one way keeps showing on the same relative side after the block is rotated (e.g. a TV-screen face always faces the direction you place the block, matching G13's existing "faces the player" behavior for letters). `ServerPackGenerator`'s 4 rotational model states (DP3) must remap which texture variable each face uses per rotation, not just rotate geometry — not yet designed, needs a build pass when this group is picked up. |
-
-**Status:** idea, brainstormed. Build alongside / after FaceGuide.
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
+- [G07 Bulk Operations](GROUP_07_BULK_OPERATIONS.md)
+- [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)
+- [G13 Arabic](GROUP_13_ARABIC.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [G28 Create Studio](GROUP_28_CREATE_STUDIO.md)
+- [Pre-template Group 08 snapshot](../archive/group-migration-2026-07-18/GROUP_08_SHAPES.md)

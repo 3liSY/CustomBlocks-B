@@ -2,14 +2,16 @@
  * FaceCommands.java
  *
  * Responsibility: The per-face paint commands (Group 06 / M4):
- *   /cb paintface <id> <face> <url>  — download an image and put it on ONE face of the block
+ *   /cb setface <id> <face> <url>    — download an image and put it on ONE face of the block
  *                                      (same clean-up pipeline as /cb retexture; the other
  *                                      faces keep showing the base texture)
- *   /cb setface <id> <face> <url>    — alias of paintface (the Group 08 spec name)
  *   /cb clearface <id> <face|all>    — remove face override(s), back to the base texture
  *   /cb clearallfaces <id>           — alias of "clearface <id> all" (the Group 08 spec name)
- * The Rainbow Rectangle's right-click pre-fills "/cb paintface <id> <face> " in chat, so the
+ * The Rainbow Rectangle's right-click pre-fills "/cb setface <id> <face> " in chat, so the
  * player only pastes the URL (ChatPrefillPayload).
+ *
+ * G08 §D cleanup (2026-07-20): the old duplicate `/cb paintface` literal (an identical alias of
+ * setface) was removed — setface is the one Group 08 spec name. No behavior change.
  *
  * Depends on: SlotManager/SlotData, TextureStore (saveFace/deleteFace), LockManager,
  *             ImageDownloader, BackgroundRemover, ImageProcessor, ResourcePackServer,
@@ -44,25 +46,15 @@ public final class FaceCommands {
     private FaceCommands() {} // static-only
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
-        root.then(CommandManager.literal("paintface")
-                .then(CommandManager.argument("id", StringArgumentType.word())
-                        .suggests(BlockSuggestions.IDS)
-                        .then(CommandManager.argument("face", StringArgumentType.word())
-                                .suggests((c, b) -> { for (String f : TextureStore.FACES) b.suggest(f); return b.buildFuture(); })
-                                .then(CommandManager.argument("url", StringArgumentType.greedyString())
-                                        .executes(ctx -> paintFace(ctx,
-                                                StringArgumentType.getString(ctx, "id"),
-                                                StringArgumentType.getString(ctx, "face"),
-                                                StringArgumentType.getString(ctx, "url")))))));
-
-        // setface — Group 08 spec name; identical to paintface.
+        // setface — the one Group 08 spec name for painting a single face (the old duplicate
+        // `paintface` alias was removed in the G08 §D cleanup).
         root.then(CommandManager.literal("setface")
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
                         .then(CommandManager.argument("face", StringArgumentType.word())
                                 .suggests((c, b) -> { for (String f : TextureStore.FACES) b.suggest(f); return b.buildFuture(); })
                                 .then(CommandManager.argument("url", StringArgumentType.greedyString())
-                                        .executes(ctx -> paintFace(ctx,
+                                        .executes(ctx -> setFace(ctx,
                                                 StringArgumentType.getString(ctx, "id"),
                                                 StringArgumentType.getString(ctx, "face"),
                                                 StringArgumentType.getString(ctx, "url")))))));
@@ -89,7 +81,7 @@ public final class FaceCommands {
         return false;
     }
 
-    private static int paintFace(CommandContext<ServerCommandSource> ctx, String id, String faceRaw, String url) {
+    private static int setFace(CommandContext<ServerCommandSource> ctx, String id, String faceRaw, String url) {
         ServerCommandSource src = ctx.getSource();
         String face = faceRaw.toLowerCase(Locale.ROOT);
         if (!validFace(face)) {

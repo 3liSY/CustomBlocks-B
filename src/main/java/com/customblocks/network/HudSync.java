@@ -87,6 +87,12 @@ public final class HudSync {
             s.addProperty("sound", d.soundType());
             s.addProperty("shape", d.shape());
             s.addProperty("pass",  d.noCollision());
+            // G08 §B — the six face quarter-turns packed into one int (2 bits per face). The client
+            // draws non-full shapes at runtime and never reads the pack's model JSON, where these used
+            // to live; without this a shaped block would silently lose its G06 §G rotations on a
+            // dedicated server. Absent (= 0) for the overwhelming majority of blocks.
+            int rot = com.customblocks.core.FaceRotations.packed(d.index());
+            if (rot != 0) s.addProperty("rot", rot);
             // G13-25 CP3b — the Arabic identity tuple ("glyph/form/colour"), so a REMOTE client
             // (stale local SlotManager, G05 lesson) can predict the join flow off the synced cache.
             // Absent for every normal block.

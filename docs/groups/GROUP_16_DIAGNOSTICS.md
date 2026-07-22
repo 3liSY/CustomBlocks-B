@@ -1,303 +1,230 @@
-# Group 16 — Diagnostics, IT Chest & Admin Tools
+# Group 16 - Diagnostics and Private Testing
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Phase 15 (Diagnostics + Polish) build-verified.
->
-> **Objective:** Rework `/cb diag` + `/cb incidents` into an interactive **IT Chest Dashboard** —
-> live system health, an incident log, the mutation/history log, and admin controls in one 6-row
-> chest GUI. Then layer on auto-fix, admin commands, and per-category particle/sound toggles.
->
-> **Source issues:** 17.24 (`/cb diag` + `/cb incidents` rework), P2 (DevConsoleScreen merged into
-> the IT Chest — Issue 17.17), R1 (HistoryTracker + mutation log), Group M (audit, cache, screenshot),
-> `/cb particles`, `/cb sounds`.
+> Group 16 gives the owner a trustworthy place to inspect CustomBlocks health, repair known problems, control feedback, and run private in-game tests without altering the official guides.
 
-> **Status & test steps live in** `Reports/GROUP_16_TESTING_GUIDE.md`. This spec stays status-free.
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_16.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## UI medium audit (2026-07-09)
-
-ItChestMenu, AuditMenu, ReportMenu, DebugLogMenu → **one unified IT Screen, tabbed** (health/incidents,
-audit, report, debug log all live as tabs in the same Screen instead of 4 separate chests). **Not built.**
-
-FeedbackMenu (FX toggle grid) → **Screen**, kept separate from the IT Screen (it's reached by its own
-commands too, not just from IT-Chest row 6). **Not built.**
-
-## Reality check — what already exists (read 2026-06-21)
-
-Before designing, the live code was surveyed. Several spec assumptions were **stale**:
-
-| Area | Spec assumed | Actual state in code |
-|---|---|---|
-| Mutation / history log | "Missing" | ✅ **Built** — `MutationLog` (who/what/when/blockId) + 6-row paginated `HistoryMenu` (click → editor). Fed centrally by `UndoManager.record`. |
-| `/cb confirm` / `/cb cancel` | "New" | ✅ **Built** — `BulkConfirm` (one pending per actor, 60s expiry). Spec wording differs slightly; trivial. |
-| `/cb diag` GUI | text → GUI | ⚠️ **Partial** — opens a 3-row `DiagMenu` (slot/history/server gauges + report lore). Not the 6-row dashboard. |
-| `/cb incidents` | text → GUI | ⚠️ **Text only** — `IncidentRecorder` stores **time + context + error string only**. No player, no blockId, no severity. |
-| Incident recording coverage | — | ✅ Already wired at **~22 sites** (texture download/create/retexture/recolour/backup/pack-rebuild/face/import/trash…). The bad-URL case already fires an incident. |
-| Particle effects | togglable | ❌ **The mod emits zero particles anywhere.** Nothing to toggle yet. |
-| Server-side screenshot | save PNG | ❌ Impractical on a headless dedicated server (no framebuffer). |
-
----
-
-## Decisions (2026-06-21, with the owner)
-
-- **Screenshot — DROPPED.** Server-side render is impractical; not worth a client-F2 detour for this group.
-- **Particles — add the effects first, then the toggle.** A small particle-FX set is built, *then*
-  `/cb particles <category> on|off` controls it. (Own slice, after the dashboard.)
-- **Debug Log viewer (DevConsoleScreen merge) — deferred** to a later slice (don't forget it).
-- **Auto-fix — its own well-structured slice** (slice 2), not folded into the dashboard.
-- **Old 3-row `DiagMenu` — replaced** by the new 6-row IT Chest (one dashboard).
-- **Structured incidents — pulled forward into slice 1** so the dashboard's incident row is real from
-  day one (player + blockId + severity), wiring **all ~22 record sites**. Only the *auto-fix actions*
-  (re-download / restore-from-backup) stay in slice 2.
-- **Health row — all 5 gauges**, best-effort (Network Sync = online count + pack SHA, no per-client lag).
-- **Severity colour — auto-derived** from the error (throwable / "fail|error" → red, "skip|warn" →
-  yellow, else lime). No per-call-site level argument.
-- **`/cb incidents`** opens the dashboard (incidents view); `/cb incidents clear` still clears.
-
----
-
-## Ownership corrections (sweep 2026-06-21)
-
-| Command/feature | Ruling | Source doc |
-|---|---|---|
-| `particles` / `sounds` / `feedback` | **G16 owns** — merged into the Feedback FX system (slices 4–5). Removed the stale G19 (particles) / G25 (sounds) claims. | SWEEP_INDEX §B |
-| `showbrokenblocks` | **G16 owns** (diagnostics) — decision B 2026-06-21. **Moved out of G09**; G09 keeps a cross-ref. Already built (`BrokenBlockScanner` + `BrokenBlocksMenu`, `/cb showbrokenblocks` → `Dest.BROKEN_LIST`); **test spec added** to the G16 testing guide §7 (2026-06-21). **Physical file move locked 2026-07-12** — `BrokenBlockScanner` / `BrokenBlocksMenu` / `BrokenConfirmMenu` relocate out of G09's package into a diagnostics package as part of G09's Screen rebuild; G09's SafetyMenu keeps a link/tile into whatever screen this becomes here, owns none of the code. | G09 |
-| `screenshot` | **DROPPED here.** If ever revived it belongs to **G23** (player experience), not diagnostics. | G23 |
-| `incidents` | **G16 owns** the viewer; G04 only *routes* errors into it. | SWEEP_INDEX §A |
-| `history` / mutation log | G16 *displays* it in the IT Chest; the block-edit-history **feature** is owned by **G25** (shared surface). | G25 |
-
----
-
-## Slice plan (build → owner tests in-game → next)
-
-> ⚠️ **Synced 2026-07-10:** `docs/testing/GROUP_16_TESTING_GUIDE.md` reverted sections A/B/C/D/E to
-> needs-testing on 2026-07-05 ("stale, needs retest") — the ✅ rows below were never updated to reflect
-> that revert, on top of ItChestMenu/AuditMenu/ReportMenu/DebugLogMenu/FeedbackMenu all being reclassified
-> as unbuilt Screens by the 2026-07-09 audit note above. Treat these ✅ as historical, not current.
-
-| Slice | Scope | State |
-|---|---|---|
-| **1 — IT Chest dashboard** | 6-row GUI (health / incidents / mutation / controls) + structured incident model (all ~22 sites). Replaces `DiagMenu`. | ✅ verified in-game 2026-06-21 |
-| **2 — Structured auto-fix** | Click a failed-texture incident → re-download from last URL; broken-block → restore-from-backup / delete; else open editor. | ✅ verified in-game 2026-06-21 |
-| **3 — Admin commands** | `/cb audit [player]`, `/cb cache` + `cache clear`, Generate Report (+ Row-6 button). | ✅ verified in-game 2026-06-21 |
-| **4 — Particles** | Particle-FX set + `/cb particles <category> on\|off` + Particle FX board. | ✅ verified in-game 2026-06-21 |
-| **5 — Feedback FX (merged particle + sound)** | Add the per-category **sound** layer and **merge it with particles** into one Feedback system. Each category keeps **2 flags** (FX + sound); a master toggle flips both, each still settable alone. Expand/collapse chest board. `/cb feedback` / `particles` / `sounds <cat> on\|off`. | ✅ R1–R4 verified in-game 2026-06-21. 🟡 `achievement` FX preview-only (no live trigger; waits on achievement system) |
-| **Later** | Debug Log viewer (latest.log `[CustomBlocks]` filter) folded into Row-6 controls. | ✅ verified in-game 2026-06-21 — advanced `DebugLog` + `DebugLogMenu` (summary tile, severity filter, click-to-copy), IT-Chest Row 6 slot 50 → `Dest.DEBUG_LOG` |
-| ✅ already done | mutation log, `/cb confirm` / `/cb cancel` (verify wording in-game). | — |
-| ❌ dropped | server-side / client screenshot. | — |
-
----
-
-## Slice 1 — IT Chest Dashboard (locked design)
-
-**6-row chest GUI, title "IT Chest". `Nav.Dest.DIAG` routes here. `/cb diag` and `/cb incidents` both open it.**
-
-### Row 1 — Live System Health (all 5)
-| Slot | Item | Colour meaning | Hover |
-|---|---|---|---|
-| TPS | Glass pane | Green ≥18 / Yellow 15–17 / Red <15 | Exact TPS |
-| Block Registry | Comparator | Green healthy / Red errors | Used vs max slots |
-| Network Sync | Redstone dust | Green synced / Yellow approx | Online players + pack SHA *(best-effort, no per-client lag)* |
-| Pack Status | Book | Green current / Yellow rebuilding / Red error | Pack size, SHA-1, last rebuild |
-| Memory | Barrel | Green <70% / Yellow 70–85% / Red >85% | Heap used/max MB |
-
-### Rows 2–4 — Incident Log (27 slots)
-- One wool per incident; **colour auto-derived** from severity (red error / yellow warn / lime info).
-- Newest first. Hover: timestamp, player, action/context, error detail.
-- Click: open that block's editor if the blockId resolves to an existing block; else show full detail in chat.
-- **Error Code Search:** A search bar exists to quickly type in a 3-character error code (e.g., `E-45`) printed in the read-only chat to instantly filter the incidents log and jump to the raw Java exception trace.
-- *(Auto-fix actions come in slice 2.)*
-
-### Row 5 — Mutation Log
-- Last 9 entries from `MutationLog.recent()` (reuse `HistoryMenu` rendering).
-- Hover: timestamp, player, action, blockId. Click → editor if the block still exists.
-
-### Row 6 — Controls (lean for slice 1)
-| Slot | Action |
-|---|---|
-| Refresh | Force-refresh live health (repage in place) |
-| Clear Incidents | Clears incident rows only (health + mutation untouched) |
-| Back | Back to the previous menu |
-| Close | Close the chest |
-
-*(Generate Report + Debug Log buttons arrive with slices 3 / later.)*
-
-### Data model — structured incidents
-`IncidentRecorder` gains **severity + blockId + player**; `incidents.json` schema extended; old
-entries degrade gracefully (missing fields → "—"). All ~22 `record(...)` call sites updated to pass
-the block id + actor where in scope; core services with no player log as **"System"**. Severity is
-derived, not passed. Last 100 kept (unchanged), atomic write (unchanged).
-
----
-
-## Later-slice requirements (reference)
-
-### Slice 2 — Auto-fix
-- Missing texture → re-download from the last known URL.
-- Broken block (missing `SlotData`) → "Restore from backup" or "Delete broken entry".
-- No auto-fix available → open the relevant block editor.
-
-### Slice 3 — Admin commands
-- **`/cb audit [player]`** — the mutation log, optionally filtered to one player.
-- **`/cb cache`** — texture cache file count + size, resource-pack size + last-built, pending rebuild queue.
-- **`/cb cache clear`** — clears in-memory download cache + temp files. Live texture PNGs in
-  `config/customblocks/textures/` are **not** cleared.
-- **Generate Report** — writes `config/customblocks/data/diag_report.txt` (server info, full health
-  snapshot, last 100 incidents, last 50 mutation entries) + a `[download]` chat link.
-
-### Slice 4 — Particles
-- Add a particle-FX set first, then `/cb particles <category> on|off`.
-- Categories: `success`, `error`, `gui`, `selection`, `bulk_complete`, `rp_regenerate`, `achievement`.
-- Config: `particlesEnabled_<category>`.
-
-### Slice 5 — Feedback FX (merged particle + sound) — **locked design 2026-06-21**
-
-**Decision (owner):** don't ship particles and sounds as two separate systems. **Merge** them into
-one per-category "Feedback FX". Default behaviour = one switch flips both; but each category stays
-**splittable** so you can run particle-only or sound-only.
-
-**Data model — two flags per category, both persisted:**
-- Keep `particlesEnabled_<category>` (slice 4, unchanged).
-- Add `soundsEnabled_<category>` (new, default all ON), mirrored in `CustomBlocksConfigStore`.
-- Helpers: `soundsOn(category)` next to the existing `particlesOn(category)`.
-- The "master" toggle is a convenience that writes **both** flags — it is not a third flag.
-
-**Sound engine — `core/SoundFx`** (parallel to `core/ParticleFx`):
-- `play(p, category)` (gated by `soundsOn`) / `preview(p, category)` (ignores toggle, for the board).
-- One sound per category. Note-block sounds **must** use `.value()` (NFR-12 / `soundGate` gate).
-- Provisional palette: success = XP-orb pickup · error = note-block bass (low) · gui = amethyst chime
-  · selection = amethyst chime (lower) · bulk_complete = beacon activate · rp_regenerate = amethyst
-  chime (soft) · achievement = UI toast / firework.
-
-**Firing — same hubs as particles, now both channels:**
-- `Chat.success` / `Chat.error` → also fire `SoundFx.play(p, "success"/"error")`.
-- `GuiFx.click` / `GuiFx.select` → route the chime through `SoundFx.play(p, "gui"/"selection")` so the
-  per-category sound toggle actually gates it (removes the current hard-coded, un-gated chime).
-- The other `GuiFx` cues (open / apply / danger / deny) are **not** categories — left as-is.
-
-**Board — `ParticlesMenu` → `FeedbackMenu` (expand/collapse, one chest):**
-- 7 category **master tiles**, collapsed by default. Tile lore shows both child states (FX ● / Snd ●).
-- **Left-click master** = toggle BOTH (the merge). **Right-click** = preview BOTH (particle + sound).
-- **Shift-click** = expand that category → two sub-tiles (FX on/off, Sound on/off) for independent
-  control; shift-click again collapses. Only one category expanded at a time (transient per-player).
-- Reached by `/cb particles`, `/cb sounds`, `/cb feedback`, and IT-Chest Row 6 — all the same board.
-- **Layout (R3 polish, owner feedback 2026-06-21):** keep the 6-row chest, but the masters are
-  **vertically centred**. Master row = row 2 (slots 19-25, cols 1-7); expansion sub-tiles ride rows
-  3-4 (`+9` / `+18`); header row 0, footer (Back/Close) row 5. (Master can't go lower — row 3 would
-  push the sub-tiles into the footer row.) Horizontal centring unchanged (col 0/8 stay empty).
-
-**Commands:**
-- `/cb feedback <category> on|off` = set BOTH flags. `/cb particles <category> on|off` = FX flag only.
-  `/cb sounds <category> on|off` = sound flag only. All three tab-complete category + on/off.
-- Console (no player): each prints its category state list (sound list / particle list / both).
-
-**Build in two owner-test rounds:** R1 = sound layer fires + merged + `/cb sounds` toggle (board
-unchanged). R2 = expand/collapse `FeedbackMenu` + `/cb feedback` master + aliases open the board.
-
-> **Deferred-FX wiring (R4, 2026-06-21):**
-> - **`bulk_complete`** → wired. Fires at the end of every bulk op (property / delete / rename), at the
->   `Chat.line` summary site — those use `Chat.line` (no FX), so no double burst.
-> - **`rp_regenerate`** → wired to **manual pack reloads only** (owner call): `/cb sync` and `/cb rp
->   resume`. Both used `Chat.success` (generic success FX); switched to new `Chat.successFx(…,
->   "rp_regenerate")` so they fire the pack FX, not a doubled success. Auto-debounced rebuilds stay
->   silent (they'd spam on every create/delete). `/cb reload` is a *data* reload (`SlotManager.reload`),
->   not a pack regen — left on generic success.
-> - **`achievement`** → **intentionally preview-only.** No achievement/milestone system exists yet;
->   owner will wire it when that system is built. Effect remains testable via board right-click preview.
-
----
-
-## Already built — verify only
-
-- **Mutation log:** `MutationLog` + `HistoryMenu`. Slice 1 reuses it for Row 5.
-- **Confirm/cancel:** `BulkConfirm` — `/cb confirm` runs the held bulk op, `/cb cancel` discards it,
-  "Nothing to confirm/cancel." when none pending. Verify wording in-game; tweak to spec text if wanted.
-
----
-
-## Private Testing Center - owner-only temporary testing workspace
-
-This is a private developer/testing workspace for the CustomBlocks owner. It is not a normal
-player-facing feature and is separate from the ordinary diagnostics dashboard.
-
-### Entry and access lock
-
-- The entry command is `/cb testing`.
-- Access requires both the owner's Minecraft account and the configured server to match.
-- The initial server target is `yoyoo.mcsh.io`; this is temporary and must remain changeable.
-- A different player on the same server must not be able to open it, including another operator,
-  unless the owner explicitly adds that account later.
-- The workspace must also remain unavailable when the owner's account joins a different server.
-
-### Dashboard presentation
-
-The dashboard follows the owner's SrbProjects CustomBlocks dashboard as the visual reference. It
-shows every existing Testing Guide, including completed guides, rather than hiding finished work.
-The overview includes:
-
-- Overall completion percentage.
-- Per-guide completion percentage and test counts.
-- Completed, active, failed, blocked, and needs-retest work.
-- Latest activity and the next useful test to run.
-- Filters for unfinished work, failures, blocked tests, and recent findings.
-
-The guide content itself is displayed exactly as it exists. The Testing Center must not rewrite,
-reorder, or visually reinterpret the guide's instructions.
-
-### Guide and result layout
-
-Selecting a guide opens a two-part workspace:
-
-- **Left:** the original Testing Guide, unchanged and protected.
-- **Right:** the owner's editable results panel for the selected test.
-
-Only test results and findings are editable in-game. The guide instructions are read-only. The
-results panel supports Passed, Failed, Blocked, and Needs Retest, plus:
-
-- Detailed notes.
-- Expected result versus actual result.
-- Severity.
-- Reproduction steps.
-- Server and Minecraft version.
-- Date and time.
-- Test history and edited-result history.
-- Follow-up tasks.
-- Evidence and screenshot references.
-- Recent activity.
-- A next-test action.
-- A clean report/export action.
-
-### Persistence and external documentation
-
-- Results auto-save while the owner works; there is no dependence on a final Save button.
-- Results are stored on the selected server and tied to the owner's account, so they remain
-  available when the owner joins that same server from another computer.
-- The official guide text is not edited by this workspace. The owner's external AI workflow
-  remains the place where conversations and final findings are turned into official documentation.
-- The in-game workspace must use the same guide names, test identifiers, statuses, and percentages
-  as the existing guides so the in-game view and SrbProjects stay understandable together.
-
-### End-of-life teardown
-
-After all Testing Guides and tests are finished, the workspace needs an easy final teardown:
-
-1. A clearly labelled delete/nuke control removes the private server data, results, history,
-   evidence references, progress cache, and access lock.
-2. The command becomes unavailable after the workspace is destroyed.
-3. A separate final project cleanup removes the temporary `/cb testing` command, UI, configuration,
-   assets, and source integration from the CustomBlocks-B root so no temporary Testing Center
-   system remains.
-
-The in-game control may destroy the stored workspace, but source-file removal is a deliberate final
-cleanup pass rather than the running mod deleting its own source code.
-
-### Ownership
-
-- **Primary group:** Group 16 - Diagnostics, IT Chest & Admin Tools.
-- **Supporting UI conventions:** Group 27 - Unified Screen Design System, Upgrades & Block
-  Creation Studio.
-- **Testing guide:** `docs/testing/GROUP_16_TESTING_GUIDE.md` section F.
-
-## Dropped
-
-- **Screenshot** (`/cb screenshot`) — server-side render impractical; client-F2 detour not worth it here.
+## Purpose
+
+Diagnostics should turn an incident into understandable evidence and a safe next action. The private Testing Center should let its owner test directly in-game, record only results, and later remove the temporary system cleanly without modifying the official documentation or exposing it to other players.
+
+G16 owns diagnostic data/surfaces, broken-block recovery, feedback FX, and the private Testing Center. It displays mutation history but does not own the global history engine; it links to Trash but does not own deletion behavior.
+
+## Ownership
+
+| Owns | Does not own |
+| --- | --- |
+| Incidents, diagnostic health, debug log, cache/audit/report actions | Shared mutation/undo engine: G28/G25 |
+| Broken-block scanner and repair surface | Delete/restore/marker behavior: G06/G09 |
+| Feedback FX settings for particles and sounds | General player-experience screenshot feature: G23 |
+| Private Testing Center access, result storage, and teardown | Official Testing Guide content and external findings workflow |
+| IT Screen and Feedback Screen behavior | Shared Screen system and visual language: G27 |
+
+## Direction
+
+Diagnostics consolidate into one tabbed IT Screen for health, incidents, audit, report, and debug log. Feedback FX stays a separate surface because it also has direct commands. Existing diagnostic capability is migrated, not lost.
+
+`/cb testing` is a private, temporary owner workspace. It is available only when both the configured Minecraft account and configured server match. It shows the real Testing Guides unchanged on the left and stores owner-entered results on the right. When the work ends, stored test data can be destroyed from inside the game; removing command/UI/source integration is a separate deliberate final cleanup.
+
+## Locked Decisions
+
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-21 | Incidents are structured with severity, actor/system, context, and block ID where available. | Diagnostics can show actionable evidence instead of raw error strings only. |
+| 2026-06-21 | Broken-block diagnostics belongs to G16. | G09 may link to it but does not own scanner or repair UI. |
+| 2026-06-21 | Feedback merges particle and sound controls into one splittable system. | A master toggle controls both, while each channel remains independently configurable. |
+| 2026-06-21 | Server-side screenshot capture is dropped. | A headless server does not pretend to have a framebuffer; any future screenshot is G23 scope. |
+| 2026-07-09 | IT Chest, audit, report, and debug log migrate to one tabbed IT Screen. | Diagnostic chest menus do not remain as competing end-state UI. |
+| 2026-07-09 | Feedback FX becomes its own Screen. | It stays reachable from its direct commands and is not forced into the IT tabs. |
+| 2026-07-18 | Testing Center access requires both owner account and configured server. | It is unavailable to every other player, including operators, and unavailable to the owner on another server. |
+| 2026-07-18 | Testing Center guide text is read-only and results auto-save server-side for the owner. | The in-game workspace records findings without rewriting official guides. |
+| 2026-07-18 | Testing Center teardown removes runtime test data; source removal is a separate final pass. | The running mod does not attempt to delete its own source integration. |
+
+## Feature Plan
+
+### A. IT Diagnostics
+
+**Player outcome**
+
+An administrator can see health, incidents, recent mutations, and repair options without hunting through logs or disconnected menus.
+
+**Experience**
+
+- `/cb diag` and `/cb incidents` open the relevant IT view.
+- Health covers TPS, slot capacity, sync/pack state, and memory with honest best-effort values.
+- Incidents show newest first with timestamp, actor/system, context, block ID, severity, and detail.
+- Mutation history opens the relevant editor where the block remains available.
+- Audit, cache inspection/cleanup, report generation, and Debug Log are reachable without losing the current tab/filter context.
+
+**Requirements**
+
+- `IncidentRecorder` writes structured entries atomically and older entries degrade safely when fields are absent.
+- Auto-fix may re-download a known texture source, route to editor, restore from backup, or send deletion through the normal Trash path; it never invents a destructive fix.
+- Cache clear excludes live textures, sources, generated packs, and backups.
+- Debug Log filters `[CustomBlocks]` lines by severity and supports copyable evidence.
+- Console commands provide text output rather than opening a Screen.
+
+**Boundary**
+
+G16 displays diagnostic history and repair actions. It does not replace the undo engine, backup contract, or deletion rail.
+
+### B. Broken-Block Recovery
+
+**Player outcome**
+
+A broken/missing-texture block is easy to identify and has a safe fix route or a clear reason why it cannot be fixed automatically.
+
+**Experience**
+
+- `/cb showbrokenblocks` shows a calm empty state when nothing is wrong.
+- Entries identify the block, slot/source condition, and available actions.
+- Fixes re-bake from saved source when possible; source-less blocks route to retexture or an honest skip.
+- Bulk selection persists across pages and deletion goes to recoverable Trash, not hard deletion.
+
+**Requirements**
+
+- Scanner, list, confirm, and repair classes live in the diagnostics package.
+- Fix routes use G05/G10 texture work and G06/G09 recoverable deletion as appropriate.
+- G09 Safety routes link into diagnostics without duplicating this UI.
+
+**Boundary**
+
+This Group diagnoses and routes a repair. It does not redefine what a valid texture, delete, or restore means.
+
+### C. Feedback FX
+
+**Player outcome**
+
+Players can control visual and sound feedback by category, together or independently, without surprise effects.
+
+**Experience**
+
+- `/cb feedback`, `/cb particles`, and `/cb sounds` reach one Feedback surface.
+- A category master toggle changes both particle and sound values; expanded controls change either one.
+- Preview plays both channels even if a category is currently disabled.
+- Success, error, GUI, selection, bulk completion, and manual pack regeneration have distinct feedback routes.
+
+**Requirements**
+
+- Per-category particle and sound flags persist independently.
+- Master control writes both flags instead of creating a third competing state.
+- Bulk completion and manual pack regeneration use their dedicated categories rather than duplicate generic success feedback.
+- Achievement feedback remains preview-only until an achievement system supplies real triggers.
+
+**Boundary**
+
+Feedback control applies only to actual emitted effects. It does not claim a category is live when no source event exists.
+
+### D. Private Testing Center
+
+**Player outcome**
+
+The owner can test every real Testing Guide in game, see overall and per-guide progress, record professional findings, and export a clean report without exposing the system to other players.
+
+**Experience**
+
+- `/cb testing` opens only for the configured owner account on the configured server; the temporary initial server is `yoyoo.mcsh.io`.
+- The dashboard includes completed and unfinished guides, overall/per-guide percentages, test counts, filters, recent activity, and next useful test.
+- A guide view keeps the original Testing Guide read-only on the left and owner results on the right.
+- Results support pass/fail/blocked/retest, expected versus actual behavior, notes, severity, reproduction, environment, date/time, evidence, follow-up, and edit history.
+- Result entries auto-save and reappear for the same owner/server from another computer.
+- Report export produces copyable professional findings without mentioning an external AI workflow.
+
+**Requirements**
+
+- Authorization checks both UUID/account and configured server identity for every entry/action, not merely operator level.
+- Server-side storage keys results to owner and server, never modifies the official guide Markdown, and uses the same guide/section/test identifiers as the existing docs.
+- Progress derives from results without altering the guide's official verdict/status fields.
+- The UI follows the G27 Screen system while retaining the intended SrbProjects-style dashboard clarity.
+
+**Boundary**
+
+Only owner results are editable in game. Official guides and external documentation remain separate and read-only here.
+
+### E. Testing Center Teardown
+
+**Player outcome**
+
+When all testing is finished, the temporary private workspace can be removed completely and clearly.
+
+**Experience**
+
+- A plainly named destructive control requires deliberate confirmation.
+- It removes private result data, activity/history, evidence references, cached progress, and the runtime access lock.
+- The command is unavailable after runtime teardown.
+- Final project cleanup removes the temporary command, UI, configuration, assets, and source integration from CustomBlocks-B.
+
+**Requirements**
+
+- Runtime teardown targets only the Testing Center's own persisted data after final confirmation.
+- It does not delete official guide documents, unrelated backups, or project source files at runtime.
+- Source removal is tracked as an explicit final maintenance task after data teardown.
+
+**Boundary**
+
+Runtime cleanup erases testing data. Repository cleanup erases implementation; they are intentionally separate operations.
+
+## Cross-Group Contracts
+
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G04 | Error presentation | G04 routes human-facing errors; G16 stores/views diagnostic incidents. |
+| G05 | Pack failures | Pack diagnostics report status and may use normal refresh/rebuild routes without duplicating delivery. |
+| G06 | Recoverable delete | Broken-block deletion and auto-fix use the shared Recycle-Bin/Trash contract. |
+| G09 | Safety link | G09 Safety may enter G16 diagnostics; G16 does not own backup persistence. |
+| G27 | Screen system | G27 supplies IT, Feedback, and Testing Center visual/system patterns. |
+| G28 | History | G16 displays history and launches normal undo/redo routes without implementing history storage. |
+
+## Technical Contract
+
+- Incidents are structured, atomically persisted, bounded in retention, and retain actor/system, context, severity, block ID, and error details where known.
+- Diagnostic fixes use existing create/retexture, backup, Trash, and editor routes; they do not bypass their safety conditions.
+- Particle/sound feedback stores two flags per category, with master toggles writing both.
+- Testing Center authorization validates the configured owner identity and server identity on every server-side request.
+- Testing Center data is isolated from official guide Markdown and from unrelated server data; guide identifiers are read-only references.
+- Auto-save writes only changed owner results and preserves a result-history trail.
+- Runtime teardown deletes only the Testing Center data namespace; source removal is never attempted by a running server.
+
+## Deferred Scope
+
+<details><summary>Future ideas outside this Group's current plan</summary>
+
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Live achievement feedback | Needs a real achievement event source. | G16 |
+| Testing Center implementation | Design is locked; it waits for the temporary in-game build pass. | G16 with G27 |
+| Final Testing Center source removal | Happens only after owner confirms all guides/testing are complete. | G16 final cleanup |
+| Screenshot feature | Not viable on a headless server and is outside diagnostics scope. | G23 |
+
+</details>
+
+## Superseded Decisions
+
+<details><summary>Historical decisions kept only so old work does not return</summary>
+
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-21 | Incidents are unstructured text and diagnostics are separate small menus. | Incidents are structured and migrate into one IT Screen. |
+| 2026-06-21 | G09 owns broken-block scanning. | G16 owns diagnostics; G09 only links to it. |
+| 2026-06-21 | Particles and sounds are independent unrelated controls. | Feedback FX combines a master control with per-channel overrides. |
+| 2026-07-18 | A Testing Center could edit official guide instructions. | Guides remain read-only; only owner result records are editable. |
+| 2026-07-18 | A nuke action removes source files while the mod is running. | Runtime data teardown and source cleanup are separate deliberate steps. |
+
+</details>
+
+## References
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_16.md) · [All Groups](README.md)
+
+- [G04 Communication](GROUP_04_Communication.md)
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
+- [G09 Backup, Data Safety, and Trash](GROUP_09_BACKUP_SAFETY.md)
+- [G23 Player Experience](GROUP_23_PLAYER_EXPERIENCE.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [G28 Create Studio](GROUP_28_CREATE_STUDIO.md)
+- [Pre-template Group 16 snapshot](../archive/group-migration-2026-07-18/GROUP_16_DIAGNOSTICS.md)

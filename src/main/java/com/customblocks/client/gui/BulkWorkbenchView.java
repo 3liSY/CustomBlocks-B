@@ -39,14 +39,8 @@ final class BulkWorkbenchView {
     static final int RAIL_W = 104;                // the LEFT tab rail (wide enough for "Bulk Actions")
     static final int TAB_TOP = BAR_H + 8, TAB_H = 22, TAB_GAP = 3;
     static final int CONTENT_X = LX + RAIL_W + 8;  // content starts to the right of the rail
-    static final int NL_BAR_H = 30;                // always-visible natural-language command bar strip (§G07-4)
-    static final int CONTENT_Y = BAR_H + 8 + NL_BAR_H;  // content sits below the title bar + the NL bar
+    static final int CONTENT_Y = BAR_H + 8;        // content sits directly below the title bar (§G07-B: NL bar ripped)
     static final int FOOT_H = 30;
-
-    // The NL command bar's input field (a Screen widget) + its preview live in the strip above the content.
-    static int nlFieldX() { return CONTENT_X; }
-    static int nlFieldY() { return BAR_H + 8; }
-    static int nlFieldW(int width) { return Math.max(120, contentW(width) - 190); }
 
     // §G27.22 grid tile geometry: cube up top, name + id beneath (tuned for ~6 columns × 5 rows ≈ 30 tiles).
     private static final int GRID_PAD = 6, TILE_W = 72, TILE_H = 78, TILE_GAP = 6;
@@ -67,6 +61,9 @@ final class BulkWorkbenchView {
     int[] rClose, rHistory;
     // Blocks List controls.
     int[] rChipAll, rChipFav, rChipLocked, rChipSel;                 // filter chips
+    int[] rChipCategory;                                             // §G07-B Category ▾ button
+    final List<int[]> rCatOpts = new ArrayList<>();                  // §G07-B Category ▾ dropdown option rects
+    final List<String> catOptValues = new ArrayList<>();            // parallel: "" = All categories, else the name
     int[] rSort, rSortName, rSortId, rSortNewest, rSortColor;         // Sort ▾ + its 4 options
     int[] rSelAll, rSelScreen, rSelMatch, rSelLocked, rSelFav, rClearSel, rUseThese; // Select ▾ (4 opts) + Clear
     int[] rInfoClose, rInfoTick, rInfoEditor, rInfoPanel;             // left info panel (right-click a tile)
@@ -125,14 +122,6 @@ final class BulkWorkbenchView {
         // History (§G07-4 / §G27.22) — now bottom-LEFT in the footer, shows the undo depth, opens the popup.
         rHistory = new int[]{LX, footY + 6, 92, 18};
         BulkDraw.btn(ctx, tr, mx, my, "History " + s.undoHistSize(), rHistory, true, s.histOpen(), false);
-
-        // §G07-4 always-visible NL command bar: its input is a Screen widget (nlField*). The old "press Enter to
-        // parse" helper is gone (§G27.22) — draw the live parse result only once there is one.
-        String pv = s.nlPreview();
-        if (pv != null && !pv.isBlank()) {
-            int px = nlFieldX() + nlFieldW(width) + 8;
-            ctx.drawTextWithShadow(tr, Text.literal(pv), px, nlFieldY() + 4, 0xFFFFFFFF);
-        }
     }
 
     /** The green-bordered "N selected" pill beside the block count. */
@@ -166,15 +155,16 @@ final class BulkWorkbenchView {
 
         renderFoot(ctx, tr, mx, my, s, width, height);
 
-        // Sort dropdown overlays everything below the button (drawn last).
+        // Sort / Category dropdowns overlay everything below their button (drawn last).
         if (s.sortOpen()) renderSortMenu(ctx, tr, mx, my, s);
+        if (s.categoryOpen()) renderCategoryMenu(ctx, tr, mx, my, s);
 
         // Hover tooltip — only when nothing is overlaying the grid.
-        if (hoverId != null && s.detailId() == null && !s.selAllOpen() && !s.sortOpen())
+        if (hoverId != null && s.detailId() == null && !s.selAllOpen() && !s.sortOpen() && !s.categoryOpen())
             drawTileTooltip(ctx, tr, s, hoverId, mx, my);
     }
 
-    /** Filter-chip strip + the Sort ▾ button, above the grid. */
+    /** Filter-chip strip + the Category ▾ and Sort ▾ buttons, above the grid. */
     private void renderChips(DrawContext ctx, TextRenderer tr, int mx, int my, BulkWorkbenchScreen s,
                              int gx, int y, int width) {
         String f = s.browseFilter();
@@ -183,8 +173,35 @@ final class BulkWorkbenchView {
         rChipLocked = chip(ctx, tr, mx, my, gx + 128,    y, "Locked",      f.equals("locked"));
         rChipSel    = chip(ctx, tr, mx, my, gx + 190,    y, "Selected",    f.equals("selected"));
 
+        // §G07-B Category ▾ — combines (AND) with the chip above. Label shows the active category, or "Category".
+        String cat = s.browseCategory();
+        boolean catActive = cat != null && !cat.isEmpty();
+        String catLabel = (catActive ? "§f" + cat : "Category") + " ▾";
+        int catW = Math.max(90, tr.getWidth(catLabel.replace("§f", "")) + 14);
+        rChipCategory = new int[]{gx + 262, y, catW, CHIP_ROW_H - 2};
+        BulkDraw.btn(ctx, tr, mx, my, catLabel, rChipCategory, true, catActive || s.categoryOpen(), false);
+
         rSort = new int[]{contentRight(width) - 116, y, 116, CHIP_ROW_H - 2};
         BulkDraw.btn(ctx, tr, mx, my, "Sort: " + sortLabel(s.browseSort()) + " ▾", rSort, true, s.sortOpen(), false);
+    }
+
+    /** The Category ▾ dropdown: "All categories" + every live category, checked against browseCategory. */
+    private void renderCategoryMenu(DrawContext ctx, TextRenderer tr, int mx, int my, BulkWorkbenchScreen s) {
+        rCatOpts.clear(); catOptValues.clear();
+        List<String> cats = new ArrayList<>(ClientSlotCache.categories());
+        cats.removeIf(c -> c == null || c.isEmpty());
+        cats.sort(String::compareToIgnoreCase);
+        int x = rChipCategory[0], y = rChipCategory[1] + rChipCategory[3] + 2;
+        int w = Math.max(rChipCategory[2], 120), h = 15;
+        int rows = cats.size() + 1;                       // +1 for "All categories"
+        ctx.fill(x - 1, y - 1, x + w + 1, y + rows * h + 1, 0xFF000000);
+        String active = s.browseCategory() == null ? "" : s.browseCategory();
+        rCatOpts.add(opt(ctx, tr, mx, my, x, y, w, h, "All categories", active.isEmpty()));
+        catOptValues.add("");
+        for (int i = 0; i < cats.size(); i++) {
+            rCatOpts.add(opt(ctx, tr, mx, my, x, y + (i + 1) * h, w, h, cats.get(i), active.equalsIgnoreCase(cats.get(i))));
+            catOptValues.add(cats.get(i));
+        }
     }
 
     private int[] chip(DrawContext ctx, TextRenderer tr, int mx, int my, int x, int y, String label, boolean active) {
@@ -259,19 +276,25 @@ final class BulkWorkbenchView {
         return rows;
     }
 
-    /** Narrow by the active filter chip (§G27.22): All · Favorites · Locked · Selected. */
+    /**
+     * Narrow by the active filter chip (§G27.22: All · Favorites · Locked · Selected) AND the Category ▾
+     * choice (§G07-B) — both conditions must hold, so "Locked + category red" shows only locked red blocks.
+     */
     private List<ClientSlotCache.Entry> applyChip(List<ClientSlotCache.Entry> rows, BulkWorkbenchScreen s) {
         String f = s.browseFilter();
-        if (f.equals("all")) return rows;
+        String cat = s.browseCategory();
+        boolean catActive = cat != null && !cat.isEmpty();
+        if (f.equals("all") && !catActive) return rows;
         List<ClientSlotCache.Entry> out = new ArrayList<>();
         for (ClientSlotCache.Entry e : rows) {
-            boolean keep = switch (f) {
+            boolean chip = switch (f) {
                 case "fav"      -> s.fav().contains(e.id());
                 case "locked"   -> s.locked().contains(e.id());
                 case "selected" -> s.ticked().contains(e.id());
                 default         -> true;
             };
-            if (keep) out.add(e);
+            boolean catOk = !catActive || (e.category() != null && e.category().equalsIgnoreCase(cat));
+            if (chip && catOk) out.add(e);
         }
         return out;
     }

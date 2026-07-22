@@ -51,13 +51,8 @@ public final class CreationCommands {
             + "background was cleaned to black. For a crisper result, grab the site's real " + CbFmt.OK + "transparent PNG" + CbFmt.RESET + " download.";
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
-        // Old-project format the players already know:
-        //   /cb create <id>                  → block, name = id, untextured
-        //   /cb create <id> <name>           → block with a display name, untextured
-        //   /cb create <id> <name> <url>     → block + texture in one command
-        // Name is a quoted string so a multi-word name + URL can coexist
-        //   (single-word names need no quotes, e.g. /cb create heart Heart https://...).
-        // Group 27 §G27.6 — bare /cb create (no args) opens the Block Creation Studio (CreationStudioBridge).
+        // Forms: /cb create <id> [<name>] [<url>] — id-only (name=id), +name, or +name+url (texture in one
+        // go); name is quoted so a multi-word name + url coexist. Bare /cb create → Block Creation Studio (G27).
         root.then(CommandManager.literal("create")
                 .executes(ctx -> CreationStudioBridge.openStudio(ctx.getSource()))
                 .then(CommandManager.argument("id", StringArgumentType.word())
@@ -247,14 +242,18 @@ public final class CreationCommands {
             Chat.lockedError(src, id);
             return 0;
         }
+        // No-op guard (G04-3): rename to the current name used to fake-succeed — answer honestly, no undo (like /cb reid).
+        if (name.equals(before.displayName())) {
+            Chat.info(src, "\"" + id + "\" is already named \"" + name + "\" — nothing to change.");
+            return 0;
+        }
         SlotData d = SlotManager.rename(id, name);
         if (d == null) {
             Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
             return 0;
         }
         UndoManager.recordModify(actor(src), before, d, "rename");
-        Chat.successWith(src, "Renamed \"" + id + "\" to \"" + name + "\".",
-                Chat.editButton(id), Chat.undoButton());
+        Chat.successWith(src, "Renamed \"" + id + "\" to \"" + name + "\".", Chat.editButton(id), Chat.undoButton());
         syncHud(src);
         return 1;
     }

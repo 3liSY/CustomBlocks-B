@@ -10,8 +10,15 @@
  *
  * This one renderer is registered for EVERY slot item, but it only paints off-atlas slots: ServerPackGenerator
  * gives static AND animated off-atlas slots a {@code builtin/entity} item model (which is what routes an item
- * to a DynamicItemRenderer); shaped / per-face items keep their atlas item model and both caches return null,
- * so this draws nothing for them.
+ * to a DynamicItemRenderer); a per-face / rotated item keeps its atlas item model and both caches return null,
+ * so this draws nothing for it.
+ *
+ * G08 §B: a SHAPED slot's icon is NO LONGER drawn here. It moved to {@link ShapedItemIcon} +
+ * {@link com.customblocks.mixin.ShapedItemMixin} (2026-07-22) so it is drawn pack-INDEPENDENTLY — this
+ * DynamicItemRenderer only fires for a {@code builtin/entity} item model, which the SERVER authors on a
+ * dedicated server, so the shape draw could no-op there (a shaped block showed a full cube in hand). The
+ * mixin cancels {@code renderItem} before this renderer runs for a shaped slot, so here we only draw the
+ * plain cube for the full / cross / painted / animated cases.
  *
  * Depends on: SlotBlock (slot index off the BlockItem), StaticFrameCache, AnimFrameCache, AnimSlotBER (drawCube).
  * Called by:  CustomBlocksClient (BuiltinItemRendererRegistry.register).
@@ -22,7 +29,6 @@ import com.customblocks.block.SlotBlock;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.fabricmc.fabric.api.client.rendering.v1.BuiltinItemRendererRegistry;
-import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
@@ -75,6 +81,14 @@ public final class SlotItemRenderer implements BuiltinItemRendererRegistry.Dynam
             if (tex == null) return;
         }
         VertexConsumer vc = vcp.getBuffer(RenderLayer.getEntityCutoutNoCull(tex));
+
+        // The SHAPED icon is no longer drawn here. It moved to {@link ShapedItemIcon} + {@link
+        // com.customblocks.mixin.ShapedItemMixin}, which hooks ItemRenderer.renderItem at HEAD and draws the
+        // shape pack-INDEPENDENTLY (the dedicated-server fix, 2026-07-22): this DynamicItemRenderer only fires
+        // for a builtin/entity item model, which the SERVER authors on a dedicated server, so it could no-op
+        // there and leave a shaped block showing a full cube. The mixin cancels renderItem BEFORE the model
+        // (and therefore this renderer) runs for a shaped slot, so we only ever reach here for the FULL-cube /
+        // cross / painted / animated cases — all of which draw the plain cube below.
         AnimSlotBER.drawCube(matrices, vc, light, overlay, 0f, 1f, 0f, 1f);
     }
 }

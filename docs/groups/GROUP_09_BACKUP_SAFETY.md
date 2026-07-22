@@ -1,320 +1,201 @@
-# Group 09 — Backup, Data Safety & First-Boot Migration
+# Group 09 - Backup, Data Safety, and Trash
 
-> **Prerequisite:** Group 01 (Legacy Audit) signed off. Phase 2 (Persistence) build-verified.
->
-> **Objective:** Build the unified `/cb backup` system (replacing the old unreliable snapshot system). Restore the trash browser and broken-blocks report. Execute first-boot data migration from old CustomBlocks format. All data paths updated to `config/customblocks/data/`.
->
-> **Source issues:** Group C (backup system), Group D (trash & recovery), first-boot MigrationManager (§Server Config Folder Structure in All_Groups.md)
->
-> **CRITICAL:** The old snapshot system was completely unreliable (reverted to broken states on restart). This is a **ground-up rebuild** — do NOT patch old code. Design for reliability first.
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
+> Group 09 protects a server's CustomBlocks data before risky changes and provides a calm, recoverable path back when something goes wrong.
+
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_09.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-## UI medium audit (2026-07-09) — locked 2026-07-12
-
-Whole group → **Screens**: BackupMenu (+ BackupConfirmMenu folded in), TrashMenu (+ TrashEntryMenu folded
-in, real deleted-block texture preview via `SlotItemRenderer` instead of the missing-texture placeholder
-icon), and SafetyMenu as the hub Screen (tiles: Backup / Trash / Broken-Blocks — the last tile links out
-to G16's diagnostics screen, code no longer lives here).
-
-Built to the **Group 27 `CbScreenTemplate` standard** (`GROUP_27_SCREENS.md`): locked red `#FF0000` /
-black `#000000` / lime `#40FF00` palette (red = selected/active, lime = success only, never mixed), dark
-title-bar strip + gold-slot-now-red 1px border, dual hint lines (context + universal shortcuts), `[?]`
-help button, bottom action bar, opaque confirm modals (no bleed-through), save flashes lime + CB toast
-(no chat). This **overrides** G27's older 2026-07-04 "leave backup/trash as chest-menus" note — the
-2026-07-09 TG9 audit is the newer decision.
-
-Mockup approved 2026-07-12 (owner review, overlap bug fixed — each panel now `display:none` unless
-active, bounded-height scroll container).
-
-**BrokenBlocksMenu / BrokenConfirmMenu / BrokenBlockScanner move fully to Group 16** as part of this
-rebuild — see §7 below and `GROUP_16_DIAGNOSTICS.md` (already documents G16 ownership; the physical
-package move + command repoint happens in this build).
-
-## What this group restores
-
-| Area | Old CustomBlocks | New CustomBlocks-B | This Group |
-|---|---|---|---|
-| Backup system | Unreliable snapshots with random restore failures | `BackupManager` stub | Reliable ground-up rebuild with named saves |
-| `/cb backup` commands | `backup create/list/restore/delete/expiry` | Not functional | Fully restored |
-| Panic mode | `/cb panic` — emergency rollback | Missing | Restored |
-| Recover | `/cb recover` — restore from latest backup | Missing | Restored |
-| Trash browser | `/cb deletedblocks` — browse recently deleted blocks | Not accessible | Restored as Screen (TrashMenu) |
-| ~~Broken blocks report~~ | `/cb showbrokenblocks` | **MOVED → G16** (diagnostics, decision B 2026-06-21) | — |
-| Data paths | `config/customblocks/*.json` (root) | Mixed paths | All normalized to `config/customblocks/data/` |
-| Auto-backup | Timed automatic backup every 30 min | Not running | Restored, interval configurable |
-| Cloud backup | Sync to CustomBlocks Vault | Missing | Restored (depends on Group 20) |
-| First-boot migration | N/A | Old `.gz` files present | MigrationManager converts old format on first boot |
-
----
-
-## What this group covers
-
-| Feature | Commands |
-|---|---|
-| Manual backup | `/cb backup save [name]` |
-| Backup list | `/cb backup list` |
-| Restore backup | `/cb backup restore <name>` |
-| Delete backup | `/cb backup delete <name>` |
-| Emergency rollback | `/cb backup panic` |
-| Auto-backup config | `autoBackupInterval` (default 30 min) |
-| Trash browser | `/cb deletedblocks` |
-| Trash pin | Pin items to prevent auto-delete |
-| ~~Broken blocks~~ | **MOVED → G16** (`/cb showbrokenblocks` is diagnostics) |
-| Recover | `/cb recover` |
-| Safety check | `/cb safety` |
-| Data migration | Automatic on first boot |
-| Storage location | `config/customblocks/backups/` |
+## Purpose
 
----
+Backups must be trustworthy: complete, atomically written, clearly named, safe to restore after a restart, and impossible to apply halfway over live data. Trash must let the owner review recoverable deleted blocks without reimplementing the G06 deletion system.
 
-## Implementation Requirements
+This Group owns backup lifecycle, safety controls, automatic backup policy, and the backup/trash surfaces. It does not own the shared deletion rail, broken-block diagnostics, cloud transport, or common Screen framework.
 
-### 1. Backup System — Reliability Rules
+## Ownership
 
-- Every backup is written atomically: write to a temp file, then rename (same as SlotDataStore).
-- Every backup includes: all `SlotData`, all textures (or texture checksums + originals), config snapshot, and a timestamp.
-- Backup names: auto-generated as `auto-YYYYMMDD-HHMMSS` for timed backups, or developer-named for manual saves.
-- Backups stored in `config/customblocks/backups/`.
-- Restoring a backup: write to temp location, verify integrity, then swap — never overwrite live data mid-write.
+| Owns | Does not own |
+| --- | --- |
+| Manual backup, load, delete, list, auto-backup, and prune behavior | Shared Recycle-Bin deletion and marker behavior: G06 |
+| Backup file integrity and the backup data layout | Broken-block diagnostics and repair: G16 |
+| Backup and Trash user flows | Common Screen framework and visual system: G27 |
+| Backup safety boundary for Set All and other callers | Cloud/Vault transport: G20 |
+| Configured backup interval and retention rules | Bulk selection and mutation behavior: G07 |
 
-### 2. `/cb backup save [name]`
+## Direction
 
-Creates a named point-in-time backup. If no name given, auto-generates one.
+Every restore starts from a complete, verified backup and protects the current state with a safety copy before replacing it. Write and restore operations are atomic, serialized, and explicit about destructive consequences. Player Screens are calm front doors to the same command contracts; server-console use stays textual.
 
-### 3. `/cb backup restore <name>`
+Trash is the recovery view over G06's Recycle-Bin records. It shows what is recoverable and routes Restore, pin, and Empty through that shared system rather than maintaining an independent deleted-block store.
 
-Restores the server to the state captured in that backup.
-- Requires `/cb confirm` (always, regardless of `bulkConfirmThreshold`).
-- Triggers full pack rebuild after restore.
-- Server pauses block modifications during restore.
+## Locked Decisions
 
-### 4. `/cb backup panic`
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-27 | Trash is the recovery half of G06's Recycle-Bin system. | Restore, marker healing, slot reservation, and Empty use one shared contract. |
+| 2026-07-09 | Backup, Trash, and Safety use Screens rather than chest menus. | Their player experience follows the G27 Screen pattern. |
+| 2026-07-12 | A destructive backup load always asks for confirmation and creates a pre-restore safety copy. | Live data is never overwritten casually or mid-write. |
+| 2026-07-12 | Broken-block reporting belongs to G16. | G09 may link to diagnostics but does not own scanner or repair code. |
+| 2026-07-12 | First-boot migration is removed until a real legacy-data case exists. | No speculative migration format or code is kept alive. |
+| 2026-07-12 | Automatic backups prune only automatic entries. | Manual named backups remain intact while scheduled retention stays bounded. |
 
-Emergency rollback: immediately restores the most recent backup without a confirmation prompt. Use when something has gone catastrophically wrong.
+## Feature Plan
 
-### 5. Auto-Backup
+### A. Reliable Backup Lifecycle
 
-Config field: `autoBackupInterval` (default 30 min). Timer fires on a daemon thread. Runs silently — no chat message unless configured. Old auto-backups beyond `autoBackupKeepCount` (default 10) are pruned automatically.
+**Player outcome**
 
-### 6. Trash Browser — `/cb deletedblocks`
+An owner can save a named point in time, find it later, load it safely, recover from the latest copy, or remove only the backup they intend.
 
-Opens `TrashMenu` (Screen, not built — see audit note above) listing recently deleted blocks (sorted newest first):
-- Rows show: block ID, display name, deleted timestamp, texture preview.
-- Click a row → sub-menu: "Restore", "Pin", "Delete permanently".
-- Pinned items are never auto-pruned.
-- Auto-delete timer: configurable `trashRetentionDays` (default 30).
+**Experience**
 
-> 🔁 **2026-06-27 — Trash is now the recovery half of the unified Recycle-Bin deletion system.**
-> Behaviour is owned by **[G06-14](GROUP_06_TOOLS.md#g06-14--unified-recycle-bin-deletion-system-replaces-the-removed-system)**
-> (spec there). Key changes vs the old trash:
-> - **Delete** moves the block here AND turns its placed copies into `Deleted: <name>` markers. The
->   block's slot number is **reserved** (kept out of reuse) while it sits in Trash.
-> - **Restore** re-creates the block on **any free slot number** (not necessarily the old one) and the
->   `Deleted: <name>` markers in the world resolve **by name** back into it — even after a restart.
-> - **Delete permanently (Empty)** frees the reserved slot number for reuse and tombstones that block's
->   leftover markers (a generic `(Deleted)` marker that won't revive on a later same-name create).
->
-> This replaces the old behaviour where Restore made a brand-new slot and left the placed copies grey
-> and orphaned. The old `(Removed)` block / `DeletedSlots` no-reuse / chunk-scanner are removed.
+- `/cb backup save [name]` creates a named save or a clear timestamp-style name.
+- `/cb backup list` shows recent backups with useful metadata, newest first.
+- `/cb backup load <name>` shows the consequence, asks for confirmation, and refreshes the recovered game data.
+- `/cb backup delete <name>` affects backup data only, never live blocks.
+- `/cb backup` opens the Backup Screen for a player and returns text from a server console.
 
-### 7. ~~Broken Blocks Report~~ — MOVED → G16 (physical move locked 2026-07-12)
+**Requirements**
 
-`/cb showbrokenblocks` is owned by **G16** (diagnostics) as of decision B (2026-06-21) — it scans for
-missing textures / broken registrations and feeds the IT Chest auto-fix flow. Spec + test live in
-`GROUP_16_DIAGNOSTICS.md` / `GROUP_16_TESTING_GUIDE.md` §E.
+- Each backup includes block data, textures or source metadata, configuration snapshot, manifest, and timestamp.
+- Writes use a temporary location followed by an atomic rename.
+- Loading verifies the chosen backup before swapping it into place.
+- Restore serializes with block mutations and requests the required pack/client refresh after success.
+- Duplicate and invalid names are refused before any file is created.
 
-Ownership moved 2026-06-21 but the code (`core/BrokenBlockScanner`, `gui/chest/BrokenBlocksMenu`,
-`gui/chest/BrokenConfirmMenu`, related command handlers) never physically relocated out of G09's
-package. This Screen rebuild is doing that move now: files → a diagnostics package, `/cb
-showbrokenblocks` command registration repointed, TG9's old §B rows struck (no rows kept here — see
-`GROUP_09_TESTING_GUIDE.md`). SafetyMenu's Broken-Blocks tile keeps a link/tile that opens G16's screen;
-it no longer owns any of the underlying code.
+**Boundary**
 
-### 8. ~~First-Boot Migration (MigrationManager)~~ — STRUCK, dead scope (2026-07-12)
+G09 guarantees a reliable data boundary. It does not define how a particular tool or block mutation works.
 
-Verified against source: `core/TextureStore.java` has only ever read/written `slot_N.png` — no `.dat`
-handling, no gzip branch, no migration code path anywhere in the tree. It was never `.dat`; there is no
-legacy `slots.json.gz` / `categories.json` format expected in this codebase. No `MigrationManager` class
-exists, and none is being built. Removed from TG9's Planned/Parked list. If a real legacy-data scenario
-ever surfaces, it gets a fresh spec + session — not this one.
+### B. Automation
 
-### 9. Data Paths — All Classes Must Use
+**Player outcome**
 
-All data files now live in `config/customblocks/data/`. See All_Groups.md §Server Config Folder Structure for the full path constants table. Violating classes must be updated.
+The owner gets quiet scheduled protection without hand-running backups, on top of the normal confirm-gated load flow in §A.
 
----
+**Experience**
 
-## Setup
+- Auto-backup uses timestamp-style names and runs quietly on the configured schedule.
+- Setting the interval to zero disables scheduling.
+- The configured keep count removes only older automatic entries.
+- Backup configuration is protected by the server-config confirmation gate.
 
-Create some test blocks before testing backup features:
-```
-/cb create g09a BackupTest1
-/cb create g09b BackupTest2
-/cb setglow g09a 8
-```
+**Requirements**
 
----
+- Auto-backup scheduling is bounded and does not block normal server work.
+- The default interval and keep count are persisted configuration, not hardcoded one-off behavior.
+- Pruning distinguishes automatic saves from manual names and from pinned recovery records.
+- A server restart does not make valid backups unrecoverable.
 
-## Test G09.1 — Manual backup save
+**Boundary**
 
-```
-/cb backup save pre-test
-```
+Automation runs the same §A save path on a schedule; it is not a shortcut around permission, confirmation, or pack-consistency rules.
 
-**Expected:** `Backup "pre-test" saved. (2 block(s), config, textures)`
+### C. Trash and Recycle-Bin Recovery
 
-Check `config/customblocks/backups/` — a folder or file named `pre-test` exists.
+**Player outcome**
 
-**Pass:** Backup created with confirmation message.
-**Fail:** Error, or no backup file created.
+A deleted block is visible, recoverable, and clearly distinguishable from one that has been permanently emptied.
 
----
+**Experience**
 
-## Test G09.2 — Backup list
+- `/cb trash` opens a Screen with deletion time and the saved block record.
+- Restore returns the block through the G06 Recycle-Bin contract and heals eligible markers.
+- An ID collision refuses restore cleanly rather than overwriting a live definition.
+- Pin protects an entry from retention pruning.
+- Empty permanently removes the recovery record without touching unrelated live blocks.
 
-```
-/cb backup list
-```
+**Requirements**
 
-**Expected:** List shows at least `pre-test` with creation timestamp, block count, and a `[restore]` button.
+- Trash reads the persisted records created by G06 deletion rather than duplicating them.
+- Restore and Empty call the shared G06 services for marker and slot behavior.
+- The Trash Screen keeps the current entry selected after a safe refresh where practical.
+- Screens use a real item/texture preview route where that data is available, never a misleading placeholder.
 
-**Pass:** Backup appears in list with correct metadata.
-**Fail:** List empty, or backup missing.
+**Boundary**
 
----
+G09 presents recovery. G06 remains the authority for delete conversion, marker identity, slot reservation, and world healing.
 
-## Test G09.3 — Backup restore
+### D. Data Layout and External Handoff
 
-1. Delete a block:
-   ```
-   /cb delete g09a
-   ```
-2. Restore:
-   ```
-   /cb backup restore pre-test
-   ```
-3. Confirm:
-   ```
-   /cb confirm
-   ```
+**Player outcome**
 
-**Expected:** `Restored from backup "pre-test". 2 block(s) restored.` — `g09a` is back with glow 8.
+Backup and runtime data have clear local homes, and future remote backup can be added without weakening local restore safety.
 
-**Pass:** Block restored correctly with correct attributes.
-**Fail:** Block not restored, wrong attributes, or restore crashes.
+**Experience**
 
----
+- Runtime data uses the established `config/customblocks/data/` layout.
+- Backups live under `config/customblocks/backups/`.
+- A future Vault handoff keeps local backups as the primary recovery source.
 
-## Test G09.4 — Restore is reliable across restart
+**Requirements**
 
-1. `/cb backup save restart-test`
-2. `/stop` (restart server)
-3. `/cb delete g09b`
-4. `/cb backup restore restart-test` → `/cb confirm`
+- Storage classes use the central data-path constants rather than inventing root-level paths.
+- Any cloud export is a copy/handoff operation; it cannot silently replace the local backup lifecycle.
+- File names and manifests remain valid on the supported server filesystem.
 
-**Expected:** `g09b` restored after restart.
+**Boundary**
 
-**Pass:** Backup survived restart and restores correctly.
-**Fail:** Backup missing after restart, or restore fails.
+G09 owns local safety. G20 owns remote integration and credentials.
 
----
+## Cross-Group Contracts
 
-## Test G09.5 — Auto-backup fires
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G06 | Recycle-Bin and Trash | G09 displays and requests recovery; G06 performs deletion, restore, Empty, marker healing, and slot handling. |
+| G07 | Set All safety | G07 routes Set All through G09's backup/apply safety boundary. |
+| G16 | Diagnostics | Broken-block findings and repairs route to G16, while safety surfaces may link there. |
+| G20 | Vault handoff | A remote copy uses the reliable local backup artifact and cannot bypass it. |
+| G27 | Screens | Backup and Trash use the shared Screen framework while keeping G09 command/data behavior. |
+| G05 | Pack refresh after load | A successful load uses the normal generated-pack delivery and client refresh route. |
 
-Set `autoBackupInterval = 2` (minutes) in config for testing. Wait 2 minutes.
+## Technical Contract
 
-```
-/cb backup list
-```
+- Backup artifacts are written to a temporary target, verified, and atomically promoted to their final name.
+- A backup contains data required to reconstruct block definitions and their related configuration/assets without reading partially live state.
+- Load makes a current-state safety copy, verifies the target artifact, serializes mutations, swaps state safely, and starts the normal pack refresh path.
+- Automatic retention only prunes automatic backups; manual and pinned records are not swept by that rule.
+- Trash data is a view of persisted Recycle-Bin records, not a second deletion database.
+- Console command paths do not attempt to open Screens.
+- Storage paths remain under `config/customblocks/data/` and `config/customblocks/backups/` through shared path constants.
 
-**Expected:** An auto-generated backup (named `auto-YYYYMMDD-HHMMSS`) appears in the list.
+## Deferred Scope
 
-Restore `autoBackupInterval` to 30 after this test.
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-**Pass:** Auto-backup created without any manual command.
-**Fail:** No auto-backup appears.
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Vault/cloud backup handoff | Depends on the G20 remote integration contract and credentials flow. | G20 with G09 |
+| Further Trash browsing polish | The core recovery and G06 alignment come before optional presentation additions. | G09 with G27 |
+| New legacy-data migration | No real legacy format is present in this codebase. | New group after evidence exists |
 
----
+</details>
 
-## Test G09.6 — Trash browser ⏳ (blocked — Screen not built)
+## Superseded Decisions
 
-```
-/cb delete g09b
-/cb deletedblocks
-```
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
-**Expected:** `TrashMenu` Screen opens. `g09b` appears as a deleted block row with: ID, name, deletion timestamp. "Restore", "Pin", "Delete permanently" buttons on click.
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-27 | Trash was a separate deleted-block store with old slot behavior. | It is the recovery surface for G06's unified Recycle-Bin rail. |
+| 2026-07-09 | Backup and Trash were chest-menu targets. | They use the shared G27 Screen pattern. |
+| 2026-07-12 | G09 owned broken-block scanning and repair. | Diagnostics belongs to G16. |
+| 2026-07-12 | A first-boot migration converted speculative gzip or `.dat` formats. | The feature is removed until a real legacy format is found. |
+| 2026-07-19 | `/cb recover` and `/cb backup panic` were planned no-confirm/shortcut emergency routes. | Scrapped as redundant with `/cb backup load <newest>` through the existing confirm-gated safe-restore rail; never implemented. |
+| 2026-07-19 | `/cb backup restore` was a hidden alias for `/cb backup load`. | Removed as a duplicate literal; `load` is the only verb. |
 
-**Pass:** Screen opens, g09b visible, all action buttons present.
-**Fail:** Empty, g09b not listed, or old chest GUI opens instead.
+</details>
 
----
+## References
 
-## Test G09.7 — Restore from trash
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_09.md) · [All Groups](README.md)
 
-In `/cb deletedblocks`, click `g09b` → click "Restore".
-
-**Expected:** `g09b` is restored to the block registry. GUI closes or refreshes. `/cb list` shows g09b.
-
-**Pass:** Block restored from trash.
-**Fail:** Restore button doesn't work.
-
----
-
-## Test G09.8 — ⛔ MOVED → G16
-
-The broken-blocks report test (`/cb showbrokenblocks`) now lives in `GROUP_16_DIAGNOSTICS.md` (decision B).
-Skip here.
-
----
-
-## Test G09.9 — First-boot migration (if old data present)
-
-*(Skip if no old-format data exists in the server folder.)*
-
-Check: does `config/customblocks/data/slots.json.gz` exist? If yes:
-
-1. Install the new JAR for the first time.
-2. Start the server.
-
-**Expected:** Server log shows: `[CustomBlocks] Running first-boot migration…` followed by conversion steps. After startup, `slots.json.gz` is gone, `slots.json` exists with blocks in new format (`"blocks"` key, `"glow"` field).
-
-**Pass:** Migration runs without errors. All old blocks accessible in new format.
-**Fail:** Migration errors, or blocks missing after migration.
-
----
-
-## Group 09 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G09.1 | Manual backup created | ⬜ |
-| G09.2 | Backup list shows correct metadata | ⬜ |
-| G09.3 | Backup restore works correctly | ⬜ |
-| G09.4 | Backup survives server restart | ⬜ |
-| G09.5 | Auto-backup fires on schedule | ⬜ |
-| G09.6 | Trash browser shows deleted blocks | ⬜ |
-| G09.7 | Restore from trash works | ⬜ |
-| ~~G09.8~~ | ~~Broken blocks detected and reported~~ | ⛔ MOVED → G16 (decision B) |
-| G09.9 | First-boot migration converts old data | ⬜ |
-
-**Group 09 passes when backups are reliable, trash is browsable, broken blocks are detectable, and migration runs cleanly.**
-
-If anything shows ❌ — paste:
-1. The exact command or action
-2. What happened vs what was expected
-3. Full `latest.log` from the affected session start
-
----
-
-## Cleanup
-
-```
-/cb delete g09a
-/cb delete g09b
-/cb backup delete pre-test
-/cb backup delete restart-test
-```
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
+- [G07 Bulk Operations](GROUP_07_BULK_OPERATIONS.md)
+- [G16 Diagnostics](GROUP_16_DIAGNOSTICS.md)
+- [G20 External Integrations](GROUP_20_EXTERNAL_INTEGRATIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Pre-template Group 09 snapshot](../archive/group-migration-2026-07-18/GROUP_09_BACKUP_SAFETY.md)

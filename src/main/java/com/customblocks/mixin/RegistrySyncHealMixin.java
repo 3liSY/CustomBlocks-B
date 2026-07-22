@@ -25,6 +25,8 @@
 package com.customblocks.mixin;
 
 import com.customblocks.CustomBlocksMod;
+import com.customblocks.client.kick.CbKick;
+import com.customblocks.client.kick.CbKickInfo;
 import com.customblocks.core.MaxSlotsHealer;
 import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import net.fabricmc.fabric.impl.registry.sync.RegistrySyncManager;
@@ -63,7 +65,13 @@ public class RegistrySyncHealMixin {
         if (serverMax <= localMax) return;       // local registry already covers the server -> no kick
 
         MaxSlotsHealer.ensureAtLeast(serverMax);                                       // single write path
-        throw new RemapException(MaxSlotsHealer.restartScreenText(serverMax, localMax)); // friendly screen
+
+        // §G04-5: arm the unified kick screen (What/Why/How + Technical Details + Copy Report) and throw
+        // the same info as the coloured disconnect reason — the DisconnectedScreenMixin swaps in
+        // CbKickScreen; the reason() Text is the fallback vanilla shows if that swap ever doesn't run.
+        CbKickInfo info = CbKick.registryDesync(serverMax, localMax);
+        CbKick.arm(info);
+        throw new RemapException(info.reason());
     }
 
     /** Highest customblocks:slot_N index across the server's remap map; -1 if none. */

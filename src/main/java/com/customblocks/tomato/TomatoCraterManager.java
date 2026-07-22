@@ -1,22 +1,26 @@
 /**
  * TomatoCraterManager.java — Group 32 (Explosive Tomato) Phase B ("Boom").
  *
- * The anti-grief layer: the tomato craters like TNT, then the crater RESTORES after
- * {@code tomatoRestoreSeconds}. In-memory only and lost on restart, intentionally (owner-locked) — a
- * server stop clears it so craters never leak across worlds.
+ * The anti-grief layer: the tomato craters like TNT, then the crater RESTORES after {@code tomatoRestoreSeconds}.
+ * Owner-locked root-safety rework (2026-07-17): restore is now PERSISTED (survives restart, via
+ * {@link TomatoCraterState}), BATCHED (a hard per-tick budget, never a whole crater in one tick), CHUNK-SAFE
+ * (never force-loads a chunk — a block in an unloaded chunk simply waits), and ISOLATED (one bad position can't
+ * stop the rest or crash the sweep).
  *
- * Three correctness rules, all owner-locked:
- *   • FIRST-SNAPSHOT-WINS — a later blast must never record a block an active crater already owns, or the
- *     later restore would write that block back as "original" over the first crater's terrain and leave a
- *     permanent hole. A per-world OWNED set enforces it: a position is claimed by exactly one crater.
- *   • NEVER OVERWRITE A PLAYER'S BUILD — at restore, a position is only refilled if it is still AIR (what
- *     the blast left). If a player has since built there, it is skipped.
+ * Correctness rules, all owner-locked:
+ *   • FIRST-SNAPSHOT-WINS — a later blast never records a block an active crater already owns, or the later
+ *     restore would write a crater back as "original" over the first crater's terrain and leave a permanent hole.
+ *     A per-world in-memory OWNED set (rebuilt from the persisted craters on first access) enforces it.
+ *   • FARM ORDER (E11) — each crater's queue is ordered supports-first / plants-last, so terrain/tilled soil/water
+ *     return before the crops that sit on them. The full BlockState snapshot carries each crop's exact growth stage.
+ *   • PLAYER BUILDS SURVIVE — at restore a position is refilled only where it is AIR, sauce, or a BLAST-CAUSED
+ *     flowing fluid; sauce and flowing water can no longer block a refill (D1). Anything deliberately placed by a
+ *     player — a solid block, a container, a source fluid — is left exactly where it is.
  *   • BLOCKS ONLY — entities (item frames, boats, …) are not tracked; the anti-grief promise covers blocks.
  *
- * All access is on the server thread (detonation + the END_SERVER_TICK sweep), so the plain collections are
- * safe.
+ * All access is on the server thread (detonation + the END_SERVER_TICK sweep), so the plain collections are safe.
  *
- * Depends on: CustomBlocksConfig (tomatoRestoreSeconds), Fabric ServerTickEvents + ServerLifecycleEvents
+ * Depends on: CustomBlocksConfig, TomatoCraterState, SauceManager (clearSauceForRestore), SauceRegistry, Fabric events
  * Called by:  CustomBlocksMod.onInitialize (init), TomatoEntity.detonate (snapshotBox + recordCrater)
  */
 package com.customblocks.tomato;
@@ -25,6 +29,8 @@ import com.customblocks.CustomBlocksConfig;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.minecraft.block.BlockState;
+import net.minecraft.block.FluidBlock;
+import net.minecraft.block.PlantBlock;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.world.ServerWorld;
@@ -43,19 +49,17 @@ public final class TomatoCraterManager {
 
     private TomatoCraterManager() {} // static-only
 
-    /** One pending crater: the world it lives in, its captured original states, and the tick it restores at. */
-    private record Crater(RegistryKey<World> worldKey, Map<BlockPos, BlockState> blocks, long restoreAtTick) {}
+    /** Root safety (owner-locked): the whole server restores at most this many blocks per tick, across all craters. */
+    private static final int RESTORE_BUDGET_PER_TICK = 128;
 
-    /** Craters waiting to restore, in record order (server thread only). */
-    private static final List<Crater> PENDING = new ArrayList<>();
-    /** Positions owned by an ACTIVE crater, per world — the first-snapshot-wins guard. */
+    /** Positions owned by a pending crater, per world — the first-snapshot-wins guard, rebuilt from the save on demand. */
     private static final Map<RegistryKey<World>, Set<BlockPos>> OWNED = new HashMap<>();
 
-    /** Wire the restore sweep + the world-stop clear. Call once from onInitialize. */
+    /** Wire the restore sweep + the server-stop cache clear. Call once from onInitialize. */
     public static void init() {
         ServerTickEvents.END_SERVER_TICK.register(TomatoCraterManager::tick);
-        // In-memory only (owner-locked): a stop clears everything so a crater never carries into the next world.
-        ServerLifecycleEvents.SERVER_STOPPED.register(server -> { PENDING.clear(); OWNED.clear(); });
+        // The craters themselves persist with the world; only the derived in-memory OWNED cache is dropped here.
+        ServerLifecycleEvents.SERVER_STOPPED.register(server -> OWNED.clear());
     }
 
     /**
@@ -79,47 +83,96 @@ public final class TomatoCraterManager {
 
     /**
      * Record a crater for restore. {@code originals} is {destroyed pos → its ORIGINAL state}. Positions already
-     * owned by an active crater are dropped here (first-snapshot-wins), so overlapping blasts never fight over a
-     * block. Restore is scheduled {@code tomatoRestoreSeconds} out; 0 seconds means "never restore" (pure grief).
+     * owned by a pending crater are dropped (first-snapshot-wins). The kept positions are queued supports-first /
+     * plants-last (E11) and persisted with the world; restore begins {@code tomatoRestoreSeconds} out.
      */
     public static void recordCrater(ServerWorld world, Map<BlockPos, BlockState> originals) {
         int seconds = CustomBlocksConfig.tomatoRestoreSeconds;
         if (seconds <= 0 || originals.isEmpty()) return;
 
-        RegistryKey<World> key = world.getRegistryKey();
-        Set<BlockPos> owned = OWNED.computeIfAbsent(key, k -> new HashSet<>());
-        Map<BlockPos, BlockState> mine = new HashMap<>();
+        Set<BlockPos> owned = ownedFor(world);
+        List<Map.Entry<BlockPos, BlockState>> supports = new ArrayList<>();
+        List<Map.Entry<BlockPos, BlockState>> plants = new ArrayList<>();
         for (Map.Entry<BlockPos, BlockState> e : originals.entrySet()) {
-            if (owned.add(e.getKey())) mine.put(e.getKey(), e.getValue()); // claim only positions nobody owns yet
+            if (!owned.add(e.getKey())) continue;                       // claim only positions nobody owns yet
+            (isPlant(e.getValue()) ? plants : supports).add(e);
         }
-        if (mine.isEmpty()) return;
+        if (supports.isEmpty() && plants.isEmpty()) return;
 
-        long restoreAt = world.getServer().getTicks() + (long) seconds * 20L;
-        PENDING.add(new Crater(key, mine, restoreAt));
+        TomatoCraterState.Crater crater = new TomatoCraterState.Crater();
+        crater.delayTicks = (long) seconds * 20L;
+        for (Map.Entry<BlockPos, BlockState> e : supports) crater.queue.addLast(new TomatoCraterState.Entry(e.getKey(), e.getValue()));
+        for (Map.Entry<BlockPos, BlockState> e : plants) crater.queue.addLast(new TomatoCraterState.Entry(e.getKey(), e.getValue()));
+
+        TomatoCraterState state = TomatoCraterState.get(world);
+        state.craters.add(crater);
+        state.markDirty();
     }
 
-    /** END_SERVER_TICK: restore every crater whose timer has elapsed, and release the positions it owned. */
+    /**
+     * END_SERVER_TICK: count each crater's timer down, then drain due craters in small batches sharing ONE global
+     * per-tick budget so total restore work is hard-bounded no matter how many craters overlap. A block whose
+     * chunk is unloaded is left untouched (never force-loaded); one that throws is skipped, never fatal.
+     */
     private static void tick(MinecraftServer server) {
-        if (PENDING.isEmpty()) return;
-        long now = server.getTicks();
-        Iterator<Crater> it = PENDING.iterator();
-        while (it.hasNext()) {
-            Crater c = it.next();
-            if (now < c.restoreAtTick()) continue;
-            ServerWorld world = server.getWorld(c.worldKey());
-            if (world != null) restore(world, c.blocks());
-            Set<BlockPos> owned = OWNED.get(c.worldKey());
-            if (owned != null) owned.removeAll(c.blocks().keySet());
-            it.remove();
+        for (ServerWorld world : server.getWorlds()) {
+            TomatoCraterState state = TomatoCraterState.get(world);
+            if (state.craters.isEmpty()) continue;
+            Set<BlockPos> owned = ownedFor(world);
+            int budget = RESTORE_BUDGET_PER_TICK;
+            boolean dirty = false;
+
+            Iterator<TomatoCraterState.Crater> it = state.craters.iterator();
+            while (it.hasNext() && budget > 0) {
+                TomatoCraterState.Crater c = it.next();
+                if (c.delayTicks > 0) { c.delayTicks--; dirty = true; continue; }
+                while (budget > 0 && !c.queue.isEmpty()) {
+                    TomatoCraterState.Entry e = c.queue.peekFirst();
+                    if (!world.isChunkLoaded(e.pos().getX() >> 4, e.pos().getZ() >> 4)) break; // wait for natural load
+                    try { restoreOne(world, e); } catch (RuntimeException ignored) {}           // isolate a bad position
+                    c.queue.pollFirst();
+                    owned.remove(e.pos());
+                    budget--;
+                    dirty = true;
+                }
+                if (c.queue.isEmpty()) { it.remove(); dirty = true; }
+            }
+            if (dirty) state.markDirty();
         }
     }
 
-    /** Refill each crater block with its original state — but only where the blast left AIR (never over a build). */
-    private static void restore(ServerWorld world, Map<BlockPos, BlockState> blocks) {
-        for (Map.Entry<BlockPos, BlockState> e : blocks.entrySet()) {
-            if (world.getBlockState(e.getKey()).isAir()) {
-                world.setBlockState(e.getKey(), e.getValue()); // NOTIFY_ALL default → clients see it live
-            }
+    /**
+     * Refill one crater block with its original state — but only where the blast left AIR, sauce, or a blast-caused
+     * flowing fluid. A puddle sitting on the spot is force-cleared first (untracked from SauceManager's FIFO, with a
+     * splash fx); a solid player build, a container, or a source fluid is left exactly where it is (D1).
+     */
+    private static void restoreOne(ServerWorld world, TomatoCraterState.Entry e) {
+        BlockState current = world.getBlockState(e.pos());
+        if (current.isOf(SauceRegistry.SAUCE)) {
+            SauceManager.clearSauceForRestore(world, e.pos());
+        } else if (!current.isAir() && !isClearableFluid(current)) {
+            return; // a player built / placed here → never overwrite it
         }
+        world.setBlockState(e.pos(), e.state()); // NOTIFY_ALL default → clients see it live
+    }
+
+    /** A blast-caused flowing fluid (flowing water/lava) that a refill may overwrite; a source block is kept as player intent. */
+    private static boolean isClearableFluid(BlockState state) {
+        return state.getBlock() instanceof FluidBlock && !state.getFluidState().isStill();
+    }
+
+    /** Crops, saplings, flowers, grass, nether wart — anything that must restore AFTER its supporting block (E11). */
+    private static boolean isPlant(BlockState state) {
+        return state.getBlock() instanceof PlantBlock;
+    }
+
+    /** The first-snapshot-wins owned-position set for a world, rebuilt from the persisted craters on first access. */
+    private static Set<BlockPos> ownedFor(ServerWorld world) {
+        return OWNED.computeIfAbsent(world.getRegistryKey(), k -> {
+            Set<BlockPos> set = new HashSet<>();
+            for (TomatoCraterState.Crater c : TomatoCraterState.get(world).craters)
+                for (TomatoCraterState.Entry e : c.queue) set.add(e.pos());
+            return set;
+        });
     }
 }

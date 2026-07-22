@@ -2,13 +2,19 @@ import os
 import re
 import glob
 import json
+import sys
 from datetime import datetime
 
-DIR = r"c:\Users\66664\OneDrive\Desktop\Coding\CustomBlocks-B\docs\testing"
-DASH_DIR = os.path.join(DIR, "dashboard")
+DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DASH_DIR = os.path.join(os.path.dirname(__file__), "dashboard")
+EXTRA_DIR = os.path.join(DIR, "extra")
+
+if EXTRA_DIR not in sys.path:
+    sys.path.insert(0, EXTRA_DIR)
+
+from testing_tools import _guide_records
 
 def extract_data():
-    files = glob.glob(os.path.join(DIR, "GROUP_*_TESTING_GUIDE.md"))
     data = {
         "lastUpdated": datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         "groups": [],
@@ -16,34 +22,32 @@ def extract_data():
         "nextTask": None
     }
     
-    for f in sorted(files):
-        name = os.path.basename(f).replace("_TESTING_GUIDE.md", "")
+    # The Markdown dashboard and this supporting data must use the same guide.
+    for record in _guide_records():
+        f = os.path.join(DIR, record["filename"])
+        base = os.path.basename(f)
+        group_id = f"GROUP_{record['id']}"
         with open(f, 'r', encoding='utf-8') as file:
             content = file.read()
             
-        verdict_m = re.search(r'\|\s*\*\*Verdict\*\*\s*\|\s*(.*?)\s*\|', content)
-        progress_m = re.search(r'\|\s*\*\*Progress\*\*\s*\|\s*(.*?)\s*\|', content)
-        last_tested_m = re.search(r'\|\s*\*\*Last tested\*\*\s*\|\s*(.*?)\s*\|', content)
-        title_match = re.search(r'^#\s*(.*?)$', content, re.MULTILINE)
-        
-        display_name = title_match.group(1).strip() if title_match else name
-        verdict = verdict_m.group(1) if verdict_m else "Unknown"
-        progress_raw = progress_m.group(1) if progress_m else ""
-        last_tested = last_tested_m.group(1) if last_tested_m else "Unknown"
+        display_name = record["title"]
+        verdict = record["verdict"]
+        progress_raw = record["progress"]
+        last_tested = record["tested"]
         
         pct = 0
         passed = 0
         total = 0
-        pct_m = re.search(r'(\d+)%\s*\((\d+)\/(\d+)', progress_raw)
+        pct_m = re.search(r'(100|[1-9]?\d)%', progress_raw)
         if pct_m:
             pct = int(pct_m.group(1))
-            passed = int(pct_m.group(2))
-            total = int(pct_m.group(3))
+            passed = progress_raw.count('\U0001F7E9')
+            total = passed + progress_raw.count('\U0001F7E5')
             
         group_data = {
-            "id": name,
+            "id": group_id,
             "title": display_name,
-            "filename": os.path.basename(f),
+            "filename": base,
             "verdict": verdict,
             "percent": pct,
             "passed": passed,
@@ -52,10 +56,10 @@ def extract_data():
         }
         data["groups"].append(group_data)
         
-        bug_match = re.search(r'# 🐛 Active Bugs.*?(\|-.*?-\|.*?)(?=\n---|)$', content, re.DOTALL)
+        bug_match = re.search(r'(?ms)^#\s+Active Bugs\s*$\n(.*?)(?=^#\s|\Z)', content)
         if bug_match:
-            lines = bug_match.group(1).strip().split('\n')
-            for line in lines[1:]: 
+            lines = [line for line in bug_match.group(1).split('\n') if line.startswith('|')]
+            for line in lines[2:]:
                 parts = [p.strip() for p in line.split('|')[1:-1]]
                 if len(parts) >= 4 and parts[0] != "":
                     data["bugs"].append({
@@ -67,14 +71,17 @@ def extract_data():
                     })
                     
         if data["nextTask"] is None:
-            match = re.search(r'# 🎯 Test now\s*(.*?)(?=# 🗄️|# 🐛|---)', content, re.DOTALL)
+            match = re.search(r'(?ms)^#\s+Active Tests\s*$\n(.*?)(?=^#\s|\Z)', content)
             if match:
-                test_now = match.group(1)
-                row_match = re.search(r'\|\s*([A-Z0-9]+)\s*\|([^|]+)\|([^|]+)\|\s*(?:🟥|not tested)\s*\|', test_now)
-                if row_match:
+                row_match = None
+                for candidate in re.finditer(r'\|\s*([A-Z0-9]+)\s*\|([^|]+)\|([^|]+)\|([^|]+)\|([^|]+)\|', match.group(1)):
+                    if '\U0001F3AF' in candidate.group(4) or '\U0001F3AF' in candidate.group(5):
+                        row_match = candidate
+                        break
+                if row_match is not None:
                     data["nextTask"] = {
                         "group": display_name,
-                        "filename": os.path.basename(f),
+                        "filename": base,
                         "id": row_match.group(1).strip(),
                         "action": row_match.group(2).strip(),
                         "expect": row_match.group(3).strip()
@@ -90,6 +97,10 @@ def build_web():
     out_path = os.path.join(DASH_DIR, "data.js")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(js_content)
+
+    stats_path = os.path.join(DIR, "Dashboard_Stats.json")
+    with open(stats_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
         
     print(f"Web data built at {out_path}")
 

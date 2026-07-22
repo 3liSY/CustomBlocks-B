@@ -1,13 +1,13 @@
 /**
  * OmniToolState.java
  *
- * Per-player state for the Omni-Tool (Group 06): the active mode (Glow / Hardness /
- * Eyedrop) and the Eyedrop clipboard. The mode persists to
- * config/customblocks/data/omni_tool.json so a player keeps their preference across
- * restarts; the clipboard is in-memory only.
+ * Per-player state for the Omni-Tool (Group 06): the active mode (one of five, cycled in-hand)
+ * plus a per-player in-memory Copy buffer. The mode persists to
+ * config/customblocks/data/omni_tool.json so a player keeps their preference across restarts;
+ * the Copy buffer is a session-only feel-stats clipboard that lives while Copy mode is active.
  *
  * Depends on: Gson, SlotData
- * Called by:  OmniToolItem (read/cycle/copy), OmniMenu (switch mode)
+ * Called by:  OmniToolItem (cycle mode / copy / paste), ToolCommands (give in current mode)
  */
 package com.customblocks.core;
 
@@ -30,13 +30,16 @@ public final class OmniToolState {
     private OmniToolState() {} // static-only
 
     /**
-     * The Omni-Tool's modes — the three tools it merges: the Brush (Glow), the Chisel
-     * (Hardness) and the Rainbow Rectangle (Area selection).
+     * The Omni-Tool's five modes, listed IN CYCLE ORDER (sneak+right-click steps through them,
+     * wrapping via {@link Mode#next()}): Glow → Hardness → Face → Copy → Delete → back to Glow.
+     * Delete is intentionally last (§F fixed order); the standalone Brush/Chisel are merged in.
      */
     public enum Mode {
         GLOW("Glow", CbFmt.VALUE),
         HARDNESS("Hardness", CbFmt.DIM),
-        AREA("Area", CbFmt.HEAD);
+        FACE("Face", CbFmt.VALUE),
+        COPY("Copy", CbFmt.VALUE),
+        DELETE("Delete", CbFmt.BAD);
 
         public final String label;
         public final String color;
@@ -60,6 +63,15 @@ public final class OmniToolState {
     private static final Map<UUID, Mode> MODE = new ConcurrentHashMap<>();
     private static volatile boolean loaded = false;
 
+    /**
+     * The four feel-stats Copy mode grabs and pastes (glow, hardness, sound, walk-through) — NOT look,
+     * shape, name, or category (§I5). A per-player, session-only clipboard; it need not persist, since
+     * Copy is a live copy→paste loop that ends the moment the player leaves Copy mode.
+     */
+    public record Feel(int glow, float hardness, String soundType, boolean noCollision) {}
+
+    private static final Map<UUID, Feel> COPY_BUF = new ConcurrentHashMap<>();
+
     public static Mode getMode(UUID player) {
         ensureLoaded();
         return MODE.getOrDefault(player, Mode.GLOW);
@@ -68,8 +80,15 @@ public final class OmniToolState {
     public static void setMode(UUID player, Mode mode) {
         ensureLoaded();
         MODE.put(player, mode);
+        // §I3: the paste buffer/prompt lives only while Copy mode is active — leaving it drops the clipboard.
+        if (mode != Mode.COPY) clearCopy(player);
         save();
     }
+
+    // ── Copy-mode clipboard (session-only, per player) ────────────────────────
+    public static void setCopy(UUID player, Feel feel) { COPY_BUF.put(player, feel); }
+    public static Feel getCopy(UUID player)            { return COPY_BUF.get(player); }
+    public static void clearCopy(UUID player)          { COPY_BUF.remove(player); }
 
     private static synchronized void ensureLoaded() {
         if (loaded) return;

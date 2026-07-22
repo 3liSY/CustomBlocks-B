@@ -24,15 +24,14 @@
  *      now NORMALISED by length, tiered (prefix beats substring beats fuzzy), and the shortest-word
  *      tie-break is gone. Nothing close → we say we don't know, rather than inventing an answer.
  *
- * Modes (CustomBlocksConfig.didYouMean): smart (confident hits only, default),
- * always (a looser threshold — still normalised, still never garbage), off (plain message).
+ * Mode: always smart — confident hits only, never garbage. Not editable (owner-locked 2026-07-18);
+ * the old smart/always/off config switch was removed, so there is one behaviour and no way to weaken it.
  *
- * Depends on: CommandTree (the real registered literals), CustomBlocksConfig, Chat
+ * Depends on: CommandTree (the real registered literals), Chat
  * Called by: CommandRegistrar (appendFallback, registered last)
  */
 package com.customblocks.command;
 
-import com.customblocks.CustomBlocksConfig;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import net.minecraft.server.command.CommandManager;
@@ -40,17 +39,30 @@ import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.text.Text;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public final class DidYouMean {
 
     /**
-     * Fuzzy threshold as a FRACTION of word length, not an absolute edit count.
-     * smart: a third of the word may be wrong ("cretae"→"create" is 2/6 = 0.33).
-     * always: half may be wrong. Even "always" refuses genuine nonsense — that is the point.
+     * Suggestion-only aliases for HARD-renamed commands (owner-locked 2026-07-15). The old name is
+     * gone from the tree — it is NOT re-registered and never auto-runs — but an old habit still lands
+     * on the new command as a clickable chip, with the full tail preserved. Two exist:
+     *   • anim      → animation   (hard rename 2026-06-22, AnimCommands.java:54 — old /cb anim removed)
+     *   • livecolor → recolor     (§G27.11 locked rename, ImageToolCommands.java:78 — NO live alias)
+     * `anim` would also prefix-match `animation` on its own, but `livecolor`→`recolor` fails the fuzzy
+     * gate (ratio 0.44 > smart 0.34), so the map is what makes that bridge exist at all.
      */
-    private static final double SMART_MAX  = 0.34;
-    private static final double ALWAYS_MAX = 0.50;
+    private static final Map<String, String> RENAMED = Map.of(
+            "anim", "animation",
+            "livecolor", "recolor");
+
+    /**
+     * Fuzzy threshold as a FRACTION of word length, not an absolute edit count.
+     * A third of the word may be wrong ("cretae"→"create" is 2/6 = 0.33). Anything looser starts
+     * matching genuinely different words, so this is fixed — there is deliberately no looser mode.
+     */
+    private static final double SMART_MAX = 0.34;
 
     /** Below this many characters a typo is indistinguishable from a different word — don't guess. */
     private static final int MIN_FUZZY_LEN = 3;
@@ -58,9 +70,9 @@ public final class DidYouMean {
     private DidYouMean() {} // static-only
 
     /**
-     * Append the greedy catch-all as the LAST branch of the /cb tree. Always present
-     * (even when the mode is off) so unknown input gets a friendly message instead of
-     * a raw Brigadier usage error.
+     * Append the greedy catch-all as the LAST branch of the /cb tree. Always present so unknown
+     * input gets a friendly suggestion (or an honest "I don't know") instead of a raw Brigadier
+     * usage error.
      */
     public static void appendFallback(LiteralArgumentBuilder<ServerCommandSource> root) {
         root.then(CommandManager.argument("subcommand", StringArgumentType.greedyString())
@@ -75,13 +87,24 @@ public final class DidYouMean {
         String first = (sp < 0 ? typedRaw : typedRaw.substring(0, sp)).toLowerCase(Locale.ROOT);
         String remainder = sp < 0 ? "" : typedRaw.substring(sp).trim();
 
-        String mode = CustomBlocksConfig.normalizeDidYouMean(CustomBlocksConfig.didYouMean);
-        String best = "off".equals(mode) || first.isEmpty() ? null : pickBest(mode, first);
+        // A hard-renamed command is a KNOWN bridge, not a guess — offer it regardless of mode. It is a
+        // clickable chip that never auto-runs and never revives the removed name (owner-locked 2026-07-15).
+        String renamed = RENAMED.get(first);
+        if (renamed != null) {
+            String moved = "/cb " + renamed + (remainder.isEmpty() ? "" : " " + remainder);
+            Chat.line(src, Text.literal(CbFmt.BAD + "\"" + first + "\" is now ")
+                    .append(Chat.runButton(CbFmt.CLICK + "[" + moved + "]", moved))
+                    .append(Text.literal(CbFmt.DIM + " — click to run it.")));
+            return 1;
+        }
+
+        // Suggestion behaviour is always smart — confident hits only, never editable (owner-locked 2026-07-18).
+        String best = first.isEmpty() ? null : pickBest(first);
 
         if (best == null) {
             // Nothing is genuinely close. Say so honestly — do NOT manufacture a suggestion.
-            Chat.raw(src, Text.literal(CbFmt.BAD + "I don't know \"" + first + "\". ")
-                    .append(Chat.runButton("/cb help", "/cb help"))
+            Chat.line(src, Text.literal(CbFmt.BAD + "I don't know \"" + first + "\" " + CbFmt.BAD + "✖ " + CbFmt.DIM + "— ")
+                    .append(Chat.runButton(CbFmt.CLICK + "[/cb help]", "/cb help"))
                     .append(Text.literal(CbFmt.DIM + " for the full list.")));
             return 0;
         }
@@ -89,8 +112,8 @@ public final class DidYouMean {
         // The full tail is preserved, so `/cb anim x ticks 5` offers `/cb animation x ticks 5`.
         // It is a chip: clicking RUNS it. It never auto-executes (G04-4).
         String full = "/cb " + best + (remainder.isEmpty() ? "" : " " + remainder);
-        Chat.raw(src, Text.literal(CbFmt.DIM + "I don't know \"" + first + "\" — did you mean ")
-                .append(Chat.runButton(full, full))
+        Chat.line(src, Text.literal(CbFmt.BAD + "I don't know \"" + first + "\" " + CbFmt.BAD + "✖ " + CbFmt.DIM + "— did you mean ")
+                .append(Chat.runButton(CbFmt.CLICK + "[" + full + "]", full))
                 .append(Text.literal(CbFmt.DIM + "?")));
         return 1;
     }
@@ -102,12 +125,12 @@ public final class DidYouMean {
      *   1. PREFIX   — what you typed starts the command ("anim" → "animation"). The strongest signal
      *                 there is; among several, the shortest completion is the least presumptuous.
      *   2. SUBSTRING— what you typed appears inside it ("glow" → "setglow").
-     *   3. FUZZY    — edit distance normalised by length, gated by mode. Real typos only.
+     *   3. FUZZY    — edit distance normalised by length, gated by the fixed smart threshold. Real typos only.
      */
-    private static String pickBest(String mode, String typed) {
+    private static String pickBest(String typed) {
         Set<String> candidates = CommandTree.literals();
         if (candidates.isEmpty()) return null;              // tree not captured yet (shouldn't happen)
-        double maxRatio = "always".equals(mode) ? ALWAYS_MAX : SMART_MAX;
+        double maxRatio = SMART_MAX;
 
         String prefixBest = null, substrBest = null, fuzzyBest = null;
         double fuzzyBestRatio = Double.MAX_VALUE;

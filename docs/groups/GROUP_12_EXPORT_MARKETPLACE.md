@@ -1,271 +1,196 @@
-# Group 12 — Export Dashboard & Marketplace
+# Group 12 - Export and Marketplace
 
-> 🟣 **importfolder REWORK — logged 2026-06-29 (NO code yet).** `/cb importfolder` today reads `.json`
-> only and never applies textures (a matching `.png` next to it is ignored; see `BlockExporter.importFolder`).
-> Plan = accept image files (png/jpg/gif/webp) and make a block from each (filename → id, bake the picture),
-> and apply textures to `.json` blocks. Full record: **`docs/Information/IMAGE_INPUT_OVERHAUL.md`** (§6 + §9).
+> Group 12 turns CustomBlocks into useful local files, portable Blueprint items, and later safe Vault/Marketplace artifacts without exposing a server address or losing block data.
 
-> **Prerequisite:** Group 02 (Chest GUI) verified. Group 20 (External Integrations) verified. Phase 9 (Import/Export) build-verified.
->
-> **Objective:** Redesign the entire export system into a robust Export Dashboard chest GUI. Add advanced export formats (litematic, schem, vanilla resource pack). Restore marketplace browsing and block sharing via short codes.
->
-> **Source issues:** 17.15 (export system rework), Group H (sharecategory, importcategory, exportblock, importblock, market), Decision §11 (Universal Export Dashboard), Decision §H (litematic + schem + standalone vanilla resource pack)
->
-> **Rules:** Work through each test in order. Stop and report failure before continuing.
->
-> ⚠️ **UI medium audit (2026-07-10):** the Export Dashboard and Marketplace are Screen-based, not chest GUI,
-> per the mod-wide Screen migration. Note: the Export Dashboard is already **built and confirmed in-game**
-> (2026-06-21, `ExportDashboardMenu`) as a chest GUI — owner confirmed 2026-07-10: convert to Screen (default
-> applies, no exception). Real rework, marked ⏳ planned. Marketplace (`/cb market`) is unbuilt either way, so
-> it can target Screen directly whenever it's written.
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_12.md) · [All Groups](README.md)
+
+[Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
 ---
 
-> ## ⚙️ Implementation status — 2026-06-14 (built, build green, NOT in-game tested)
->
-> Scope was set with the developer: the **offline core** is built now; the **online vault** parts and
-> the **advanced formats** are deferred and marked partial (revisit at the end).
->
-> | Test | State |
-> |---|---|
-> | G12.1 dashboard GUI | ✅ built (already existed) |
-> | G12.2 single JSON + link | ✅ built (now `cloud_exports/`, dashboard tile + link) |
-> | G12.3 single PNG + link | ✅ built (PNG link fixed → `cloud_exports/`) |
-> | G12.4 Export All → ZIP | ✅ built (`/cb export zip` + tile, `all-<stamp>.zip` + link) |
-> | G12.5 category ZIP + link | ✅ built (now a clickable `[download]`) |
-> | G12.6 Blueprint item | ✅ built (`/cb exportblock` + `/cb importblock` from hand) |
-> | G12.7 share-code round-trip | ⏸️ **partial — deferred** (needs the cloud vault deployed) |
-> | G12.8 marketplace | ⏸️ **partial — deferred** (needs the cloud vault deployed) |
-> | litematic / .schem / vanilla RP | ⏸️ **partial — deferred** (heavy binary formats) |
->
-> **Note on download links:** they resolve from `httpHost` (default `127.0.0.1`) — fine for
-> single-player / same machine. Remote friends need a reachable `host:port`.
+## Purpose
 
----
+Exports must be honest: a locally written JSON, PNG, or ZIP is useful even when a remote browser download is unavailable. Portable items, Vault sharing, Marketplace browsing, folder imports, and heavyweight formats each need their own explicit contract rather than being presented as one finished export button.
 
-## What this group restores / adds
+This Group owns export contents, Blueprint behavior, folder-import requirements, and Marketplace/export routes. It does not own the common Screen framework, resource-pack HTTP delivery, Vault deployment, category schema, or image processing.
 
-| Area | Old CustomBlocks | New CustomBlocks-B | This Group |
-|---|---|---|---|
-| Export GUI | `/cb export json/txt` (text-only output) | Text-only, no GUI | Full Export Dashboard (Screen-based target; currently built as chest GUI, see audit note) |
-| Export formats | JSON, TXT | JSON | JSON, TXT, PNG, CSV, NBT, ZIP, litematic, schem, vanilla resource pack |
-| Localhost download links | Not present | Not present | HTTP route generates clickable chat link |
-| Share single block | `/cb vault upload <id>` or `/cb export <id> vault` → share code | Missing | Restored for one block |
-| Import single block | `/cb importblock <code>` or `/cb vault download <code>` | Missing | Restored via Vault download |
-| Marketplace | `/cb market` — browse shared blocks from others | Missing | Restored |
-| Bulk export to vault | Not present | Not present | Parked; use one-block Vault share |
-| Cloud exports folder | `config/customblocks/cloud_exports/` | Uses `exports/` | Updated to `cloud_exports/` |
-| Blueprint item | Not present | Not present | New: physical in-game Blueprint item generated from block |
+## Ownership
 
----
+| Owns | Does not own |
+| --- | --- |
+| Local block/category/all-block export artifacts and format selection | Export and Marketplace Screen framework: G27 |
+| Blueprint item creation and hand import | Vault deployment, share codes, and remote transport: G20 |
+| `importfolder` image/JSON import rules | Category schema and metadata meaning: G11 |
+| Download-link safety requirements for export surfaces | Resource-pack delivery infrastructure: G05 |
+| Marketplace data presentation and import handoff | Image decode, bake, and validation: G10 |
 
-## What this group covers
+## Direction
 
-| Feature | Commands |
-|---|---|
-| Export dashboard | `/cb export` (opens Screen-based target; currently a chest GUI) |
-| Export single block | `/cb exportblock <id>` |
-| Import single block | `/cb importblock <code>` |
-| Bulk export all | From export GUI |
-| Export by category | From export GUI |
-| One-block Vault share | `/cb export <id> vault` or the single-block export GUI |
-| Marketplace browse | `/cb market` (alias: `/cb marketplace`) |
-| Download link | Clickable `[download]` link in chat |
+Local export goes first to `config/customblocks/cloud_exports/` and reports the actual saved artifact. Chat must never leak a server host/IP or offer an unreachable remote download as though it worked. A host-local link is only acceptable when visibly local; remote distribution belongs to an opt-in Vault URL or another deliberate delivery route.
 
----
+The Export Dashboard and Marketplace are G27 Screens that call G12 export/import services. Same-server Blueprint transfer is useful as an in-game handoff, but it is not a substitute for portable Vault sharing across servers.
 
-## Implementation Requirements
+## Locked Decisions
 
-### 1. Export Dashboard — moved to G27
+| Date | Decision | Effect |
+| --- | --- | --- |
+| 2026-06-21 | A host-leaking or unreachable `[download]` link is unacceptable. | Export reports a reliable local artifact until a safe remote route exists. |
+| 2026-06-21 | Blueprint is a same-server item handoff, not proof of cross-server portability. | Its value is reviewed separately from Vault sharing. |
+| 2026-06-29 | `importfolder` accepts image files and applies matching textures to JSON imports. | Image-only and JSON-plus-image folder inputs have a real target behavior. |
+| 2026-07-10 | Export Dashboard and Marketplace use Screens. | The current chest dashboard is a baseline only; Marketplace targets Screen directly. |
+| 2026-07-12 | Export Dashboard uses a hand-picked Bulk Choose flow for multi-block bundles. | It does not return to the incorrect per-slot-click spec. |
+| 2026-07-12 | Vault share/import and Marketplace wait for the G20 deployment path. | Local export remains independent and no fake remote fallback is added. |
+| 2026-07-12 | Advanced binary and vanilla-pack formats remain parked. | They are not advertised as available until their real serializers and validation exist. |
 
-`/cb export` opens the Export Dashboard — full spec moved to `GROUP_27_SCREENS.md` §G27.30 (2026-07-12).
-G12 keeps the export formats/routes/Blueprint/storage logic below.
+## Feature Plan
 
-### 2. Advanced Export Formats
+### A. Local Export
 
-| Format | Description | Use case |
-|---|---|---|
-| `.litematic` | Litematica mod schematic | Map-making, sharing builds |
-| `.schem` | WorldEdit schematic | Server building tools |
-| Vanilla Resource Pack | ZIP with CustomModelData, no mod required | Sharing with non-modded players |
+**Player outcome**
 
-### 3. Localhost Download Links
+Creators can export one block, a hand-picked set, a category, or all blocks to clear local artifacts.
 
-The embedded HTTP server (already running on `resourcePackPort`) gains additional routes:
-- `GET /export/<id>.<format>` — serves the export file for direct browser download.
-- Chat link format: `[download]` → clickable, opens in browser.
+**Experience**
 
-Files served from `config/customblocks/cloud_exports/`.
+- `/cb export` opens the dashboard for players and provides text output for console.
+- Single-block JSON and PNG exports preserve the correct metadata or texture.
+- All-block and category export create ZIP bundles with their needed data.
+- The dashboard supports scope first, then format, including the hand-picked Bulk Choose path.
+- The saved path is reported honestly when no safe remote browser route is available.
 
-### 4. Blueprint Item
+**Requirements**
 
-`/cb exportblock <id>` (or from export GUI) can optionally generate a **Blueprint** — a physical item with the block's texture as its icon, block metadata in NBT, and a clickable tooltip. Players can trade or drop Blueprints. `/cb importblock` reads a Blueprint from the player's hand.
+- Artifacts live under `config/customblocks/cloud_exports/`.
+- JSON, PNG, and ZIP contents are validated before being presented as successful.
+- Category exports use the G11 schema and include needed metadata, assets, and assignments.
+- Any download affordance must be local-only with clear wording or a verified opt-in remote URL; it must not reveal a server address.
 
-### 5. Marketplace — moved to G27
+**Boundary**
 
-`/cb market` (alias `/cb marketplace`) — full spec moved to `GROUP_27_SCREENS.md` §G27.30 (2026-07-12).
+G12 creates export artifacts and owns their scope. G27 owns the screen layout; G20 owns public/Vault delivery.
 
-### 6. Import by Code
+### B. Blueprint Handoff
 
-`/cb importblock <code>` — downloads a block from the vault by its share code. If a block with the same ID already exists and a player ran the command, it opens the Vault conflict client screen; console gets a plain text conflict message.
+**Player outcome**
 
-### 7. Storage
+A player can hand another player a block Blueprint on the same server and import it safely from their inventory.
 
-All exports go to `config/customblocks/cloud_exports/`. The `CloudVaultClient` reads/writes this folder.
+**Experience**
 
----
+- An export action can create a Blueprint item with a texture icon and block metadata.
+- The item can be dropped or traded and survives a restart.
+- `/cb importblock` handles the held Blueprint and refuses duplicate IDs without overwriting a live block.
 
-## Setup
+**Requirements**
 
-```
-/cb create g12a ExportTestBlock1 https://i.imgur.com/example.png
-/cb create g12b ExportTestBlock2
-/cb setcategory g12a exporttest
-/cb setcategory g12b exporttest
-```
+- Blueprint NBT holds the data needed for same-server import.
+- Item import validates the record before creation and uses the normal conflict path.
+- Blueprint behavior is described as same-server until Vault sharing proves remote portability.
 
----
+**Boundary**
 
-## Test G12.1 — Export dashboard opens (currently a chest GUI; target = Screen)
+Blueprints are in-game artifacts. They do not bypass G20 remote import or conflict handling.
 
-```
-/cb export
-```
+### C. Vault and Marketplace
 
-**Expected:** The dashboard opens. Scope selection lets you choose all blocks, categories, or one block; one-block export includes an Upload to Vault tile. Currently opens as a chest GUI in code — migrating to a Screen is tracked but not yet done (see UI medium audit above).
+**Player outcome**
 
-**Pass:** Dashboard opens with correct layout (chest GUI today; Screen once migrated).
-**Fail:** Text-only output, or no UI at all.
+When Vault is ready, a creator can share a block by code and browse/import public shared entries through a proper Marketplace Screen.
 
----
+**Experience**
 
-## Test G12.2 — Single block export (JSON)
+- A single-block share returns a short code.
+- Importing a code restores metadata and texture through a conflict-safe path.
+- Player conflicts open the appropriate Screen; console conflicts receive clear text.
+- Marketplace shows empty, unavailable, error, browse, preview, search/filter, and import states honestly.
 
-In the export dashboard, click g12a → "Download JSON".
+**Requirements**
 
-**Expected:** `Exported g12a → cloud_exports/g12a.json` with a `[download]` link in chat. File exists at `config/customblocks/cloud_exports/g12a.json`.
+- G20 performs authenticated remote upload/download and reports availability.
+- Marketplace import calls the same conflict-safe import service as a typed code.
+- No bulk-to-Vault export is implied until its workload and artifact design are agreed.
 
-**Pass:** File created, chat link works.
-**Fail:** Error or file missing.
+**Boundary**
 
----
+G12 owns local artifact interpretation and Marketplace behavior. G20 owns the remote service and deployment.
 
-## Test G12.3 — Single block export (PNG)
+### D. Folder Import and Future Formats
 
-In the export dashboard, click g12a → "Download PNG".
+**Player outcome**
 
-**Expected:** `Exported g12a texture → cloud_exports/g12a.png` with `[download]` link.
+Creators can import a practical folder of image and metadata files without manually rebuilding every texture.
 
-**Pass:** PNG file created.
-**Fail:** Error or file missing.
+**Experience**
 
----
+- PNG, JPG, GIF, and WebP files can become blocks using filename-derived IDs.
+- A JSON record paired with a same-name PNG applies both metadata and texture.
+- Bad files are skipped with a concise report while valid entries continue.
+- Later litematic, schem, vanilla resource-pack, and NBT formats appear only once their format-specific behavior is complete.
 
-## Test G12.4 — Bulk export (all to ZIP)
+**Requirements**
 
-In the export dashboard, click "Export All (ZIP)".
+- Folder import reuses G10 image decoding and source safeguards.
+- Filename-to-ID mapping validates collisions and unsafe names before mutation.
+- JSON and image pairing has explicit precedence rather than silently ignoring a texture.
+- Heavy binary format work requires real serializers, size limits, and test fixtures.
 
-**Expected:** ZIP file created at `cloud_exports/all-YYYYMMDD-HHMMSS.zip` containing all blocks. `[download]` link in chat.
+**Boundary**
 
-**Pass:** ZIP created with all block data.
-**Fail:** Error or ZIP missing.
+Folder import is an input workflow, not a substitute for remote Vault sharing or a catch-all import parser.
 
----
+## Cross-Group Contracts
 
-## Test G12.5 — Export category
+| Group | Connection | Promise |
+| --- | --- | --- |
+| G05 | Delivery routes | Export download behavior does not interfere with or expose resource-pack delivery infrastructure. |
+| G10 | Images | Folder image imports use G10 decoding/baking rules. |
+| G11 | Category export | G11 supplies category schema; G12 serializes the selected category artifact. |
+| G20 | Vault | G20 hosts remote upload/download; G12 applies local import/export and conflict behavior. |
+| G27 | Dashboard and Marketplace | G27 supplies Screen presentation; G12 provides routes, scopes, and actions. |
 
-In the export dashboard, click "Export Category" → select "exporttest".
+## Technical Contract
 
-**Expected:** ZIP with g12a and g12b data. `[download]` link in chat.
+- Local export paths are under `config/customblocks/cloud_exports/`.
+- Export services validate an artifact before reporting success and distinguish local file creation from browser delivery.
+- Same-server Blueprint import validates NBT and applies duplicate-ID protection.
+- Vault code import and Marketplace import use one conflict-safe local import rail.
+- `importfolder` recognizes supported images and JSON-plus-matching-image pairs, reports bad entries, and continues valid ones.
+- Screens call G12 export/import routes; console routes stay textual.
+- No client-visible export control may emit a raw server host/IP in chat.
 
-**Pass:** ZIP contains 2 blocks.
-**Fail:** Error or ZIP missing/incomplete.
+## Deferred Scope
 
----
+<details><summary>Future ideas outside this Group's current plan</summary>
 
-## Test G12.6 — Generate Blueprint item
+| Idea | Why it is deferred | Owner if revived |
+| --- | --- | --- |
+| Vault share/import and Marketplace | Requires G20 deployment and safe remote service behavior. | G20 with G12 |
+| Advanced litematic, schem, vanilla-pack, and NBT formats | Needs dedicated serializers, validation, and fixture coverage. | G12 |
+| Bulk Vault export | Needs a separate workload, conflict, and artifact design. | G12 with G20 |
+| Richer Blueprint purpose | Requires a reason beyond same-server handoff. | G12 |
 
-In the export dashboard, click g12a → "Generate Blueprint Item".
+</details>
 
-**Expected:** A Blueprint item is given to the player. Its tooltip shows g12a's name and attributes.
+## Superseded Decisions
 
-**Pass:** Blueprint item in inventory with correct tooltip.
-**Fail:** No item given, or generic item without block data.
+<details><summary>Historical decisions kept only so old work does not return</summary>
 
----
+| Date | Old direction | Current direction |
+| --- | --- | --- |
+| 2026-06-21 | Chat `[download]` links could expose a server host and still count as a finished export. | Local artifact output is primary until a safe verified route exists. |
+| 2026-07-10 | Export Dashboard remains a chest GUI. | It migrates to the G27 Screen system. |
+| 2026-07-12 | The Dashboard picks each export from a per-slot block menu. | Multi-block export uses the hand-picked Bulk Choose flow. |
 
-## Test G12.7 — Share short-code and import
+</details>
 
-In the export dashboard, click g12a → "Share Short-Code".
+## References
 
-**Expected:** `Block "g12a" shared — code: XXXXXX` (6–8 char code).
+[Dashboard](../testing/00_DASHBOARD.md) · [Testing Guide](../testing/Testing_Guide_12.md) · [All Groups](README.md)
 
-Note the code. Then:
-```
-/cb delete g12a
-/cb importblock XXXXXX
-```
-
-**Expected:** g12a is re-imported from the vault with the same data.
-
-**Pass:** Block imported from share code.
-**Fail:** Code not generated, or import fails.
-
----
-
-## Test G12.8 — Marketplace opens ⏳ planned (blocked — not built)
-
-```
-/cb market
-```
-
-**Expected (target, Screen-based):** a Screen opens with shared blocks from the vault. If empty (no uploaded blocks yet), shows a "No blocks shared yet." row/tile.
-
-**Pass:** Marketplace Screen opens.
-**Fail:** Command missing or error.
-
----
-
-## Group 12 Verdict
-
-| Test | Description | Result |
-|---|---|---|
-| G12.1 | Export dashboard opens (chest GUI today; Screen migration not started) | ✅ in-game (2026-06-21) — opens, but layout differs from spec (hand-pick "Bulk Choose" bundle flow, not per-slot click). Spec corrected |
-| G12.2 | Single block JSON export with download link | ❌ in-game (2026-06-21) — download link broken (`ERR_CONNECTION_REFUSED`) AND leaks server host. Needs rework |
-| G12.3 | Single block PNG export | 🟡 in-game (2026-06-21) — export runs, but same broken/IP-leaking download link as G12.2 |
-| G12.4 | Bulk export all to ZIP | 🟡 in-game (2026-06-21) — same download-link issue as G12.2 |
-| G12.5 | Export category to ZIP | 🟡 in-game (2026-06-21) — same download-link issue as G12.2 |
-| G12.6 | Blueprint item generated | ✅ in-game (2026-06-21) — generates, but value questionable on same server; needs rework/rethink |
-| G12.7 | Share code → import round-trip | ⏸️ DEFERRED — needs cloud vault deployed |
-| G12.8 | Marketplace Screen opens | ⏸️ DEFERRED — needs cloud vault deployed; ⏳ planned as Screen-based (not built) |
-
-**Group 12 passes when the Export Dashboard works in-game and all export/import/share paths function correctly.**
-
-If anything shows ❌ — paste:
-1. The exact action taken
-2. What happened vs what was expected
-3. Last 20 lines of `latest.log`
-
----
-
-## Follow-ups (from in-game test 2026-06-21)
-
-- **🔴 CROSS-CUTTING — kill IP/host-exposing download links.** Chat download buttons currently point at
-  `http://<serverHost>:<httpPort>/export/<id>` (screenshot: `yoyoo.mcsh.io:8123/export/3lisy`). Two problems:
-  (1) it **leaks the server address** — unacceptable for a PUBLIC mod; (2) the route is **unreachable**
-  (`ERR_CONNECTION_REFUSED`) so downloads don't even work. **Decision:** remove IP/host from every chat
-  download button across the mod and rethink delivery (e.g. write to a known local folder + show the path,
-  or in-game delivery, or a proper opt-in public URL via the vault). Affects G12.2–.5 and any other group
-  that posts a download link (e.g. G10.5 export PNG). Tracked in SWEEP_INDEX §A.
-- **G12.1 spec corrected** — dashboard uses a hand-pick "Bulk Choose" bundle flow (tick blocks → pick
-  format), not the per-block-slot-click sub-menu the spec described.
-- **G12.6 — Blueprint rework/rethink.** Generates, but a Blueprint that only works on the same server is
-  low value. Reconsider its purpose (cross-server trade? offline import?) before polishing.
-- **Export system rework (17.15)** still wanted overall once delivery is fixed.
-
-## Cleanup
-
-```
-/cb delete g12a
-/cb delete g12b
-```
+- [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
+- [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)
+- [G11 Categories](GROUP_11_CATEGORY.md)
+- [G20 External Integrations](GROUP_20_EXTERNAL_INTEGRATIONS.md)
+- [G27 Screens](GROUP_27_SCREENS.md)
+- [Image Input Overhaul](../Information/IMAGE_INPUT_OVERHAUL.md)
+- [Pre-template Group 12 snapshot](../archive/group-migration-2026-07-18/GROUP_12_EXPORT_MARKETPLACE.md)

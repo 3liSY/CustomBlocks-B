@@ -11,19 +11,23 @@
  * passenger's tickRiding(), so it beats shouldDismount()) clears the rider's sneak flag, keeping them on.
  * The window closes the instant the rider lets go of sneak — from then on a FRESH sneak drops them, free
  * and unconditional, and the tomato flies on without them. A hard 1s cap means a rider who never releases
- * sneak still isn't trapped. This is the middle ground between the old "full kamikaze, no dismount" clear
- * (owner-rejected) and deleting the clear outright (which brought back the instant eject).
+ * sneak still isn't trapped.
  *
- * ── The blast (Phase B) ─────────────────────────────────────────────────────────────────────────
- * A REAL vanilla explosion (ExplosionSourceType.TNT): ONE power drives crater + damage-through-armour +
- * knockback, exactly like TNT. Point-blank with no armour is lethal; full iron survives. Power is
- * tomatoBlastPower (a tomato named "nuke" jumps to NUKE_POWER). Griefing is ON, but the affected terrain is
- * snapshotted BEFORE it craters and restored after tomatoRestoreSeconds — see TomatoCraterManager (restore,
- * first-snapshot-wins, anti-dupe) and TomatoBlastBehavior (CB blocks + containers never break).
+ * ── The blast (Phase B) — NO FUSE (owner-locked 2026-07-15, B1/B2) ────────────────────────────────
+ * There is NO fuse: no ~0.5s tell, no TNT hiss, no white flash/swell, no bail window. The tomato
+ * detonates INSTANTLY on ANY contact (block, entity, ground), and airbursts INSTANTLY at the 20s mark if
+ * it hits nothing. The detonation is a REAL vanilla explosion (ExplosionSourceType.TNT): ONE power drives
+ * crater + damage-through-armour + knockback, exactly like TNT. Point-blank with no armour is lethal; full
+ * iron survives. Power is tomatoBlastPower (a tomato named "nuke" jumps to NUKE_POWER). Griefing is ON, but
+ * the affected terrain is snapshotted BEFORE it craters and restored after tomatoRestoreSeconds — see
+ * TomatoCraterManager (restore, first-snapshot-wins, anti-dupe) and TomatoBlastBehavior (CB blocks +
+ * containers never break).
  *
- * Every detonation is preceded by a ~0.5s FUSE (owner-locked): a vanilla TNT hiss + a white flash & swell
- * (the client reads the synced FUSE tracker), which doubles as the rider's bail window — a sneak-off in that
- * gap dismounts and saves them (B3). The fuse fires on impact, the 10s airburst, and a ride-into-wall.
+ * B2 root cause (fixed 2026-07-15): vanilla ThrownItemEntity.onCollision DISCARDS the entity (and sends the
+ * item-break status byte) the instant it hits anything. The old code called super.onCollision FIRST and only
+ * then lit a fuse — but the discard had already killed the entity, so the blast never ran → zero damage, no
+ * crater. The fix is to {@link #detonate()} DIRECTLY inside onCollision and NOT call super at all: no discard
+ * race, no stray item-break puff. This single change delivers both B1 (instant contact blast) and B2 (damage).
  *
  * Depends on: TomatoRegistry, CustomBlocksConfig (blast keys), TomatoBlastBehavior, TomatoCraterManager, TomatoSounds
  * Called by:  TomatoItem (throw / ride), the dispenser behaviour, the game (tick / collision)
@@ -36,15 +40,12 @@ import net.minecraft.entity.Entity;
 import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.data.DataTracker;
-import net.minecraft.entity.data.TrackedData;
-import net.minecraft.entity.data.TrackedDataHandlerRegistry;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.projectile.ProjectileEntity;
 import net.minecraft.entity.projectile.thrown.ThrownItemEntity;
 import net.minecraft.item.Item;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.sound.SoundCategory;
-import net.minecraft.sound.SoundEvents;
 import net.minecraft.util.hit.HitResult;
 import net.minecraft.util.math.BlockPos;
 import net.minecraft.util.math.Box;
@@ -57,8 +58,11 @@ import java.util.Map;
 
 public class TomatoEntity extends ThrownItemEntity {
 
-    /** Fly time before the tomato gives up (10s). Phase B turns this into the airburst detonation. */
-    public static final int LIFETIME_TICKS = 200;
+    /**
+     * Fly time before the tomato gives up and airbursts (20s, owner-locked 2026-07-15, was 10s). A tomato that
+     * never hits anything detonates in mid-air here instead of flying on into unloaded chunks — instant, no fuse.
+     */
+    public static final int LIFETIME_TICKS = 400;
 
     /** Snowball gravity — the locked "snowball-like arc". */
     private static final double GRAVITY = 0.03;
@@ -74,15 +78,14 @@ public class TomatoEntity extends ThrownItemEntity {
     /** The entity age the current ride began at, or -1 when nobody is riding. */
     private int mountAge = -1;
 
-    /** ~0.5s fuse before every blast — the tell, and the rider's bail window (owner-locked 2026-07-15). */
-    public static final int FUSE_TICKS = 10;
-
     /** Power of a tomato named "nuke" (case-insensitive), overriding tomatoBlastPower. */
-    public static final double NUKE_POWER = 12.0;
+    public static final double NUKE_POWER = 20.0;
 
-    /** Fuse countdown, synced to the client so the renderer can flash + swell the tomato (0 = not fusing). */
-    private static final TrackedData<Integer> FUSE =
-            DataTracker.registerData(TomatoEntity.class, TrackedDataHandlerRegistry.INTEGER);
+    /**
+     * Knockback reference: the imparted explosion push is scaled by {@code tomatoBlastKnockback / this}. 6.0 is
+     * the normal blast power, so knockback == 6 reproduces a vanilla same-power shove and the locked 8 is punchier.
+     */
+    private static final double KNOCKBACK_VANILLA_REF = 6.0;
 
     public TomatoEntity(EntityType<? extends TomatoEntity> type, World world) {
         super(type, world);
@@ -96,12 +99,6 @@ public class TomatoEntity extends ThrownItemEntity {
     /** Fired by a dispenser (A6) — deliberately ownerless, so Phase B credits nobody for the kill. */
     public TomatoEntity(World world, double x, double y, double z) {
         super(TomatoRegistry.TOMATO, x, y, z, world);
-    }
-
-    @Override
-    protected void initDataTracker(DataTracker.Builder builder) {
-        super.initDataTracker(builder);
-        builder.add(FUSE, 0);
     }
 
     @Override
@@ -133,23 +130,38 @@ public class TomatoEntity extends ThrownItemEntity {
 
     @Override
     public void tick() {
-        super.tick();
-        if (getWorld().isClient) return;
+        super.tick(); // moves the tomato and, on any contact, fires onCollision → detonate() (instant, no fuse)
+        if (getWorld().isClient || isRemoved()) return;
         armRideDismount(); // A4: keep the rider on until they release the throw-sneak (see header note)
 
-        int fuse = dataTracker.get(FUSE);
-        if (fuse > 0) {
-            // Sit still and count down. The swell/flash play on the client; a rider still has this window to
-            // sneak off and live (B3). At zero, it blows.
-            setVelocity(Vec3d.ZERO);
-            velocityModified = true;
-            dataTracker.set(FUSE, --fuse);
-            if (fuse <= 0) detonate();
-            return;
+        checkInterception(); // Phase C: a projectile hit / another tomato mid-air detonates it (flak)
+        if (isRemoved()) return;
+
+        // The 20s airburst: a tomato that never hits anything detonates in mid-air INSTANTLY (no fuse) rather
+        // than flying on into unloaded chunks. A rider still aboard dies in the blast (owner-locked 2026-07-15).
+        if (age >= LIFETIME_TICKS) detonate();
+    }
+
+    /**
+     * Phase C interception (C1/C2). Scans a tight box around the tomato each server tick:
+     *   • another {@link TomatoEntity} touching it → BOTH detonate (C2), each at its own spot; or
+     *   • ANY other projectile (arrow, snowball, …) touching it → it detonates like flak (C1).
+     * A deliberate mid-air trigger, separate from {@link #onCollision} (which fires on block/entity contact).
+     * C3 (punch reflection/deflection) was removed entirely (owner-locked 2026-07-17): a melee punch now has
+     * no special effect — only projectile/tomato overlaps intercept.
+     */
+    private void checkInterception() {
+        for (Entity e : getWorld().getOtherEntities(this, getBoundingBox().expand(0.35))) {
+            if (e instanceof TomatoEntity other && !other.isRemoved()) { // C2 — two tomatoes both explode
+                other.detonate();
+                detonate();
+                return;
+            }
+            if (e instanceof ProjectileEntity) { // C1 — any incoming projectile sets it off (flak cannon)
+                detonate();
+                return;
+            }
         }
-        // The 10s airburst: a tomato that never hits anything lights its fuse in mid-air rather than flying
-        // on into unloaded chunks. Same fuse, same blast as an impact.
-        if (age >= LIFETIME_TICKS) startFuse();
     }
 
     /** Begin the arming window for a fresh ride. Called by {@link TomatoItem} right after {@code startRiding}. */
@@ -172,33 +184,15 @@ public class TomatoEntity extends ThrownItemEntity {
     }
 
     /**
-     * Impact lights the fuse — it does not detonate instantly (the ~0.5s tell is the bail window). No status
-     * byte is sent (that would spawn a vanilla item-break puff): the tomato is stealthy; the fuse is the tell.
+     * Contact = instant blast (owner-locked 2026-07-15, B1/B2). We detonate DIRECTLY here and deliberately do
+     * NOT call super.onCollision: vanilla would discard the entity (killing the blast before it runs — the B2
+     * bug) and send an item-break status byte (a stray poof the stealthy tomato must not make). detonate()
+     * does its own discard.
      */
     @Override
     protected void onCollision(HitResult hitResult) {
-        super.onCollision(hitResult);
-        if (!getWorld().isClient) startFuse();
-    }
-
-    /**
-     * Light the ~0.5s fuse: freeze in place, play the vanilla TNT hiss, and start the countdown the renderer
-     * reads for its flash + swell. Idempotent — a tomato already fusing (e.g. it keeps grazing the ground)
-     * does not restart or stack it.
-     */
-    private void startFuse() {
-        if (getWorld().isClient || dataTracker.get(FUSE) > 0) return;
-        dataTracker.set(FUSE, FUSE_TICKS);
-        setVelocity(Vec3d.ZERO);
-        setNoGravity(true);
-        velocityModified = true;
-        getWorld().playSound(null, getX(), getY(), getZ(), SoundEvents.ENTITY_TNT_PRIMED,
-                SoundCategory.NEUTRAL, 1.0F, 1.0F);
-    }
-
-    /** The current fuse value (0 = not fusing). Read by the client renderer for the flash + swell. */
-    public int getFuse() {
-        return dataTracker.get(FUSE);
+        if (getWorld().isClient) return;
+        detonate();
     }
 
     /**
@@ -207,10 +201,11 @@ public class TomatoEntity extends ThrownItemEntity {
      * is snapshotted BEFORE it craters and handed to {@link TomatoCraterManager} for a timed restore, and the
      * blast's own drops are cleared so a restored crater can't dupe items. CB blocks + containers never break
      * ({@link TomatoBlastBehavior}). A null damage source gives the vanilla explosion death line (Phase E adds
-     * the 30 custom messages).
+     * the 30 custom messages). Idempotent: a tomato already gone (e.g. contact + same-tick airburst) never
+     * double-blasts.
      */
     private void detonate() {
-        if (getWorld().isClient) return;
+        if (getWorld().isClient || isRemoved()) return;
         ServerWorld world = (ServerWorld) getWorld();
 
         float power = (float) blastPower();
@@ -223,18 +218,28 @@ public class TomatoEntity extends ThrownItemEntity {
         int snapRadius = (int) Math.ceil(power * 1.5) + 1;
         Map<BlockPos, BlockState> pre = restoring ? TomatoCraterManager.snapshotBox(world, centre, snapRadius) : null;
 
-        // Honour tomatoBlastKnockback=false (a real explosion always shoves) by restoring pre-blast velocities.
+        // Knockback is a tunable strength (owner-locked float=8, 2026-07-17): snapshot nearby entities' pre-blast
+        // velocities, let the real explosion apply its shove, then rescale that delta by knockback / vanilla-ref.
+        // knockback==6 is an unscaled vanilla shove, 8 is punchier, 0 cancels it. Skipped when the scale is ~1
+        // (exact vanilla behaviour) so velocities are never touched needlessly.
+        double kbScale = CustomBlocksConfig.tomatoBlastKnockback / KNOCKBACK_VANILLA_REF;
         Map<Entity, Vec3d> preVel = null;
-        if (!CustomBlocksConfig.tomatoBlastKnockback) {
+        if (Math.abs(kbScale - 1.0) > 1.0e-4) {
             preVel = new HashMap<>();
             for (Entity e : world.getOtherEntities(this, new Box(centre).expand(power * 2.0))) preVel.put(e, e.getVelocity());
         }
 
-        Explosion explosion = world.createExplosion(this, null, TomatoBlastBehavior.INSTANCE,
-                x, y, z, power, fire, World.ExplosionSourceType.TNT);
+        Explosion explosion = world.createExplosion(this, TomatoCombat.explosionDamageSource(world, this),
+                TomatoBlastBehavior.INSTANCE, x, y, z, power, fire, World.ExplosionSourceType.TNT);
 
         if (preVel != null) {
-            for (Map.Entry<Entity, Vec3d> en : preVel.entrySet()) { en.getKey().setVelocity(en.getValue()); en.getKey().velocityModified = true; }
+            for (Map.Entry<Entity, Vec3d> en : preVel.entrySet()) {
+                Entity e = en.getKey();
+                Vec3d before = en.getValue();
+                Vec3d delta = e.getVelocity().subtract(before); // the shove the explosion just imparted
+                e.setVelocity(before.add(delta.multiply(kbScale)));
+                e.velocityModified = true;
+            }
         }
 
         // Restore only the blocks the blast actually destroyed (their pre-states); the manager applies
@@ -243,6 +248,8 @@ public class TomatoEntity extends ThrownItemEntity {
             Map<BlockPos, BlockState> originals = new HashMap<>();
             for (BlockPos p : explosion.getAffectedBlocks()) {
                 BlockState orig = pre.get(p);
+                // E11 (owner-locked 2026-07-17, reversal): crops now RESTORE with the crater like any other block —
+                // the full BlockState snapshot already carries the exact growth stage, so no crop special-casing.
                 if (orig != null && !orig.isAir()) originals.put(p.toImmutable(), orig);
             }
             TomatoCraterManager.recordCrater(world, originals);
@@ -255,6 +262,12 @@ public class TomatoEntity extends ThrownItemEntity {
         // A random splat (owner-locked) layered over the vanilla TNT boom the explosion already played.
         world.playSound(null, x, y, z, TomatoSounds.randomSplat(world.getRandom()),
                 SoundCategory.NEUTRAL, 1.2F, 1.0F);
+
+        // Phase D ("Mess"): lay the sauce field — deep at the centre, thin at the edge (or floating clumps underwater).
+        SauceManager.splatter(world, centre, power);
+
+        // Phase E ("Combat"): stun hostiles (free-hit window), anger hit villagers (gossip), protect tamed pets.
+        TomatoCombat.applyBlastEffects(world, this, centre, power);
 
         discard();
     }

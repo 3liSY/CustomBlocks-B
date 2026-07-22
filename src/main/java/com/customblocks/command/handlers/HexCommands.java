@@ -117,9 +117,10 @@ public final class HexCommands {
                     + ". /cb customcolor shows them all.");
             return 0;
         }
-        CustomColorToolItem.givePair(p, Integer.parseInt(hex.substring(1), 16));
-        String name = ColorLibrary.nameForHex(hex);
-        Chat.success(ctx.getSource(), "Gave you the " + (name != null ? name : hex)
+        int rgb = Integer.parseInt(hex.substring(1), 16);
+        CustomColorToolItem.givePair(p, rgb);
+        String name = ColorLibrary.nearestName(rgb);
+        Chat.success(ctx.getSource(), "Gave you the " + name
                 + " Square + Triangle " + CbFmt.DIM + "(" + hex + ")" + CbFmt.OK + ".");
         return 1;
     }
