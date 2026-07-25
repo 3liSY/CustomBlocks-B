@@ -106,6 +106,7 @@ final class BgMask {
 
 
 
+
     /** Flood each foreground (non-bg) island; islands at or below the speck area become background. */
     private static void dropForegroundSpecks(boolean[][] isBg, int w, int h) {
         int speckArea = Math.max(SPECK_MIN, (w * h) / SPECK_DIVISOR);

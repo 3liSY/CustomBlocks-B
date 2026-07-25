@@ -5,9 +5,27 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 242 sessions · 2026-06-09 → 2026-07-25 · ✅ 44 confirmed · 🟡 153 built/pending · 📝 21 docs · ⛔ 7 reverted
+**At a glance:** 243 sessions · 2026-06-09 → 2026-07-26 · ✅ 44 confirmed · 🟡 154 built/pending · 📝 21 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
+
+---
+
+## G10 §H Jar A follow-up — peel restored (frontier + memo), weak-run cap; the "outline stutter" root-caused to checker-flatten residue and deferred to Jar B with evidence · 2026-07-26 (🟡 built, pending in-game)
+
+Owner reported stuttering grey dashes under the chrome-logo JPEG's wing edge and asked for a careful smoothing fix. The investigation ran five hypotheses through the golden harness; the code that survived is small, and the finding that matters is written into G10 §H's requirements.
+
+**What shipped:**
+- **The anti-fringe peel is restored** — its deletion in Jar A was half right. Golden evidence: the dark rim it chased is gone with the linear-light blend, but its second job (descending source-baked feathers) is real. It lives in new `image/BgFringe.java` now, frontier-propagated (first pass scans the mask boundary once; later passes touch only neighbours of freshly peeled pixels) with constants re-derived for ΔE00 by the same 14.2/22 plateau ratio (`PEEL_CAP` 45→29, `PEEL_MARGIN` 1.5→1.0).
+- **New `image/BgDist.java`** — per-bake ΔE00-to-background memo keyed by exact ARGB, capped at 131k colours. Provably transparent (hashes identical with and without) and the reason CIEDE2000 is affordable: the 6000×3300 stress bake went ~13 s → ~7 s `edges` / ~10.7 s `closed`, at or under the CIE76-era golden baseline (8.7/9.7 s).
+- **`WEAK_MAX_RUN = 2`** on the hysteresis flood: the weak tier inherits exactly the 1-2 px bridging power of the radius-1 close it replaced and can no longer make region-scale decisions (an off-white page in the weak band could previously be swallowed whole). Footprint on the baselines: 5-15 px on the letter O only.
+- `BackgroundRemover` split (`BgFringe`, `BgDist`) for the §9.3 gate (was 520 lines, now 424); split proven byte-identical on all 49 bakes.
+
+**The stutter itself — root cause, and why it is Jar B's:** the dashes are NOT made by the removal pipeline. The source is a Google-thumbnail JPEG of a dark-checker preview; `CheckerboardDetector.flattenToBlack` paints the checker black, but JPEG compression DC-shifts the cells along the subject's edge off both checker tones, so the mask misses them — a dashed residue row fused (8-connected, same greys) with the logo's own legitimate under-shadow. Five fixes were tried and golden-diffed: peel restore (dashes are flat, not descending — no effect), a depth-bounded debris flood (blocked: dash cores exceed any honest colour cap), a weak-run cap (gaps are below the STRONG threshold — no effect on this), background thickness opening (perforations connect to the open field; a true erode-dilate opening moved nothing in the band), and a dark-regime edge-grain rule in the detector (killed dashes AND ate the logo's real shadow lines on the owner-approved clean PNG — rejected on its heat map). Pixel-level rules cannot split residue from shadow here; G10 §H's requirements now record the case as a cascade design input (rung 4 statistics / rung 5 unmixing, or decline to `/cb bgpick`). The debris flood, thickness opening, and detector rule were all reverted — no just-in-case code shipped.
+
+**Practical note for the owner:** the clean PNG of the same logo (baseline picture 2) bakes without any stutter; the dashes come with the re-compressed thumbnail itself.
+
+Jar rebuilt green on JDK 21; CieDe2000Check 34/34; checker controls 6/6 untouched, checkers 4/4 flattened; health + group check green.
 
 ---
 

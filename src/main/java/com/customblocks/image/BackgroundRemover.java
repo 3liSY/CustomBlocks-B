@@ -63,6 +63,12 @@ public final class BackgroundRemover {
      *  2:1 is Canny's recommended high:low threshold ratio (Canny 1986, §VI suggests 2:1-3:1);
      *  the conservative end is taken because the flood expands regions, not thin edge chains. */
     private static final double HYSTERESIS_RATIO = 2.0;
+    /** How many consecutive WEAK pixels the flood may cross before it must touch STRONG ground
+     *  again. The weak tier replaces the old radius-1 morphological close, whose whole job was
+     *  bridging 1-2 px hairline gaps — so 2 px is the bridging power it inherits, no more. Without
+     *  this cap the weak tier makes region-scale decisions: on a JPEG it tunnels through the noise
+     *  gaps of a blocky shadow and hollows it into stuttering dashes (owner report, 2026-07-25). */
+    private static final int WEAK_MAX_RUN = 2;
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
@@ -113,32 +119,41 @@ public final class BackgroundRemover {
             int bgArgb = sampleCornerBackground(img, w, h);
             int bgA = (bgArgb >>> 24) & 0xFF;
             double[] bgLab = rgbToLab(bgArgb);
+            BgDist dist = new BgDist(bgLab);
 
             boolean[][] isBg = new boolean[w][h];
 
             // Stage 1 — hysteresis flood-fill (G10 §H). Seeds are border pixels that STRONGLY match
             // the background (ΔE ≤ tol); the flood then also accepts WEAK pixels (ΔE ≤ 2·tol) that
-            // connect to an already-accepted one. A background edge survives its own near-tolerance
-            // dips — the hairline gaps the old geometric close existed to bridge — while a pixel
-            // plainly far from the background colour can never be swallowed, however thin the
-            // feature it sits on. That replaces both the close and its colour guard.
+            // connect to an already-accepted one, but a weak RUN is capped at WEAK_MAX_RUN px — the
+            // tier bridges hairline gaps the way the old radius-1 close did, and touching strong
+            // ground resets the run. A background edge survives its own near-tolerance dips, a pixel
+            // plainly far from the background can never be swallowed, and the flood cannot tunnel
+            // region-deep through the sub-threshold noise gaps of a JPEG shadow.
             final double weakTol = tol * HYSTERESIS_RATIO;
+            byte[][] weakRun = new byte[w][h]; // 0 for strong/unvisited; weak pixels carry their run length
             Queue<int[]> queue = new ArrayDeque<>();
             for (int x = 0; x < w; x++) {
-                seed(img, isBg, queue, x, 0, bgA, bgLab, tol);
-                seed(img, isBg, queue, x, h - 1, bgA, bgLab, tol);
+                seed(img, isBg, queue, x, 0, bgA, dist, tol);
+                seed(img, isBg, queue, x, h - 1, bgA, dist, tol);
             }
             for (int y = 1; y < h - 1; y++) {
-                seed(img, isBg, queue, 0, y, bgA, bgLab, tol);
-                seed(img, isBg, queue, w - 1, y, bgA, bgLab, tol);
+                seed(img, isBg, queue, 0, y, bgA, dist, tol);
+                seed(img, isBg, queue, w - 1, y, bgA, dist, tol);
             }
             while (!queue.isEmpty()) {
                 int[] p = queue.poll();
+                int run = weakRun[p[0]][p[1]];
                 for (int[] d : DIRS) {
                     int nx = p[0] + d[0], ny = p[1] + d[1];
-                    if (nx >= 0 && nx < w && ny >= 0 && ny < h && !isBg[nx][ny]
-                            && isBackground(img.getRGB(nx, ny), bgA, bgLab, weakTol)) {
+                    if (nx < 0 || nx >= w || ny < 0 || ny >= h || isBg[nx][ny]) continue;
+                    int px = img.getRGB(nx, ny);
+                    if (isBackground(px, bgA, dist, tol)) {          // strong — always joins, resets the run
                         isBg[nx][ny] = true;
+                        queue.add(new int[]{nx, ny});
+                    } else if (run < WEAK_MAX_RUN && isBackground(px, bgA, dist, weakTol)) {
+                        isBg[nx][ny] = true;
+                        weakRun[nx][ny] = (byte) (run + 1);
                         queue.add(new int[]{nx, ny});
                     }
                 }
@@ -156,7 +171,7 @@ public final class BackgroundRemover {
                 boolean[][] pocket = new boolean[w][h];
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
-                        if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, bgLab, tol)) {
+                        if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, dist, tol)) {
                             pocket[x][y] = true;
                         }
                     }
@@ -179,11 +194,12 @@ public final class BackgroundRemover {
             // a clear central subject far better than corners/flood alone.
             if (smart) BgMask.keepLargestForeground(isBg, w, h);
 
-            // G10 §H Jar A — the anti-fringe peel and the recolour dark-ring absorb are DELETED, not
-            // kept "just in case". Both were compensations chasing the dark rim the old gamma-space
-            // blend painted along anti-aliased edges; the blend is fixed (LinearBlend), so the rim
-            // they chased no longer exists. Removal was reviewed as a golden diff — see the
-            // Jar A entry in PROGRESS_LOG.md for the evidence.
+            // Stage 2 — anti-fringe peel (BgFringe): shave the descending-gradient halo a SOURCE
+            // image carries against its own flat background, without eating a crisp subject edge.
+            // Skipped when the bg was transparent (no colour halo to shave).
+            if (bgA >= OPAQUE_THRESHOLD) {
+                BgFringe.peel(img, isBg, dist, w, h);
+            }
 
             // Background is always plain BLACK (owner: content is composed on black backgrounds, so the
             // subject reads on black as-is). The old smart dark-subject specials — the whole-bg WHITE FLIP
@@ -334,20 +350,21 @@ public final class BackgroundRemover {
         }
     }
 
+
     private static void seed(BufferedImage img, boolean[][] isBg, Queue<int[]> q,
-                             int x, int y, int bgA, double[] bgLab, double tol) {
-        if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, bgLab, tol)) {
+                             int x, int y, int bgA, BgDist dist, double tol) {
+        if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, dist, tol)) {
             isBg[x][y] = true;
             q.add(new int[]{x, y});
         }
     }
 
     /** Background if (near-)transparent, or within ΔE {@code tol} of the sampled bg colour. */
-    private static boolean isBackground(int argb, int bgA, double[] bgLab, double tol) {
+    private static boolean isBackground(int argb, int bgA, BgDist dist, double tol) {
         int a = (argb >>> 24) & 0xFF;
         if (a < OPAQUE_THRESHOLD) return true;   // transparent pixels are background
         if (bgA < OPAQUE_THRESHOLD) return false; // bg sampled transparent: only transparency counts
-        return deltaE(rgbToLab(argb), bgLab) <= tol;
+        return dist.of(argb) <= tol;
     }
 
     /** Median of 3×3 samples from each of the four corners (robust to a stray edge pixel). */
@@ -374,8 +391,9 @@ public final class BackgroundRemover {
         return out;
     }
 
+
     // ── CIE-LAB (sRGB → XYZ → L*a*b*, D65); distance is CIEDE2000 via CieDe2000 ───
-    private static double[] rgbToLab(int argb) {
+    static double[] rgbToLab(int argb) { // package-private: BgDist reads it
         double rF = ((argb >> 16) & 0xFF) / 255.0;
         double gF = ((argb >> 8)  & 0xFF) / 255.0;
         double bF = ( argb        & 0xFF) / 255.0;

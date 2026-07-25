@@ -321,6 +321,7 @@ If rungs 1-4 all decline, that is the honest outcome: background removal does no
 - An unrecognised mode value resolves to Auto. It must never fall through to Off, which would stop background removal with nothing said.
 - The opaque-bake snap runs unconditionally, independent of any removal setting.
 - Authored alpha must be read correctly: Java's PNG reader silently drops a `tRNS` chunk on non-indexed PNGs, so rung 1 must not conclude "no alpha" from a decode that quietly discarded it.
+- A lossy thumbnail of a dark-checker source keeps a dashed residue row after flattening: JPEG compression DC-shifts whole checker cells off both tones and fuses them with the subject's own edge shading, so no pixel-level rule can take the residue without also taking real shadow — five candidate fixes were golden-diffed and rejected on exactly that trade (2026-07-26, the chrome-logo JPEG baseline). The cascade must catch this case by evidence — rung 4's statistics or rung 5's unmixing — or decline to `/cb bgpick`; a widened per-pixel tolerance is not an acceptable fix.
 - Behaviour is captured as golden images from the current jar before any code is ripped, and every later change is reviewed as a diff against them.
 - `/cb bgpick` operates on the stored source bytes. A block with no stored source gets the same honest skip `/cb setbg` already gives, not a guessed re-bake.
 - `/cb bgpick` takes the same permission tier as `/cb setbg`, tab-completes the same colour values, and records one undoable action.

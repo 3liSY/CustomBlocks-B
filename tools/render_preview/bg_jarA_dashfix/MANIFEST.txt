@@ -1,0 +1,52 @@
+# G10 §H golden baselines — background pipeline
+# texture size 512, default tolerance 30, fill #EE3333
+# picture | variant | out bytes | ms | sha256 | vs baseline
+1_transparent.png | off | 150860 | 452 | c851e40cff3d7faff44559d9bfbe84ec50bc3863108651527e44ae77f56e0c1b | identical
+1_transparent.png | edges | 140835 | 207 | a2dd464593e85a58fec712bf42ccc705037953bc4bbeb80ba2bc3a8956469b80 | identical
+1_transparent.png | closed | 140835 | 215 | a2dd464593e85a58fec712bf42ccc705037953bc4bbeb80ba2bc3a8956469b80 | identical
+1_transparent.png | smart | 143643 | 229 | 975b39a8a7e82fd4e5c340587adf57038aefa5137179adfb5410e2d95291a659 | identical
+1_transparent.png | edges_fill | 143585 | 145 | 05deb05b04f95ce16556ff8a8e4a4e2ba9f15cf257fb01ba2e174c01e244476c | identical
+1_transparent.png | setbg | 140968 | 162 | 58484be7e2c23ab50874fbae1b58082e9966bcbf18ec097c34bc99d1b124767f | identical
+1_transparent.png | variant | 149599 | 177 | c49c73d15ac01f74d549a9c0d7926a12d64ef9ffa2cd80c36b4038f8039d5217 | identical
+2_chrome_logo.png | off | 128141 | 329 | f37e84659659c85c64add91dc3535a868f3e0984a76d357e02db0029a93032da | 3318 px moved, max 151
+2_chrome_logo.png | edges | 126427 | 461 | 0b6c8261cf9547ddc30cd89b088d85bab98f7f36b4f6e83459bb40707839635a | 2826 px moved, max 152
+2_chrome_logo.png | closed | 126427 | 616 | 0b6c8261cf9547ddc30cd89b088d85bab98f7f36b4f6e83459bb40707839635a | 2826 px moved, max 152
+2_chrome_logo.png | smart | 128148 | 1442 | 881310e87dc091665b9f2806a2bd9b378e4a9e6189740a57784611731f0308e8 | 3018 px moved, max 151
+2_chrome_logo.png | edges_fill | 128148 | 1126 | 881310e87dc091665b9f2806a2bd9b378e4a9e6189740a57784611731f0308e8 | 3155 px moved, max 151
+2_chrome_logo.png | setbg | 127253 | 959 | b85d5c1b5e20e0859fb38a18ab631763c4184c0a49161bf5af0ea4fe0920eddf | 2951 px moved, max 238
+2_chrome_logo.png | variant | 129374 | 986 | 1319025645e01b590c4d6320d2ac468a583d4f6ec1b6bbf3e6653a561a384bd9 | 3437 px moved, max 252
+3_tux.png | off | 142575 | 206 | 8b18c2e4eeb79daffc65ef0104d22d8104557403529f059131de2e863da77096 | identical
+3_tux.png | edges | 121879 | 233 | 4eb7565413a27daf7921b1bf4621eb7fee28b99184f77fd3a328edf9d70d4632 | identical
+3_tux.png | closed | 121879 | 225 | 4eb7565413a27daf7921b1bf4621eb7fee28b99184f77fd3a328edf9d70d4632 | identical
+3_tux.png | smart | 142504 | 218 | 60f06f3564cf677cd543d25adf8d0446f02a79026477347201a7aebfbe60abeb | identical
+3_tux.png | edges_fill | 143818 | 125 | e22c53fce3d3f0f1d5787b10e8f50064f3584134f26a88a15b820f30dfb47443 | identical
+3_tux.png | setbg | 145477 | 216 | 6b5bb2c84bbbfd48e4052b456936c54afeefeec18439c0f0d14a83484bd6b1c4 | identical
+3_tux.png | variant | 153352 | 152 | 00c66a34d6b156864e0f6f1f5e7f6c07e1f4272b9d195df5a1fadd8468e14d50 | identical
+4_chrome_jpeg.jpg | off | 140405 | 306 | 372864552c96a545c360828c0632923caeae644c9b84f9baf31bfe62307804d5 | 2589 px moved, max 204
+4_chrome_jpeg.jpg | edges | 137650 | 558 | ae80d9998c809d53acfbc47ed6ea86c051a97ae227d5bace780d7c49e67b43f8 | 1653 px moved, max 208
+4_chrome_jpeg.jpg | closed | 137650 | 819 | ae80d9998c809d53acfbc47ed6ea86c051a97ae227d5bace780d7c49e67b43f8 | 1653 px moved, max 208
+4_chrome_jpeg.jpg | smart | 139615 | 669 | 3308d090c6d6f0a55cce7535e5719a10314503da8696ec2aa0a7355937a5b68c | 2524 px moved, max 204
+4_chrome_jpeg.jpg | edges_fill | 139615 | 649 | 3308d090c6d6f0a55cce7535e5719a10314503da8696ec2aa0a7355937a5b68c | 2524 px moved, max 204
+4_chrome_jpeg.jpg | setbg | 139178 | 649 | 03d10d95def4df9870bceca4a0bfa4b7c135a535bebcaf6077563a4030d14e78 | 1800 px moved, max 155
+4_chrome_jpeg.jpg | variant | 142645 | 546 | 546129273a920269786949eeec982db3734b9cc96c004612c64a1337850129a7 | 2747 px moved, max 157
+5_periodic_table.png | off | 163920 | 4171 | e3f7419a118e854b527a5706091ac5612392100e45eb518e5e1a067c5946d03d | identical
+5_periodic_table.png | edges | 146789 | 11098 | 661404f0527e266fc7ca51c5f7cbd92e7758395bb9c811f70dbdf13870f2c214 | identical
+5_periodic_table.png | closed | 146639 | 12562 | 71728df0581188a5c12dbdddf66dd034d0217c6704d797f89b3f5bf4c05f8b97 | identical
+5_periodic_table.png | smart | 108776 | 13259 | 6392250d2062ace0f2f68aab66b8e02cca13d3d54c23b03ba346f111c5bce63e | identical
+5_periodic_table.png | edges_fill | 149828 | 11491 | 96b5906bcca3b990d625e1d4f64032e2ad223c829aa961042da7fb8745ea4915 | identical
+5_periodic_table.png | setbg | 152081 | 10937 | cacf43f35f3ecea26931674572b447a35d7f8ab844b3f2e4b1ac286e0aa2c667 | identical
+5_periodic_table.png | variant | 158061 | 11084 | e6dc9946bff999d368c2633d08aa7b5a524e139854c468a351d6d87e7221d1da | identical
+6_stripes.png | off | 3083 | 216 | adce1e0e614b75757a3b81ab6faf8a39d9c24fddc950ab34c88599baa5198264 | identical
+6_stripes.png | edges | 2973 | 619 | e90a92c225d502df3b81a9636fda99493a2e873b7b63b9745e90e162c5ce768b | identical
+6_stripes.png | closed | 2973 | 483 | e90a92c225d502df3b81a9636fda99493a2e873b7b63b9745e90e162c5ce768b | identical
+6_stripes.png | smart | 2329 | 374 | 42280bae707291e6bffa47f41f389dbb190f64e79e490c7b0a3f90f22cd583e8 | identical
+6_stripes.png | edges_fill | 3163 | 370 | 386498c5a1abc73b577b856ecf0a2f32288d9837c54946200682ae598228a353 | identical
+6_stripes.png | setbg | 3080 | 310 | 47d996902a3377f0ec65d439f0c4a21369cfffc182b40c494d524d148b4977a5 | identical
+6_stripes.png | variant | 3138 | 305 | 9cf985157c1e09b105d35041efea4041ad8d265a4626829ce80f1057efe294ca | identical
+7_letter_o.jpg | off | 67722 | 676 | 4d768ce1c843baad51d792f6ed7f4d40b1d7917fb28d2d7f1f7a4522144cb238 | identical
+7_letter_o.jpg | edges | 51481 | 928 | 4fab386011947a9c9b5eb21677d266d75e0433c3f9b7a216728592fa6a7c993e | identical
+7_letter_o.jpg | closed | 28121 | 874 | a01daa9233884b3a34bc988953aeb7c70360ec9dd16e0faf6a56c17ac457f93a | identical
+7_letter_o.jpg | smart | 31832 | 937 | addc090777b0bfe2c293c0f27c28c680ee39f86d5d8149d22037385e84092f1c | identical
+7_letter_o.jpg | edges_fill | 53788 | 845 | a88dd0ff55b1bc6097493b99715e3ed4ff66374e1107fa8a104a87e29d99bcda | identical
+7_letter_o.jpg | setbg | 51618 | 846 | dcc9f8e13131ff56e218eea4007142757eec3f126d00abd065f746f4f68dd740 | identical
+7_letter_o.jpg | variant | 55953 | 935 | 821c7e6ecef0e4bc41f2e9ed20f07927ecb3dd365c9694cfad1448bfcd6c120e | identical
