@@ -19,6 +19,8 @@ import com.customblocks.command.CbFmt;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.block.SlotLighting;
 import com.customblocks.command.Chat;
+import com.customblocks.core.CategoryMembershipStore;
+import com.customblocks.core.CategoryService;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -33,8 +35,12 @@ import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class AttributeCommands {
 
@@ -98,10 +104,12 @@ public final class AttributeCommands {
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
                         .then(CommandManager.argument("category", StringArgumentType.greedyString())
+                                // TG11 A9: suggestions come from the real category records (shared with
+                                // /cb category), so an empty category still completes and a typo can't
+                                // quietly invent one.
                                 .suggests((c, b) -> {
                                     b.suggest("none");
-                                    for (String s : SlotManager.categories()) b.suggest(s);
-                                    return b.buildFuture();
+                                    return CategoryCommands.suggestCategories(c, b);
                                 })
                                 .executes(ctx -> setCategory(ctx,
                                         StringArgumentType.getString(ctx, "id"),
@@ -236,28 +244,65 @@ public final class AttributeCommands {
         return 1;
     }
 
+    /**
+     * /cb setcategory &lt;id&gt; &lt;category&gt;… — G11: this ADDS memberships now, it does not replace them.
+     *
+     * Assigning a block somewhere new never silently removes it from where it already is (G11
+     * Locked Decisions); clearing needs {@code none} or {@code /cb category remove}. Several
+     * categories can be named at once, and a multi-word name is quoted — otherwise "Arabic Letters"
+     * would read as two separate categories.
+     */
     private static int setCategory(CommandContext<ServerCommandSource> ctx, String id, String raw) {
         ServerCommandSource src = ctx.getSource();
-        String cat = raw.trim();
-        if (cat.equalsIgnoreCase("none") || cat.equalsIgnoreCase("clear") || cat.equalsIgnoreCase("uncategorized")) {
-            cat = ""; // clear
-        } else {
-            cat = cat.toLowerCase(Locale.ROOT);
-        }
         SlotData before = SlotManager.getById(id);
         if (before == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         if (locked(src, id)) return 0;
-        SlotData d = SlotManager.setCategory(id, cat);
-        if (d == null) {
-            Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id.");
-            return 0;
+
+        List<String> names = splitCategories(raw);
+        if (names.isEmpty()) { Chat.error(src, "Name at least one category (or 'none' to clear)."); return 0; }
+
+        // "none" is still the clear escape hatch — it drops every membership, so the block falls
+        // back to Uncategorized rather than adding a category literally named "none".
+        String first = names.get(0);
+        if (names.size() == 1 && (first.equalsIgnoreCase("none") || first.equalsIgnoreCase("clear")
+                || first.equalsIgnoreCase("uncategorized"))) {
+            List<String> was = new ArrayList<>(CategoryMembershipStore.of(before.customId()));
+            SlotManager.setCategory(id, "");
+            UndoManager.recordMembership(actor(src), before.customId(), was,
+                    CategoryMembershipStore.of(before.customId()), "category");
+            HudSync.broadcast(src.getServer());
+            Chat.success(src, "Removed \"" + id + "\" from every category — it's Uncategorized now.");
+            return 1;
         }
-        UndoManager.recordModify(actor(src), before, d, "category");
+
+        List<String> was = new ArrayList<>(CategoryMembershipStore.of(before.customId()));
+        List<String> added = new ArrayList<>();
+        for (String name : names) {
+            CategoryService.Outcome o = CategoryService.addMembership(null, id, name);
+            if (!o.ok()) { Chat.error(src, o.msg()); continue; }
+            added.add(name);
+        }
+        if (added.isEmpty()) return 0;
+        // One undo step for the whole command line, not one per name (addMembership was passed a
+        // null actor above precisely so it wouldn't push a step of its own).
+        UndoManager.recordMembership(actor(src), before.customId(), was,
+                CategoryMembershipStore.of(before.customId()), "category");
         HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD category updates live for all players
-        Chat.success(src, cat.isEmpty()
-                ? "Removed \"" + id + "\" from its category."
-                : "Moved \"" + id + "\" to the \"" + cat + "\" category.");
+        Chat.success(src, "\"" + id + "\" is now in " + String.join(", ", added)
+                + " (" + CategoryMembershipStore.of(before.customId()).size() + " total).");
         return 1;
+    }
+
+    /** Split a category argument into names: bare words, or "quoted phrases" for multi-word names. */
+    private static List<String> splitCategories(String raw) {
+        List<String> out = new ArrayList<>();
+        if (raw == null) return out;
+        Matcher m = Pattern.compile("\"([^\"]*)\"|(\\S+)").matcher(raw.trim());
+        while (m.find()) {
+            String s = (m.group(1) != null ? m.group(1) : m.group(2)).trim();
+            if (!s.isEmpty()) out.add(s);
+        }
+        return out;
     }
 
     /** Parse a collision mode. Returns true (passable), false (solid), or null if unrecognized. */

@@ -39,7 +39,9 @@ public abstract class AbstractBlockStateMixin {
         at = @At("HEAD"), cancellable = true)
     private void customblocks$guessBlindOutline(BlockView world, BlockPos pos, ShapeContext context,
                                                 CallbackInfoReturnable<VoxelShape> cir) {
-        if (GuessDisguise.blinds((BlockState) (Object) this))
+        // §A (the local player is a flagged holder) OR §H (this exact block sits under someone else's placed
+        // mask) — both draw the same full "?" cube, so both need the same full-cube selection box.
+        if (GuessDisguise.blindsAt(pos, (BlockState) (Object) this))
             cir.setReturnValue(VoxelShapes.fullCube());
     }
 }

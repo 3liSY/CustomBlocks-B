@@ -26,6 +26,8 @@ import com.customblocks.cloud.CloudVaultClient;
 import com.customblocks.cloud.VaultHistory;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
+import com.customblocks.core.CategoryMembershipStore;
+import com.customblocks.core.CategoryMetadataStore;
 import com.customblocks.core.CategoryService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -64,17 +66,22 @@ public final class CategoryCommands {
     }
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
-        root.then(CommandManager.literal("category")
+        LiteralArgumentBuilder<ServerCommandSource> cat = CommandManager.literal("category")
                 .executes(ctx -> openList(ctx.getSource()))
 
+                // Bare `list` still opens the Category Hub for a player; with a mode it prints the
+                // ordered text listing instead — the Hub has no filter UI of its own yet (G27 owns it).
                 .then(CommandManager.literal("list")
-                        .executes(ctx -> openList(ctx.getSource())))
+                        .executes(ctx -> openList(ctx.getSource()))
+                        .then(CommandManager.argument("mode", StringArgumentType.word())
+                                .suggests((c, b) -> {
+                                    for (String m : CategoryService.categoryModes()) b.suggest(m);
+                                    return b.buildFuture();
+                                })
+                                .executes(ctx -> listFiltered(ctx.getSource(), str(ctx, "mode")))))
 
                 .then(CommandManager.literal("edit")
                         .then(catArg("cat").executes(ctx -> openEdit(ctx.getSource(), str(ctx, "cat")))))
-
-                .then(CommandManager.literal("info")
-                        .then(catArg("cat").executes(ctx -> info(ctx.getSource(), str(ctx, "cat")))))
 
                 .then(CommandManager.literal("rename")
                         .then(CommandManager.argument("old", StringArgumentType.word())
@@ -90,10 +97,6 @@ public final class CategoryCommands {
                                         .suggests(CategoryCommands::suggestCategories)
                                         .executes(ctx -> report(ctx.getSource(),
                                                 CategoryService.merge(str(ctx, "source"), str(ctx, "target")))))))
-
-                .then(CommandManager.literal("delete")
-                        .then(catArg("cat").executes(ctx -> report(ctx.getSource(),
-                                CategoryService.delete(str(ctx, "cat"))))))
 
                 .then(CommandManager.literal("color")
                         .then(CommandManager.argument("cat", StringArgumentType.word())
@@ -144,7 +147,12 @@ public final class CategoryCommands {
 
                 .then(CommandManager.literal("import")
                         .then(CommandManager.argument("code", StringArgumentType.word())
-                                .executes(ctx -> importCategory(ctx, str(ctx, "code"))))));
+                                .executes(ctx -> importCategory(ctx, str(ctx, "code")))));
+
+        // create / set / remove / delete-modes / filter / info live next door (§9.3 line gate),
+        // hung onto this same node so it stays ONE /cb category tree.
+        CategoryMemberCommands.register(cat);
+        root.then(cat);
     }
 
     /** A single greedy category-name argument with category suggestions. */
@@ -154,7 +162,7 @@ public final class CategoryCommands {
     }
 
     /** Turn a CategoryService.Outcome into chat feedback + a Brigadier result code. */
-    private static int report(ServerCommandSource src, CategoryService.Outcome o) {
+    static int report(ServerCommandSource src, CategoryService.Outcome o) {
         if (o.ok()) Chat.success(src, o.msg()); else Chat.error(src, o.msg());
         return o.ok() ? 1 : 0;
     }
@@ -167,12 +175,18 @@ public final class CategoryCommands {
             ServerPlayNetworking.send(p, new OpenGuiPayload(GuiMode.CATEGORY_HUB.id, ""));
             return 1;
         }
-        List<String> cats = new ArrayList<>(SlotManager.categories());
-        if (cats.isEmpty()) { Chat.info(src, "No categories yet. Use /cb setcategory <id> <name>."); return 1; }
-        cats.sort(String::compareToIgnoreCase);
-        StringBuilder sb = new StringBuilder("Categories (" + cats.size() + "): ");
-        for (String c : cats) sb.append(c).append(" (").append(SlotManager.byCategory(c).size()).append(")  ");
-        Chat.info(src, sb.toString().trim());
+        return listFiltered(src, ""); // console gets the text listing, alphabetical by default
+    }
+
+    /** The category listing in a named order (G11 filter — the category half of the mode set). */
+    private static int listFiltered(ServerCommandSource src, String mode) {
+        List<String> lines = CategoryService.filterCategories(mode);
+        if (lines == null) {
+            Chat.error(src, "Unknown order \"" + mode + "\". Categories can be listed by: "
+                    + String.join(", ", CategoryService.categoryModes()) + ".");
+            return 0;
+        }
+        for (String line : lines) Chat.raw(src, Text.literal(line));
         return 1;
     }
 
@@ -185,11 +199,6 @@ public final class CategoryCommands {
         return 1;
     }
 
-    private static int info(ServerCommandSource src, String category) {
-        for (String line : CategoryService.info(category)) Chat.raw(src, Text.literal(line));
-        return 1;
-    }
-
     // ── /cb category give <cat> ─────────────────────────────────────────────────
 
     private static int giveCategory(CommandContext<ServerCommandSource> ctx, String category) {
@@ -199,7 +208,7 @@ public final class CategoryCommands {
             return 0;
         }
         String cat = category.trim().toLowerCase(Locale.ROOT);
-        List<SlotData> blocks = sortedByIndex(SlotManager.byCategory(cat));
+        List<SlotData> blocks = sortedByIndex(CategoryMembershipStore.blocksIn(cat));
         if (blocks.isEmpty()) {
             Chat.error(src, "No blocks in category \"" + cat + "\". See /cb categories.");
             return 0;
@@ -230,7 +239,7 @@ public final class CategoryCommands {
     private static int exportCategory(CommandContext<ServerCommandSource> ctx, String category) {
         ServerCommandSource src = ctx.getSource();
         String cat = category.trim().toLowerCase(Locale.ROOT);
-        List<SlotData> blocks = sortedByIndex(SlotManager.byCategory(cat));
+        List<SlotData> blocks = sortedByIndex(CategoryMembershipStore.blocksIn(cat));
         if (blocks.isEmpty()) {
             Chat.error(src, "No blocks in category \"" + cat + "\". See /cb categories.");
             return 0;
@@ -258,7 +267,7 @@ public final class CategoryCommands {
                     + "\"vaultEndpoint\", then /cb reload.");
             return 0;
         }
-        List<SlotData> blocks = sortedByIndex(SlotManager.byCategory(cat));
+        List<SlotData> blocks = sortedByIndex(CategoryMembershipStore.blocksIn(cat));
         if (blocks.isEmpty()) {
             Chat.error(src, "No blocks in category \"" + cat + "\". See /cb categories.");
             return 0;
@@ -356,12 +365,24 @@ public final class CategoryCommands {
 
 
 
-    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
+    /**
+     * Suggest EXISTING category names (TG11 A9), by their typed display name.
+     *
+     * Reads the metadata records plus the keys actually in use, not SlotManager's block scan: a
+     * category with 0 blocks is still real (G11) and has to tab-complete, or an empty category
+     * would be untypeable the moment its last block left. A name containing a space is offered
+     * pre-quoted, since the arguments that are followed by a mode word take a quotable string.
+     */
+    static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
     suggestCategories(CommandContext<ServerCommandSource> ctx,
                       com.mojang.brigadier.suggestion.SuggestionsBuilder b) {
-        String typed = b.getRemaining().toLowerCase(Locale.ROOT);
-        for (String c : SlotManager.categories()) {
-            if (c.toLowerCase(Locale.ROOT).startsWith(typed)) b.suggest(c);
+        String typed = b.getRemaining().toLowerCase(Locale.ROOT).replace("\"", "");
+        java.util.Set<String> keys = new java.util.TreeSet<>(CategoryMetadataStore.knownCategories());
+        keys.addAll(CategoryMembershipStore.keysInUse());
+        for (String k : keys) {
+            String name = CategoryMetadataStore.getDisplayName(k);
+            if (!name.toLowerCase(Locale.ROOT).startsWith(typed) && !k.startsWith(typed)) continue;
+            b.suggest(name.contains(" ") ? "\"" + name + "\"" : name);
         }
         return b.buildFuture();
     }

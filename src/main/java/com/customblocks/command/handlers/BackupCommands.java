@@ -22,10 +22,13 @@ package com.customblocks.command.handlers;
 
 import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
-import com.customblocks.cloud.CloudVaultClient;
-import com.customblocks.cloud.VaultHistory;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BackupManager;
+import com.customblocks.core.BackupArchive;
+import com.customblocks.core.BackupIntegrity;
+import com.customblocks.core.BackupRestore;
+import com.customblocks.core.BackupRetention;
+import com.customblocks.core.BackupView;
 import com.customblocks.core.IncidentRecorder;
 import com.customblocks.core.SlotManager;
 import com.customblocks.gui.GuiMode;
@@ -58,6 +61,15 @@ public final class BackupCommands {
         return b.buildFuture();
     };
 
+    /** Tab-complete the top-level entries INSIDE the already-typed backup (for granular load). */
+    private static final SuggestionProvider<ServerCommandSource> ENTRIES = (ctx, b) -> {
+        try {
+            String n = StringArgumentType.getString(ctx, "name");
+            for (String e : BackupRestore.contents(n)) b.suggest(e);
+        } catch (Exception ignored) { /* name not parsed yet */ }
+        return b.buildFuture();
+    };
+
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
         root.then(CommandManager.literal("backup")
                 // Bare /cb backup opens the advanced GUI for a player; console falls back to chat usage.
@@ -72,11 +84,33 @@ public final class BackupCommands {
                         .then(CommandManager.argument("name", StringArgumentType.word())
                                 .suggests(NAMES)
                                 .executes(ctx -> requestRestore(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "name")))
+                                // Granular (P5): /cb backup load <name> <entry> restores ONE store only.
+                                .then(CommandManager.argument("entry", StringArgumentType.word())
+                                        .suggests(ENTRIES)
+                                        .executes(ctx -> requestRestoreEntry(ctx.getSource(),
+                                                StringArgumentType.getString(ctx, "name"),
+                                                StringArgumentType.getString(ctx, "entry"))))))
+                .then(CommandManager.literal("contents")
+                        .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests(NAMES)
+                                .executes(ctx -> BackupScreenCommands.contents(ctx.getSource(),
                                         StringArgumentType.getString(ctx, "name")))))
                 .then(CommandManager.literal("delete")
                         .then(CommandManager.argument("name", StringArgumentType.word())
                                 .suggests(NAMES)
                                 .executes(ctx -> delete(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "name")))))
+                .then(CommandManager.literal("preview")
+                        .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests(NAMES)
+                                .executes(ctx -> BackupScreenCommands.preview(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "name")))))
+                .then(CommandManager.literal("verify")
+                        .executes(ctx -> BackupScreenCommands.verifyAll(ctx.getSource()))
+                        .then(CommandManager.argument("name", StringArgumentType.word())
+                                .suggests(NAMES)
+                                .executes(ctx -> BackupScreenCommands.verifyOne(ctx.getSource(),
                                         StringArgumentType.getString(ctx, "name"))))));
 
         // /cb backupgui — open the advanced backup GUI directly (matches /cb bulkgui …).
@@ -86,7 +120,7 @@ public final class BackupCommands {
     /** Bare /cb backup: open the Backup Screen (G09-A4) as a player; console gets the chat usage list. */
     private static int openOrUsage(ServerCommandSource src) {
         if (src.getEntity() instanceof ServerPlayerEntity p) {
-            openScreen(p);
+            BackupScreenCommands.openScreen(p);
             return 1;
         }
         return usage(src);
@@ -97,6 +131,10 @@ public final class BackupCommands {
         Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup save [name] " + CbFmt.DIM + "- save a point-in-time backup"));
         Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup list " + CbFmt.DIM + "- list saved backups"));
         Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup load <name> " + CbFmt.DIM + "- load one back (asks to confirm)"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup contents <name> " + CbFmt.DIM + "- list what a backup holds"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup load <name> <item> " + CbFmt.DIM + "- restore just one part (e.g. notes.json)"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup preview <name> " + CbFmt.DIM + "- show what a restore would change (no change)"));
+        Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup verify [name] " + CbFmt.DIM + "- check a backup (or all) for corruption"));
         Chat.raw(src, Text.literal("  " + CbFmt.VALUE + "/cb backup delete <name> " + CbFmt.DIM + "- remove a backup"));
         return 1;
     }
@@ -106,17 +144,31 @@ public final class BackupCommands {
     private static int save(ServerCommandSource src, String nameArg) {
         MinecraftServer server = src.getServer();
         if (server == null) return 0;
-        String name = (nameArg == null || nameArg.isBlank())
-                ? BackupManager.timestampName("backup") : nameArg.trim();
-        if (!validateNewName(src, name)) return 0;
+        boolean userTyped = nameArg != null && !nameArg.isBlank();
+        String name = userTyped ? nameArg.trim() : BackupManager.generatedName(BackupManager.Kind.MANUAL);
+        if (!validateNewName(src, name, userTyped)) return 0;
         startSave(src, server, name, null);
         return 1;
     }
 
-    /** Validate a proposed NEW backup name, messaging {@code src} on failure. */
-    private static boolean validateNewName(ServerCommandSource src, String name) {
+    /** Validate a proposed NEW backup name typed by a player (runs the reserved-prefix guard). */
+    static boolean validateNewName(ServerCommandSource src, String name) {
+        return validateNewName(src, name, true);
+    }
+
+    /**
+     * Validate a proposed NEW backup name, messaging {@code src} on failure. When {@code userTyped} is
+     * false the name came from the mod itself (generatedName/timestampName), so the reserved-prefix guard
+     * is skipped — otherwise the auto-name "manual_…" would refuse itself for starting with "manual_".
+     */
+    static boolean validateNewName(ServerCommandSource src, String name, boolean userTyped) {
         if (!BackupManager.isValidName(name)) {
             Chat.error(src, "Bad backup name \"" + name + "\". Use letters, numbers, - or _ (max 48 chars).");
+            return false;
+        }
+        if (userTyped && BackupManager.isReservedName(name)) {
+            Chat.error(src, "\"" + name + "\" starts with a reserved prefix (manual_/auto_/safety_/pre-). "
+                    + "Pick a different name — those are used by automatic backups.");
             return false;
         }
         if (BackupManager.exists(name)) {
@@ -131,18 +183,17 @@ public final class BackupCommands {
      * success {@code onDone} (if any) runs on the server thread — the GUI uses it to refresh the list.
      * Assumes {@code name} is already validated.
      */
-    private static void startSave(ServerCommandSource src, MinecraftServer server, String name, Runnable onDone) {
+    static void startSave(ServerCommandSource src, MinecraftServer server, String name, Runnable onDone) {
         SlotManager.saveAll();
         int blocks = SlotManager.assignedSlots().size();
         Chat.info(src, "Saving backup \"" + name + "\"…");
         Thread worker = new Thread(() -> {
             try {
-                BackupManager.save(name, blocks, false);
+                BackupManager.save(name, blocks, BackupManager.Kind.MANUAL, "manual", null);
                 server.execute(() -> {
                     Chat.success(src, "Backup \"" + name + "\" saved. (" + blocks + " block(s), config, textures)");
                     if (onDone != null) onDone.run();
                 });
-                maybeCloudSync(src, server, name); // best-effort cloud push (gated); never fails the save
             } catch (Exception e) {
                 String code = IncidentRecorder.record("Backup save failed for \"" + name + "\"", null, src.getName(), e);
                 server.execute(() -> Chat.incidentError(src, "Couldn't save the backup.", code));
@@ -152,31 +203,6 @@ public final class BackupCommands {
         worker.start();
     }
 
-    /**
-     * Best-effort cloud sync (Group 20 §C): if cloud sharing is ON and a vaultEndpoint is set, zip the
-     * just-saved backup and push it to the vault, recording the returned code in /cb vault codes. The
-     * local backup already succeeded, so any failure here is reported but NEVER fails the save. Runs on
-     * the backup worker thread (network I/O); user-facing messages hop back to the server thread.
-     */
-    private static void maybeCloudSync(ServerCommandSource src, MinecraftServer server, String name) {
-        if (!CustomBlocksConfig.cloudShareEnabled || !CloudVaultClient.isConfigured()) return;
-        byte[] zip = BackupManager.zip(name);
-        if (zip == null || zip.length == 0) {
-            server.execute(() -> Chat.error(src, "Cloud sync skipped — couldn't package backup \"" + name + "\"."));
-            return;
-        }
-        server.execute(() -> Chat.info(src, "Syncing backup \"" + name + "\" to the cloud…"));
-        String code = CloudVaultClient.uploadBackup(name, zip);
-        server.execute(() -> {
-            if (code == null) {
-                Chat.error(src, "Cloud sync failed — the backup is saved locally. Check vaultEndpoint and the worker's /backup route.");
-            } else {
-                VaultHistory.record("backup", code, name, src);
-                Chat.success(src, "☁ Backup synced — code " + CbFmt.VALUE + code + CbFmt.OK + ". Find it again with " + CbFmt.BODY + "/cb vault codes" + CbFmt.OK + ".");
-            }
-        });
-    }
-
     // ── GUI bridge (BackupMenu / BackupConfirmMenu) ───────────────────────────
 
     /** Create a backup from the GUI's name prompt, then refresh the list when the save finishes. */
@@ -184,9 +210,9 @@ public final class BackupCommands {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         ServerCommandSource src = player.getCommandSource();
-        String name = (nameArg == null || nameArg.isBlank())
-                ? BackupManager.timestampName("backup") : nameArg.trim();
-        if (!validateNewName(src, name)) { reopenList(player); return; }
+        boolean userTyped = nameArg != null && !nameArg.isBlank();
+        String name = userTyped ? nameArg.trim() : BackupManager.generatedName(BackupManager.Kind.MANUAL);
+        if (!validateNewName(src, name, userTyped)) { reopenList(player); return; }
         startSave(src, server, name, () -> reopenList(player));
     }
 
@@ -207,7 +233,7 @@ public final class BackupCommands {
     private static int list(ServerCommandSource src) {
         // A player gets the Backup Screen (G09-A4); console/command-block keeps the chat list.
         if (src.getEntity() instanceof ServerPlayerEntity p) {
-            openScreen(p);
+            BackupScreenCommands.openScreen(p);
             return 1;
         }
         List<BackupManager.BackupInfo> backups = BackupManager.list();
@@ -217,11 +243,11 @@ public final class BackupCommands {
         }
         Chat.info(src, "Backups (" + backups.size() + ", newest first):");
         for (BackupManager.BackupInfo b : backups) {
-            String label = BackupManager.displayLabel(b);
+            String label = BackupView.displayLabel(b);
             String blocks = b.blocks() >= 0 ? (b.blocks() + " block(s)") : "?";
             if (label.equals(b.name())) {
                 // Manual save: the name is both the label and the restore-by id; show time separately.
-                Chat.raw(src, Text.literal("  " + CbFmt.VALUE + label + " " + CbFmt.DIM + "- " + BackupManager.friendlyTime(b)
+                Chat.raw(src, Text.literal("  " + CbFmt.VALUE + label + " " + CbFmt.DIM + "- " + BackupView.friendlyTime(b)
                         + " " + CbFmt.FAINT + "· " + CbFmt.DIM + blocks));
             } else {
                 // Auto: friendly label already carries the time; raw restore-by id shown dim in parens.
@@ -229,63 +255,6 @@ public final class BackupCommands {
             }
         }
         return 1;
-    }
-
-    // ── Backup Screen bridge (G09-A4) ─────────────────────────────────────────
-
-    /** Send the Backup Screen to a player with the current backup list (opens fresh or refreshes). */
-    public static void openScreen(ServerPlayerEntity player) {
-        ServerPlayNetworking.send(player, new OpenGuiPayload(GuiMode.BACKUP_SCREEN.id, BackupManager.screenJson()));
-    }
-
-    /**
-     * Perform a Backup Screen action server-side (authoritative), then re-push the refreshed screen.
-     * The screen's opaque confirm modal is the confirmation, so restore/delete run immediately here —
-     * the /cb confirm gate only guards the chat path. Runs on the server thread.
-     */
-    public static void handleScreenAction(ServerPlayerEntity player, String action, String name, String arg) {
-        ServerCommandSource src = player.getCommandSource();
-        switch (action == null ? "" : action) {
-            case BackupActionPayload.ACTION_CREATE -> {
-                MinecraftServer server = player.getServer();
-                if (server == null) return;
-                String n = (name == null || name.isBlank()) ? BackupManager.timestampName("backup") : name.trim();
-                if (!validateNewName(src, n)) { openScreen(player); return; }
-                startSave(src, server, n, () -> openScreen(player)); // onDone refreshes once the save lands
-            }
-            case BackupActionPayload.ACTION_RESTORE -> { doRestore(src, name); openScreen(player); }
-            case BackupActionPayload.ACTION_DELETE  -> { delete(src, name);    openScreen(player); }
-            case BackupActionPayload.ACTION_RENAME  -> { renameBackup(src, name, arg); openScreen(player); }
-            case BackupActionPayload.ACTION_PROTECT -> { toggleProtect(src, name);     openScreen(player); }
-            default -> openScreen(player);
-        }
-    }
-
-    private static void renameBackup(ServerCommandSource src, String oldName, String newName) {
-        if (newName == null || newName.isBlank()) { Chat.error(src, "Enter a new name for the backup."); return; }
-        try {
-            boolean ok = BackupManager.rename(oldName, newName.trim());
-            if (ok) Chat.success(src, "Renamed backup \"" + oldName + "\" → \"" + newName.trim() + "\".");
-            else Chat.error(src, "There's no backup named \"" + oldName + "\".");
-        } catch (Exception e) {
-            String code = IncidentRecorder.record("Backup rename failed for \"" + oldName + "\"", null, src.getName(), e);
-            Chat.incidentError(src, "Couldn't rename the backup.", code);
-        }
-    }
-
-    private static void toggleProtect(ServerCommandSource src, String name) {
-        boolean nowProtected = false;
-        boolean found = false;
-        for (BackupManager.BackupInfo b : BackupManager.list()) {
-            if (b.name().equals(name)) { nowProtected = !b.protectedFromPrune(); found = true; break; }
-        }
-        if (!found) { Chat.error(src, "There's no backup named \"" + name + "\"."); return; }
-        if (BackupManager.setProtected(name, nowProtected)) {
-            Chat.info(src, nowProtected ? "Protected \"" + name + "\" — it won't be auto-pruned."
-                                        : "Unprotected \"" + name + "\".");
-        } else {
-            Chat.error(src, "Couldn't update protection for \"" + name + "\".");
-        }
     }
 
     // ── Restore / delete (Slice 2) ────────────────────────────────────────────
@@ -302,7 +271,49 @@ public final class BackupCommands {
         return 1;
     }
 
-    private static int delete(ServerCommandSource src, String name) {
+    /** Arm a confirm-gated granular restore of ONE entry from a backup (P5). */
+    private static int requestRestoreEntry(ServerCommandSource src, String name, String entry) {
+        if (!BackupManager.isValidBackup(name)) {
+            Chat.error(src, "Backup \"" + name + "\" is missing or unreadable.");
+            return 0;
+        }
+        if (!BackupRestore.contents(name).contains(entry)) {
+            Chat.error(src, "Backup \"" + name + "\" has no \"" + entry + "\". Run /cb backup contents " + name + ".");
+            return 0;
+        }
+        BulkConfirm.request(src, () -> doRestoreEntry(src, name, entry), "restore " + entry + " from " + name);
+        Chat.info(src, "About to restore ONLY " + CbFmt.VALUE + entry + CbFmt.DIM + " from \"" + name + "\" (a safety copy of "
+                + "the current " + entry + " is saved first). Type " + CbFmt.OK + "/cb confirm" + CbFmt.DIM + " or " + CbFmt.BAD + "/cb cancel" + CbFmt.DIM + ".");
+        return 1;
+    }
+
+    /** Perform a single-entry restore on the server thread: pause pack, restore the one entry, reload. */
+    private static void doRestoreEntry(ServerCommandSource src, String name, String entry) {
+        MinecraftServer server = src.getServer();
+        if (server == null) return;
+        int current = SlotManager.assignedSlots().size();
+        ResourcePackServer.pause();
+        String safety;
+        try {
+            SlotManager.saveAll();
+            safety = BackupRestore.restoreEntry(name, entry, current);
+            BackupRetention.pruneSafety(CustomBlocksConfig.safetyKeepCount);
+            CustomBlocksConfig.load();
+            SlotManager.reload();
+        } catch (Exception e) {
+            ResourcePackServer.resume();
+            String code = IncidentRecorder.record("Granular restore failed (" + entry + " from " + name + ")", null, src.getName(), e);
+            Chat.incidentError(src, "Restore failed — your data was left as it was.", code);
+            return;
+        }
+        ResourcePackServer.resume();
+        ResourcePackServer.syncToAll();
+        Chat.success(src, "Restored " + CbFmt.VALUE + entry + CbFmt.OK + " from \"" + name + "\". Old " + entry
+                + " saved as \"" + safety + "\" (undo with /cb backup load " + safety + " " + entry + ").");
+    }
+
+
+    static int delete(ServerCommandSource src, String name) {
         if (!BackupManager.exists(name)) {
             Chat.error(src, "There's no backup named \"" + name + "\". Run /cb backup list.");
             return 0;
@@ -318,7 +329,7 @@ public final class BackupCommands {
      * backup is taken first), then reload config + slots and rebuild/push the pack. On failure the
      * data is left as it was (BackupManager rolls the safety copy back) and the pack resumes.
      */
-    private static void doRestore(ServerCommandSource src, String name) {
+    static void doRestore(ServerCommandSource src, String name) {
         MinecraftServer server = src.getServer();
         if (server == null) return;
         if (!BackupManager.isValidBackup(name)) {
@@ -330,7 +341,8 @@ public final class BackupCommands {
         String safety;
         try {
             SlotManager.saveAll();
-            safety = BackupManager.restore(name, current);
+            safety = BackupRestore.restore(name, current);
+            BackupRetention.pruneSafety(CustomBlocksConfig.safetyKeepCount); // bound the pre-restore copies (P0 fix)
             CustomBlocksConfig.load();
             SlotManager.reload();
         } catch (Exception e) {

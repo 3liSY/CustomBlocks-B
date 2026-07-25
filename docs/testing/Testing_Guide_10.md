@@ -4,23 +4,23 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Core image commands are confirmed; background routes and the advanced `/cb bulkrecolor` Hub need later discussion. |
-| **Progress** | 🟩🟩🟩🟥🟥🟥🟥🟥🟥🟥 30% |
-| **Last tested** | 2026-06-29 |
+| **Verdict** | Six sections are confirmed; nothing is runnable now because §E is parked and §H is unbuilt, both waiting on `/cb tolerance` being replaced by automatic detection. |
+| **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 75% |
+| **Last tested** | 2026-07-25 |
 | **Jar** | `customblocks-1.0.0.jar` |
 
 ## Sections
 
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
-| D | Checkerboard-source flattening and speck cleanup | Built 🎯 | Discussion ✏️ |
-| E | Colour-variant edge/off-edge black cleanup | Built 🎯 | Discussion ✏️ |
-| B | Background Studio, palette, and coloring engine flows | Built 🎯 | Polish 🎨 |
-| G | Advanced `/cb bulkrecolor` Hub | Planned 📜 | Discussion ✏️ |
-| C | Unified `background` attribute | Designed ⏳ | Discussion ✏️ |
-| F | `/cb colorvariants` family command and future GUI | Designed ⏳ | - |
-| A | Resize, export PNG, and gradient command basics | Done ✅ | - |
-| H | AI background removal | Planned 📜 | Parked 💤 |
+| H | Automatic background detection | Designed ⏳ | - |
+| A | Resize, export PNG, gradient | Done ✅ | - |
+| B | No hairline at block edges | Done ✅ | - |
+| C | Change a block's background colour | Done ✅ | - |
+| D | Fake-transparency grid cleanup | Done ✅ | - |
+| F | `/cb colorvariants` families and delete | Done ✅ | - |
+| G | Quieter chat, sharper resize | Done ✅ | - |
+| E | Colour variants covering the background | Planned 📜 | Parked 💤 |
 
 **Original Group:** [GROUP_10_COLOR_IMAGE.md](../groups/GROUP_10_COLOR_IMAGE.md)
 
@@ -30,90 +30,76 @@
 
 ## 💡 Setup
 
-- Create `g10a` and `g10b` from real image URLs with visibly different colors.
-- Keep one flattened checkerboard source image and one normal transparent PNG available.
-- Cross-check screen-only failures in G27 when the UI is live recolor, eyedrop, or the unified Coloring Screen.
+- Nothing runnable: §E is parked, §H is not built.
+- The picture table stays because §H reuses it as its baseline set.
 
-## B - Background Studio, palette, and coloring engine flows - Built 🎯
+**Test pictures** — referenced below as `<link 1>`, `<link 2>`, and so on.
 
-| | |
-| --- | --- |
-| **Check** | G10 engines still perform background removal, fill color, tolerance, palette, and color-variant operations while final screens move through G27. |
-| **Pass rule** | Background, fill color, tolerance, palette persistence, variant creation, and undo rows pass twice. |
-| **Pass mark** | ✅ `YYYY-MM-DD` |
+| # | Link | Why this one |
+| --- | --- | --- |
+| 1 | [transparent PNG](https://commons.wikimedia.org/wiki/Special:FilePath/PNG_transparency_demonstration_1.png) | Real alpha, must stay untouched |
+| 2 | [chrome logo](https://www.citypng.com/public/uploads/preview/chevrolet-logo-emblem-png-image-701751694713268nqpyixtxkk.png) | Dark checker grid behind shiny chrome |
+| 3 | [Tux](https://commons.wikimedia.org/wiki/Special:FilePath/Tux.png) | Hair-thin outlines |
+| 4 | [blurry JPEG copy](https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcTSe6HDsghzAZLcsTvwpErU0SlbVKOOBNYDfFPCUOPCBzEOiIG8QkQ3pC8&s=10) | Link 2 re-compressed |
+| 5 | [oversized table](https://upload.wikimedia.org/wikipedia/commons/3/39/Periodic_table_large.png) | Too big on purpose |
+| 6 | [one-way stripes](https://upload.wikimedia.org/wikipedia/commons/a/ad/Narrow_9_stripes.png) | Must not read as a checker grid |
+| 7 | [letter O on blue](https://thumbs.dreamstime.com/b/letter-o-lettering-design-blue-color-background-o-letter-blue-background-268745593.jpg) | Enclosed hole for the fill to reach |
 
-| # | Action | Expected result | SP | MP |
-| --- | --- | --- | --- | --- |
-| B1 | Apply Background Studio background-only with black fill. | Background becomes black and `/cb undo` restores. | 🎯 | 🎯 |
-| B2 | Change fill color to red or a hex value and apply. | Removed background bakes to that color. | 🎯 | 🎯 |
-| B3 | Run `/cb tolerance 60` and `/cb tolerance 60 g10a`. | Global and per-block tolerance behave separately and persist. | 🎯 | 🎯 |
-| B4 | Save, load, and delete a palette. | Palette state persists and appears as a reusable color source. | 🎯 | 🎯 |
-| B5 | Create a color variant from the panel/command path. | Variant is generated from the source and is undoable. | 🎯 | 🎯 |
+All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehave.
 
-## C - Unified `background` attribute - Designed ⏳
+## H - Automatic background detection - Designed ⏳
 
 | | |
 | --- | --- |
-| **Check** | Background becomes one stored per-block attribute: transparent, black, or color. |
-| **Pass rule** | Single, selected, all-block, command, Studio, and tool surfaces write the same value and render correctly on full and shaped blocks after discussion is locked. |
-| **Pass mark** | ✅ `YYYY-MM-DD` |
-| **Blocked** | Exact commands, Screen controls, selection flow, tool behavior, migration mechanics, edge cases, limits, confirmation, cancel/rollback, and undo remain Discussion ✏️ for later. |
+| **Check** | Backgrounds come off with no strength setting anywhere, and an unsure result says so instead of damaging the picture. |
+| **Pass rule** | Every row passes with no number typed anywhere. |
+| **Pass mark** | ⏳ not built |
+| **Blocked** | §H is unbuilt; golden baselines were captured 2026-07-25, so the rip may now proceed. |
+
+**The knob is gone**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| C1 | Set a block background to transparent. | Atlas and off-atlas blocks become actually see-through where alpha exists. | 🎯 | 🎯 |
-| C2 | Set a block background to black. | Texture composites onto solid black and records that value on the block. | 🎯 | 🎯 |
-| C3 | Set a block background to a color from the 29-dye palette or hex. | Texture composites onto that color and survives restart. | 🎯 | 🎯 |
-| C4 | Apply the same background value to a shaped block. | Slab/stair/cross visuals do not show broken interior-face artifacts. | 🎯 | 🎯 |
-| C5 | Bulk-change background on a small selection. | Each selected block re-bakes, pack rebuilds once safely, and no-source blocks are skipped with a warning. | 🎯 | 🎯 |
-| C6 | Apply one background choice to all blocks through the future approved route. | Every eligible block receives the same stored background value; skips and failures are reported honestly. | ⏳ | ⏳ |
-| C7 | Use the future approved background tool on one block. | The tool writes the same stored background value as command, Studio, selected, and all-block routes. | ⏳ | ⏳ |
+| H1 | `/cb tolerance`, `/cb tolerance 30` | Unknown command, no tab-complete | ⏳ | ⏳ |
+| H2 | `/cb bgstudio` on any block | No strength button, no percentage | ⏳ | ⏳ |
+| H3 | Cycle `background` in `/cb config` | Auto and Off only | ⏳ | ⏳ |
+| H4 | `/cb config background BgRemove&More` | Accepted, resolves to Auto | ⏳ | ⏳ |
+| H5 | `/cb config background BgSmart` | Resolves to Auto, never suggested | ⏳ | ⏳ |
+| H6 | Junk mode value in config, restart | Comes up Auto, not Off | ⏳ | ⏳ |
+| H7 | Inspect `config/customblocks/` | `block_tolerances.json` gone | ⏳ | ⏳ |
+| H8 | Rename one block, then bulk-rename | Both succeed, no error | ⏳ | ⏳ |
 
-## D - Checkerboard-source flattening and speck cleanup - Built 🎯
-
-| | |
-| --- | --- |
-| **Check** | Opaque transparency-checkerboard preview images are detected and flattened to black before normal background processing. |
-| **Pass rule** | Owner checkerboard images, color variants, and normal transparent PNG controls pass twice in-game. |
-| **Pass mark** | ✅ `YYYY-MM-DD` |
+**Auto gets the pictures right**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| D1 | Create/retexture from a flattened checkerboard source. | Checkerboard pixels become black; subject remains intact. | 🎯 | 🎯 |
-| D2 | Make color variants from that source. | Tinted checkerboard does not survive into red/green/yellow variants. | 🎯 | 🎯 |
-| D3 | Use a real transparent PNG. | It remains unaffected by checkerboard flattening. | 🎯 | 🎯 |
-| D4 | Inspect tiny edge specks around the subject. | Speck cleanup removes small checker dots without eating real design pixels. | 🎯 | 🎯 |
+| H9 | Create from `<link 1>` | Untouched, file alpha used | ⏳ | ⏳ |
+| H10 | Create from `<link 2>` | Grid gone, shading kept, no dark rim | ⏳ | ⏳ |
+| H11 | Create from `<link 4>` | Same verdict as H10 | ⏳ | ⏳ |
+| H12 | Create from `<link 3>` | Thin outlines all present | ⏳ | ⏳ |
+| H13 | Colour variant from `<link 7>` | Blue and the O's hole both recoloured | ⏳ | ⏳ |
+| H14 | Create from `<link 6>` | Left alone | ⏳ | ⏳ |
+| H15 | Set Off, inspect edges close up | Still no hairline | ⏳ | ⏳ |
 
-## E - Colour-variant edge/off-edge black cleanup - Built 🎯
-
-| | |
-| --- | --- |
-| **Check** | Color variants do not leave avoidable black bands or trapped background when the source can be safely cleaned. |
-| **Pass rule** | Non-square padding fix is still confirmed, and remaining trapped-pocket candidates are classified honestly. |
-| **Pass mark** | ✅ `YYYY-MM-DD` |
+**Rails that must keep working**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| E1 | Create a variant from a non-square source. | Transparent padding is filled with the variant color instead of black bands. | 🎯 | 🎯 |
-| E2 | Test an image with a disconnected black pocket. | Result is classified as source content, closed-mode candidate, or true bug with screenshot evidence. | 🎯 | 🎯 |
-| E3 | Retest the owner edge-black screenshot source if available. | The exact old failure either stays fixed or records what still remains. | 🎯 | 🎯 |
+| H16 | Off set, make a colour family | Variants recoloured, not clones | ⏳ | ⏳ |
+| H17 | Off set, create from a link | Background left alone | ⏳ | ⏳ |
+| H18 | Inspect bundled Arabic coloured sets | Recoloured right, no dark rim | ⏳ | ⏳ |
+| H19 | `/cb retextureall`, timed | No hang, not slower than baseline | ⏳ | ⏳ |
+| H20 | Off set, create from a flattened checkerboard | Still flattened to black | ⏳ | ⏳ |
+| H21 | `/cb bgstudio` on a pre-update per-block strength | Opens clean, no error | ⏳ | ⏳ |
 
-## F - `/cb colorvariants` family command and future GUI - Designed ⏳
-
-| | |
-| --- | --- |
-| **Check** | One source can create or refresh a full color family safely, with one undo and clear summary. |
-| **Pass rule** | Fresh create, id-only regen, delete, overwrite guard, extra colors, and size limits pass twice. |
-| **Pass mark** | ✅ `YYYY-MM-DD` |
-| **Blocked** | Command slice exists; GUI/screen builder is still design-discuss. |
+**When Auto is unsure**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| F1 | Run `/cb colorvariants logo MyLogo <link>`. | `logo`, `logo_red`, `logo_green`, and `logo_yellow` exist with correct names/colors. | 🎯 | 🎯 |
-| F2 | Edit `logo`, then run `/cb colorvariants logo`. | Existing color variants rebuild from the base block's stored texture. | 🎯 | 🎯 |
-| F3 | Run `/cb colorvariants delete logo` and confirm. | Whole family is removed and one undo restores it. | 🎯 | 🎯 |
-| F4 | Try an oversized image. | Command fails before slot or texture state mutates. | 🎯 | 🎯 |
-| F5 | Open the future family GUI when built. | GUI/screen supplies source, color set, preview, and create flow without duplicating command logic. | 🎯 | 🎯 |
+| H22 | Create from a busy edge-to-edge picture | Refuses, bakes unchanged, names `/cb bgpick` | ⏳ | ⏳ |
+| H23 | `/cb bgpick <id> <bg colour>` on the H22 block | Removes correctly, `/cb undo` reverts | ⏳ | ⏳ |
+| H24 | `/cb bgpick <id> #FF00FF` on a magenta-free image | Says colour absent, no re-bake | ⏳ | ⏳ |
+| H25 | `/cb bgpick` on a block with no stored picture | Honest skip, no guessed re-bake | ⏳ | ⏳ |
 
 ---
 
@@ -121,8 +107,17 @@
 
 <details><summary>✅ <b>Confirmed</b></summary>
 
-- §A Resize, export PNG, and gradient command basics — ✅ `2026-06-15`
-- §E Non-square color-variant padding fix — ✅ `2026-06-29`
+- §A Resize, export PNG and gradient commands — ✅ `2026-06-15`
+- §B No hairline around block edges close up — ✅ `2026-07-25`
+- §C Single-block background: black, named colour, hex, shaped block, restart, undo, honest skip — ✅ `2026-07-25`
+- §C9 `/cb setbg` on a trashed block names the trash and `/cb trash restore` — ✅ `2026-07-25`
+- §D Checker grids cleaned to black on sharp and blurry sources, real alpha untouched, no speckles — ✅ `2026-07-25`
+- §D6 One-way striped artwork left alone by checker cleanup — ✅ `2026-07-25`
+- §E1 Tall and wide pictures pad with the variant colour, no black bars — ✅ `2026-07-25`
+- §E2 Chrome logo keeps its shading in `BgRemove&More` — ✅ `2026-07-25`
+- §F Colour families: create, rebuild, size limits, overwrite warning, delete with confirm, undo, locked members, missing name — ✅ `2026-07-25`
+- §G1 Creating from a small source prints only the fetching and result lines — ✅ `2026-07-25`
+- §G2 Both blocks crisper, no bright rim and no doubled outline — ✅ `2026-07-25`
 
 </details>
 
@@ -134,20 +129,25 @@
 
 <details><summary>📜 <b>Planned</b></summary>
 
-- §G Advanced `/cb bulkrecolor` Hub — 📜 `2026-07-18`: A separate advanced Hub is locked; selection, operations, layout, arguments, safety, progress/cancel behavior, undo, and `/cb bulk` integration need later Discussion ✏️.
+- Owner-set colour hexes — 📜 `2026-07-25`: waiting on the owner's hex list. [G10 §G](../groups/GROUP_10_COLOR_IMAGE.md)
 
 </details>
 
 <details><summary>💤 <b>Parked</b></summary>
 
-- §H AI background removal — 💤 `2026-07-09`: Tied to G15 and gated separately.
+- §E3 and §E4 — 💤 `2026-07-25`: both rows set a tolerance number and `/cb tolerance` is being deleted; they return as §H13 and §H12.
+- §E3 case: the letter O — `<link 7>` — the hole inside the O must fill too.
+- §E4 case: Tux — `<link 3>` — hair-thin outlines must survive.
 
 </details>
 
 <details><summary>👎 <b>Scrapped</b></summary>
 
-- `/cb dress` — 👎 `2026-06-15`: Replaced by Color Variants and live recolor.
-- Whole-bg white keyline direction — 👎 `2026-06-29`: Reverted and superseded by plain-black fill.
+- `/cb dress` — 👎 `2026-06-15`: colour variants and live recolour cover it.
+- White outline behind dark art — 👎 `2026-06-29`: reverted, plain black won.
+- Advanced `/cb bulkrecolor` Hub — 👎 `2026-07-24`: moved to G27 as the Advanced Recolor Hub; simple hue-shift stays.
+- AI background removal — 👎 `2026-07-24`: owner call, never implemented.
+- `/cb setbg all` — 👎 `2026-07-25`: owner call; the run broke blocks and server-wide background is not wanted.
 
 </details>
 
@@ -155,9 +155,9 @@
 
 <details><summary>🧨 <b>Cleanup</b></summary>
 
-- [ ] Delete `g10a`, `g10b`, color-family blocks, and gradient blocks after testing.
-- [ ] Keep screen-only findings in G27.
-- [ ] Keep AI background-removal findings in G15 unless they affect the shared image engine.
-- [ ] Do not move Bulk Recolor Hub back to G07.
+- [ ] Delete test blocks `g10a`, `d6`, `g1` — rows are done.
+- [ ] Delete `e3` and `e4` — §H makes its own blocks.
+- [ ] Restore the background on any block left black by the scrapped `/cb setbg all` run.
+- [ ] Delete old confirmed-section blocks: `d1`, `d3`, `d5`, `chev`, `test3`, `test5`, `Test6`, `test10`, `big`, zombie.
 
 </details>

@@ -62,6 +62,8 @@ Do not create copied `Done`, `Scrapped`, plan, notes, or status documents beside
 - Do not put a glossary, legend, AI instructions, or old status system inside a Testing Guide.
 - Update every affected canonical link and regenerate the dashboard after a filename or status change.
 - After changing a Testing Guide, run `python docs/testing/extra/testing_tools.py health`. Do not report the document repair complete while it has warnings.
+- **Rule: after every jar build, run `python docs/testing/extra/testing_tools.py health` before handing off, in the same pass as the testing-guide/log update.** A build is not complete while health reports warnings.
+- **Rule: no raw long URLs and no full-sentence Expected-result text in Testing Guide table cells.** Links use `[short label](url)` or point to a shared retest-links table; Action/Expected cells stay one short clause, not prose. This is a hard formatting rule, not a style suggestion.
 
 ## Conflict Handling
 

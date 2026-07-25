@@ -23,6 +23,7 @@ import net.minecraft.block.AbstractBlock;
 import net.minecraft.block.MapColor;
 import net.minecraft.block.entity.BlockEntityType;
 import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
 import net.minecraft.item.ItemGroup;
 import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
@@ -48,6 +49,9 @@ public final class WheelBlockRegistry {
     public static WheelBlock BLOCK;
     public static BlockItem ITEM;
     public static BlockEntityType<WheelBlockEntity> BLOCK_ENTITY;
+    /** Render-only item: its model is the baked wheel-face quad the face ITEM_DISPLAY shows. Never given
+     *  to a player and in no creative tab — it exists so an ITEM_DISPLAY has something to render. */
+    public static Item FACE_ITEM;
 
     /** Where the one live wheel is. In-memory only — a restart re-claims it from the wheel's first tick. */
     private static @Nullable BlockPos activePos;
@@ -68,7 +72,12 @@ public final class WheelBlockRegistry {
         BLOCK_ENTITY = Registry.register(Registries.BLOCK_ENTITY_TYPE, hubId,
                 FabricBlockEntityTypeBuilder.create(WheelBlockEntity::new, BLOCK).build());
 
-        CustomBlocksMod.LOGGER.info("[CustomBlocks] G34: registered 'wheel_hub' anchor block + BlockEntity.");
+        // Render-only, same pattern as the buzzer stand parts (G31): a plain Item whose only job is to
+        // carry a custom model for a display entity.
+        FACE_ITEM = new Item(new Item.Settings());
+        Registry.register(Registries.ITEM, Identifier.of(CustomBlocksMod.MOD_ID, "wheel_face"), FACE_ITEM);
+
+        CustomBlocksMod.LOGGER.info("[CustomBlocks] G34: registered 'wheel_hub' anchor block + BlockEntity + 'wheel_face' render item.");
     }
 
     /** Register the dedicated Wheel of Fortune creative tab (just the wheel item). */

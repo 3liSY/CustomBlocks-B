@@ -120,7 +120,7 @@ public final class TempRetextureCommands {
         Thread worker = new Thread(() -> {
             // Safety net FIRST — never overwrite the only copy of a block's pixels without a restore point.
             try {
-                BackupManager.save(backupName, blockCount, true);
+                BackupManager.save(backupName, blockCount, BackupManager.Kind.SAFETY, "pre-tempretexture", null);
             } catch (Exception e) {
                 IncidentRecorder.record("tempretexture aborted: pre-change safety backup failed", null, src.getName(), e);
                 server.execute(() -> Chat.error(src, "Stopped — couldn't make a safety backup first, so "

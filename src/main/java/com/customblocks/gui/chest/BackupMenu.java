@@ -142,7 +142,7 @@ public final class BackupMenu {
     private static void openCreate(ServerPlayerEntity player) {
         GuiFx.click(player);
         AnvilPrompt.open(player, "Name the backup", new ItemStack(Items.NAME_TAG),
-                BackupManager.timestampName("backup"),
+                BackupManager.generatedName(BackupManager.Kind.MANUAL),
                 text -> BackupCommands.guiCreate(player, text),
                 () -> GuiRouter.render(player, MenuKey.of(Dest.BACKUP_LIST)));
     }

@@ -39,7 +39,7 @@ public abstract class ParticleDisguiseMixin {
         method = "addBlockBreakParticles(Lnet/minecraft/util/math/BlockPos;Lnet/minecraft/block/BlockState;)V",
         at = @At("HEAD"), cancellable = true)
     private void customblocks$guessBlindBreakParticles(BlockPos pos, BlockState state, CallbackInfo ci) {
-        if (!GuessDisguise.blinds(state)) return;
+        if (!GuessDisguise.blindsAt(pos, state)) return;   // §A flagged holder, or §H placed mask (by pos)
         MinecraftClient mc = MinecraftClient.getInstance();
         if (mc != null && mc.world != null) MysteryBreakParticle.spawnBreak(mc.world, pos); // "?" debris instead
         ci.cancel();                                                                        // kill the leaking real burst
@@ -51,7 +51,7 @@ public abstract class ParticleDisguiseMixin {
         at = @At("HEAD"), cancellable = true)
     private void customblocks$guessBlindDiggingParticles(BlockPos pos, Direction direction, CallbackInfo ci) {
         MinecraftClient mc = MinecraftClient.getInstance();
-        if (mc == null || mc.world == null || !GuessDisguise.blinds(mc.world.getBlockState(pos))) return;
+        if (mc == null || mc.world == null || !GuessDisguise.blindsAt(pos, mc.world.getBlockState(pos))) return;
         MysteryBreakParticle.spawnDig(mc.world, pos, direction); // one "?" chip instead of the real one
         ci.cancel();
     }

@@ -15,21 +15,33 @@
  * from ids to slots here (deleted look → -1). The client fallback is per-slot look → default → bundled "?"
  * cube (the "?" stays hardcoded client-side, never sent). The blank NAME "???" is still hardcoded client-side.
  *
- * Depends on: GuessModeStore, SlotManager, GuessModePayload, Gson
- * Called by:  CustomBlocksMod (on join), GuessCommands (after mutations).
+ * §H Placed Mask Mode rides this same route (Group doc: "masked positions and mode state sync to clients
+ * through the existing GuessSync route rather than a second parallel channel"), but on its own compact
+ * binary payload and with per-VIEWER filtering: {@link com.customblocks.core.PlacedMaskStore#feedFor} drops
+ * a runner's own placements before the packet is built, so the runner keeps seeing the truth without any
+ * client-side trust. Placements/breaks send one-position DELTAS ({@link #placedMaskAdd}/{@link #placedMaskDel});
+ * only a join or a mode toggle costs a full re-send ({@link #broadcastPlacedMask}).
+ *
+ * Depends on: GuessModeStore, PlacedMaskStore, SlotManager, GuessModePayload, PlacedMaskPayload, Gson
+ * Called by:  CustomBlocksMod (on join), GuessCommands + PlacedMaskCommands (after mutations), SlotBlock
+ *             (per placement / break).
  */
 package com.customblocks.network;
 
 import com.customblocks.core.GuessModeStore;
 import com.customblocks.core.GuessPoseStore;
 import com.customblocks.core.GuessShowcaseStore;
+import com.customblocks.core.PlacedMaskStore;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.network.payloads.GuessModePayload;
+import com.customblocks.network.payloads.PlacedMaskPayload;
 import com.google.gson.JsonObject;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
 
 import java.util.Map;
 import java.util.UUID;
@@ -41,6 +53,40 @@ public final class GuessSync {
     /** Send the current guess-mode set to one player's client. */
     public static void sendTo(ServerPlayerEntity player) {
         ServerPlayNetworking.send(player, new GuessModePayload(buildJson()));
+        sendPlacedMask(player);   // §H — plus the placed-mask picture this viewer must see
+    }
+
+    // ── §H Placed Mask Mode ──────────────────────────────────────────────────
+
+    /** Send one player their full placed-mask picture (their own placements already filtered out). */
+    public static void sendPlacedMask(ServerPlayerEntity player) {
+        ServerPlayNetworking.send(player, new PlacedMaskPayload(
+                PlacedMaskPayload.OP_FULL, PlacedMaskStore.feedFor(player.getUuid())));
+    }
+
+    /** Rebuild every online player's placed-mask picture (join, /cb guess placed on/off). */
+    public static void broadcastPlacedMask(MinecraftServer server) {
+        if (server == null) return;
+        for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) sendPlacedMask(p);
+    }
+
+    /** One block just became masked: tell everyone EXCEPT the runner, who must keep seeing the real block. */
+    public static void placedMaskAdd(MinecraftServer server, UUID runner, World world, BlockPos pos) {
+        delta(server, runner, PlacedMaskPayload.OP_ADD, world, pos);
+    }
+
+    /** One masked block is gone: tell everyone (the runner never had it, and simply ignores an unknown pos). */
+    public static void placedMaskDel(MinecraftServer server, World world, BlockPos pos) {
+        delta(server, null, PlacedMaskPayload.OP_DEL, world, pos);
+    }
+
+    private static void delta(MinecraftServer server, UUID skip, byte op, World world, BlockPos pos) {
+        if (server == null || world == null || pos == null) return;
+        PlacedMaskPayload payload = PlacedMaskPayload.one(op, PlacedMaskStore.dimId(world), pos.asLong());
+        for (ServerPlayerEntity p : server.getPlayerManager().getPlayerList()) {
+            if (skip != null && skip.equals(p.getUuid())) continue;
+            ServerPlayNetworking.send(p, payload);
+        }
     }
 
     /** Broadcast the current guess-mode set to EVERY online player (NO-REJOIN live push). */

@@ -169,6 +169,10 @@ When G10 enables a transparent background, alpha really shows through while ordi
 
 G14 only supplies render-layer registration. G10 owns background data and texture re-bake decisions.
 
+**Dependency state**
+
+G10's half of this contract is in place: `SlotData.background` stores the choice and `BackgroundService` re-bakes it, with `black` and colour values working. `transparent` parses and is a valid stored value, but `/cb setbg` refuses it and reports that the render layer is missing, because no cutout registration exists for slot blocks yet and `SlotBlock` is not non-opaque. This section is therefore the sole remaining blocker for G10 §B's transparent option. Note that the client already flattens alpha onto black for off-atlas blocks (`OffAtlasImage`); that behavior has to be reconciled with a real transparent option rather than left to fight it.
+
 ## Cross-Group Contracts
 
 | Group | Connection | Promise |

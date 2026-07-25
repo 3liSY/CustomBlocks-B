@@ -6,7 +6,8 @@
  *   • entry.json   — the block's fields (id, name, glow, hardness, sound, collision, category, shape)
  *                    plus the deleted timestamp and a "pinned" flag;
  *   • texture.png  — the baked texture bytes (if any);
- *   • source.png   — the original source image (if any), so a restored block can be re-rendered.
+ *   • source.png   — the original source image (if any), so a restored block can be re-rendered;
+ *   • url.txt      — the link it was made from (if any), so the studio still shows it after a restore.
  *
  * RELIABILITY (mirrors BackupManager): each entry is built in a &lt;entryId&gt;.tmp dir then atomically
  * renamed, so a crash mid-write can only leave a stray .tmp (ignored by list()). Capture is BEST-EFFORT
@@ -56,6 +57,8 @@ public final class TrashManager {
     private static final String ENTRY = "entry.json";
     private static final String TEXTURE = "texture.png";
     private static final String SOURCE = "source.png";
+    /** The link the block was made from, kept beside the source so a restore comes back whole (G06 §D2). */
+    private static final String URL = "url.txt";
 
     /** One trashed block, as shown in the trash browser and used to restore it. {@code slotIndex} is the
      *  slot number the block held when deleted — RESERVED while it sits here (never reused), shown in the
@@ -66,7 +69,7 @@ public final class TrashManager {
                              long deletedEpochMs, String deletedHuman, boolean pinned, boolean hasTexture) {}
 
     // ── Capture (called from SlotManager.delete; BEST-EFFORT — never throws) ───
-    public static synchronized void capture(SlotData d, byte[] texture, byte[] source) {
+    public static synchronized void capture(SlotData d, byte[] texture, byte[] source, String url) {
         if (d == null) return;
         try {
             Files.createDirectories(TRASH_DIR);
@@ -93,6 +96,7 @@ public final class TrashManager {
 
             if (texture != null && texture.length > 0) Files.write(tmp.resolve(TEXTURE), texture);
             if (source != null && source.length > 0)  Files.write(tmp.resolve(SOURCE), source);
+            if (url != null && !url.isBlank()) Files.writeString(tmp.resolve(URL), url.trim(), StandardCharsets.UTF_8);
 
             Path target = TRASH_DIR.resolve(entryId);
             deleteRecursively(target);
@@ -174,6 +178,45 @@ public final class TrashManager {
     public static synchronized byte[] textureBytes(String entryId) { return bytes(entryId, TEXTURE); }
     /** The trashed block's original source-image bytes, or null. */
     public static synchronized byte[] sourceBytes(String entryId)  { return bytes(entryId, SOURCE); }
+
+    /** The link the trashed block was made from, or null (entries written before G06 §D2 have none). */
+    public static synchronized String urlText(String entryId) {
+        byte[] b = bytes(entryId, URL);
+        if (b == null) return null;
+        String s = new String(b, StandardCharsets.UTF_8).trim();
+        return s.isEmpty() ? null : s;
+    }
+
+    /**
+     * The most recently trashed copy of {@code customId} that still holds a source image, or null.
+     *
+     * <p>G06 §D2: {@code SlotManager.delete} erases the live {@code slot_N.src}, but the trash copy it
+     * takes first still has it. An undo of a delete restores the slot and its baked pixels from the undo
+     * stack — which never carried the source — so this is how that rail gets the original picture back
+     * instead of leaving a block that looks right but can never be re-baked. Matching on the slot index
+     * as well as the id keeps two same-named entries apart.
+     */
+    public static synchronized byte[] sourceFor(String customId, int slotIndex) {
+        String id = entryIdFor(customId, slotIndex, SOURCE);
+        return id == null ? null : sourceBytes(id);
+    }
+
+    /** Companion to {@link #sourceFor} for the stored link. */
+    public static synchronized String urlFor(String customId, int slotIndex) {
+        String id = entryIdFor(customId, slotIndex, URL);
+        return id == null ? null : urlText(id);
+    }
+
+    /** Newest entry for this id/slot that actually holds {@code file}, or null. */
+    private static String entryIdFor(String customId, int slotIndex, String file) {
+        if (customId == null) return null;
+        for (TrashEntry e : list()) { // newest first
+            if (!customId.equals(e.customId())) continue;
+            if (e.slotIndex() >= 0 && slotIndex >= 0 && e.slotIndex() != slotIndex) continue;
+            if (Files.isRegularFile(TRASH_DIR.resolve(e.entryId()).resolve(file))) return e.entryId();
+        }
+        return null;
+    }
 
     private static byte[] bytes(String entryId, String file) {
         if (!isValidEntryId(entryId)) return null;

@@ -2,10 +2,16 @@
  * CheckerboardDetector.java — G10-6 fix (v3 + speck-cleanup).
  *
  * Responsibility: recognise a "flattened transparency-checkerboard" source — an OPAQUE image whose
- * background is the editor's grey/white transparency checkerboard baked into pixels (no alpha), the
- * kind that stock sites (rawpixel `image_png_800`, pngtree `ourlarge`) hand out as a *preview*
+ * background is the editor's transparency checkerboard baked into pixels (no alpha), the kind that
+ * stock sites (rawpixel `image_png_800`, pngtree `ourlarge`, citypng) hand out as a *preview*
  * instead of a real transparent PNG — and clean that checkerboard to solid BLACK so it bakes like a
  * normal block instead of rendering the checkerboard in-world.
+ *
+ * Light AND dark grids: the grid is drawn in the source site's own theme, so it arrives either as the
+ * classic near-white tone pair or, on dark-themed sites, as a near-black one (citypng measures 25 vs 40).
+ * detect() therefore tries each brightness regime in turn. Only the brightness gate differs between them
+ * — neutrality, the two-tone border split, the L* gap and the periodic switch run are applied unchanged
+ * inside whichever regime is being tested, so a normal image still cannot match either way.
  *
  * Why v3 (not the old edge-flood): the earlier fix flooded the checkerboard inward from the image
  * border, so checker "pockets" walled off from the border by the subject (e.g. a gap between glyphs)
@@ -23,9 +29,9 @@
  * speck) that is not the main subject. Removes the dot fuzz; cannot touch text/arrow/planet (all part of
  * the one big blob). Whole pass is gated behind detect() — it only runs on a confirmed checkerboard.
  *
- * Called by: BackgroundRemover.process (flattenToBlack, before the mode-gated flood) ·
- *            command/handlers/CreationCommands (isFlattened, to warn the player the source was a
- *            flattened preview — G10-6 option C).
+ * Called by: BackgroundRemover.process (flattenToBlack, before the mode-gated flood).
+ *            isFlattened() has no caller since G10 §G removed the "that was a flattened preview image"
+ *            chat notice (owner, 2026-07-25); the detection it exposes is unchanged and still available.
  */
 package com.customblocks.image;
 
@@ -42,12 +48,20 @@ public final class CheckerboardDetector {
 
     // ── detection thresholds (validated offline on the rawpixel + pngtree previews) ──
     private static final int    LIGHT_MIN         = 190;  // a "light" pixel has max channel ≥ this
+    /** A "dark" pixel has max channel ≤ this. Dark-themed stock sites (citypng) ship their transparency
+     *  grid as two near-black greys instead of the classic near-white pair; measured tones are 25 and 40,
+     *  so the ceiling sits well above them while staying far below any mid-tone image content. */
+    private static final int    DARK_MAX          = 96;
     private static final int    NEUTRAL_DETECT    = 18;   // detection: max-min ≤ this = near-neutral
-    private static final double BORDER_LIGHT_FRAC = 0.85; // ≥ this fraction of the border ring must be light-neutral
+    private static final double BORDER_LIGHT_FRAC = 0.85; // ≥ this fraction of the border ring must be in-regime
     private static final double TONE_MIN_FRAC     = 0.20; // each of the two tones ≥ this fraction of light border pixels
     private static final double DL_MIN            = 2.0;  // the two tones must differ by L* in [DL_MIN, DL_MAX]
     private static final double DL_MAX            = 22.0; // distinct but close (a true checker is two near-white greys)
     private static final int    MIN_ALT           = 4;    // ≥ this many tone switches along a border line = periodic grid
+    /** The two tone peaks must be at least this many luminance buckets apart. A lossy source smears one
+     *  tone over its neighbouring buckets, so without this the "second biggest bucket" is that smear
+     *  rather than the other tone, and the L* gap test then sees two near-identical greys. */
+    private static final int    MIN_BUCKET_SEP    = 2;
     private static final int    OPAQUE_ALPHA      = 250;  // alpha ≥ this = opaque
 
     // ── v3 flatten params (validated offline: share_real.webp, uranus_real.png) ──
@@ -271,58 +285,95 @@ public final class CheckerboardDetector {
 
     // ── detection ────────────────────────────────────────────────────────────────────────────────
 
-    /** Returns the two background tones if {@code img} is a flattened 2-tone neutral checkerboard, else null. */
+    /**
+     * Returns the two background tones if {@code img} is a flattened 2-tone neutral checkerboard, else null.
+     *
+     * <p>A preview grid is drawn in whatever theme its site uses, so the same pattern arrives either as the
+     * classic near-white pair or as a near-black one. Both are tried; everything that makes the test strict
+     * — neutrality, two tones that each hold a real share of the border, a small L* gap, and a periodic run
+     * of switches — is applied identically inside each regime, so widening the brightness gate does not
+     * loosen the signature. Light is tried first because it is by far the common case.
+     */
     private static Tones detect(BufferedImage img, int w, int h) {
         if (w < 16 || h < 16) return null;
         if (hasRealTransparency(img, w, h)) return null; // a genuine transparent PNG → leave it alone
+        Tones light = detectRegime(img, w, h, false);
+        return light != null ? light : detectRegime(img, w, h, true);
+    }
 
-        // Border ring: how light-neutral is it, and which luminance buckets dominate?
+    /** One brightness regime's pass of the checkerboard signature ({@code dark} = near-black tone pair). */
+    private static Tones detectRegime(BufferedImage img, int w, int h, boolean dark) {
+        // Border ring: how much of it is in-regime neutral, and which luminance buckets dominate?
         long[] hist = new long[64]; // luminance / 4
         long lightCount = 0, borderCount = 0;
-        for (int x = 0; x < w; x++) { borderCount += 2; lightCount += tallyBorder(img.getRGB(x, 0), hist); lightCount += tallyBorder(img.getRGB(x, h - 1), hist); }
-        for (int y = 1; y < h - 1; y++) { borderCount += 2; lightCount += tallyBorder(img.getRGB(0, y), hist); lightCount += tallyBorder(img.getRGB(w - 1, y), hist); }
+        for (int x = 0; x < w; x++) { borderCount += 2; lightCount += tallyBorder(img.getRGB(x, 0), hist, dark); lightCount += tallyBorder(img.getRGB(x, h - 1), hist, dark); }
+        for (int y = 1; y < h - 1; y++) { borderCount += 2; lightCount += tallyBorder(img.getRGB(0, y), hist, dark); lightCount += tallyBorder(img.getRGB(w - 1, y), hist, dark); }
         if (lightCount < borderCount * BORDER_LIGHT_FRAC) return null;
 
-        int b1 = -1, b2 = -1; // two most-common luminance buckets
+        // Two tone peaks. The second peak must sit at least MIN_BUCKET_SEP buckets away from the first:
+        // a lossy source (JPEG thumbnail, webp) smears each tone across its neighbouring buckets, so the
+        // plain "two biggest buckets" pick would otherwise return one tone and its own ringing.
+        int b1 = -1;
+        for (int i = 0; i < 64; i++) if (b1 < 0 || hist[i] > hist[b1]) b1 = i;
+        int b2 = -1;
         for (int i = 0; i < 64; i++) {
-            if (b1 < 0 || hist[i] > hist[b1]) { b2 = b1; b1 = i; }
-            else if (b2 < 0 || hist[i] > hist[b2]) { b2 = i; }
+            if (Math.abs(i - b1) < MIN_BUCKET_SEP) continue;
+            if (b2 < 0 || hist[i] > hist[b2]) b2 = i;
         }
-        if (b1 < 0 || b2 < 0 || hist[b2] == 0) return null;
-        if (hist[b1] < lightCount * TONE_MIN_FRAC || hist[b2] < lightCount * TONE_MIN_FRAC) return null;
+        if (b1 < 0 || b2 < 0 || hist[b1] == 0 || hist[b2] == 0) return null;
 
         int c1 = b1 * 4, c2 = b2 * 4; // bucket centre luminances
+
+        // Tone share is measured over ALL in-regime border mass, each pixel assigned to whichever peak it
+        // is nearer — the same split the periodicity test uses. Counting only the two peak buckets would
+        // reject a genuine checkerboard whose tones are smeared by lossy compression (a Google-image JPEG
+        // thumbnail of the same PNG spreads one tone over four buckets and drops it under the threshold).
+        long nearC1 = 0, nearC2 = 0;
+        for (int i = 0; i < 64; i++) {
+            if (hist[i] == 0) continue;
+            int lum = i * 4;
+            if (Math.abs(lum - c1) <= Math.abs(lum - c2)) nearC1 += hist[i]; else nearC2 += hist[i];
+        }
+        if (nearC1 < lightCount * TONE_MIN_FRAC || nearC2 < lightCount * TONE_MIN_FRAC) return null;
         double l1 = rgbToLab(0xFF000000 | gray(c1))[0];
         double l2 = rgbToLab(0xFF000000 | gray(c2))[0];
         double gap = Math.abs(l1 - l2);
         if (gap < DL_MIN || gap > DL_MAX) return null;
 
         // Periodicity: a true checkerboard switches tone repeatedly along a border line; two solid
-        // halves (a normal image) do not.
-        int altTop = alternations(img, w, h, true, c1, c2);
-        int altLeft = alternations(img, w, h, false, c1, c2);
-        if (Math.max(altTop, altLeft) < MIN_ALT) return null;
+        // halves (a normal image) do not. BOTH axes must switch, because a checkerboard is periodic in
+        // two dimensions — accepting either axis alone also accepts plain STRIPES, and striped artwork
+        // in these tones is a design a player may genuinely want (it was flattened as a false positive
+        // in both brightness regimes while this took the better axis).
+        int altTop = alternations(img, w, h, true, c1, c2, dark);
+        int altLeft = alternations(img, w, h, false, c1, c2, dark);
+        if (Math.min(altTop, altLeft) < MIN_ALT) return null;
 
-        return new Tones(meanToneLab(img, w, h, b1), meanToneLab(img, w, h, b2));
+        return new Tones(meanToneLab(img, w, h, b1, dark), meanToneLab(img, w, h, b2, dark));
     }
 
-    /** Count this border pixel into the luminance histogram if it is light-neutral; returns 1 if light, else 0. */
-    private static long tallyBorder(int argb, long[] hist) {
+    /** Neutral (near-grey) AND inside the requested brightness regime — the gate every detection step shares. */
+    private static boolean inRegime(int r, int g, int b, boolean dark) {
+        int mx = Math.max(r, Math.max(g, b)), mn = Math.min(r, Math.min(g, b));
+        if (mx - mn > NEUTRAL_DETECT) return false;
+        return dark ? mx <= DARK_MAX : mx >= LIGHT_MIN;
+    }
+
+    /** Count this border pixel into the luminance histogram if it is in-regime; returns 1 if it is, else 0. */
+    private static long tallyBorder(int argb, long[] hist, boolean dark) {
         int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
-        if (Math.max(r, Math.max(g, b)) < LIGHT_MIN) return 0;
-        if (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > NEUTRAL_DETECT) return 0;
+        if (!inRegime(r, g, b, dark)) return 0;
         hist[luminance(r, g, b) / 4]++;
         return 1;
     }
 
-    /** Tone switches along the top row (horizontal=true) or left column, classifying each light pixel by nearest tone. */
-    private static int alternations(BufferedImage img, int w, int h, boolean horizontal, int c1, int c2) {
+    /** Tone switches along the top row (horizontal=true) or left column, classifying each in-regime pixel by nearest tone. */
+    private static int alternations(BufferedImage img, int w, int h, boolean horizontal, int c1, int c2, boolean dark) {
         int n = horizontal ? w : h, switches = 0, prev = 0;
         for (int i = 0; i < n; i++) {
             int argb = horizontal ? img.getRGB(i, 0) : img.getRGB(0, i);
             int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
-            if (Math.max(r, Math.max(g, b)) < LIGHT_MIN
-                    || Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > NEUTRAL_DETECT) { prev = 0; continue; }
+            if (!inRegime(r, g, b, dark)) { prev = 0; continue; }
             int lum = luminance(r, g, b);
             int cls = Math.abs(lum - c1) <= Math.abs(lum - c2) ? 1 : 2;
             if (prev != 0 && cls != prev) switches++;
@@ -331,21 +382,20 @@ public final class CheckerboardDetector {
         return switches;
     }
 
-    /** Mean RGB (as LAB) of the light border pixels whose luminance bucket is within ±1 of {@code bucket}. */
-    private static double[] meanToneLab(BufferedImage img, int w, int h, int bucket) {
+    /** Mean RGB (as LAB) of the in-regime border pixels whose luminance bucket is within ±1 of {@code bucket}. */
+    private static double[] meanToneLab(BufferedImage img, int w, int h, int bucket, boolean dark) {
         long sr = 0, sg = 0, sb = 0, n = 0;
-        for (int x = 0; x < w; x++) { long[] a = sampleTone(img.getRGB(x, 0), bucket); sr += a[0]; sg += a[1]; sb += a[2]; n += a[3];
-                                      long[] c = sampleTone(img.getRGB(x, h - 1), bucket); sr += c[0]; sg += c[1]; sb += c[2]; n += c[3]; }
-        for (int y = 1; y < h - 1; y++) { long[] a = sampleTone(img.getRGB(0, y), bucket); sr += a[0]; sg += a[1]; sb += a[2]; n += a[3];
-                                          long[] c = sampleTone(img.getRGB(w - 1, y), bucket); sr += c[0]; sg += c[1]; sb += c[2]; n += c[3]; }
+        for (int x = 0; x < w; x++) { long[] a = sampleTone(img.getRGB(x, 0), bucket, dark); sr += a[0]; sg += a[1]; sb += a[2]; n += a[3];
+                                      long[] c = sampleTone(img.getRGB(x, h - 1), bucket, dark); sr += c[0]; sg += c[1]; sb += c[2]; n += c[3]; }
+        for (int y = 1; y < h - 1; y++) { long[] a = sampleTone(img.getRGB(0, y), bucket, dark); sr += a[0]; sg += a[1]; sb += a[2]; n += a[3];
+                                          long[] c = sampleTone(img.getRGB(w - 1, y), bucket, dark); sr += c[0]; sg += c[1]; sb += c[2]; n += c[3]; }
         if (n == 0) return rgbToLab(0xFF000000 | gray(bucket * 4));
         return rgbToLab(0xFF000000 | ((int) (sr / n) << 16) | ((int) (sg / n) << 8) | (int) (sb / n));
     }
 
-    private static long[] sampleTone(int argb, int bucket) {
+    private static long[] sampleTone(int argb, int bucket, boolean dark) {
         int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
-        if (Math.max(r, Math.max(g, b)) < LIGHT_MIN
-                || Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > NEUTRAL_DETECT) return new long[]{0, 0, 0, 0};
+        if (!inRegime(r, g, b, dark)) return new long[]{0, 0, 0, 0};
         if (Math.abs(luminance(r, g, b) / 4 - bucket) > 1) return new long[]{0, 0, 0, 0};
         return new long[]{r, g, b, 1};
     }

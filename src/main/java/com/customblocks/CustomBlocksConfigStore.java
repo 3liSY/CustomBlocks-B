@@ -72,6 +72,9 @@ public final class CustomBlocksConfigStore {
             CustomBlocksConfig.bulkConfirmThreshold = clamp(getInt(root, "bulkConfirmThreshold", CustomBlocksConfig.bulkConfirmThreshold), 1, 100000);
             CustomBlocksConfig.autoBackupInterval  = clamp(getInt(root, "autoBackupInterval", CustomBlocksConfig.autoBackupInterval), 0, 10080); // 0..1 week
             CustomBlocksConfig.autoBackupKeepCount = clamp(getInt(root, "autoBackupKeepCount", CustomBlocksConfig.autoBackupKeepCount), 0, 1000);
+            CustomBlocksConfig.safetyKeepCount     = clamp(getInt(root, "safetyKeepCount", CustomBlocksConfig.safetyKeepCount), 1, 1000);
+            CustomBlocksConfig.autoBackupTime      = sanitizeTime(getString(root, "autoBackupTime", CustomBlocksConfig.autoBackupTime));
+            CustomBlocksConfig.autoBackupBudgetMB  = clamp(getInt(root, "autoBackupBudgetMB", CustomBlocksConfig.autoBackupBudgetMB), 0, 1_000_000);
             CustomBlocksConfig.trashRetentionDays  = clamp(getInt(root, "trashRetentionDays", CustomBlocksConfig.trashRetentionDays), 0, 3650);
             CustomBlocksConfig.autoCategorizeEnabled = getBool(root, "autoCategorizeEnabled", CustomBlocksConfig.autoCategorizeEnabled);
             CustomBlocksConfig.mirrorNamedTextures = getBool(root, "mirrorNamedTextures", CustomBlocksConfig.mirrorNamedTextures);
@@ -136,6 +139,9 @@ public final class CustomBlocksConfigStore {
             root.addProperty("bulkConfirmThreshold", CustomBlocksConfig.bulkConfirmThreshold);
             root.addProperty("autoBackupInterval",  CustomBlocksConfig.autoBackupInterval);
             root.addProperty("autoBackupKeepCount", CustomBlocksConfig.autoBackupKeepCount);
+            root.addProperty("safetyKeepCount",     CustomBlocksConfig.safetyKeepCount);
+            root.addProperty("autoBackupTime",      CustomBlocksConfig.autoBackupTime);
+            root.addProperty("autoBackupBudgetMB",  CustomBlocksConfig.autoBackupBudgetMB);
             root.addProperty("trashRetentionDays",  CustomBlocksConfig.trashRetentionDays);
             root.addProperty("autoCategorizeEnabled", CustomBlocksConfig.autoCategorizeEnabled);
             root.addProperty("mirrorNamedTextures", CustomBlocksConfig.mirrorNamedTextures);
@@ -170,5 +176,12 @@ public final class CustomBlocksConfigStore {
     private static boolean getBool  (JsonObject o, String k, boolean d) { return o.has(k) ? o.get(k).getAsBoolean() : d; }
     private static double  getDouble(JsonObject o, String k, double  d) { return o.has(k) ? o.get(k).getAsDouble()  : d; }
     private static int     clamp    (int v, int min, int max)           { return Math.max(min, Math.min(max, v)); }
+    /** Accept a valid "HH:mm" (00:00–23:59); anything else (incl. blank) becomes "" = interval mode. */
+    private static String  sanitizeTime(String s) {
+        if (s == null) return "";
+        s = s.trim();
+        if (!s.matches("([01]\\d|2[0-3]):[0-5]\\d")) return "";
+        return s;
+    }
     private static double  clampD   (double v, double min, double max)  { return Math.max(min, Math.min(max, v)); }
 }

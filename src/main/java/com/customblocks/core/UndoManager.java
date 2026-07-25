@@ -31,7 +31,7 @@ public final class UndoManager {
     private UndoManager() {} // static-only
 
     /** What kind of change an Op represents (drives how undo/redo reverses it). */
-    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG, FACE_ROTATE }
+    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG, FACE_ROTATE, CATEGORY }
 
     /**
      * A lock / favorite flip, the one edit that lives OUTSIDE SlotData.
@@ -63,6 +63,22 @@ public final class UndoManager {
     public record FaceRot(int index, String face, int oldQ, int newQ) {}
 
     /**
+     * A change to which categories a block belongs to (G11) — the third edit, like {@link Flag} and
+     * {@link FaceRot}, that lives OUTSIDE SlotData.
+     *
+     * Membership is a SET in {@link CategoryMembershipStore}, not a field on the snapshot, so a
+     * MODIFY op carrying before/after SlotData could only ever restore the derived one-word display
+     * shadow — it would look like the undo worked while the real memberships stayed changed. This
+     * payload carries the whole set on each side instead, so undo puts a block back in exactly the
+     * categories it was in.
+     *
+     * @param id     the block id whose memberships changed.
+     * @param before every category key it held BEFORE (undo restores this).
+     * @param after  every category key it held AFTER (redo re-applies this).
+     */
+    public record Membership(String id, List<String> before, List<String> after) {}
+
+    /**
      * One reversible edit.
      *
      * @param kind         CREATE (before == null), DELETE (after == null), MODIFY (both set),
@@ -80,22 +96,29 @@ public final class UndoManager {
      * @param faceRot      for FACE_ROTATE: the per-face quarter-turn payload (null otherwise).
      */
     public record Op(Kind kind, SlotData before, SlotData after,
-                     byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot) {
+                     byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot,
+                     Membership membership) {
+        /** Pre-CATEGORY 9-arg shape (FACE_ROTATE era) — membership null. */
+        public Op(Kind kind, SlotData before, SlotData after,
+                  byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot) {
+            this(kind, before, after, texture, textureAfter, label, children, flag, faceRot, null);
+        }
+
         /** Pre-FACE_ROTATE 8-arg shape (FLAG era) — faceRot null. */
         public Op(Kind kind, SlotData before, SlotData after,
                   byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag) {
-            this(kind, before, after, texture, textureAfter, label, children, flag, null);
+            this(kind, before, after, texture, textureAfter, label, children, flag, null, null);
         }
 
         /** Pre-FLAG 7-arg shape — every existing caller still compiles unchanged. */
         public Op(Kind kind, SlotData before, SlotData after,
                   byte[] texture, byte[] textureAfter, String label, List<Op> children) {
-            this(kind, before, after, texture, textureAfter, label, children, null, null);
+            this(kind, before, after, texture, textureAfter, label, children, null, null, null);
         }
 
         /** Convenience constructor for a single (non-batch) op — textureAfter + children null. */
         public Op(Kind kind, SlotData before, SlotData after, byte[] texture, String label) {
-            this(kind, before, after, texture, null, label, null, null, null);
+            this(kind, before, after, texture, null, label, null, null, null, null);
         }
     }
 
@@ -178,6 +201,26 @@ public final class UndoManager {
     public static void recordFlag(UUID player, Flag flag, String label) {
         if (flag == null) return;
         push(player, flagOp(flag, label));
+    }
+
+    /**
+     * Build a CATEGORY child op (for a bulk batch). Not pushed — hand it to {@link #recordBatch}.
+     * Returns null when the sets match, so a no-op assignment doesn't earn an undo step.
+     */
+    public static Op membershipOp(String blockId, java.util.Collection<String> before,
+                                  java.util.Collection<String> after, String label) {
+        if (blockId == null || before == null || after == null) return null;
+        List<String> b = List.copyOf(before), a = List.copyOf(after);
+        if (b.equals(a)) return null;
+        return new Op(Kind.CATEGORY, null, null, null, null, label, null, null, null,
+                new Membership(blockId, b, a));
+    }
+
+    /** Record one block's category-membership change as a single undo step (G11). */
+    public static void recordMembership(UUID player, String blockId, java.util.Collection<String> before,
+                                        java.util.Collection<String> after, String label) {
+        Op op = membershipOp(blockId, before, after, label);
+        if (op != null) push(player, op);
     }
 
     /**

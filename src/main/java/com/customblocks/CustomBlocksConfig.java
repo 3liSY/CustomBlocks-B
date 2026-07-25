@@ -138,11 +138,30 @@ public final class CustomBlocksConfig {
 
     // ── Group 09 / Slice 3 — auto-backup ──────────────────────────────────────
 
-    /** Minutes between automatic backups. 0 (or less) disables auto-backup. Default 30. */
+    /** The owner's timezone. Backup name stamps, the friendly list times, the manifest's human date, and
+     *  the daily auto-backup wall-clock all read in THIS zone — not the host machine's clock, which often
+     *  runs UTC and made backups read hours off (owner is GST / Asia/Dubai, UTC+4). Central so the four
+     *  spots that stamp or show a time never drift apart; a future /cb config setting can replace it. */
+    public static final java.time.ZoneId OWNER_ZONE = java.time.ZoneId.of("Asia/Dubai");
+
+    /** Minutes between automatic backups. 0 (or less) disables interval mode. Ignored when
+     *  {@link #autoBackupTime} is set (daily mode wins). Default 30. */
     public static volatile int autoBackupInterval = 30;
 
-    /** How many of the most recent auto-backups to keep; older "auto-…" ones are pruned. Default 10. */
+    /** Wall-clock daily backup time as "HH:mm" (24h, server-local). Empty = use interval mode instead.
+     *  When set, one auto-backup runs each day at that time (e.g. "04:00") — quieter and predictable. */
+    public static volatile String autoBackupTime = "";
+
+    /** Optional cap on the auto-backup DEDUP footprint (megabytes of the shared pool). 0 = no cap, keep
+     *  by count only. When >0, the oldest auto-backups are pruned until the pool fits (min 1 auto kept). */
+    public static volatile int autoBackupBudgetMB = 0;
+
+    /** How many of the most recent auto-backups to keep; older auto backups are pruned. Default 10. */
     public static volatile int autoBackupKeepCount = 10;
+
+    /** How many of the most recent SAFETY backups (pre-restore / pre-setall / pre-bulk / …) to keep;
+     *  older ones are pruned. Minimum enforced at 1 so the latest undo point always survives. Default 10. */
+    public static volatile int safetyKeepCount = 10;
 
     // ── Group 09 / Slice 4 — deleted-block trash ──────────────────────────────
 

@@ -14,6 +14,7 @@
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
 | C | Backup cloud sync to R2 | Built 🎯 | Blocked ‼️ |
+| K | Category vault share/import (from G11) | Planned 📜 | Blocked ‼️, Discussion ✏️ |
 | D | Vault conflict import screen handoff | Designed ⏳ | Discussion ✏️ |
 | E | Discord event embeds | Designed ⏳ | Discussion ✏️ |
 | F | Discord customization and chat helpers | Designed ⏳ | Discussion ✏️ |
@@ -37,6 +38,8 @@
 - Use OP account for upload/share paths; use non-OP for permission checks.
 - Keep one static block and one animated block available.
 - Worker-side changes require owner Cloudflare/R2 deploy evidence; a mod jar alone cannot confirm them.
+- §K needs a category (`testcat`) with assigned blocks; G11 owns the category schema, G20 owns transport.
+- §K carries `Discussion ✏️` (2026-07-25): whether a shared category carries G11's multi-membership data is undecided and must be settled with G11 and G12 before the payload is designed. G11's membership model is built as of 2026-07-25 and a shared category still carries one category per block.
 
 ## A - Block vault share and master gate - Done ✅
 
@@ -91,6 +94,19 @@
 | C4 | Break worker/R2 intentionally and save backup. | Local save still succeeds; warning names the cloud failure cause. | 🎯 | 🎯 |
 | C5 | Run `/cb vault codes`. | Backup sync logs a code/history entry with kind and label. | 🎯 | 🎯 |
 | C6 | Trigger auto-backup or safety backup. | It does not sync unless the manual backup path is used. | 🎯 | 🎯 |
+
+## K - Category vault share/import (from G11) - Planned 📜
+
+> Moved from G11 (2026-07-25): no test rows exist yet — G11's `/cb category share`/`import` design was never built. G11 keeps category schema and local merge rules; G20 owns the remote transport once this is designed.
+
+| | |
+| --- | --- |
+| **Check** | A category can be shared through Vault by code and imported on another server, mirroring block-level vault share (§A). |
+| **Pass rule** | Not designed yet — payload shape, code format, and conflict handling all need Discussion before build. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+| **Blocked** | Needs the same Cloud Vault deployment path as §A/§C, plus a category-specific payload design. |
+
+*(No test rows yet — design discussion pending.)*
 
 ## D - Vault conflict import screen handoff - Designed ⏳
 
@@ -187,7 +203,7 @@
 
 <details><summary>📜 <b>Planned</b></summary>
 
-*(none)*
+- §K Category vault share/import — 📜 `2026-07-25`: Moved from G11; no test rows yet, needs payload/code-format design before build.
 
 </details>
 
@@ -219,5 +235,6 @@
 - [ ] Keep worker secrets and R2 keys out of TG notes.
 - [ ] Keep conflict Screen findings in G27.
 - [ ] Keep Discord GUI editor findings in G21.
+- [ ] Keep category schema/merge findings linked to G11; G20 only owns §K transport.
 
 </details>

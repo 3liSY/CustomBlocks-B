@@ -82,7 +82,9 @@ public final class SlotDataStore {
                         ? animFromJson(o.getAsJsonObject("anim")) : AnimData.NONE;
                 ArabicMeta arabic = o.has("arabic") && o.get("arabic").isJsonObject()
                         ? arabicFromJson(o.getAsJsonObject("arabic")) : null; // absent = normal block (G13-25)
-                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape, anim, arabic));
+                // absent = a block from before G10 §C → the default black fill, which is what it was baked as
+                String background = o.has("background") ? o.get("background").getAsString() : BackgroundValue.DEFAULT;
+                out.add(new SlotData(index, customId, displayName, glow, hardness, sound, noCollision, category, shape, anim, arabic, background));
             }
         } catch (Exception e) {
             LOGGER.error("[CustomBlocks] Failed to load slot data (starting empty)", e);
@@ -107,6 +109,7 @@ public final class SlotDataStore {
         if (d.noCollision()) o.addProperty("noCollision", true); // omit the common default
         if (!d.category().isEmpty()) o.addProperty("category", d.category()); // omit when uncategorized
         if (!d.shape().equals(SlotData.DEFAULT_SHAPE)) o.addProperty("shape", d.shape()); // omit "full"
+        if (!BackgroundValue.DEFAULT.equals(d.background())) o.addProperty("background", d.background()); // omit "black" (G10 §C)
         if (d.isAnimated()) o.add("anim", animToJson(d.anim())); // Group 14 — only present for animated blocks
         if (d.isArabic()) o.add("arabic", arabicToJson(d.arabic())); // G13-25 — only present for Arabic slots
         return o;

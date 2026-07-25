@@ -129,11 +129,21 @@ public final class WheelBlock extends BlockWithEntity {
         BlockPos anchor = WheelDisplayVisual.hitAnchor(entity);
         if (anchor == null || !(world.getBlockEntity(anchor) instanceof WheelBlockEntity wheel)) return ActionResult.PASS;
 
+        WheelDisplayVisual.Part part = WheelDisplayVisual.hitPart(entity);
         if (!attack) {
-            spin(serverWorld, anchor, serverPlayer);
+            // Only treat a click on the prize box as a claim while a prize is actually showing; otherwise it
+            // falls through to a normal spin.
+            if (part == WheelDisplayVisual.Part.CLAIM && wheel.hasPrize()) {
+                wheel.claimPrize(serverWorld, serverPlayer); // right-click the floating prize = take it
+            } else {
+                spin(serverWorld, anchor, serverPlayer);
+            }
             return ActionResult.SUCCESS;
         }
-        if (WheelDisplayVisual.hitPart(entity) != WheelDisplayVisual.Part.CENTER) {
+        // Left-click removes the wheel, and ONLY from the centre arrow. The prize box now floats high above the
+        // rim, nowhere near the hub, so it must not be a delete surface — punching the prize would be a nasty
+        // way to lose the whole wheel.
+        if (part != WheelDisplayVisual.Part.CENTER) {
             Chat.tool(serverPlayer, "Hit the centre arrow to take the wheel down.");
             return ActionResult.SUCCESS;
         }
@@ -147,7 +157,7 @@ public final class WheelBlock extends BlockWithEntity {
     /** Start a spin, or say why not. Shared by the block click and the display-entity click. */
     private static void spin(ServerWorld world, BlockPos anchor, ServerPlayerEntity player) {
         if (!(world.getBlockEntity(anchor) instanceof WheelBlockEntity wheel)) return;
-        if (wheel.startSpin(world)) Chat.tool(player, "Spinning the wheel...");
+        if (wheel.startSpin(world, player)) Chat.tool(player, "Spinning the wheel...");
         else Chat.tool(player, "The wheel is already spinning.");
     }
 }

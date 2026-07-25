@@ -16,6 +16,7 @@ package com.customblocks.command;
 import com.customblocks.command.handlers.AchievementCommands;
 import com.customblocks.command.handlers.AiCommands;
 import com.customblocks.command.handlers.AnimCommands;
+import com.customblocks.command.handlers.BackgroundCommands;
 import com.customblocks.command.handlers.ArabicCommands;
 import com.customblocks.command.handlers.ArabicFormCommands;
 import com.customblocks.command.handlers.AttributeCommands;
@@ -115,6 +116,7 @@ public final class CommandRegistrar {
             ArabicFormCommands.register(root); // Group 13 / O6 — /cb config arabicforms (own handler, §5 split)
             ColorImageCommands.register(root);
             ColorVariantCommands.register(root); // G10-CV — /cb colorvariants + /cb variants (create form, Phase 1 slice 1)
+            BackgroundCommands.register(root); // G10 §C — /cb setbg + /cb setbackground (stored background attribute)
             ImageToolCommands.register(root);
             PaletteCommands.register(root);
             HexCommands.register(root);

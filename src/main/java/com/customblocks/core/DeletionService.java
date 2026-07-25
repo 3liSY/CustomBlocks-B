@@ -17,10 +17,14 @@
  *
  * Callers do their own lock check + chat message first (the wording differs per path).
  *
- * Depends on: SlotManager, TextureStore, BlockNotesManager, ResourcePackServer, UndoManager,
+ * {@link #healSourceFromTrash} is the same rail's undo half: it puts a deleted block's ORIGINAL picture
+ * back when /cb undo revives it, since the undo stack only ever carried the baked pixels (G06 §D2).
+ *
+ * Depends on: SlotManager, TextureStore, TrashManager, BlockNotesManager, ResourcePackServer, UndoManager,
  *             HudSync, MarkerResolver, DeletedPlacementSweeper, SlotData
  * Called by:  DeleteCommands.deleteCore, SlotBlock.cbDelete (the Deleter),
- *             BulkCommands.applyDelete + BrokenConfirmMenu.doDeleteSelected (batch, via deleteCore)
+ *             BulkCommands.applyDelete + BrokenConfirmMenu.doDeleteSelected (batch, via deleteCore),
+ *             HistoryCommands (healSourceFromTrash, on undo of a delete)
  */
 package com.customblocks.core;
 
@@ -67,5 +71,28 @@ public final class DeletionService {
         MarkerResolver.put(before.index(), id, before.displayName());
         DeletedPlacementSweeper.onDeleted(server, before.index());
         return texture;
+    }
+
+    /**
+     * G06 §D2 — the inverse of what a delete does to the SOURCE files: put an undone delete's original
+     * picture (and the link it came from) back on disk.
+     *
+     * <p>A delete erases {@code slot_N.src} / {@code slot_N.url}, but {@link #deleteCore} copies both into
+     * the trash first, so the trash entry is the only surviving record of them. The undo stack carries the
+     * baked pixels alone — which is why an undone delete used to come back looking perfect while
+     * {@code /cb setbg}, {@code /cb resize} and {@code /cb variants} all refused it with "no stored picture
+     * to re-bake". Only fills gaps: an existing source is never overwritten. Silent no-op when the block
+     * genuinely had no source (Arabic glyphs, video frames) or the best-effort trash capture failed.
+     */
+    public static void healSourceFromTrash(SlotData before) {
+        if (before == null) return;
+        if (!TextureStore.hasSource(before.index())) {
+            byte[] source = TrashManager.sourceFor(before.customId(), before.index());
+            if (source != null) TextureStore.saveSource(before.index(), source);
+        }
+        if (TextureStore.loadUrl(before.index()) == null) {
+            String url = TrashManager.urlFor(before.customId(), before.index());
+            if (url != null) TextureStore.saveUrl(before.index(), url);
+        }
     }
 }

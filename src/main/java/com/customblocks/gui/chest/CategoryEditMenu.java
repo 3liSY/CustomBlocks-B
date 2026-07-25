@@ -2,8 +2,8 @@
  * CategoryEditMenu.java — advanced category editor (Group 11 overhaul).
  *
  * Opened by right-clicking a category in CategoryListMenu. A framed 6-row panel giving
- * full control over a category: display block, rename, merge, lock/unlock all, bulk retexture,
- * stats, delete, color tag, description, sort order, and a placeholder Share tile.
+ * full control over a category: display block, rename, merge, lock/unlock all, stats,
+ * delete, color tag, description, sort order, and a placeholder Share tile.
  *
  * All mutating operations delegate to tested commands or direct manager calls — no block
  * logic duplicated. The menu is entirely server-side (vanilla chest GUI, no client mod).
@@ -190,17 +190,6 @@ public final class CategoryEditMenu {
                 });
 
         // ── Row 2: More options ──────────────────────────────────────────────
-
-        // Bulk Retexture (slot 19)
-        m.set(19, Icons.of(Items.PAINTING, "§a§lBulk Retexture",
-                        "§7Re-apply a URL to all blocks",
-                        "§7in this category at once.",
-                        "§8Opens a chat prompt"),
-                (p, b, a) -> {
-                    GuiFx.click(p);
-                    GuiRouter.promptCommand(p, "/cb bulkretexture category:" + cat + " ",
-                            "paste image URL");
-                });
 
         // Stats (slot 22) — display-only
         String texSizeStr;

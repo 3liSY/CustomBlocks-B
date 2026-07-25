@@ -200,6 +200,16 @@ public final class ColorFamilyOps {
                             + "(it wasn't made from an image link). Nothing was changed."));
                     return;
                 }
+                // The size gate lives on the DOWNLOAD in the create/overwrite forms, so a stored source
+                // reaches this rail unchecked: it may predate these limits, or have been saved by plain
+                // /cb create (looser cap, no pixel limit). Re-check before baking three textures from it.
+                try {
+                    ImageLimits.requireColorFamilySource(raw);
+                } catch (Exception tooBig) {
+                    server.execute(() -> Chat.error(src, tooBig.getMessage() + " Retexture " + CbFmt.BODY + id
+                            + CbFmt.BAD + " with a smaller image first, then rebuild its colours. Nothing was changed."));
+                    return;
+                }
                 Map<String, byte[]> colourPngs = recolourSet(raw, baseMode, colourTol, size);
                 server.execute(() -> commitRebuild(src, server, who, id, name, raw, colourPngs));
             } catch (Exception e) {
@@ -413,8 +423,9 @@ public final class ColorFamilyOps {
         return existing;
     }
 
-    /** Which of the family's target ids (base + the 3 colours) already exist. */
-    private static List<String> takenTargets(String id) {
+    /** Which of the family's target ids (base + the 3 colours) already exist. Package-visible so
+     *  ColorFamilyDelete resolves family membership the same way the clash check does. */
+    static List<String> takenTargets(String id) {
         List<String> taken = new ArrayList<>();
         if (SlotManager.hasId(id)) taken.add(id);
         taken.addAll(existingColours(id));

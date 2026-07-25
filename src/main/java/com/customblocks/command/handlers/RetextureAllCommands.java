@@ -84,7 +84,7 @@ public final class RetextureAllCommands {
             // file, so /cb backup restore can bring everything back. Heavy copy is fine off-thread (same
             // idiom as AutoBackup). If it fails, ABORT — never overwrite the only copy without a restore point.
             try {
-                BackupManager.save(backupName, blockCount, true);
+                BackupManager.save(backupName, blockCount, BackupManager.Kind.SAFETY, "pre-retextureall", null);
             } catch (Exception e) {
                 IncidentRecorder.record("Retexture-all aborted: pre-change safety backup failed",
                         null, src.getName(), e);

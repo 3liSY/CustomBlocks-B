@@ -107,6 +107,9 @@ final class PayloadRegistrar {
         PayloadTypeRegistry.playS2C().register(                                                    // Group 30 — Guess Mode
                 com.customblocks.network.payloads.GuessModePayload.ID,
                 com.customblocks.network.payloads.GuessModePayload.CODEC);
+        PayloadTypeRegistry.playS2C().register(                                                    // Group 30 §H — Placed Mask
+                com.customblocks.network.payloads.PlacedMaskPayload.ID,
+                com.customblocks.network.payloads.PlacedMaskPayload.CODEC);
         // Group 30 · G30-4: client→server pose from the Guess Settings screen (replaces the removed
         // /cb guess pose command). Op-checked; writes GuessPoseStore then re-broadcasts so it applies live.
         PayloadTypeRegistry.playC2S().register(
@@ -249,7 +252,7 @@ final class PayloadRegistrar {
         net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking.registerGlobalReceiver(
                 com.customblocks.network.payloads.BackupActionPayload.ID, (payload, context) -> {
                     var player = context.player();
-                    player.server.execute(() -> com.customblocks.command.handlers.BackupCommands
+                    player.server.execute(() -> com.customblocks.command.handlers.BackupScreenCommands
                             .handleScreenAction(player, payload.action(), payload.name(), payload.arg()));
                 });
 

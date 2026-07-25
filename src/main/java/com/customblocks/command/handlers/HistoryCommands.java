@@ -28,6 +28,7 @@ import com.customblocks.core.FavoritesManager;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
+import com.customblocks.core.DeletionService;
 import com.customblocks.core.TextureStore;
 import com.customblocks.core.UndoManager;
 import com.customblocks.core.WidgetSync;
@@ -223,9 +224,10 @@ public final class HistoryCommands {
                 SlotManager.removeSilentlyKeepTexture(op.after().customId());
                 ResourcePackServer.updatePack();
             }
-            case DELETE -> { // block was deleted → bring it back (data + texture + greyed placements)
+            case DELETE -> { // block was deleted → bring it back (data + texture + source + greyed placements)
                 SlotManager.restoreSnapshot(op.before());
                 if (op.texture() != null) TextureStore.save(op.before().index(), op.texture());
+                DeletionService.healSourceFromTrash(op.before()); // G06 §D2: undo carries pixels, not the source
                 // Turn the placed copies the sweeper marked back into the real block (G06-2 undo completion).
                 com.customblocks.block.RemovedPlacements.restore(src.getServer(), op.before().index());
                 com.customblocks.core.MarkerResolver.forget(op.before().index()); // no longer deleted
@@ -249,6 +251,10 @@ public final class HistoryCommands {
             case REID -> // id was changed old→new → change it back new→old (reId is its own inverse)
                     SlotManager.reId(op.after().customId(), op.before().customId());
             case FLAG -> setFlag(src, op.flag(), !op.flag().on()); // flag was set to `on` → put it back to !on
+            case CATEGORY -> { // G11 — put the block back in exactly the categories it held before
+                com.customblocks.core.CategoryMembershipStore.restoreSet(op.membership().id(), op.membership().before());
+                HudSync.broadcast(src.getServer());
+            }
             case FACE_ROTATE -> { FaceRotations.set(op.faceRot().index(), op.faceRot().face(), op.faceRot().oldQ()); ResourcePackServer.updatePack(); HudSync.broadcast(src.getServer()); } // restore pre-rotate turn + rebuild model; F2: sync packed rot so §B shaped blocks re-mesh on MP
             case BATCH -> { // revert every child of the bulk op as a single step
                 if (op.children() != null) {
@@ -288,6 +294,10 @@ public final class HistoryCommands {
             case REID -> // re-apply the id change old→new
                     SlotManager.reId(op.before().customId(), op.after().customId());
             case FLAG -> setFlag(src, op.flag(), op.flag().on()); // re-apply the flip the op recorded
+            case CATEGORY -> { // re-apply the membership change the op recorded
+                com.customblocks.core.CategoryMembershipStore.restoreSet(op.membership().id(), op.membership().after());
+                HudSync.broadcast(src.getServer());
+            }
             case FACE_ROTATE -> { FaceRotations.set(op.faceRot().index(), op.faceRot().face(), op.faceRot().newQ()); ResourcePackServer.updatePack(); HudSync.broadcast(src.getServer()); } // re-apply the rotate + rebuild model; F2: sync packed rot so §B shaped blocks re-mesh on MP
             case BATCH -> { // re-apply every child of the bulk op as a single step
                 if (op.children() != null) {
@@ -328,64 +338,9 @@ public final class HistoryCommands {
         SlotLighting.applyToPlaced(src.getServer(), d.index(), d.glow());
     }
 
-    /**
-     * One step's human description. When {@code undo} is true the value diff reads
-     * current→restored (e.g. glow 12→8); on redo it reads restored→reapplied (8→12).
-     */
+    /** How a step reads in chat — see HistoryDescribe (split out under the §9.3 line gate). */
     private static String describe(UndoManager.Op op, boolean undo) {
-        if (op.kind() == UndoManager.Kind.BATCH) {
-            int n = op.children() == null ? 0 : op.children().size();
-            return op.label() + " (" + n + " block" + (n == 1 ? "" : "s") + ")";
-        }
-        if (op.kind() == UndoManager.Kind.REID) {
-            String from = undo ? op.after().customId() : op.before().customId();
-            String to = undo ? op.before().customId() : op.after().customId();
-            return "reid " + from + CbFmt.DIM + "→" + CbFmt.RESET + " " + to;
-        }
-        if (op.kind() == UndoManager.Kind.FLAG) { // carries no snapshot — the id is on the payload
-            return op.label() + " " + (op.flag() == null ? "?" : op.flag().id());
-        }
-        if (op.kind() == UndoManager.Kind.FACE_ROTATE) { // no snapshot — index+face live on the payload
-            UndoManager.FaceRot fr = op.faceRot();
-            if (fr == null) return op.label() + " ?";
-            return "rotate " + fr.face() + " " + ((undo ? fr.oldQ() : fr.newQ()) * 90) + "°";
-        }
-        SlotData ref = op.before() != null ? op.before() : op.after();
-        String id = ref != null ? ref.customId() : "?";
-        if ((op.kind() == UndoManager.Kind.MODIFY || op.kind() == UndoManager.Kind.SHAPE)
-                && op.before() != null && op.after() != null) {
-            String d = undo ? diff(op.after(), op.before()) : diff(op.before(), op.after());
-            return op.label() + " " + id + (d.isEmpty() ? "" : " " + d);
-        }
-        return op.label() + " " + id;
-    }
-
-    /** Format the single attribute that differs between two snapshots as "from→to" (or "" if none). */
-    private static String diff(SlotData a, SlotData b) {
-        if (a.glow() != b.glow()) return a.glow() + CbFmt.DIM + "→" + CbFmt.RESET + b.glow();
-        if (a.hardness() != b.hardness()) return fmtH(a.hardness()) + CbFmt.DIM + "→" + CbFmt.RESET + fmtH(b.hardness());
-        if (!eq(a.soundType(), b.soundType())) return a.soundType() + CbFmt.DIM + "→" + CbFmt.RESET + b.soundType();
-        if (a.noCollision() != b.noCollision()) return solid(a.noCollision()) + CbFmt.DIM + "→" + CbFmt.RESET + solid(b.noCollision());
-        if (!eq(a.category(), b.category())) return cat(a.category()) + CbFmt.DIM + "→" + CbFmt.RESET + cat(b.category());
-        if (!eq(a.shape(), b.shape())) return a.shape() + CbFmt.DIM + "→" + CbFmt.RESET + b.shape();
-        if (!eq(a.displayName(), b.displayName())) return "\"" + a.displayName() + "\"" + CbFmt.DIM + "→" + CbFmt.RESET + "\"" + b.displayName() + "\"";
-        return "";
-    }
-
-    private static boolean eq(String x, String y) {
-        return x == null ? y == null : x.equals(y);
-    }
-
-    private static String fmtH(float h) {
-        return h == Math.rint(h) ? String.valueOf((int) h) : String.valueOf(h);
-    }
-
-    private static String solid(boolean noCollision) {
-        return noCollision ? "passable" : "solid";
-    }
-
-    private static String cat(String c) {
-        return c == null || c.isBlank() ? "(none)" : c;
+        return HistoryDescribe.describe(op, undo);
     }
 
     private static MutableText confirmButton() {

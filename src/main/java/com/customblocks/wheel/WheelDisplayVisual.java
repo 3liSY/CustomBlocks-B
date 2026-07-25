@@ -12,7 +12,7 @@
  *   - the win popup (giant slow-spinning ITEM_DISPLAY icon + glowing TEXT_DISPLAY name banner);
  *   - the INTERACTION hitboxes (one at the centre, a ring of them over the rim) that make a wall of display
  *     entities right-clickable at all.
- * {@link WheelRing} owns the wedge + icon ring and builds it from the same {@link #baseNbt} helpers.
+ * {@link WheelRing} owns the baked face + the icon ring and builds them from the same {@link #baseNbt} helpers.
  *
  * Every spawned entity carries the {@link #TAG} command tag so {@link #despawnAll} can sweep the area and
  * leave nothing behind even if a UUID handle was lost (design lock: breaking the centre removes ALL of it).
@@ -55,23 +55,27 @@ public final class WheelDisplayVisual {
     /** Tag naming which click surface an INTERACTION entity is (CENTRE = the arrow, RIM = the wheel face). */
     private static final String TAG_PART = "cb_wheel_part:";
 
-    /** The two click surfaces; both spin the wheel, only CENTRE removes it on a left-click. */
-    public enum Part { CENTER, RIM }
+    /** The click surfaces. CENTRE + RIM spin the wheel (CENTRE also removes it on a left-click); CLAIM is the
+     *  box floating over the won-prize popup — right-clicking it hands the prize to the player who spun. */
+    public enum Part { CENTER, RIM, CLAIM }
 
     // ------------------------------------------------------------------ tunable geometry
-    /** How far in front of the wheel plane each layer sits (blocks) — wedges 0, then icons, arrow, popup. */
+    /** How far in front of the wheel plane each layer sits (blocks) — the face at 0, then icons, arrow, popup. */
     static final double DEPTH_ICON = 0.18;
     private static final double DEPTH_ARROW = 0.40;
-    private static final double DEPTH_POPUP = 1.10;
+    /** The won-prize popup floats OUT of the wheel plane a little, but its real clearance comes from riding high
+     *  ABOVE the rim (see {@link #POPUP_ICON_UP}) — so it can never read as "stuck to the arrow". */
+    private static final double DEPTH_POPUP = 1.20;
     /** Arrow model scale. The sprite is 1 block square with the shaft on its diagonal, so the tip reaches
      *  {@code scale * 0.707} blocks out — 10 puts it at r≈7.1, just short of the icons at r=8. */
     private static final double ARROW_SCALE = 10.0;
     /** The arrow sprite is drawn pointing at 45° (bottom-left feathers → top-right tip), so a slice at wheel
      *  angle {@code a} needs the model rotated by {@code a - 45}. */
     private static final double ARROW_SPRITE_DEG = 45.0;
-    /** Popup icon centre / name banner, offset from the wheel centre along the wheel's up axis. */
-    private static final double POPUP_ICON_UP = 1.1;
-    private static final double POPUP_TEXT_DOWN = 2.2;
+    /** The prize icon floats clear ABOVE the top of the wheel (rim is {@link WheelRing#OUTER_R}), so it never
+     *  overlaps the arrow or the disc. The name banner sits just ABOVE the icon, close (design 2026-07-23). */
+    private static final double POPUP_ICON_UP = WheelRing.OUTER_R + 2.2;
+    private static final double POPUP_TEXT_UP = POPUP_ICON_UP + 2.4;
     static final float POPUP_ICON_SCALE = 3.2f;
     static final float POPUP_TEXT_SCALE = 1.1f;
     /** Brand lime — the glow the winner's name banner is outlined in. */
@@ -82,22 +86,25 @@ public final class WheelDisplayVisual {
     private static final int HIT_RING = 20;
     private static final float HIT_CENTER_SIZE = 4.0f;
     private static final float HIT_RIM_SIZE = 2.8f;
+    /** The claim box over the floating prize popup — big enough to cover the giant 3.2-scale icon. */
+    private static final float HIT_CLAIM_SIZE = 4.0f;
     /** Half-extent of the sweep {@link #despawnAll} clears — comfortably past the 10-block rim. */
     private static final double SWEEP = 26.0;
 
-    /** Every entity one placed wheel owns. Wedge/icon lists are parallel to {@link WheelRing#SLICES}. */
-    public record Handles(List<UUID> wedges, List<UUID> icons, @Nullable UUID arrow,
+    /** Every entity one placed wheel owns. {@code face} is the single baked-texture disc; {@code icons} is
+     *  parallel to {@link WheelRing#SLICES}. */
+    public record Handles(@Nullable UUID face, List<UUID> icons, @Nullable UUID arrow,
                           @Nullable UUID popupIcon, @Nullable UUID popupText, List<UUID> hits) {
 
         public static Handles empty() {
-            return new Handles(List.of(), List.of(), null, null, null, List.of());
+            return new Handles(null, List.of(), null, null, null, List.of());
         }
 
         /** True once the wheel is fully built (a partial set means a rebuild is due). */
         public boolean complete() {
-            return arrow != null && popupIcon != null && popupText != null
-                    && wedges.size() == WheelRing.SLICES && icons.size() == WheelRing.SLICES
-                    && hits.size() == HIT_RING + 1;
+            return face != null && arrow != null && popupIcon != null && popupText != null
+                    && icons.size() == WheelRing.SLICES
+                    && hits.size() == HIT_RING + 2; // centre + rim ring + the prize claim box
         }
     }
 
@@ -166,10 +173,15 @@ public final class WheelDisplayVisual {
         }
     }
 
-    private static NbtCompound popupIconNbt(BlockPos anchor, float faceYaw, Item item, float scale, double spinDeg) {
-        Vec3d p = WheelRing.center(anchor)
+    /** Where the giant prize popup (and its claim box) floats: clear above the wheel's rim, a little out front. */
+    private static Vec3d popupIconPos(BlockPos anchor, float faceYaw) {
+        return WheelRing.center(anchor)
                 .add(WheelRing.normal(faceYaw).multiply(DEPTH_POPUP))
                 .add(0, POPUP_ICON_UP, 0);
+    }
+
+    private static NbtCompound popupIconNbt(BlockPos anchor, float faceYaw, Item item, float scale, double spinDeg) {
+        Vec3d p = popupIconPos(anchor, faceYaw);
         NbtCompound n = baseNbt(p, faceYaw, "center"); // billboard: keeps facing whoever walks around it (D4)
         n.putInt("interpolation_duration", 2);         // the spin/pop-in is pushed every 2 ticks — smooth it
         float s = POPUP_ICON_SCALE * scale;
@@ -184,7 +196,7 @@ public final class WheelDisplayVisual {
     private static NbtCompound popupTextNbt(ServerWorld world, BlockPos anchor, float faceYaw, Item item, float scale) {
         Vec3d p = WheelRing.center(anchor)
                 .add(WheelRing.normal(faceYaw).multiply(DEPTH_POPUP))
-                .add(0, -POPUP_TEXT_DOWN, 0);
+                .add(0, POPUP_TEXT_UP, 0);
         NbtCompound n = baseNbt(p, faceYaw, "center");
         n.putInt("interpolation_duration", 2);
         float s = POPUP_TEXT_SCALE * scale;
@@ -209,12 +221,15 @@ public final class WheelDisplayVisual {
      * over the rim, so right-clicking the wheel ANYWHERE spins it. Order matters — index 0 is the centre.
      */
     public static List<UUID> spawnHits(ServerWorld world, BlockPos anchor, float faceYaw) {
-        List<UUID> out = new ArrayList<>(HIT_RING + 1);
+        List<UUID> out = new ArrayList<>(HIT_RING + 2);
         out.add(spawnHit(world, anchor, WheelRing.center(anchor), HIT_CENTER_SIZE, Part.CENTER));
         for (int i = 0; i < HIT_RING; i++) {
             Vec3d p = WheelRing.point(anchor, faceYaw, WheelRing.ICON_R, i * 360.0 / HIT_RING, DEPTH_ICON);
             out.add(spawnHit(world, anchor, p, HIT_RIM_SIZE, Part.RIM));
         }
+        // Claim box over the floating prize popup, high above the rim — it is off the wheel face entirely, so a
+        // right-click on the prize resolves here (claim) and never collides with the spin surfaces.
+        out.add(spawnHit(world, anchor, popupIconPos(anchor, faceYaw), HIT_CLAIM_SIZE, Part.CLAIM));
         return List.copyOf(out);
     }
 
@@ -271,9 +286,9 @@ public final class WheelDisplayVisual {
      * handle lost to a {@code /kill}, a crash or an old build can never leave debris behind (item A3).
      */
     public static void despawnAll(ServerWorld world, Handles h, BlockPos anchor) {
-        h.wedges().forEach(id -> discard(world, id));
         h.icons().forEach(id -> discard(world, id));
         h.hits().forEach(id -> discard(world, id));
+        discard(world, h.face());
         discard(world, h.arrow());
         discard(world, h.popupIcon());
         discard(world, h.popupText());

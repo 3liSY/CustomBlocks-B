@@ -23,6 +23,7 @@ G27 owns interaction design, client layout, Screen state, input, previews, and r
 | Paint/resize user workflow and client working state | Image processing limits: G10; animation decode/frame rules: G14 |
 | Screen versions of the vault conflict, backup, trash, safety, diagnostics, macro, and other migrated surfaces | Vault, backup, diagnostics, macro, and game logic: their owning Groups |
 | Text, recolour, shape, animation, HUD, bulk, and configuration Screen presentation | Text, colour, shape, animation, HUD data, bulk, and config backend behavior |
+| CategoryHubScreen, the Create-workspace Category tab, and the Export Dashboard Screen | Category data, mutation, tree/membership rules, and export contents: G11 |
 
 ## Direction
 
@@ -47,7 +48,9 @@ Every CustomBlocks Screen follows the same red, black, and lime language: near-b
 | 2026-07-18 | Shared block browsers provide an `Animated` filter inside a Filters menu. | GIF and animated WebP blocks can be found without adding a redundant Static filter. |
 | 2026-07-18 | `/cb animation` opens the shared block browser with `Animated` already selected; choosing a block opens `/cb create` on that block's Animation tab. | The old animated-only chest picker is replaced by one Screen route. |
 | 2026-07-18 | `/cb editor` opens the same modern block browser as `/cb list`; choosing a block opens that block in Studio Edit Mode, the same destination as `/cb editor <id>`. | `/cb listgui` stays removed and no second block-browser route is created. |
+| 2026-07-23 | The Backup and Trash Screen surface moves here from G09 (its command/data layer is complete). Scope needs discussion before build. | G09 keeps persistence/restore/retention; G27 owns the Screen. See §F and the Deferred Scope note. |
 | 2026-07-20 | The Bulk Operations Hub has no natural-language "ask" / NL command bar; blocks are targeted by ticking rows and narrowing with filters. The Blocks List gains a `Category ▾` filter that combines (AND) with the All/Favorites/Locked/Selected chip. | The mis-targeting NL parser (a phrase could tick every block) is gone; targeting is explicit and cannot silently act on the whole list. |
+| 2026-07-25 | CategoryHubScreen, the Create-workspace Category tab, and the Export Dashboard Screen move here from G11. | G11 keeps category data, mutation, and export contents; G27 owns their Screen presentation. See §N. |
 
 ## Feature Plan
 
@@ -199,6 +202,7 @@ Features such as backup, trash, safety, diagnostics, vault conflict, macros, onb
 
 - Vault conflict presents only one import choice at a time with clear local/incoming comparison and normal undo integration.
 - Backup, Trash, and Safety give real saved/deleted texture previews, explicit destructive confirmation, and routes to diagnostics rather than hiding safety actions in chest menus.
+- **Backup/Trash Screen migration (from G09, 2026-07-23) — Discussion ✏️ before build.** G09's backup engine is rebuilt and complete at the command/data layer (whole-tree deduped snapshots, kind-based retention, verify, preview/contents, granular restore, cloud pull). What remains is the Screen surface: add **multi-select delete** to the Backup Screen, expose the new backup metadata (kind tab/icon, reason/note, size, health dot from `/cb backup verify`, preview/contents/granular actions), build a **Trash Screen** (proposed `GuiMode` 19) mirroring it, and **retire the chest menus** (`BackupMenu`, `BackupConfirmMenu`, `BackupSelection`, `TrashMenu`, `TrashEntryMenu`) plus repoint `SafetyMenu`. Open questions to settle first: exact layout/tabs, whether per-block "restore just this block from backup X" is in-scope now, and the cutover order (Screen accepted before chest removal per the rule below).
 - Diagnostics opens one incident detail at a time and provides history without accidentally dumping every incident into one view.
 - Tutorial and achievements gallery read G23 flags/data, while macro, config, vault, and game Screens use their owning Group services.
 
@@ -231,6 +235,32 @@ Not designed. Open questions for discussion before any build:
 
 G27 owns the Screen and presentation only; G06 keeps mode state, switching logic, and item behavior.
 
+### N. Category Screens (from G11)
+
+> Moved from G11 §B/§D (2026-07-25): G11's category commands, records, membership/tree model, migration, and export contents stay in place and unchanged. Only the three Screen surfaces move: `CategoryHubScreen`, the Create-workspace Category tab, and the Export Dashboard Screen replacement.
+
+**Player outcome**
+
+Players browse, create, and edit categories in a proper Screen, and export a category through the same Studio visual language as every other CustomBlocks Screen.
+
+**Experience**
+
+- `CategoryHubScreen` lists categories with counts, icons, browse/edit actions, and category detail; a block row supports category-appropriate give, edit, and remove actions.
+- The Create-workspace Category tab uses the main Studio canvas rather than a narrow panel, letting a player select/create a category, set a main category, and edit visible style fields without hiding existing records.
+- The Export Dashboard Screen offers the same export result as `/cb category export <category>` without a separate console-only path.
+- `/cb categories` opens `CategoryHubScreen` for players; console callers keep a text-only fallback.
+
+**Requirements**
+
+- Browser routes retire the old chest-menu target without breaking the console fallback.
+- Screen code receives category data and invokes G11 mutation/export paths rather than reimplementing them.
+- Screens read a block's categories as a set from G11's membership store, not the legacy one-word field, which survives only as a derived display shadow for surfaces G27 has not reworked yet and is removed as each one moves across.
+- Screen copy and shortcuts make browse, edit, delete, export, and modifier actions discoverable without clutter.
+
+**Boundary**
+
+G27 owns the reusable Screen/Studio presentation. G11 owns what a category means, how its edits are applied, and what an export contains.
+
 ## Cross-Group Contracts
 
 | Group | Connection | Promise |
@@ -241,6 +271,7 @@ G27 owns the Screen and presentation only; G06 keeps mode state, switching logic
 | G08 | Shapes | Studio Shape is the only modern Screen route; G08 owns geometry and shape data. |
 | G09 | Backup, trash, and safety | G27 presents safety Screens while G09 controls persistence, restore, and deletion semantics. |
 | G10 | Colour, images, and resize | Editing/recolour UI uses G10 limits and processing contracts. |
+| G11 | Category Screens | G27 owns CategoryHub, Create-workspace, and Export Dashboard presentation; G11 owns category data, mutation, and export contents. |
 | G13 | Arabic and text | Studio Text provides Unicode/UI flow; G13 creates and renders the text/Arabic data. |
 | G14 | Animation and GIFs | Studio presents animation/resize controls; G14 owns decoding, frame behavior, and render/performance rules. |
 | G16 | Diagnostics and testing | G27 can route private testing/diagnostic Screens, but G16 owns incidents, access control, and results. |
@@ -275,6 +306,7 @@ G27 owns the Screen and presentation only; G06 keeps mode state, switching logic
 | AI design/screenshot matching and studio cloud publication | They require G15/G20 services and their safety/cost rules. | G15/G20 with G27 |
 | Premium effects, cinematic welcome extensions, 3D wiki, and admin editor | They are later experience work after core Studio and migration reliability. | G27 with owner Group |
 | Custom icon-art project | Functional familiar icons come first; bespoke visual art is separate work. | Future UI art work |
+| Backup/Trash Screen migration from G09 (multi-select delete, backup metadata surface, Trash Screen, chest-menu retirement) | Backend is complete in G09, but the Screen scope/layout needs a design discussion before build (see §F). | G27 with G09 |
 
 </details>
 
@@ -305,6 +337,7 @@ G27 owns the Screen and presentation only; G06 keeps mode state, switching logic
 - [G08 Shapes and Faces](GROUP_08_SHAPES.md)
 - [G09 Backup and Recovery](GROUP_09_BACKUP_SAFETY.md)
 - [G10 Colour and Image Tools](GROUP_10_COLOR_IMAGE.md)
+- [G11 Categories](GROUP_11_CATEGORY.md)
 - [G13 Arabic and Text Blocks](GROUP_13_ARABIC.md)
 - [G14 Animation and Video](GROUP_14_ANIMATION_VIDEO.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

@@ -13,7 +13,8 @@ package com.customblocks.core;
 
 public record SlotData(int index, String customId, String displayName,
                        int glow, float hardness, String soundType, boolean noCollision,
-                       String category, String shape, AnimData anim, ArabicMeta arabic) {
+                       String category, String shape, AnimData anim, ArabicMeta arabic,
+                       String background) {
 
     /** Vanilla stone hardness — the default break resistance for a new block. */
     public static final float DEFAULT_HARDNESS = 1.5f;
@@ -24,10 +25,20 @@ public record SlotData(int index, String customId, String displayName,
     /** Default block shape — a full 1×1×1 cube (see BlockShapes). */
     public static final String DEFAULT_SHAPE = "full";
 
-    /** Normalize a null/blank shape and a null anim so callers never see null. */
+    /** Normalize a null/blank shape, a null anim, and an unset/corrupt background so callers never see null. */
     public SlotData {
         shape = (shape == null || shape.isBlank()) ? DEFAULT_SHAPE : shape;
         anim = anim == null ? AnimData.NONE : anim;
+        String bg = BackgroundValue.normalize(background);
+        background = bg == null ? BackgroundValue.DEFAULT : bg; // unparseable stored value → the safe default
+    }
+
+    /** Back-compat (pre-background, G10 §C): same fields as before, background = the default black fill. */
+    public SlotData(int index, String customId, String displayName,
+                    int glow, float hardness, String soundType, boolean noCollision,
+                    String category, String shape, AnimData anim, ArabicMeta arabic) {
+        this(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic,
+                BackgroundValue.DEFAULT);
     }
 
     /** Back-compat (pre-Arabic, G13-25): same fields as before, not an Arabic slot. */
@@ -72,53 +83,53 @@ public record SlotData(int index, String customId, String displayName,
 
     /** Return a copy with a new id + display name (the canonical .update() builder). */
     public SlotData update(String newCustomId, String newDisplayName) {
-        return new SlotData(index, newCustomId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic);
+        return new SlotData(index, newCustomId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic, background);
     }
 
     public SlotData withCustomId(String newCustomId) {
-        return new SlotData(index, newCustomId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic);
+        return new SlotData(index, newCustomId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic, background);
     }
 
     public SlotData withDisplayName(String newDisplayName) {
-        return new SlotData(index, customId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic);
+        return new SlotData(index, customId, newDisplayName, glow, hardness, soundType, noCollision, category, shape, anim, arabic, background);
     }
 
     /** Return a copy with a new light level, clamped to the valid 0..15 range. */
     public SlotData withGlow(int newGlow) {
-        return new SlotData(index, customId, displayName, Math.max(0, Math.min(15, newGlow)), hardness, soundType, noCollision, category, shape, anim, arabic);
+        return new SlotData(index, customId, displayName, Math.max(0, Math.min(15, newGlow)), hardness, soundType, noCollision, category, shape, anim, arabic, background);
     }
 
     /** Return a copy with a new break hardness (negative = unbreakable, 0 = instant break). */
     public SlotData withHardness(float newHardness) {
-        return new SlotData(index, customId, displayName, glow, newHardness, soundType, noCollision, category, shape, anim, arabic);
+        return new SlotData(index, customId, displayName, glow, newHardness, soundType, noCollision, category, shape, anim, arabic, background);
     }
 
     /** Return a copy with a new sound group key (see SlotBlock.getSoundGroup). */
     public SlotData withSoundType(String newSoundType) {
-        return new SlotData(index, customId, displayName, glow, hardness, newSoundType, noCollision, category, shape, anim, arabic);
+        return new SlotData(index, customId, displayName, glow, hardness, newSoundType, noCollision, category, shape, anim, arabic, background);
     }
 
     /** Return a copy with collision toggled (true = passable/walk-through, false = solid). */
     public SlotData withNoCollision(boolean newNoCollision) {
-        return new SlotData(index, customId, displayName, glow, hardness, soundType, newNoCollision, category, shape, anim, arabic);
+        return new SlotData(index, customId, displayName, glow, hardness, soundType, newNoCollision, category, shape, anim, arabic, background);
     }
 
     /** Return a copy in a new category ("" = uncategorized). */
     public SlotData withCategory(String newCategory) {
         return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision,
-                newCategory == null ? DEFAULT_CATEGORY : newCategory, shape, anim, arabic);
+                newCategory == null ? DEFAULT_CATEGORY : newCategory, shape, anim, arabic, background);
     }
 
     /** Return a copy with a new shape (null/blank → full; see BlockShapes for valid names). */
     public SlotData withShape(String newShape) {
         return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category,
-                newShape == null || newShape.isBlank() ? DEFAULT_SHAPE : newShape, anim, arabic);
+                newShape == null || newShape.isBlank() ? DEFAULT_SHAPE : newShape, anim, arabic, background);
     }
 
     /** Return a copy with new animation state (AnimData.NONE = make it a plain static block). */
     public SlotData withAnim(AnimData newAnim) {
         return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape,
-                newAnim == null ? AnimData.NONE : newAnim, arabic);
+                newAnim == null ? AnimData.NONE : newAnim, arabic, background);
     }
 
     /** G13-25: true when this slot IS an Arabic auto-join letter/number. */
@@ -126,8 +137,18 @@ public record SlotData(int index, String customId, String displayName,
         return arabic != null && arabic.isValid();
     }
 
+    /**
+     * G10 §C: return a copy with a new stored background ("black", "transparent", or "#RRGGBB").
+     * An unparseable value falls back to the default black fill rather than corrupting the slot —
+     * callers validate with {@link BackgroundValue#normalize} first and report the typo themselves.
+     */
+    public SlotData withBackground(String newBackground) {
+        return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape,
+                anim, arabic, newBackground);
+    }
+
     /** Return a copy with new Arabic meta (null = a normal block; see ArabicMeta). */
     public SlotData withArabic(ArabicMeta newArabic) {
-        return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, newArabic);
+        return new SlotData(index, customId, displayName, glow, hardness, soundType, noCollision, category, shape, anim, newArabic, background);
     }
 }

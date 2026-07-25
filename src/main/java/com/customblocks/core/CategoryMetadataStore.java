@@ -38,6 +38,7 @@ public final class CategoryMetadataStore {
 
     /** Per-category metadata record. */
     public static final class Meta {
+        String displayName  = "";   // G11: the name AS TYPED; the map key stays the normalized form
         String displayBlock = "";   // block id, "" = none
         String colorTag     = "";   // §-code like "§a", "" = default white
         String colorHex     = "";   // Group 27 Category Hub custom hex "#RRGGBB", "" = use colorTag/default
@@ -45,9 +46,11 @@ public final class CategoryMetadataStore {
         String sortOrder    = "alpha";  // "alpha" or "custom"
         List<String> customOrder = new ArrayList<>(); // block ids in custom order (only used when sortOrder="custom")
         boolean exists = false; // §G27 L11: true once explicitly created — keeps the category listed at 0 blocks
+        long createdAt = 0L;    // G11 filter: epoch millis, for newest-to-oldest / oldest-to-newest
 
         private Meta() {}
 
+        public String displayName()   { return displayName; }
         public String displayBlock()  { return displayBlock; }
         public String colorTag()      { return colorTag; }
         public String colorHex()      { return colorHex; }
@@ -55,20 +58,36 @@ public final class CategoryMetadataStore {
         public String sortOrder()     { return sortOrder; }
         public List<String> customOrder() { return customOrder; }
         public boolean exists()       { return exists; }
+        public long createdAt()       { return createdAt; }
     }
 
-    private static final Map<String, Meta> DATA = new HashMap<>(); // category → metadata
+    private static final Map<String, Meta> DATA = new HashMap<>(); // category key → metadata
 
-    static { load(); }
+    static { load(); bootstrapUncategorized(); }
 
     private CategoryMetadataStore() {} // static-only
 
+    /** The shared normalizer — one definition, in {@link CategoryMembershipStore#key}. */
     private static String key(String category) {
-        return category == null ? "" : category.trim().toLowerCase(Locale.ROOT);
+        return CategoryMembershipStore.key(category);
     }
 
     private static Meta getOrCreate(String cat) {
-        return DATA.computeIfAbsent(key(cat), k -> new Meta());
+        String k = key(cat);
+        Meta m = DATA.computeIfAbsent(k, x -> new Meta());
+        if (m.displayName.isEmpty()) m.displayName = cat == null ? k : cat.trim();
+        if (m.createdAt == 0L) m.createdAt = System.currentTimeMillis();
+        return m;
+    }
+
+    /**
+     * G11: {@code Uncategorized} is a built-in record that always exists and can never be deleted
+     * or renamed — it is where a block lands when its last real membership goes.
+     */
+    private static void bootstrapUncategorized() {
+        Meta m = DATA.computeIfAbsent(CategoryMembershipStore.UNCATEGORIZED, k -> new Meta());
+        m.exists = true;
+        if (m.displayName.isEmpty()) m.displayName = "Uncategorized";
     }
 
     // ── Display block ────────────────────────────────────────────────────────
@@ -161,12 +180,82 @@ public final class CategoryMetadataStore {
         save();
     }
 
+    // ── Display name / creation time (Group 11) ──────────────────────────────
+
+    /**
+     * The category's name AS TYPED ("Arabic Letters"), for every player-facing surface. Falls back
+     * to the normalized key for a record that predates display names, so nothing renders blank.
+     */
+    public static synchronized String getDisplayName(String category) {
+        String k = key(category);
+        Meta m = DATA.get(k);
+        return m != null && !m.displayName.isEmpty() ? m.displayName : k;
+    }
+
+    /** Epoch millis this category record was first created (0 when unknown — pre-G11 records). */
+    public static synchronized long getCreatedAt(String category) {
+        Meta m = DATA.get(key(category));
+        return m != null ? m.createdAt : 0L;
+    }
+
+    /** True when a record already exists under {@code category}'s key. */
+    public static synchronized boolean keyExists(String category) {
+        return DATA.containsKey(key(category));
+    }
+
+    /**
+     * The existing display name that {@code typedName} would collide with, or null when it is free
+     * or is simply a different CASING of the same category.
+     *
+     * This is the line between the two behaviours the locked decisions ask for: typing
+     * "arabic letters" at "Arabic Letters" resolves (case only), while typing "arabic-letters"
+     * collides — it reads as a different name but lands on the same key, so it must be refused
+     * rather than silently filed into a category the player didn't name.
+     */
+    public static synchronized String collisionFor(String typedName) {
+        String typed = typedName == null ? "" : typedName.trim();
+        Meta m = DATA.get(key(typed));
+        if (m == null) return null;
+        String shown = m.displayName.isEmpty() ? key(typed) : m.displayName;
+        return typed.equalsIgnoreCase(shown) ? null : shown;
+    }
+
     // ── Existence (Group 27 L11: categories are real the moment you create them) ─────
 
-    /** Register {@code category} as an existing category, even with 0 blocks and no other metadata. */
+    /**
+     * Register {@code category} as an existing category, even with 0 blocks and no other metadata.
+     * Idempotent and unchecked — the pre-G11 callers (the Category Hub admin bridge, the first-load
+     * conversion) create a record for a name that is already resolved. Use {@link #createChecked}
+     * for a player typing a NEW name, which must be able to fail.
+     */
     public static synchronized void create(String category) {
         getOrCreate(category).exists = true;
         save();
+    }
+
+    /**
+     * Create a brand-new category from a typed name, rejecting a key collision (TG11 A7).
+     *
+     * A name that only differs in case from an existing one RESOLVES to it — that is the whole
+     * point of the display-name/key split ("arabic letters" finds "Arabic Letters"). A name that
+     * lands on the same key any OTHER way — a hyphen for a space, doubled spacing — is a genuine
+     * collision: two visibly different names cannot share one category, so it is rejected and the
+     * caller is told which existing category owns that key.
+     *
+     * @return null on success, or the EXISTING display name that blocked it.
+     */
+    public static synchronized String createChecked(String typedName) {
+        String typed = typedName == null ? "" : typedName.trim();
+        String k = key(typed);
+        Meta existing = DATA.get(k);
+        if (existing != null) {
+            String shown = existing.displayName.isEmpty() ? k : existing.displayName;
+            return shown; // both the "already exists" and the collision case — the caller words it
+        }
+        Meta m = getOrCreate(typed);
+        m.exists = true;
+        save();
+        return null;
     }
 
     /** Every category key that has metadata OR was explicitly {@link #create}d — NOT block-membership. */
@@ -187,17 +276,25 @@ public final class CategoryMetadataStore {
         if (changed) save();
     }
 
-    /** Move all metadata from one category key to another (for rename category). */
+    /**
+     * Move all metadata from one category key to another (for rename category), re-stamping the
+     * display name to the newly typed one. Refuses to rename the built-in {@code Uncategorized}
+     * record away — it is the floor every block falls to and must keep its key.
+     */
     public static synchronized void renameCategory(String oldCat, String newCat) {
+        if (CategoryMembershipStore.isUncategorized(oldCat)) return;
+        if (CategoryMembershipStore.isUncategorized(newCat)) return; // nothing may take the floor's key
         Meta m = DATA.remove(key(oldCat));
         if (m != null) {
+            m.displayName = newCat == null ? key(newCat) : newCat.trim();
             DATA.put(key(newCat), m);
             save();
         }
     }
 
-    /** Delete all metadata for a category. */
+    /** Delete all metadata for a category. The built-in {@code Uncategorized} record is never deletable. */
     public static synchronized void deleteCategory(String category) {
+        if (CategoryMembershipStore.isUncategorized(category)) return;
         if (DATA.remove(key(category)) != null) save();
     }
 
@@ -217,6 +314,8 @@ public final class CategoryMetadataStore {
                 try {
                     Meta m = new Meta();
                     JsonObject o = e.getValue().getAsJsonObject();
+                    if (o.has("displayName"))   m.displayName   = o.get("displayName").getAsString();
+                    if (o.has("createdAt"))     m.createdAt     = o.get("createdAt").getAsLong();
                     if (o.has("displayBlock"))  m.displayBlock  = o.get("displayBlock").getAsString();
                     if (o.has("colorTag"))      m.colorTag      = o.get("colorTag").getAsString();
                     if (o.has("colorHex"))      m.colorHex      = o.get("colorHex").getAsString();
@@ -227,7 +326,12 @@ public final class CategoryMetadataStore {
                         JsonArray arr = o.getAsJsonArray("customOrder");
                         for (JsonElement el : arr) m.customOrder.add(el.getAsString());
                     }
-                    DATA.put(e.getKey(), m);
+                    // Re-key through the shared normalizer: a pre-G11 file was keyed on plain
+                    // lower-case, so a stored "my-cat" has to fold to "my cat" or its metadata
+                    // would orphan the moment anything looked it up.
+                    String k = key(e.getKey());
+                    if (m.displayName.isEmpty()) m.displayName = e.getKey();
+                    DATA.put(k, m);
                 } catch (Exception ignored) {}
             }
         } catch (Exception ignored) {}
@@ -263,6 +367,8 @@ public final class CategoryMetadataStore {
                         && m.description.isEmpty() && "alpha".equals(m.sortOrder)) continue;
                 JsonObject o = new JsonObject();
                 if (m.exists) o.addProperty("exists", true);
+                if (!m.displayName.isEmpty()) o.addProperty("displayName", m.displayName);
+                if (m.createdAt > 0L)         o.addProperty("createdAt", m.createdAt);
                 if (!m.displayBlock.isEmpty()) o.addProperty("displayBlock", m.displayBlock);
                 if (!m.colorTag.isEmpty())     o.addProperty("colorTag", m.colorTag);
                 if (!m.colorHex.isEmpty())     o.addProperty("colorHex", m.colorHex);

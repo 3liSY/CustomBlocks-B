@@ -24,7 +24,24 @@ public final class ImageLimits {
         return raw;
     }
 
-    private static void requireColorFamilySource(byte[] raw) throws Exception {
+    /**
+     * The size gate every colour-family rail passes its source through, whether that source was just
+     * DOWNLOADED or loaded back from disk. The download helper already caps the body as it streams, so
+     * calling this after a download only re-states the same limit; the reason it is public is the STORED
+     * source case (`/cb colorvariants &lt;id&gt;` rebuild), which never went through that download cap — the
+     * bytes may predate these limits or have arrived through the looser plain-create download. Dimensions
+     * come from {@link ImageProcessor#dimensions} (a header-only read), so an oversized image is rejected
+     * before anything decodes it into heap.
+     */
+    public static void requireColorFamilySource(byte[] raw) throws Exception {
+        if (raw == null || raw.length == 0) {
+            throw new Exception("Could not read that image. Use a direct PNG, JPG, GIF, or WebP image link.");
+        }
+        if (raw.length > COLOR_FAMILY_MAX_BYTES) {
+            throw new Exception("That image is too heavy for a colour family ("
+                    + Math.round(raw.length / (1024.0 * 1024.0)) + "MB). Use an image up to "
+                    + (COLOR_FAMILY_MAX_BYTES / (1024 * 1024)) + "MB.");
+        }
         int[] dim = ImageProcessor.dimensions(raw);
         if (dim == null) {
             throw new Exception("Could not read that image. Use a direct PNG, JPG, GIF, or WebP image link.");

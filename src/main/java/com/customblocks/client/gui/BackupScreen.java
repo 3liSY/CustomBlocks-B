@@ -36,7 +36,7 @@ import java.util.Locale;
 @Environment(EnvType.CLIENT)
 public final class BackupScreen extends Screen {
 
-    /** One backup row as sent by BackupManager.screenJson(). */
+    /** One backup row as sent by BackupView.screenJson(). */
     private record Row(String name, String label, String when, int blocks, String size, boolean auto, boolean prot) {}
 
     private static final int BAR_H   = 42;   // title + bottom bar height

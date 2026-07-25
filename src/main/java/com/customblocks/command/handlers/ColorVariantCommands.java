@@ -7,7 +7,8 @@
  *                                            black upload) plus <id>_red / _green / _yellow. If the family
  *                                            already exists, this becomes an OVERWRITE behind /cb confirm.
  *   /cb colorvariants <id>                 — rebuild an EXISTING block's 3 colours from its stored image.
- *   /cb colorvariants delete <id>          — reserved (delete-family is a later slice; prints a hint for now).
+ *   /cb colorvariants delete <id>          — delete the whole family (base + whichever colours exist),
+ *                                            behind /cb confirm; one /cb undo restores it.
  *
  * Depends on: ColorFamilyOps, Chat.
  * Called by:  CommandRegistrar.
@@ -16,6 +17,7 @@ package com.customblocks.command.handlers;
 
 import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
+import com.customblocks.command.ColorFamilyDelete;
 import com.customblocks.command.ColorFamilyOps;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -35,12 +37,13 @@ public final class ColorVariantCommands {
     private static LiteralArgumentBuilder<ServerCommandSource> familyCommand(String name) {
         return CommandManager.literal(name)
                 .executes(ctx -> usage(ctx.getSource()))
-                // "delete" is reserved BEFORE the <id> argument so `/cb colorvariants delete <id>` is
-                // parsed as the delete sub-form, not as an id named "delete" (delete-family is a later slice).
+                // "delete" sits BEFORE the <id> argument so `/cb colorvariants delete <id>` parses as the
+                // delete sub-form rather than as a family whose id happens to be "delete".
                 .then(CommandManager.literal("delete")
-                        .executes(ctx -> notYetDelete(ctx.getSource()))
+                        .executes(ctx -> needDeleteId(ctx.getSource()))
                         .then(CommandManager.argument("id", StringArgumentType.word())
-                                .executes(ctx -> notYetDelete(ctx.getSource()))))
+                                .executes(ctx -> ColorFamilyDelete.deleteFamily(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "id")))))
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         // /cb colorvariants <id> — rebuild an existing block's colour family from its stored image.
                         .executes(ctx -> ColorFamilyOps.rebuildFamily(ctx.getSource(),
@@ -61,10 +64,9 @@ public final class ColorVariantCommands {
         return 1;
     }
 
-    private static int notYetDelete(ServerCommandSource src) {
-        Chat.info(src, "Deleting a whole colour family isn't built yet. For now remove blocks with "
-                + CbFmt.BODY + "/cb delete <id>" + CbFmt.DIM + " (then " + CbFmt.BODY + "/cb undo" + CbFmt.DIM + " to restore).");
-        return 1;
+    private static int needDeleteId(ServerCommandSource src) {
+        Chat.error(src, "Say which family to delete: " + CbFmt.BODY + "/cb colorvariants delete <id>" + CbFmt.BAD + ".");
+        return 0;
     }
 
     private static int needLink(ServerCommandSource src) {

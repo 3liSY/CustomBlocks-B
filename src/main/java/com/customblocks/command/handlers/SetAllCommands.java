@@ -103,7 +103,7 @@ public final class SetAllCommands {
         Chat.info(src, "Backing up all " + blocks + " block(s) before applying " + CbFmt.VALUE + setting + CbFmt.DIM + "…");
         Thread worker = new Thread(() -> {
             try {
-                BackupManager.save(name, blocks, false);
+                BackupManager.save(name, blocks, BackupManager.Kind.SAFETY, "pre-setall", null);
             } catch (Exception e) {
                 String code = IncidentRecorder.record("Backup-before-setall failed (" + setting + ")", null, src.getName(), e);
                 server.execute(() -> Chat.incidentError(src, "Backup failed — setall aborted, nothing changed.", code));
@@ -162,7 +162,7 @@ public final class SetAllCommands {
         List<BackupManager.BackupInfo> all = BackupManager.list(); // newest-first
         int seen = 0, removed = 0;
         for (BackupManager.BackupInfo b : all) {
-            if (!b.name().startsWith(BACKUP_PREFIX + "-")) continue;
+            if (!b.name().startsWith(BACKUP_PREFIX + "_")) continue;
             seen++;
             if (seen > KEEP_BACKUPS && BackupManager.delete(b.name())) removed++;
         }

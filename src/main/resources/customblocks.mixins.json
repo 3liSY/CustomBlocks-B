@@ -2,13 +2,16 @@
   "required": true,
   "package": "com.customblocks.mixin",
   "compatibilityLevel": "JAVA_21",
-  "mixins": [],
+  "mixins": [
+    "PlacedMaskPickupMixin"
+  ],
   "client": [
     "AbstractBlockStateMixin",
     "BipedArmPoseMixin",
     "ItemDisguiseMixin",
     "ShapedItemMixin",
     "ParticleDisguiseMixin",
+    "PlacedMaskSoundMixin",
     "ClientCommonNetworkHandlerMixin",
     "HudRenderMixin",
     "ShieldSauceTintMixin",

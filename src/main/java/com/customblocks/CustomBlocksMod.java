@@ -89,7 +89,20 @@ public class CustomBlocksMod implements ModInitializer {
         PayloadRegistrar.registerAll();
 
         SlotManager.registerAll(maxSlots);
+        // P3 boot guard: warn LOUDLY (before loading) if the live data is missing/corrupt while backups
+        // exist — the owner likely wants /cb backup load rather than starting on empty data. We do not
+        // auto-restore (that's the owner's call), but auto-backup will refuse to overwrite good history.
+        if (com.customblocks.core.BackupIntegrity.dataLossSuspected()) {
+            String newest = com.customblocks.core.BackupManager.latestName();
+            LOGGER.error("[CustomBlocks] ***** DATA WARNING: slots.json is missing or corrupt, but backups exist. "
+                    + "Your custom blocks did NOT load. Recover with /cb backup load {} (newest). Auto-backup is "
+                    + "paused so it can't overwrite your backups. *****", newest);
+        }
         SlotManager.loadAll();
+        // G11: turn any leftover legacy category word into a real membership + category record.
+        // Runs once (the store file is its own "already ran" marker) and is a no-op with nothing
+        // to convert — it gates nothing, it just makes sure a stray assignment isn't lost.
+        com.customblocks.core.CategoryMembershipStore.runFirstLoadConversionIfNeeded();
         // G06-2/G06-3 (improved Opt-2, 2026-06-26): migrate any old FreedSlots reservations into the new
         // permanent DeletedSlots set so previously-deleted indices are never reused and their placements
         // get swept to (Removed) too. Idempotent (a no-op once freed_slots.json is empty/gone).
@@ -188,7 +201,10 @@ public class CustomBlocksMod implements ModInitializer {
             AutoBackup.start(server); // Group 09 / Slice 3 — timed auto-backups + prune
         });
         // Stop the auto-backup timer first, THEN flush slots, so no auto-backup fires mid-shutdown.
-        ServerLifecycleEvents.SERVER_STOPPING.register(server -> { AutoBackup.stop(); SlotManager.saveAll(); });
+        ServerLifecycleEvents.SERVER_STOPPING.register(server -> {
+            AutoBackup.stop(); SlotManager.saveAll();
+            com.customblocks.core.PlacedMaskStore.flush(); // G30 §H — masked positions survive the restart
+        });
         ServerLifecycleEvents.SERVER_STOPPED.register(server -> ResourcePackServer.stop());
 
         // On player join: tell the client our silent-pack preference FIRST (so the pack
@@ -253,6 +269,10 @@ public class CustomBlocksMod implements ModInitializer {
         // old admin-panel block used to tick its own session; there is no block now).
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
                 com.customblocks.buzzergame.BuzzerSessionManager::tickAll);
+        // Group 30 §H — placements mutate the placed-mask store per BLOCK, so its writer is debounced onto
+        // this tick instead of touching disk on every block a runner puts down.
+        net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(
+                server -> com.customblocks.core.PlacedMaskStore.tick());
         // Group 06 §I3 — keep the Omni-Tool Copy-mode paste prompt on the hotbar (re-send before it fades)
         // while the player holds the tool in Copy mode with a live clipboard.
         net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents.END_SERVER_TICK.register(

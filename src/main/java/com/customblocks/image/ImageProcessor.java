@@ -25,6 +25,14 @@ public final class ImageProcessor {
 
     private ImageProcessor() {} // static-only
 
+    /** Sharpen strength after an ENLARGE. Owner-approved from the tools/render_preview sheets, 2026-07-25. */
+    private static final float ENLARGE_SHARPEN = 0.60f;
+    /** Sharpen strength after a SHRINK — lighter, because a down-scale is already the crisper direction. */
+    private static final float SHRINK_SHARPEN = 0.35f;
+    /** How far a sharpened pixel may pass its 3×3 neighbourhood, as a fraction of that neighbourhood's
+     *  contrast. Flat colour has no contrast, so it gets no allowance and cannot grow a halo. */
+    private static final float SHARPEN_OVERSHOOT = 0.20f;
+
     /**
      * Produce a {@code size}x{@code size} ARGB PNG from arbitrary image bytes.
      * {@code size} should be a power of two (16/32/64/128) for clean mipmapping.
@@ -41,11 +49,18 @@ public final class ImageProcessor {
         int dw = Math.max(1, (int) Math.round(sw * scale));
         int dh = Math.max(1, (int) Math.round(sh * scale));
 
-        // High-quality Lanczos resample (premultiplied alpha → no transparent-edge halo). A light
-        // sharpen only when ENLARGING restores the crisp edges the resize softens; skipped when
-        // shrinking (Lanczos is already crisp there and sharpening a down-scale just adds aliasing).
+        // High-quality Lanczos resample (premultiplied alpha → no transparent-edge halo) followed by a
+        // light sharpen, in BOTH directions (G10 §G, owner 2026-07-25 — "soft when a 447px picture is
+        // stretched up AND when a 954×1484 one is shrunk down"). Shrinking used to get no sharpen at all,
+        // and the enlarge sharpen was mostly cancelled by a hard clamp, so both baked mushy. Down-scales
+        // take the lighter amount because Lanczos is already crisper there and over-sharpening a shrink
+        // just aliases. A picture that is ALREADY the block size is never sharpened — no resize ran.
         BufferedImage scaled = ImageResampler.resize(src, dw, dh);
-        if (scale > 1.0) scaled = ImageResampler.unsharpMask(scaled, 0.45f);
+        boolean resized = dw != sw || dh != sh;
+        if (resized) {
+            float amount = scale > 1.0 ? ENLARGE_SHARPEN : SHRINK_SHARPEN;
+            scaled = ImageResampler.unsharpMask(scaled, amount, SHARPEN_OVERSHOOT);
+        }
 
         BufferedImage out = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
         Graphics2D g = out.createGraphics();
@@ -61,8 +76,7 @@ public final class ImageProcessor {
 
     /**
      * Read just an image's pixel dimensions from its header (no full decode), as {@code {width, height}},
-     * or {@code null} if the bytes aren't a readable image. Used to warn when a source picture is smaller
-     * than the block size and will have to be enlarged (Group 14 §5c).
+     * or {@code null} if the bytes aren't a readable image.
      */
     public static int[] dimensions(byte[] input) {
         try (ImageInputStream iis = ImageIO.createImageInputStream(new ByteArrayInputStream(input))) {
@@ -81,19 +95,9 @@ public final class ImageProcessor {
         }
     }
 
-    /**
-     * Non-blocking heads-up text when {@code input}'s picture is smaller than {@code targetSize} (so it
-     * will be enlarged and may look soft), or {@code null} when it's big enough / unreadable. The caller
-     * shows this in chat; it never stops the create/retexture (Group 14 §5c).
-     */
-    public static String smallSourceNote(byte[] input, int targetSize) {
-        int[] d = dimensions(input);
-        if (d == null) return null;
-        if (Math.max(d[0], d[1]) >= targetSize) return null;
-        return "Heads up: that picture is only " + d[0] + "×" + d[1] + "px, smaller than the "
-                + targetSize + "px block — it was enlarged, so fine details may look soft. "
-                + "For a crisp block use a picture at least " + targetSize + "px wide.";
-    }
+    // G10 §G (owner, 2026-07-25): smallSourceNote() is gone — the "that picture is only N×Npx … it was
+    // enlarged, so fine details may look soft" chat line was removed as noise. Enlarging still happens
+    // in toBlockPng exactly as before; only the notice went.
 
     /**
      * Width in pixels of a PNG, read straight from its IHDR header — no full decode. Our baked block

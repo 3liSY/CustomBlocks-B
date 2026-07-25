@@ -2,7 +2,7 @@
 
 > Group 30 lets an operator run a voice-led block guessing game: the holder sees a disguised CustomBlock while everyone else sees the real answer and the shared guessing pose.
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_30_Done.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_30.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -22,10 +22,13 @@ The game is judged through voice conversation, so the mod never pretends it can 
 | Guess-specific pose/look/showcase configuration and manual future round effects | Shared Screen frame/slider primitives: G27 |
 | `GuessShowcaseBlock` data/renderer/tuning and its command lifecycle | General persistent world display platform: G19 |
 | Voice-led round state and operator triggers | Automatic answer recognition, timers, or generic game framework |
+| Placed Mask Mode state, its command, and its per-placement mask records | Vanilla block rendering, block protection, and any claim/region system |
 
 ## Direction
 
 Guess Mode treats secrecy as a local client-render effect. The flagged holder sees a mystery look, hidden name, hotbar/inventory disguise, and matching placed view. Watchers keep the real item/block appearance. Only the pose needs all-client synchronization because every viewer must see the flagged holder present the block with both arms.
+
+The same render seam runs in both directions. Guess Mode blinds one flagged holder while watchers keep the truth; Placed Mask Mode inverts that and blinds every watcher while one runner keeps the truth. Both resolve to the same bundled QuestionMark asset and neither one changes stored block data.
 
 All configuration is organized under one `/cb guess` Screen with a persistent tab bar. Pose and Showcase use the same shared settings model. Look, Buzz, and Sound have defined destinations rather than scattered commands; visual Screen mechanics follow G27 while G30 validates the actual game settings and actions.
 
@@ -44,6 +47,11 @@ All configuration is organized under one `/cb guess` Screen with a persistent ta
 | 2026-07-07 | Hint ladder, timer, timeout TNT, and boss tension are cut. | They must not return as implied core game behavior. |
 | 2026-07-07 | Round controls, buzz, stage shockwave, and sound swap stay one later connected pass. | Shared round-state/effects work is not built piecemeal. |
 | 2026-07-07 | Showcase is a persistent command-spawned block separate from active rounds. | It can decorate a game space and remains until an operator removes that exact instance. |
+| 2026-07-24 | Guess Mode gains a second, inverted mode: Placed Mask Mode hides the runner's own placements from everyone else. | The Group now owns two disguise directions and both must share one look resolver and one render seam. |
+| 2026-07-24 | Placed Mask Mode masks only CustomBlocks placed while the mode is on, tracked per placement. | Vanilla blocks and blocks placed before the toggle are never touched, so the mask can be undone exactly. |
+| 2026-07-24 | Only the runner sees through their own mask; other operators do not. | Authorization controls who may run the command, never who may see the answer. |
+| 2026-07-24 | Toggling the command off unmasks every block that runner masked. | The mode is fully reversible and never leaves permanent masked blocks in the world. |
+| 2026-07-24 | Placed Mask Mode always uses the bundled QuestionMark and never a configurable look. | It adds no look commands, no Guess Screen tab, and no new fallback chain. |
 
 ## Feature Plan
 
@@ -149,6 +157,42 @@ When the next game-effects pass is built, an operator can react to voice-call ou
 
 This entire section is one future cohesive pass. Hint stages, countdown/timer, timeout TNT, and boss tension are not part of it.
 
+### H. Placed Mask Mode
+
+This section is lettered `H` so it matches its Testing Guide section. It is the inverted counterpart of section A: A blinds one flagged holder, H blinds everyone except one runner.
+
+**Player outcome**
+
+An operator turns on one command, builds normally, and every block they place appears as a QuestionMark to every other player while they themselves keep seeing the real build. Turning the command off restores the whole build for everyone at once.
+
+**Experience**
+
+- `/cb guess placed` toggles the mode for the player who ran it; running it again turns it off and immediately reveals every block that runner masked.
+- While the mode is on, each CustomBlock that runner places is recorded and rendered as the bundled QuestionMark for all other players.
+- The runner always sees their own placements as the real block, including the real name and HUD text.
+- Blocks placed before the toggle, blocks placed by other players, and all vanilla blocks are never masked.
+- For other players the mask also covers the look-at HUD name, the break particles, the break sound, and the item dropped when a masked block is broken.
+- The runner's held item, hotbar, and inventory are never disguised; the mask begins at placement.
+- Two players may run the mode at the same time and stay independent: each sees only their own placements as real and sees the other runner's placements as QuestionMark.
+- Mode state and masked positions survive relog and server restart, so a build stays hidden across sessions until the runner toggles the mode off.
+
+**Requirements**
+
+- A persistent `PlacedMaskStore` holds, per runner, the enabled flag and the set of masked block positions, saved atomically with the same storage discipline as `GuessModeStore`.
+- Masking is decided per placement on the server, not recomputed from block type, so the record stays exact and reversible.
+- The client render decision is `viewer is the recording runner -> real block, otherwise QuestionMark`; operator or admin permission never grants see-through.
+- Masked positions and mode state sync to clients through the existing `GuessSync` route rather than a second parallel channel.
+- Breaking a masked block drops the real item, and the mask is applied to the resulting item entity for non-runner viewers only; the record for that position is released on break.
+- The dropped item carries the mask as an invisible `custom_data` runner marker, applied only in the ground and item-frame render modes and removed the moment the item enters any inventory, so a picked-up stack is byte-identical to a normal one.
+- Look resolution is fixed to the bundled QuestionMark; the per-round and default-look chain of section B is not consulted.
+- The stored position set is capped, and reaching the cap reports a clear message instead of silently dropping masks.
+
+**Boundary**
+
+Placed Mask Mode does not mask vanilla blocks, does not disguise held or inventory items, does not add a Guess Screen tab, and does not create or judge a round. It is an independent build-hiding toggle that shares section A's render seam and section C's QuestionMark asset.
+
+Two limits come with that shared seam and are accepted rather than worked around here. The mask is painted by the placed-block renderer, so it stops at the same block-entity render distance every off-atlas custom block already stops at — a viewer far enough away sees the real block, exactly as an animated block far enough away stops animating. And only the BREAK sound is neutralised: the repeated hit sound while a watcher is mining still comes from the real block's material, the same gap section A left open when it deferred sound work.
+
 ## Cross-Group Contracts
 
 | Group | Connection | Promise |
@@ -159,7 +203,7 @@ This entire section is one future cohesive pass. Hint stages, countdown/timer, t
 | G13 | Arabic blocks | Arabic render/data remains separate; Guess only handles safe CustomBlock disguise routes. |
 | G14 | Animated looks | Animated configured looks reuse existing animation cache/render behavior. |
 | G19 | Displays | G30 Showcase remains a dedicated guessing prop and does not duplicate G19's general display management. |
-| G22 | Permissions | Guess controls, Showcase, and future keybind actions use the operator/admin authorization route. |
+| G22 | Permissions | Guess controls, Showcase, Placed Mask Mode, and future keybind actions use the operator/admin authorization route for who may run them, never for who may see through a disguise. |
 | G27 | Guess Screen | G27 owns Screen primitives/tabs; G30 owns pose/look/showcase/buzz/sound data and actions. |
 
 ## Technical Contract
@@ -170,6 +214,11 @@ This entire section is one future cohesive pass. Hint stages, countdown/timer, t
 - Look resolution is `round override -> default block ID -> bundled QuestionMark`; raw external URLs are never fetched by Guess Mode.
 - Showcase uses its own persisted block entity plus server-authoritative settings payload and a renderer that consumes cached look textures.
 - Future manual effects operate from explicit server round state and operator actions, never from inferred chat/voice answers.
+- Placed Mask Mode stores explicit block positions per runner so the mask is exactly reversible; it never infers the mask from block type or ownership at render time.
+- The Placed Mask render predicate is viewer identity only. Permission decides who may run the command; it never decides who may see through a mask.
+- The viewer filter runs on the SERVER: each client is sent only the positions it must hide, with the runner's own placements already removed, so no client is ever trusted to hide the answer from itself.
+- Placed Mask positions travel as per-placement and per-break deltas on the Guess sync route; only a join or a mode toggle costs a full re-send, so hiding a large build never re-sends the whole set per block.
+- Placed Mask positions are keyed by dimension and packed, and the store's disk write is debounced onto the server tick because its mutations happen per block placement rather than per command.
 
 ## Deferred Scope
 
@@ -200,7 +249,7 @@ This entire section is one future cohesive pass. Hint stages, countdown/timer, t
 
 ## References
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_30_Done.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_30.md) · [All Groups](README.md)
 
 - [G03 HUD and Escape](GROUP_03_HUD_ESC.md)
 - [G04 Communication](GROUP_04_Communication.md)

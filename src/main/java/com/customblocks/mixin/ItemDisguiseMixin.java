@@ -45,13 +45,20 @@ public abstract class ItemDisguiseMixin {
     private void customblocks$guessItemDisguise(ItemStack stack, ModelTransformationMode mode, boolean leftHanded,
                                                 MatrixStack matrices, VertexConsumerProvider vcp, int light,
                                                 int overlay, BakedModel model, CallbackInfo ci) {
-        if (!GuessDisguise.disguiseItem(stack)) return;
+        boolean guess = GuessDisguise.disguiseItem(stack);                     // §A — the flagged holder
+        // §H — the item a MASKED block dropped, seen by anyone but its runner. Fixed to the bundled "?"
+        // (§H never uses §B's look chain) and limited to the ground/frame modes, so a stack that still
+        // carries the tag can never disguise a hotbar or inventory slot.
+        boolean masked = !guess && GuessDisguise.maskedDrop(stack, mode);
+        if (!guess && !masked) return;
         // Reproduce vanilla ItemRenderer.renderItem's own framing so the "?" lands exactly where the real icon
         // would in this mode (GUI rotation/scale, ground, hand, frame), then draw the cube instead of the item.
         matrices.push();
         model.getTransformation().getTransformation(mode).apply(leftHanded, matrices);
         matrices.translate(-0.5, -0.5, -0.5);
-        GuessDisguise.drawLook(matrices, vcp, light, overlay, GuessDisguise.lookSlotForStack(stack));
+        GuessDisguise.drawLook(matrices, vcp, light, overlay, guess
+                ? GuessDisguise.lookSlotForStack(stack)
+                : com.customblocks.client.ClientGuessState.NO_LOOK);
         matrices.pop();
         ci.cancel();
     }

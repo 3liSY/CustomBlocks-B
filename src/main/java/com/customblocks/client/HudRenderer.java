@@ -78,7 +78,9 @@ public final class HudRenderer {
             // Group 30 — a guess-mode holder can't read a looked-at FLAGGED block's name/id either
             // (anti-cheat); substitute "???" on their client only. Covers both a specific flagged id and
             // all-mode (localDisguisesSlot handles both).
-            boolean blind = ClientGuessState.localDisguisesSlot(idx);
+            // Group 30 §H — the same substitution for a block sitting under someone else's PLACED MASK:
+            // a watcher must not read the answer off the look-at HUD of a block they can only see as "?".
+            boolean blind = ClientGuessState.localDisguisesSlot(idx) || ClientPlacedMask.masked(client.world, pos);
             String blank = blind ? ClientGuessState.BLANK_NAME : null;
             ClientSlotCache.Entry e = ClientSlotCache.getEntry(idx);
             if (e != null) {

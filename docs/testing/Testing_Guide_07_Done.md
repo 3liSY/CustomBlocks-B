@@ -64,7 +64,7 @@ The Bulk Operations Hub **Screen** (opening it, targeting blocks, search, filter
 - 3x3 op-picker grid — 👎 `2026-07-12`
 - AND/OR/NOT filter builder and escalation — 👎 `2026-07-12` (client code fully ripped `2026-07-20`)
 - Natural-language (NL) command bar + `BulkNlParser`/`BulkNlBar` — 👎 `2026-07-20` (mis-targeted; ripped entirely, replaced by tick + Category ▾ filter, now G27 §D)
-- Bulk recolor ownership in G07 — 👎 `2026-07-12` (moved to G10)
+- Bulk recolor ownership in G07 — 👎 `2026-07-12` (advanced Hub screen moved to G27 §O `2026-07-24`; live `/cb bulkrecolor` hue-shift op stays here in G07, unrelated to the Hub — see G27 §O note)
 - Bulk shape command — 👎 `2026-07-18` (scrapped outright; no longer waiting on G08)
 - Dedicated `bulksound` literal — 👎 `2026-07-18` (sound already works through `bulkproperty`)
 
@@ -77,6 +77,6 @@ The Bulk Operations Hub **Screen** (opening it, targeting blocks, search, filter
 - [ ] Delete all throwaway bulk test blocks after running the rows.
 - [ ] Keep bulk Workbench and Set All screen verification in G27.
 - [ ] Do not restore deleted chest bulk menus, the old filter-builder language, or the ripped NL command bar.
-- [ ] Move any bulk recolor findings to G10 instead of reopening it here.
+- [ ] Move any advanced bulk-recolor-Hub findings to G27 §O instead of reopening it here; findings about the live `/cb bulkrecolor` hue-shift op stay in G07.
 
 </details>

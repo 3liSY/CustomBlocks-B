@@ -169,12 +169,18 @@ public final class ImageResampler {
     }
 
     /**
-     * Light unsharp mask in premultiplied alpha. {@code amount} ~0.3–0.6 is gentle. Used only when a
-     * picture was ENLARGED, to put back the crisp edges the resize softens. A 3-tap [1 2 1] Gaussian
-     * is the blur; out = pixel + amount*(pixel - blur). Each sharpened pixel is clamped back into its own
-     * 3×3 neighbourhood so the edge-overshoot the resize clamp removed isn't re-created as a white/dark ring.
+     * Light unsharp mask in premultiplied alpha, used after ANY resample to put back the crisp edges the
+     * resize softens. {@code amount} ~0.3–0.6 is gentle. A 3-tap [1 2 1] Gaussian is the blur;
+     * out = pixel + amount*(pixel - blur).
+     *
+     * <p>{@code overshoot} is how far a sharpened pixel may pass its own 3×3 neighbourhood, as a fraction
+     * of that neighbourhood's contrast (0 = the old hard clamp). It exists because clamping strictly into
+     * the neighbourhood cancels most of the sharpen on exactly the soft edges that need it — the reason a
+     * resized picture still baked mushy (G10 §G, owner 2026-07-25). Scaling the allowance by the LOCAL
+     * contrast is what keeps it safe: on flat colour the contrast is 0, so the allowance is 0 and a halo
+     * cannot be created there; only a real edge earns the small overshoot that reads as sharpness.
      */
-    public static BufferedImage unsharpMask(BufferedImage img, float amount) {
+    public static BufferedImage unsharpMask(BufferedImage img, float amount, float overshoot) {
         int w = img.getWidth(), h = img.getHeight();
         int n = w * h;
         int[] argb = img.getRGB(0, 0, w, h, null, 0, w);
@@ -189,17 +195,17 @@ public final class ImageResampler {
         }
         float[] br = blur3(r, w, h), bg = blur3(g, w, h), bb = blur3(b, w, h), ba = blur3(a, w, h);
         int[] out = new int[n];
-        // Sharpening is controlled overshoot; at a hard edge it would push past the local extremes and
-        // rebuild the very ring the resize clamp removed. Clamp each sharpened pixel back into its 3×3
-        // neighbourhood — in-range micro-contrast survives, out-of-range halo does not.
+        // Sharpening is controlled overshoot; unbounded it would rebuild the very ring the resize clamp
+        // removed. Each sharpened pixel is held to its 3×3 neighbourhood widened by `overshoot` × that
+        // neighbourhood's own contrast — real micro-contrast survives, a halo on flat colour cannot form.
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 int p = y * w + x;
                 out[p] = packUnpremult(
-                        clampLocal(r, w, h, x, y, r[p] + amount * (r[p] - br[p])),
-                        clampLocal(g, w, h, x, y, g[p] + amount * (g[p] - bg[p])),
-                        clampLocal(b, w, h, x, y, b[p] + amount * (b[p] - bb[p])),
-                        clampLocal(a, w, h, x, y, a[p] + amount * (a[p] - ba[p])));
+                        clampLocal(r, w, h, x, y, r[p] + amount * (r[p] - br[p]), overshoot),
+                        clampLocal(g, w, h, x, y, g[p] + amount * (g[p] - bg[p]), overshoot),
+                        clampLocal(b, w, h, x, y, b[p] + amount * (b[p] - bb[p]), overshoot),
+                        clampLocal(a, w, h, x, y, a[p] + amount * (a[p] - ba[p]), overshoot));
             }
         }
         BufferedImage o = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
@@ -254,8 +260,12 @@ public final class ImageResampler {
         return v < mn ? mn : (v > mx ? mx : v);
     }
 
-    /** Clamp {@code v} into the min/max of plane {@code s}'s 3×3 neighbourhood around (x,y), edge-clamped. */
-    private static float clampLocal(float[] s, int w, int h, int x, int y, float v) {
+    /**
+     * Clamp {@code v} into the min/max of plane {@code s}'s 3×3 neighbourhood around (x,y), edge-clamped,
+     * widened at both ends by {@code overshoot} × (max − min). The allowance is proportional to the local
+     * contrast on purpose: flat colour has none, so nothing there can be pushed brighter or darker.
+     */
+    private static float clampLocal(float[] s, int w, int h, int x, int y, float v, float overshoot) {
         float mn = Float.POSITIVE_INFINITY, mx = Float.NEGATIVE_INFINITY;
         for (int dy = -1; dy <= 1; dy++) {
             int yy = y + dy < 0 ? 0 : (y + dy >= h ? h - 1 : y + dy);
@@ -266,6 +276,8 @@ public final class ImageResampler {
                 if (n > mx) mx = n;
             }
         }
-        return v < mn ? mn : (v > mx ? mx : v);
+        float slack = (mx - mn) * overshoot;
+        float lo = mn - slack, hi = mx + slack;
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 }

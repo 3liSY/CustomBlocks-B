@@ -1,26 +1,33 @@
 /**
- * BackupManager.java — Group 09, Slice 1 (backup core: save + list).
+ * BackupManager.java — Group 09 backup core (pooled, deduped snapshots).
  *
- * A point-in-time backup is a folder under config/customblocks/backups/<name>/ holding a verbatim
- * copy of the live data: slots.json, config.json, the textures/ dir and the sources/ dir, plus a
- * manifest.json (timestamp + block count). Snapshots are path-agnostic — they copy whatever exists
- * now and (later, Slice 2) restore it exactly — so this slice does NOT depend on the risky data-path
- * normalization (Slice 6).
+ * A backup is a folder under config/customblocks/backups/&lt;name&gt;/ holding a manifest.json that lists
+ * every captured file by content hash (sha) rather than a verbatim copy. The bytes live once in the
+ * shared _pool/ (see {@link BackupPool}); many backups that share an unchanged texture reference the same
+ * blob, so a second snapshot after a small edit costs almost nothing. The manifest also records the block
+ * count, {@link Kind} (manual / auto / safety), reason, note, total size, and a top-level contents list.
  *
- * RELIABILITY: this class is READ-ONLY with respect to live data — it never writes into the live
- * config/customblocks files, only reads them. Each backup is built in a sibling <name>.tmp dir and
- * then atomically renamed into place, so a crash mid-copy can only ever leave a stray .tmp (ignored
- * by list()), never a half-written named backup. The caller flushes SlotManager to disk first.
+ * RELIABILITY: this class is READ-ONLY with respect to live data — it only reads config/customblocks and
+ * writes into backups/. Each backup is built in a sibling &lt;name&gt;.tmp dir and atomically renamed into
+ * place, so a crash mid-copy can only leave a stray .tmp (ignored by {@link #list()}), never a half-written
+ * named backup. Callers flush SlotManager to disk first.
  *
- * Depends on: CustomBlocksMod (LOGGER), Gson. Heavy file I/O — callers run save() off the server thread.
- * Called by:  BackupCommands (save/list). Restore/panic/delete arrive in Slice 2.
+ * No-monolith split (2026-07-23, §9.3): restore lives in {@link BackupRestore}, retention/prune in
+ * {@link BackupRetention}, integrity/boot-guard in {@link BackupIntegrity}, portable ZIP in
+ * {@link BackupArchive}, and list presentation in {@link BackupView}. This class owns save, list, delete,
+ * naming, and the manifest/pool primitives those helpers build on.
+ *
+ * Depends on: CustomBlocksMod (LOGGER), CustomBlocksConfig (owner timezone), CbPaths, BackupPool, Gson.
+ * Heavy file I/O — callers run save() off the server thread.
  */
 package com.customblocks.core;
 
+import com.customblocks.CustomBlocksConfig;
 import com.customblocks.CustomBlocksMod;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.io.IOException;
@@ -29,14 +36,16 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.time.Instant;
 import java.time.LocalDateTime;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
@@ -47,55 +56,56 @@ public final class BackupManager {
     public static final Path BACKUPS_DIR = Path.of("config/customblocks/backups");
 
     /** The live data this snapshots (READ-ONLY here — never written by this class). */
-    private static final Path   LIVE_DIR   = Path.of("config/customblocks");
-    private static final String[] LIVE_FILES = {"slots.json", "config.json"};
-    private static final String[] LIVE_DIRS  = {"textures", "sources"};
+    static final Path LIVE_DIR = CbPaths.ROOT;
+
+    static final String MANIFEST = "manifest.json";
+
+    /** Current on-disk manifest version. FORMAT_POOLED (3) means files are stored by sha in _pool/. */
+    private static final int FORMAT_VERSION = 3;
+    static final int FORMAT_POOLED = 3;
 
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_-]{1,48}");
-    private static final DateTimeFormatter STAMP  = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-    private static final DateTimeFormatter HUMAN  = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-    /** Friendly wall-clock label for lists, e.g. "Jul 12, 2:30 PM". */
-    private static final DateTimeFormatter FRIENDLY = DateTimeFormatter.ofPattern("MMM d, h:mm a", Locale.ENGLISH);
-    private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
 
-    /**
-     * One backup's metadata as shown by /cb backup list and the Backup Screen. blocks == -1 means
-     * "unknown". {@code protectedFromPrune} backups are kept even past autoBackupKeepCount (G09-A4).
-     * {@code sizeBytes} is the on-disk folder size (-1 if it couldn't be measured).
-     */
-    public record BackupInfo(String name, long createdEpochMs, String created, int blocks, boolean auto,
-                             boolean protectedFromPrune, long sizeBytes) {}
+    /** Prefixes reserved for system-generated names so a player can't hand-type a backup that impersonates
+     *  an automatic or safety copy (e.g. faking a "pre-restore…" undo point). Applies to USER-typed names
+     *  only — names the mod generates itself skip this check (see BackupCommands.validateNewName). */
+    private static final String[] RESERVED_PREFIXES = {"manual_", "auto_", "safety_", "auto-", "pre-restore", "pre-"};
 
-    /**
-     * Friendly wall-clock time for a backup, e.g. "Jul 12, 2:30 PM". Derived from the creation epoch;
-     * falls back to the stored human string (or "?") when the epoch is unknown.
-     */
-    public static String friendlyTime(BackupInfo b) {
-        if (b.createdEpochMs() > 0L) {
-            return LocalDateTime.ofInstant(Instant.ofEpochMilli(b.createdEpochMs()), ZoneId.systemDefault())
-                    .format(FRIENDLY);
-        }
-        return b.created().isEmpty() ? "?" : b.created();
-    }
+    /** Filesystem-safe timestamp for generated names, e.g. "2026-07-23_04-09-44" (in the owner's zone). */
+    static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+    private static final DateTimeFormatter HUMAN = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
-    /**
-     * Primary display label for lists (owner scheme, 2026-07-12): a timed auto-backup shows
-     * "auto · Jul 12, 2:30 PM" instead of its raw "auto-YYYYMMDD-HHMMSS" folder name; a manual save
-     * shows its own name. The raw {@link BackupInfo#name()} is still the restore-by id and should be
-     * shown alongside (dim) so it stays copy-pasteable.
-     */
-    public static String displayLabel(BackupInfo b) {
-        if (b.name().startsWith("auto-")) return "auto · " + friendlyTime(b);
-        return b.name();
+    static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+
+    /** Infer the kind from a name's prefix (for older backups whose manifest predates the "kind" field). */
+    static Kind kindFromName(String name) {
+        if (name.startsWith("auto-") || name.startsWith("auto_")) return Kind.AUTO;
+        if (name.startsWith("pre-") || name.startsWith("safety_")) return Kind.SAFETY;
+        return Kind.MANUAL;
     }
 
     public static boolean isValidName(String name) {
         return name != null && NAME.matcher(name).matches();
     }
 
-    /** An auto-generated, filesystem-safe name like "backup-20260613-191500". */
+    /** True if {@code name} starts with a system-reserved prefix (see {@link #RESERVED_PREFIXES}). */
+    public static boolean isReservedName(String name) {
+        if (name == null) return false;
+        String lower = name.toLowerCase(Locale.ENGLISH);
+        for (String p : RESERVED_PREFIXES) {
+            if (lower.startsWith(p)) return true;
+        }
+        return false;
+    }
+
+    /** A system-generated, sortable name like "auto_2026-07-23_04-09-44" (kind-prefixed, owner-zone stamp). */
+    public static String generatedName(Kind kind) {
+        return kind.id() + "_" + LocalDateTime.now(CustomBlocksConfig.OWNER_ZONE).format(STAMP);
+    }
+
+    /** A system-generated name for a given prefix, e.g. "pre-setall_2026-07-23_04-09-44" (owner-zone stamp). */
     public static String timestampName(String prefix) {
-        return prefix + "-" + LocalDateTime.now().format(STAMP);
+        return prefix + "_" + LocalDateTime.now(CustomBlocksConfig.OWNER_ZONE).format(STAMP);
     }
 
     public static boolean exists(String name) {
@@ -103,11 +113,13 @@ public final class BackupManager {
     }
 
     /**
-     * Snapshot the live data into backups/&lt;name&gt;/. Build in &lt;name&gt;.tmp, then atomically
-     * rename. Call SlotManager.saveAll() on the server thread BEFORE this so slots.json is current.
-     * Heavy file I/O — call OFF the server thread.
+     * Snapshot the live data into backups/&lt;name&gt;/. Every regular file under the live tree (minus the
+     * excluded dirs — see {@link CbPaths#isExcludedFromBackup}) is pooled by content hash and recorded in
+     * the manifest. Build in &lt;name&gt;.tmp, then atomically rename. Call SlotManager.saveAll() on the
+     * server thread BEFORE this so slots.json is current. Heavy file I/O — call OFF the server thread.
      */
-    public static synchronized void save(String name, int blocks, boolean auto) throws IOException {
+    public static synchronized void save(String name, int blocks, Kind kind, String reason, String note) throws IOException {
+        if (kind == null) kind = Kind.MANUAL;
         if (!isValidName(name)) throw new IOException("Invalid backup name: " + name);
         Path target = BACKUPS_DIR.resolve(name);
         if (Files.exists(target)) throw new IOException("Backup already exists: " + name);
@@ -117,17 +129,20 @@ public final class BackupManager {
         deleteRecursively(tmp); // clear any leftover from a previous failed run
         Files.createDirectories(tmp);
         try {
-            for (String f : LIVE_FILES) {
-                Path src = LIVE_DIR.resolve(f);
-                if (Files.isRegularFile(src)) {
-                    Files.copy(src, tmp.resolve(f), StandardCopyOption.COPY_ATTRIBUTES);
+            List<FileRef> files = new ArrayList<>();
+            for (String entry : liveEntries()) {
+                Path src = LIVE_DIR.resolve(entry);
+                if (Files.isDirectory(src)) {
+                    try (Stream<Path> walk = Files.walk(src)) {
+                        for (Path f : walk.filter(Files::isRegularFile).toList()) {
+                            files.add(poolFile(f));
+                        }
+                    }
+                } else if (Files.isRegularFile(src)) {
+                    files.add(poolFile(src));
                 }
             }
-            for (String d : LIVE_DIRS) {
-                Path src = LIVE_DIR.resolve(d);
-                if (Files.isDirectory(src)) copyDir(src, tmp.resolve(d));
-            }
-            writeManifest(tmp, name, blocks, auto);
+            writeManifest(tmp, name, blocks, kind, reason, note, files);
             try {
                 Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE);
             } catch (AtomicMoveNotSupportedException e) {
@@ -139,13 +154,15 @@ public final class BackupManager {
         }
     }
 
-    /** All backups, newest first. Skips *.tmp (in-progress/failed) dirs. */
     public static List<BackupInfo> list() {
         List<BackupInfo> out = new ArrayList<>();
         if (!Files.isDirectory(BACKUPS_DIR)) return out;
         try (Stream<Path> s = Files.list(BACKUPS_DIR)) {
             s.filter(Files::isDirectory)
-             .filter(p -> !p.getFileName().toString().endsWith(".tmp"))
+             .filter(p -> {
+                 String n = p.getFileName().toString();
+                 return !n.endsWith(".tmp") && !n.equals("_pool");
+             })
              .forEach(p -> out.add(read(p)));
         } catch (IOException e) {
             CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to list backups", e);
@@ -156,135 +173,122 @@ public final class BackupManager {
 
     private static BackupInfo read(Path dir) {
         String name = dir.getFileName().toString();
-        Path manifest = dir.resolve("manifest.json");
+        Path manifest = dir.resolve(MANIFEST);
         if (Files.isRegularFile(manifest)) {
             try {
                 JsonObject o = GSON.fromJson(Files.readString(manifest, StandardCharsets.UTF_8), JsonObject.class);
                 long created = o.has("created") ? o.get("created").getAsLong() : 0L;
-                int blocks   = o.has("blocks") ? o.get("blocks").getAsInt() : -1;
-                boolean auto = o.has("auto") && o.get("auto").getAsBoolean();
+                int blocks = o.has("blocks") ? o.get("blocks").getAsInt() : -1;
+                Kind kind = Kind.fromId(o.has("kind") && !o.get("kind").isJsonNull() ? o.get("kind").getAsString() : null);
+                if (kind == null) {
+                    kind = kindFromName(name);
+                    if (kind == Kind.MANUAL && o.has("auto") && o.get("auto").getAsBoolean()) kind = Kind.AUTO;
+                }
+                String reason = o.has("reason") && !o.get("reason").isJsonNull() ? o.get("reason").getAsString() : "";
+                String note = o.has("note") && !o.get("note").isJsonNull() ? o.get("note").getAsString() : "";
                 boolean prot = o.has("protected") && o.get("protected").getAsBoolean();
-                String when  = o.has("createdHuman") ? o.get("createdHuman").getAsString() : "";
-                return new BackupInfo(name, created, when, blocks, auto, prot, folderSize(dir));
-            } catch (Exception ignored) { /* fall through to folder-derived */ }
+                String when = o.has("createdHuman") ? o.get("createdHuman").getAsString() : "";
+                long size = o.has("totalSize") && !o.get("totalSize").isJsonNull() ? o.get("totalSize").getAsLong() : folderSize(dir);
+                return new BackupInfo(name, created, when, blocks, kind, reason, note, prot, size);
+            } catch (Exception ignored) {
+                // fall through to the mtime-based fallback below
+            }
         }
         long mtime = 0L;
-        try { mtime = Files.getLastModifiedTime(dir).toMillis(); } catch (IOException ignored) {}
-        return new BackupInfo(name, mtime, "", -1, name.startsWith("auto-"), false, folderSize(dir));
+        try {
+            mtime = Files.getLastModifiedTime(dir).toMillis();
+        } catch (IOException ignored) {
+        }
+        return new BackupInfo(name, mtime, "", -1, kindFromName(name), "", "", false, folderSize(dir));
     }
 
-    /** True if {@code name} is a usable backup: the folder exists and its slots.json parses. */
+    /** True if the backup exists and its slots.json is present and parses (a cheap health gate). */
     public static boolean isValidBackup(String name) {
         if (!exists(name)) return false;
-        Path slots = BACKUPS_DIR.resolve(name).resolve("slots.json");
-        if (!Files.isRegularFile(slots)) return false;
+        Path dir = BACKUPS_DIR.resolve(name);
         try {
-            GSON.fromJson(Files.readString(slots, StandardCharsets.UTF_8), JsonObject.class);
+            JsonObject m = readManifest(dir);
+            byte[] slots;
+            if (m != null && formatOf(m) >= FORMAT_POOLED) {
+                String sha = null;
+                for (FileRef fr : fileRefs(m)) {
+                    if (fr.path().equals("slots.json")) { sha = fr.sha(); break; }
+                }
+                if (sha == null || !BackupPool.has(sha)) return false;
+                slots = Files.readAllBytes(BackupPool.blob(sha));
+            } else {
+                Path p = dir.resolve("slots.json");
+                if (!Files.isRegularFile(p)) return false;
+                slots = Files.readAllBytes(p);
+            }
+            GSON.fromJson(new String(slots, StandardCharsets.UTF_8), JsonObject.class);
             return true;
         } catch (Exception e) {
             return false;
         }
     }
 
-    /**
-     * Zip an existing backup folder into memory (for cloud sync — Group 20 §C). Returns the ZIP bytes,
-     * or null if the backup is missing or unreadable. READ-ONLY: never touches live data. Heavy I/O —
-     * call OFF the server thread.
-     */
-    public static synchronized byte[] zip(String name) {
-        if (!exists(name)) return null;
-        Path dir = BACKUPS_DIR.resolve(name);
-        try (java.io.ByteArrayOutputStream bos = new java.io.ByteArrayOutputStream();
-             java.util.zip.ZipOutputStream zos = new java.util.zip.ZipOutputStream(bos);
-             Stream<Path> walk = Files.walk(dir)) {
-            for (Path p : walk.filter(Files::isRegularFile).toList()) {
-                String entry = dir.relativize(p).toString().replace('\\', '/');
-                zos.putNextEntry(new java.util.zip.ZipEntry(entry));
-                Files.copy(p, zos);
-                zos.closeEntry();
-            }
-            zos.finish();
-            return bos.toByteArray();
-        } catch (IOException e) {
-            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to zip backup \"{}\"", name, e);
-            return null;
-        }
-    }
-
-    /** Name of the newest backup, or null if there are none. */
     public static String latestName() {
         List<BackupInfo> all = list();
         return all.isEmpty() ? null : all.get(0).name();
     }
 
-    /** Delete a backup folder. Returns false if it didn't exist. Never touches live data. */
     public static synchronized boolean delete(String name) {
+        if (!deleteFolder(name)) return false;
+        gcPool(); // drop pool blobs no surviving backup references
+        return true;
+    }
+
+    static synchronized boolean deleteFolder(String name) {
         if (!exists(name)) return false;
         deleteRecursively(BACKUPS_DIR.resolve(name));
         return true;
     }
 
-    /**
-     * Keep the {@code keep} newest auto-backups (folders named "auto-…") and delete the rest. Only
-     * "auto-" backups are touched — manual saves and "pre-restore-…" safety copies are never pruned.
-     * Returns how many were removed. Called after each auto-backup (Slice 3).
-     */
-    public static synchronized int pruneAuto(int keep) {
-        int k = Math.max(0, keep);
-        List<BackupInfo> autos = new ArrayList<>();
-        for (BackupInfo b : list()) { // list() is already newest-first
-            // Protected auto-backups are kept out of the prune candidate set entirely (G09-A4).
-            if (b.name().startsWith("auto-") && !b.protectedFromPrune()) autos.add(b);
-        }
-        int removed = 0;
-        for (int i = k; i < autos.size(); i++) {
-            if (delete(autos.get(i).name())) removed++;
-        }
-        return removed;
+    static synchronized void gcPool() {
+        BackupPool.gc(allReferencedShas());
     }
 
-    /**
-     * Restore live data from backups/&lt;name&gt;/ with a SAFE SWAP:
-     *   1. verify the chosen backup parses (else abort, live untouched);
-     *   2. MOVE the current live files into a fresh "pre-restore-&lt;stamp&gt;" backup — a fast rename
-     *      that both clears the live slots AND leaves the old state as a recoverable snapshot;
-     *   3. COPY the chosen backup's files into the live location.
-     * Returns the safety backup's name. On a copy failure it best-effort rolls the safety copy back
-     * into place, then rethrows. The CALLER must pause the pack first and, afterwards, reload config +
-     * SlotManager and rebuild the pack. Run on the server thread (no concurrent edits).
-     */
-    public static synchronized String restore(String name, int currentBlocks) throws IOException {
-        if (!isValidBackup(name)) throw new IOException("Backup \"" + name + "\" is missing or unreadable.");
-        Path backupDir = BACKUPS_DIR.resolve(name);
-
-        String safety = timestampName("pre-restore");
-        Path safetyDir = BACKUPS_DIR.resolve(safety);
-        Files.createDirectories(safetyDir);
-        for (String f : LIVE_FILES) moveIfExists(LIVE_DIR.resolve(f), safetyDir.resolve(f));
-        for (String d : LIVE_DIRS)  moveIfExists(LIVE_DIR.resolve(d), safetyDir.resolve(d));
-        writeManifest(safetyDir, safety, currentBlocks, true);
-
-        try {
-            for (String f : LIVE_FILES) {
-                Path src = backupDir.resolve(f);
-                if (Files.isRegularFile(src)) {
-                    Files.copy(src, LIVE_DIR.resolve(f),
-                            StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
-                }
-            }
-            for (String d : LIVE_DIRS) {
-                Path src = backupDir.resolve(d);
-                if (Files.isDirectory(src)) copyDir(src, LIVE_DIR.resolve(d));
-            }
-        } catch (IOException e) {
-            rollback(safetyDir); // put the old state back so a failed restore can't lose data
-            throw e;
+    /** Top-level live entries to snapshot (excludes backups/, updates/, the pack zip — see CbPaths). */
+    static List<String> liveEntries() throws IOException {
+        if (!Files.isDirectory(LIVE_DIR)) return new ArrayList<>();
+        try (Stream<Path> s = Files.list(LIVE_DIR)) {
+            List<String> out = new ArrayList<>();
+            s.map(p -> p.getFileName().toString())
+             .filter(n -> !CbPaths.isExcludedFromBackup(n))
+             .forEach(out::add);
+            out.sort(String::compareTo);
+            return out;
         }
-        return safety;
     }
 
-    /** Move src→dest if src exists (atomic rename where supported). */
-    private static void moveIfExists(Path src, Path dest) throws IOException {
+    /** Distinct top-level names a backup captured (pooled: derived from file paths; legacy: the folder list). */
+    static List<String> topLevelEntries(Path backupDir) throws IOException {
+        JsonObject m = readManifest(backupDir);
+        if (m != null && formatOf(m) >= FORMAT_POOLED) {
+            TreeSet<String> tops = new TreeSet<>();
+            for (FileRef fr : fileRefs(m)) {
+                int slash = fr.path().indexOf('/');
+                tops.add(slash < 0 ? fr.path() : fr.path().substring(0, slash));
+            }
+            return new ArrayList<>(tops);
+        }
+        return backupDataEntries(backupDir);
+    }
+
+    /** Legacy (pre-pool) data entries: the files actually sitting in the backup folder, minus the manifest. */
+    static List<String> backupDataEntries(Path backupDir) throws IOException {
+        try (Stream<Path> s = Files.list(backupDir)) {
+            List<String> out = new ArrayList<>();
+            s.map(p -> p.getFileName().toString())
+             .filter(n -> !n.equals(MANIFEST) && !n.endsWith(".tmp"))
+             .forEach(out::add);
+            out.sort(String::compareTo);
+            return out;
+        }
+    }
+
+    static void moveIfExists(Path src, Path dest) throws IOException {
         if (!Files.exists(src)) return;
         if (dest.getParent() != null) Files.createDirectories(dest.getParent());
         try {
@@ -294,150 +298,193 @@ public final class BackupManager {
         }
     }
 
-    /** Best-effort: move the safety copy's items back into the live location after a failed restore. */
-    private static void rollback(Path safetyDir) {
-        try {
-            for (String f : LIVE_FILES) {
-                Path s = safetyDir.resolve(f);
-                if (Files.isRegularFile(s)) { Files.deleteIfExists(LIVE_DIR.resolve(f)); moveIfExists(s, LIVE_DIR.resolve(f)); }
-            }
-            for (String d : LIVE_DIRS) {
-                Path s = safetyDir.resolve(d);
-                if (Files.isDirectory(s)) { deleteRecursively(LIVE_DIR.resolve(d)); moveIfExists(s, LIVE_DIR.resolve(d)); }
-            }
-        } catch (IOException ignored) { /* live may be partial; the safety backup folder still holds it */ }
+    /** Put a live file's bytes into the shared pool and return its manifest reference (relative path, sha, size). */
+    static FileRef poolFile(Path liveFile) throws IOException {
+        String rel = LIVE_DIR.relativize(liveFile).toString().replace('\\', '/');
+        String sha = BackupPool.put(liveFile);
+        long size = Files.size(liveFile);
+        return new FileRef(rel, sha, size);
     }
 
-    private static void writeManifest(Path dir, String name, int blocks, boolean auto) throws IOException {
+    static void writeManifest(Path dir, String name, int blocks, Kind kind, String reason, String note,
+                              List<FileRef> files) throws IOException {
         JsonObject o = new JsonObject();
         o.addProperty("name", name);
         o.addProperty("created", System.currentTimeMillis());
-        o.addProperty("createdHuman", LocalDateTime.now().format(HUMAN));
+        o.addProperty("createdHuman", LocalDateTime.now(CustomBlocksConfig.OWNER_ZONE).format(HUMAN));
         o.addProperty("blocks", blocks);
-        o.addProperty("auto", auto);
-        o.addProperty("protected", false); // new backups are prunable until the player pins them (G09-A4)
-        Files.writeString(dir.resolve("manifest.json"), GSON.toJson(o), StandardCharsets.UTF_8);
-    }
+        o.addProperty("kind", (kind == null ? Kind.MANUAL : kind).id());
+        o.addProperty("auto", kind == Kind.AUTO);
+        o.addProperty("reason", reason == null ? "" : reason);
+        o.addProperty("note", note == null ? "" : note);
+        o.addProperty("formatVersion", FORMAT_VERSION);
+        o.addProperty("protected", false);
 
-    // ── G09-A4 Backup Screen support: protect flag, rename, size, screen JSON ──────
-
-    /**
-     * Flip a backup's protect-from-prune flag by rewriting its manifest. Protected backups are kept
-     * even past autoBackupKeepCount (see {@link #pruneAuto}). Returns false if the backup is missing.
-     */
-    public static synchronized boolean setProtected(String name, boolean value) {
-        if (!exists(name)) return false;
-        Path manifest = BACKUPS_DIR.resolve(name).resolve("manifest.json");
-        JsonObject o = null;
-        try {
-            if (Files.isRegularFile(manifest)) {
-                o = GSON.fromJson(Files.readString(manifest, StandardCharsets.UTF_8), JsonObject.class);
+        JsonArray fileArr = new JsonArray();
+        LinkedHashSet<String> topLevel = new LinkedHashSet<>();
+        long total = 0L;
+        if (files != null) {
+            for (FileRef fr : files) {
+                JsonObject f = new JsonObject();
+                f.addProperty("path", fr.path());
+                f.addProperty("sha", fr.sha());
+                f.addProperty("size", fr.size());
+                fileArr.add(f);
+                total += fr.size();
+                int slash = fr.path().indexOf('/');
+                topLevel.add(slash < 0 ? fr.path() : fr.path().substring(0, slash));
             }
-        } catch (Exception ignored) { /* rebuild a minimal manifest below */ }
-        if (o == null) o = new JsonObject();
-        o.addProperty("protected", value);
+        }
+        o.add("files", fileArr);
+        o.addProperty("totalSize", total);
+
+        JsonArray items = new JsonArray();
+        for (String c : topLevel) items.add(c);
+        o.add("contents", items);
+
+        Files.writeString(dir.resolve(MANIFEST), GSON.toJson(o), StandardCharsets.UTF_8);
+    }
+
+    /** Write an older (format 2, non-pooled) manifest — kept for tools that still emit the flat layout. */
+    static void writeLegacyManifest(Path dir, String name, int blocks, Kind kind, String reason,
+                                    List<String> contents) throws IOException {
+        JsonObject o = new JsonObject();
+        o.addProperty("name", name);
+        o.addProperty("created", System.currentTimeMillis());
+        o.addProperty("createdHuman", LocalDateTime.now(CustomBlocksConfig.OWNER_ZONE).format(HUMAN));
+        o.addProperty("blocks", blocks);
+        o.addProperty("kind", (kind == null ? Kind.MANUAL : kind).id());
+        o.addProperty("auto", kind == Kind.AUTO);
+        o.addProperty("reason", reason == null ? "" : reason);
+        o.addProperty("note", "");
+        o.addProperty("formatVersion", 2);
+        o.addProperty("protected", false);
+        JsonArray items = new JsonArray();
+        if (contents != null) {
+            for (String c : contents) items.add(c);
+        }
+        o.add("contents", items);
+        Files.writeString(dir.resolve(MANIFEST), GSON.toJson(o), StandardCharsets.UTF_8);
+    }
+
+    static JsonObject readManifest(Path dir) {
+        Path manifest = dir.resolve(MANIFEST);
+        if (!Files.isRegularFile(manifest)) return null;
         try {
-            Files.writeString(manifest, GSON.toJson(o), StandardCharsets.UTF_8);
-            return true;
+            return GSON.fromJson(Files.readString(manifest, StandardCharsets.UTF_8), JsonObject.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    static int formatOf(JsonObject m) {
+        return (m != null && m.has("formatVersion") && !m.get("formatVersion").isJsonNull())
+                ? m.get("formatVersion").getAsInt() : 1;
+    }
+
+    static List<FileRef> fileRefs(JsonObject m) {
+        List<FileRef> out = new ArrayList<>();
+        if (m == null || !m.has("files") || !m.get("files").isJsonArray()) return out;
+        for (JsonElement el : m.getAsJsonArray("files")) {
+            if (!el.isJsonObject()) continue;
+            JsonObject f = el.getAsJsonObject();
+            String path = f.has("path") ? f.get("path").getAsString() : null;
+            String sha = f.has("sha") ? f.get("sha").getAsString() : null;
+            long size = f.has("size") ? f.get("size").getAsLong() : 0L;
+            if (path != null && sha != null) out.add(new FileRef(path, sha, size));
+        }
+        return out;
+    }
+
+    /** Every pool sha referenced by any surviving backup — the keep-set for {@link #gcPool()}. */
+    private static Set<String> allReferencedShas() {
+        Set<String> refs = new HashSet<>();
+        if (!Files.isDirectory(BACKUPS_DIR)) return refs;
+        try (Stream<Path> s = Files.list(BACKUPS_DIR)) {
+            for (Path dir : s.filter(Files::isDirectory).toList()) {
+                String n = dir.getFileName().toString();
+                if (n.equals("_pool") || n.endsWith(".tmp")) continue;
+                JsonObject m = readManifest(dir);
+                if (m == null) continue;
+                for (FileRef fr : fileRefs(m)) refs.add(fr.sha());
+            }
         } catch (IOException e) {
-            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to set protected on backup \"{}\"", name, e);
-            return false;
+            CustomBlocksMod.LOGGER.error("[CustomBlocks] Failed to scan backups for pool references", e);
         }
+        return refs;
     }
 
-    /**
-     * Rename a backup folder (and its stored manifest name). Throws if {@code newName} is invalid or
-     * already taken; returns false only if {@code oldName} doesn't exist. Never touches live data.
-     */
-    public static synchronized boolean rename(String oldName, String newName) throws IOException {
-        if (!exists(oldName)) return false;
-        if (!isValidName(newName)) throw new IOException("Invalid backup name: " + newName);
-        if (oldName.equals(newName)) return true;
-        if (exists(newName)) throw new IOException("A backup named \"" + newName + "\" already exists.");
-        Path from = BACKUPS_DIR.resolve(oldName);
-        Path to   = BACKUPS_DIR.resolve(newName);
-        try {
-            Files.move(from, to, StandardCopyOption.ATOMIC_MOVE);
-        } catch (AtomicMoveNotSupportedException e) {
-            Files.move(from, to);
-        }
-        Path manifest = to.resolve("manifest.json");
-        if (Files.isRegularFile(manifest)) {
-            try {
-                JsonObject o = GSON.fromJson(Files.readString(manifest, StandardCharsets.UTF_8), JsonObject.class);
-                if (o != null) {
-                    o.addProperty("name", newName);
-                    Files.writeString(manifest, GSON.toJson(o), StandardCharsets.UTF_8);
-                }
-            } catch (Exception ignored) { /* folder rename already succeeded; name field is cosmetic */ }
-        }
-        return true;
-    }
-
-    /** Total on-disk size of a backup folder in bytes, or -1 if it couldn't be walked. */
-    private static long folderSize(Path dir) {
+    static long folderSize(Path dir) {
         try (Stream<Path> walk = Files.walk(dir)) {
             return walk.filter(Files::isRegularFile).mapToLong(p -> {
-                try { return Files.size(p); } catch (IOException e) { return 0L; }
+                try {
+                    return Files.size(p);
+                } catch (IOException e) {
+                    return 0L;
+                }
             }).sum();
         } catch (IOException e) {
             return -1L;
         }
     }
 
-    /** Human-readable byte size, e.g. "12.3 KB". "?" when unknown (negative). */
-    public static String humanSize(long bytes) {
-        if (bytes < 0) return "?";
-        if (bytes < 1024) return bytes + " B";
-        double kb = bytes / 1024.0;
-        if (kb < 1024) return String.format(Locale.ENGLISH, "%.1f KB", kb);
-        double mb = kb / 1024.0;
-        if (mb < 1024) return String.format(Locale.ENGLISH, "%.1f MB", mb);
-        return String.format(Locale.ENGLISH, "%.1f GB", mb / 1024.0);
-    }
-
-    /**
-     * The backup list serialized for the Backup Screen (G09-A4). One object per backup, newest first:
-     * {@code name} (raw restore-by id), {@code label} (friendly primary), {@code when}, {@code blocks},
-     * {@code size} (human string), {@code auto} (auto-YYYYMMDD-HHMMSS timed backup → Auto tab), {@code prot}.
-     */
-    public static String screenJson() {
-        JsonArray arr = new JsonArray();
-        for (BackupInfo b : list()) {
-            JsonObject o = new JsonObject();
-            o.addProperty("name", b.name());
-            o.addProperty("label", displayLabel(b));
-            o.addProperty("when", friendlyTime(b));
-            o.addProperty("blocks", b.blocks());
-            o.addProperty("size", humanSize(b.sizeBytes()));
-            o.addProperty("auto", b.name().startsWith("auto-"));
-            o.addProperty("prot", b.protectedFromPrune());
-            arr.add(o);
-        }
-        JsonObject root = new JsonObject();
-        root.add("backups", arr);
-        return GSON.toJson(root);
-    }
-
-    /** Recursively copy src/* into dest (dest created if absent). */
-    private static void copyDir(Path src, Path dest) throws IOException {
+    static void copyDir(Path src, Path dest) throws IOException {
         Files.createDirectories(dest);
         try (Stream<Path> walk = Files.walk(src)) {
             for (Path p : walk.toList()) {
                 Path d = dest.resolve(src.relativize(p).toString());
-                if (Files.isDirectory(p)) Files.createDirectories(d);
-                else Files.copy(p, d, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+                if (Files.isDirectory(p)) {
+                    Files.createDirectories(d);
+                } else {
+                    Files.copy(p, d, StandardCopyOption.COPY_ATTRIBUTES, StandardCopyOption.REPLACE_EXISTING);
+                }
             }
         }
     }
 
-    /** Best-effort recursive delete (used only on our own backups/*.tmp scratch dirs). */
-    private static void deleteRecursively(Path p) {
+    static void deleteRecursively(Path p) {
         if (!Files.exists(p)) return;
         try (Stream<Path> walk = Files.walk(p)) {
             walk.sorted(Comparator.reverseOrder()).forEach(x -> {
-                try { Files.deleteIfExists(x); } catch (IOException ignored) {}
+                try {
+                    Files.deleteIfExists(x);
+                } catch (IOException ignored) {
+                }
             });
-        } catch (IOException ignored) {}
+        } catch (IOException ignored) {
+        }
+    }
+
+    /** What made a backup: a player's manual save, the scheduler, or a pre-op safety copy. */
+    public enum Kind {
+        MANUAL, AUTO, SAFETY;
+
+        public String id() {
+            return name().toLowerCase(Locale.ENGLISH);
+        }
+
+        public static Kind fromId(String s) {
+            if (s != null) {
+                for (Kind k : values()) {
+                    if (k.id().equals(s)) return k;
+                }
+            }
+            return null;
+        }
+    }
+
+    /** One file inside a backup: its path relative to the live root, its content hash, and its byte size. */
+    record FileRef(String path, String sha, long size) {}
+
+    /**
+     * One backup's metadata as shown by /cb backup list and the Backup Screen. blocks == -1 means
+     * "unknown". {@code protectedFromPrune} backups are kept even past the keep count. {@code sizeBytes}
+     * is the pooled total (-1 if it couldn't be measured).
+     */
+    public record BackupInfo(String name, long createdEpochMs, String created, int blocks, Kind kind,
+                             String reason, String note, boolean protectedFromPrune, long sizeBytes) {
+        public boolean auto() {
+            return kind == Kind.AUTO;
+        }
     }
 }

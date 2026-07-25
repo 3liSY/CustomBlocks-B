@@ -60,6 +60,16 @@ public class AnimSlotBER implements BlockEntityRenderer<AnimSlotBlockEntity> {
             return;
         }
 
+        // Group 30 §H (Placed Mask Mode) — the INVERSE case: a block the RUNNER placed while the mode was on
+        // is drawn as the bundled "?" for every OTHER viewer, while the runner keeps seeing the truth. The
+        // server already removed the runner's own positions from this client's feed, so reaching here with a
+        // hit means "hide it". §H is fixed to the bundled "?" (NO_LOOK) — it never consults §B's look chain.
+        if (GuessDisguise.maskedWorld(be.getWorld(), be.getPos())) {
+            GuessDisguise.drawLook(matrices, vcp, light, overlay,
+                    com.customblocks.client.ClientGuessState.NO_LOOK);
+            return;
+        }
+
         AnimFrameCache.Slot s = AnimFrameCache.get(slot);
         if (s != null) {
             // Animated off-atlas. ADR-014 Step 3 slice 1: the slot uploads only the CURRENT frame to a

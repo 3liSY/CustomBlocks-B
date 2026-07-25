@@ -17,6 +17,8 @@
  *   /cb guess defaultblock &lt;id&gt; | clear            → set/clear the GLOBAL default disguise look (v3 Phase 1)
  *   /cb guess settings                             → open the Guess Settings screen (Pose tab) — the ONLY way to
  *                                                     tune the shared pose now (the old /cb guess pose command was removed)
+ *   /cb guess placed                               → §H Placed Mask Mode (PlacedMaskCommands): the INVERSE toggle —
+ *                                                     the runner's own placements show as "?" to everyone else
  *
  * The blank name is hardcoded "???". The disguise LOOK (v3 Phase 1) resolves per-round override (look &lt;id&gt;)
  * → global default (defaultblock) → bundled "?" cube. Look ids are stored here; GuessSync maps them to slots.
@@ -83,6 +85,8 @@ public final class GuessCommands {
                         .executes(GuessCommands::openSettings))
                 // /cb guess showcase spawn [id] | delete — the floating end-crystal display (G30-8b).
                 .then(GuessShowcaseCommands.node())
+                // /cb guess placed — §H Placed Mask Mode: hide the blocks YOU place from everyone else.
+                .then(PlacedMaskCommands.node())
                 .then(CommandManager.argument("player", StringArgumentType.word())
                         .suggests(ONLINE_PLAYERS)
                         .executes(ctx -> status(ctx, player(ctx)))
@@ -262,10 +266,15 @@ public final class GuessCommands {
             }
             idPart = String.join(", ", parts);
         }
+        // §H rides the same readout so one command answers both directions of the disguise.
+        String placed = com.customblocks.core.PlacedMaskStore.isRunning(uuid)
+                ? CbFmt.OK + "ON" + CbFmt.DIM + " (" + com.customblocks.core.PlacedMaskStore.count(uuid) + " hidden)"
+                : "off (" + com.customblocks.core.PlacedMaskStore.count(uuid) + " hidden)";
         return (active ? CbFmt.OK + "ON" + CbFmt.DIM : CbFmt.BAD + "OFF" + CbFmt.DIM)
                 + " · all=" + (all ? CbFmt.OK + "yes" + CbFmt.DIM : "no")
                 + " · blocks=[" + idPart + "]"
-                + " · default look=" + defaultLookLabel();
+                + " · default look=" + defaultLookLabel()
+                + " · placed mask=" + placed;
     }
 
     private static void broadcast(ServerCommandSource src) {

@@ -26,6 +26,7 @@ import com.customblocks.command.Chat;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.entity.BlockEntity;
 import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.nbt.NbtElement;
@@ -76,6 +77,10 @@ public final class WheelBlockEntity extends BlockEntity {
     private List<Item> ringItems = List.of();
     /** The item the arrow last landed on; the popup holds it until the next spin. */
     private @Nullable Item result;
+    /** Who spun for the current {@link #result} — only they may claim its prize (design lock 2026-07-23). */
+    private @Nullable UUID spinner;
+    /** True once the current {@link #result} has been claimed; the popup stays up but can't be taken twice. */
+    private boolean prizeClaimed = false;
     /** The arrow's angle, kept across spins so the next one starts where the last stopped. */
     private double angle = 0.0;
 
@@ -97,6 +102,9 @@ public final class WheelBlockEntity extends BlockEntity {
 
     public boolean isSpinning() { return spinning; }
 
+    /** True while a won prize is showing — the claim box only intercepts a click when there's something to take. */
+    public boolean hasPrize() { return result != null; }
+
     // ------------------------------------------------------------------ place / break lifecycle (item A)
 
     /** Turn the wheel's face toward the player who placed it. Call BEFORE {@link #ensureBuilt}. */
@@ -111,15 +119,17 @@ public final class WheelBlockEntity extends BlockEntity {
      * so the handle lists always stay in step with what is actually standing.
      */
     public void ensureBuilt(ServerWorld world) {
-        // complete() only proves the handles were RECORDED; probe the arrow so a wheel someone /kill'ed (or
-        // that lost its entities any other way) rebuilds on the next spin instead of staying invisible.
-        if (handles.complete() && handles.arrow() != null && world.getEntity(handles.arrow()) != null) return;
+        // complete() only proves the handles were RECORDED; probe the face and the arrow so a wheel someone
+        // /kill'ed (or that lost its entities any other way) rebuilds on the next spin instead of staying
+        // invisible. Probing BOTH also covers an upgrade from the old strip build, whose face handle is absent.
+        if (handles.complete() && world.getEntity(handles.face()) != null
+                && world.getEntity(handles.arrow()) != null) return;
         WheelDisplayVisual.despawnAll(world, handles, pos);
         if (ringItems.size() != WheelRing.SLICES) ringItems = WheelRing.sample(world.getRandom(), WheelRing.SLICES);
         Item shown = result != null ? result : Items.CLOCK;
         UUID[] popup = WheelDisplayVisual.spawnPopup(world, pos, faceYaw, shown);
         handles = new WheelDisplayVisual.Handles(
-                WheelRing.spawnWedges(world, pos, faceYaw),
+                WheelRing.spawnFace(world, pos, faceYaw),
                 WheelRing.spawnIcons(world, pos, faceYaw, ringItems),
                 WheelDisplayVisual.spawnArrow(world, pos, faceYaw, angle),
                 popup[0], popup[1],
@@ -144,7 +154,7 @@ public final class WheelBlockEntity extends BlockEntity {
      * Start a spin. Re-rolls the ring, clears the old popup, and lays down an easing curve that ends on a
      * uniformly-random slice. Returns false if a spin is already running (right-clicks mid-spin are ignored).
      */
-    public boolean startSpin(ServerWorld world) {
+    public boolean startSpin(ServerWorld world, ServerPlayerEntity player) {
         if (spinning) return false;
         if (WheelPool.size() == 0) return false;
         ensureBuilt(world);
@@ -152,6 +162,8 @@ public final class WheelBlockEntity extends BlockEntity {
         ringItems = WheelRing.sample(world.getRandom(), WheelRing.SLICES);
         WheelRing.pushIcons(world, handles.icons(), pos, faceYaw, ringItems);
         result = null;
+        spinner = player.getUuid();  // only this player will be able to claim the prize this spin lands on
+        prizeClaimed = false;
         WheelDisplayVisual.pushPopup(world, handles.popupIcon(), handles.popupText(), pos, faceYaw,
                 Items.CLOCK, 0f, 0.0); // scale 0 = the old winner is gone the moment the wheel moves
 
@@ -247,6 +259,33 @@ public final class WheelBlockEntity extends BlockEntity {
         }
     }
 
+    // ------------------------------------------------------------------ claim (right-click the floating prize)
+
+    /**
+     * Right-click on the floating prize popup. Hands ONE of the won item to the player who spun this result,
+     * once. The popup stays up either way (it clears on the next spin), so a second click just reports the
+     * prize is already taken. Show integrity: nothing is granted for a result nobody legitimately spun.
+     */
+    public void claimPrize(ServerWorld world, ServerPlayerEntity player) {
+        if (result == null) {
+            Chat.tool(player, "Nothing to claim yet — spin the wheel first.");
+            return;
+        }
+        if (spinner == null || !spinner.equals(player.getUuid())) {
+            Chat.tool(player, "Only the player who spun the wheel can claim this prize.");
+            return;
+        }
+        if (prizeClaimed) {
+            Chat.tool(player, "You've already claimed this prize.");
+            return;
+        }
+        ItemStack stack = new ItemStack(result); // one item
+        if (!player.getInventory().insertStack(stack)) player.dropItem(stack, false);
+        prizeClaimed = true;
+        Chat.toolSuccess(player, "Claimed " + result.getName().getString() + ".");
+        markDirty();
+    }
+
     // ------------------------------------------------------------------ NBT
 
     @Override
@@ -254,9 +293,9 @@ public final class WheelBlockEntity extends BlockEntity {
         super.writeNbt(nbt, lookup);
         nbt.putFloat("faceYaw", faceYaw);
         nbt.putDouble("angle", angle);
-        nbt.put("wedges", uuidList(handles.wedges()));
         nbt.put("icons", uuidList(handles.icons()));
         nbt.put("hits", uuidList(handles.hits()));
+        if (handles.face() != null) nbt.putUuid("face", handles.face());
         if (handles.arrow() != null) nbt.putUuid("arrow", handles.arrow());
         if (handles.popupIcon() != null) nbt.putUuid("popupIcon", handles.popupIcon());
         if (handles.popupText() != null) nbt.putUuid("popupText", handles.popupText());
@@ -264,6 +303,8 @@ public final class WheelBlockEntity extends BlockEntity {
         for (Item item : ringItems) ring.add(NbtString.of(Registries.ITEM.getId(item).toString()));
         nbt.put("ring", ring);
         if (result != null) nbt.putString("result", Registries.ITEM.getId(result).toString());
+        if (spinner != null) nbt.putUuid("spinner", spinner);
+        nbt.putBoolean("prizeClaimed", prizeClaimed);
     }
 
     @Override
@@ -272,7 +313,10 @@ public final class WheelBlockEntity extends BlockEntity {
         faceYaw = nbt.getFloat("faceYaw");
         angle = nbt.getDouble("angle");
         handles = new WheelDisplayVisual.Handles(
-                readUuids(nbt, "wedges"), readUuids(nbt, "icons"),
+                // A wheel saved by an older jar has no "face" key (it had a "wedges" list instead). Reading null
+                // fails complete(), so ensureBuilt tears the old entities down by tag sweep and rebuilds.
+                nbt.containsUuid("face") ? nbt.getUuid("face") : null,
+                readUuids(nbt, "icons"),
                 nbt.containsUuid("arrow") ? nbt.getUuid("arrow") : null,
                 nbt.containsUuid("popupIcon") ? nbt.getUuid("popupIcon") : null,
                 nbt.containsUuid("popupText") ? nbt.getUuid("popupText") : null,
@@ -284,6 +328,8 @@ public final class WheelBlockEntity extends BlockEntity {
         }
         ringItems = List.copyOf(ring);
         result = nbt.contains("result") ? itemOrNull(nbt.getString("result")) : null;
+        spinner = nbt.containsUuid("spinner") ? nbt.getUuid("spinner") : null;
+        prizeClaimed = nbt.getBoolean("prizeClaimed");
         spinning = false; // never resume a spin across a reload
         popupTick = POPUP_IN_TICKS;
         claimed = false;

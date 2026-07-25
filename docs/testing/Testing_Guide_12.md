@@ -14,7 +14,7 @@
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
 | B | Blueprint item export/import on same server | Built 🎯 | - |
-| A | Offline export files and dashboard routes | Built 🎯 | Regression 💔 |
+| A | Offline export files and dashboard routes | Built 🎯 | Regression 💔, Discussion ✏️ |
 | D | Vault share-code import/export | Planned 📜 | Blocked ‼️ |
 | E | Marketplace Screen | Planned 📜 | Blocked ‼️ |
 | G | `importfolder` image input overhaul | Designed ⏳ | - |
@@ -32,13 +32,15 @@
 - Create `g12a` and `g12b`, give each a texture, and assign both to `exporttest`.
 - Test local export links on the host and remote export links from another client.
 - Keep the G27 Export Dashboard Screen target separate from G12's export file logic.
+- §A8 covers `/cb category export`; G11 owns category schema/content, G12 owns the ZIP artifact and download link (moved from TG11, 2026-07-25).
+- §A carries `Discussion ✏️` (2026-07-25): whether a category export includes G11's multi-membership data is undecided and must be settled with G11 and G20 before the format is treated as final. G11's membership model is built as of 2026-07-25 and exports still carry one category per block.
 
 ## A - Offline export files and dashboard routes - Built 🎯
 
 | | |
 | --- | --- |
 | **Check** | Export routes write the correct files to `config/customblocks/cloud_exports/` and link behavior is honest. |
-| **Pass rule** | JSON, PNG, all ZIP, category ZIP, local link, and remote link rows pass twice. |
+| **Pass rule** | JSON, PNG, all ZIP, category ZIP, local link, remote link, and category-export command-route rows pass twice. |
 | **Pass mark** | ✅ `YYYY-MM-DD` |
 
 | # | Action | Expected result | SP | MP |
@@ -50,6 +52,7 @@
 | A5 | Export category `exporttest` to ZIP. | Category ZIP contains only category blocks plus metadata/textures. | 🎯 | 🎯 |
 | A6 | Click `[download]` from the host machine. | Local download link works when `httpHost` is local. | 🎯 | ➖ |
 | A7 | Click `[download]` from a remote client. | Link does not leak an unreachable host; remote strategy is either local-only wording or Vault URL. | ➖ | 🎯 |
+| A8 | Run `/cb category export exporttest` directly (command route, not the dashboard). | Same ZIP contents and `[download]` link behavior as the dashboard category export; same regression as A6/A7 applies here too. | 🎯 | 🎯 |
 
 ## B - Blueprint item export/import on same server - Built 🎯
 
@@ -153,6 +156,7 @@
 - [ ] Delete `g12a`, `g12b`, category `exporttest`, and temporary export files after testing.
 - [ ] Keep Export Dashboard screen issues in G27.
 - [ ] Keep Vault deployment/share-code issues linked to G20.
+- [ ] Keep category schema/content issues linked to G11; G12 only owns the ZIP artifact and link.
 - [ ] Do not advertise advanced binary formats until they are actually built.
 
 </details>

@@ -2,7 +2,7 @@
 
 > Group 09 protects a server's CustomBlocks data before risky changes and provides a calm, recoverable path back when something goes wrong.
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_09.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_09_Done.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -40,6 +40,10 @@ Trash is the recovery view over G06's Recycle-Bin records. It shows what is reco
 | 2026-07-12 | Broken-block reporting belongs to G16. | G09 may link to diagnostics but does not own scanner or repair code. |
 | 2026-07-12 | First-boot migration is removed until a real legacy-data case exists. | No speculative migration format or code is kept alive. |
 | 2026-07-12 | Automatic backups prune only automatic entries. | Manual named backups remain intact while scheduled retention stays bounded. |
+| 2026-07-23 | A backup's kind (`manual`/`auto`/`safety`) is recorded in its manifest, not parsed from the folder name. | Retention can never mis-classify a hand-named backup; safety copies are bounded on their own budget. |
+| 2026-07-23 | A snapshot captures the whole `config/customblocks` tree, deduplicated into a shared content pool. | A restore reproduces the full mod state (no stale mixed data); repeated backups cost only what changed. |
+| 2026-07-23 | Storage roots come from a central `CbPaths` constant set. | No storage class invents a root-level path; new stores are covered by backups automatically. |
+| 2026-07-23 | Cloud backup is a copy/handoff: upload on save (gated) and pull-by-code, never an automatic replacement for local restore. | Local backups remain the primary recovery source; a pull lands as an ordinary local backup. |
 
 ## Feature Plan
 
@@ -126,13 +130,15 @@ Backup and runtime data have clear local homes, and future remote backup can be 
 
 **Experience**
 
-- Runtime data uses the established `config/customblocks/data/` layout.
-- Backups live under `config/customblocks/backups/`.
-- A future Vault handoff keeps local backups as the primary recovery source.
+- Runtime data uses the established `config/customblocks/data/` layout, addressed through `CbPaths`.
+- Backups live under `config/customblocks/backups/`, with a shared `_pool/` holding deduplicated file content.
+- A snapshot captures the whole tree except the backup store, `updates/`, and the generated pack zip.
+- The Vault handoff (upload on save, pull by code) keeps local backups as the primary recovery source.
 
 **Requirements**
 
-- Storage classes use the central data-path constants rather than inventing root-level paths.
+- Storage classes resolve their location from the central `CbPaths` constants rather than inventing root-level paths.
+- Snapshots deduplicate identical file content, so repeated backups cost only what changed; deleting a backup GCs unreferenced pool blobs.
 - Any cloud export is a copy/handoff operation; it cannot silently replace the local backup lifecycle.
 - File names and manifests remain valid on the supported server filesystem.
 
@@ -153,13 +159,16 @@ G09 owns local safety. G20 owns remote integration and credentials.
 
 ## Technical Contract
 
-- Backup artifacts are written to a temporary target, verified, and atomically promoted to their final name.
-- A backup contains data required to reconstruct block definitions and their related configuration/assets without reading partially live state.
-- Load makes a current-state safety copy, verifies the target artifact, serializes mutations, swaps state safely, and starts the normal pack refresh path.
-- Automatic retention only prunes automatic backups; manual and pinned records are not swept by that rule.
-- Trash data is a view of persisted Recycle-Bin records, not a second deletion database.
+- A backup snapshots the WHOLE `config/customblocks` tree except the backup store itself, `updates/`, and the generated pack zip. File bytes are content-addressed into a shared `backups/_pool/` (dedup); each backup folder holds only a `manifest.json` with a path→sha file list, its kind/reason, and a checksummed content inventory (format v3; older v1/v2 real-file backups still restore).
+- Backup artifacts are written to a temporary target, verified, and atomically promoted to their final name; pool blobs are written blob-at-a-time and atomically renamed, so a crash leaves at most a stray `.tmp`.
+- A backup contains the data required to reconstruct the full mod state (blocks, textures/sources, config, notes, categories, markers, trash, …) without reading partially live state.
+- Load makes a whole-tree current-state safety copy (move-aside → a format-2 SAFETY backup), verifies the target artifact, reconstructs live to EXACTLY the backup's data set, and starts the normal pack refresh path; on failure it rolls the safety copy back.
+- A backup's kind (`manual`/`auto`/`safety`) lives in its manifest, not its folder name; retention prunes AUTO by count and optional disk budget and SAFETY by count (never below one), so a name can never mis-classify a backup. Manual and pinned records are never swept.
+- Deleting a backup GCs pool blobs no surviving backup references.
+- Trash keeps its own persisted store under `config/customblocks/trash/`, but all delete-conversion, marker identity, slot reservation, and world healing route through the shared G06 Recycle-Bin rail — Trash is the recovery surface, not a second deletion authority.
+- Integrity: `verify` confirms blobs exist and (deep) still hash to their recorded sha; a boot guard detects missing/corrupt live `slots.json` while backups exist and blocks auto-backup from overwriting good history.
 - Console command paths do not attempt to open Screens.
-- Storage paths remain under `config/customblocks/data/` and `config/customblocks/backups/` through shared path constants.
+- Storage roots come from the central `CbPaths` constants under `config/customblocks/` (data in `data/`, backups in `backups/`).
 
 ## Deferred Scope
 
@@ -167,8 +176,7 @@ G09 owns local safety. G20 owns remote integration and credentials.
 
 | Idea | Why it is deferred | Owner if revived |
 | --- | --- | --- |
-| Vault/cloud backup handoff | Depends on the G20 remote integration contract and credentials flow. | G20 with G09 |
-| Further Trash browsing polish | The core recovery and G06 alignment come before optional presentation additions. | G09 with G27 |
+| Backup and Trash Screens (multi-select delete, read-only block browse, per-block restore) | The G27 Screen surface owns presentation; command/data behavior is complete here. | G27 with G09 |
 | New legacy-data migration | No real legacy format is present in this codebase. | New group after evidence exists |
 
 </details>
@@ -185,12 +193,14 @@ G09 owns local safety. G20 owns remote integration and credentials.
 | 2026-07-12 | A first-boot migration converted speculative gzip or `.dat` formats. | The feature is removed until a real legacy format is found. |
 | 2026-07-19 | `/cb recover` and `/cb backup panic` were planned no-confirm/shortcut emergency routes. | Scrapped as redundant with `/cb backup load <newest>` through the existing confirm-gated safe-restore rail; never implemented. |
 | 2026-07-19 | `/cb backup restore` was a hidden alias for `/cb backup load`. | Removed as a duplicate literal; `load` is the only verb. |
+| 2026-07-23 | Docs described Trash as "a view of Recycle-Bin records, not a second store" and a snapshot as only slots/config/textures/sources. | Trash keeps its own store under `trash/` (recovery routes through G06); a snapshot is the whole deduplicated tree. |
+| 2026-07-23 | Cloud backup handoff was deferred to G20. | Upload-on-save and pull-by-code are built in G09 against the `cb-cloud-vault` worker; deeper G20 integration can still layer on top. |
 
 </details>
 
 ## References
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_09.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_09_Done.md) · [All Groups](README.md)
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)

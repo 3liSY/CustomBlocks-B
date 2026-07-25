@@ -1,0 +1,18 @@
+{
+  "__comment": "Group 34 item A (rev 2026-07-24) - the whole wheel face as ONE flat double-sided quad carrying the baked customblocks:block/wheel_face texture. Replaces the ~850 TEXT_DISPLAY colour-quads: strips could not hold a clean radial seam in game because their 0.002-block depth order does not survive translucent rendering, so every boundary stair-stepped. A raster has no ordering to lose. No parent, so every ModelTransformationMode is identity and the ITEM_DISPLAY's 'none' mode renders the model raw: [0,16] model units map to [-0.5,+0.5] blocks, i.e. the disc is centred on the entity. FACES: south uses the default UVs, so from the front the face reads exactly as baked. North is U-flipped ([16,0,0,16] instead of the default [0,0,16,16]), which MIRRORS it for a viewer standing behind - matching the icon ring, whose physical positions are themselves mirrored from back there, so wedge and icon still line up slice for slice.",
+  "textures": {
+    "face": "customblocks:block/wheel_face",
+    "particle": "customblocks:block/wheel_face"
+  },
+  "elements": [
+    {
+      "name": "face",
+      "from": [0, 0, 7.99],
+      "to": [16, 16, 8.01],
+      "faces": {
+        "south": { "uv": [0, 0, 16, 16], "texture": "#face" },
+        "north": { "uv": [16, 0, 0, 16], "texture": "#face" }
+      }
+    }
+  ]
+}

@@ -31,6 +31,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.UnaryOperator;
 
 public final class SlotManager {
 
@@ -95,6 +96,7 @@ public final class SlotManager {
         SlotData withCat = d.withCategory(category);
         BY_ID.put(customId, withCat);
         BY_SLOT.put(withCat.slotKey(), withCat);
+        CategoryMembershipStore.replaceAll(customId, category); // G11: born into the membership model too
         return withCat;
     }
 
@@ -134,7 +136,8 @@ public final class SlotManager {
         if (d != null) {
             BY_SLOT.remove(d.slotKey());
             // Snapshot into the trash first, while the texture/source still exist on disk.
-            TrashManager.capture(d, TextureStore.load(d.index()), TextureStore.loadSource(d.index()));
+            TrashManager.capture(d, TextureStore.load(d.index()), TextureStore.loadSource(d.index()),
+                    TextureStore.loadUrl(d.index()));
             TextureStore.delete(d.index());
             // G06-14 (recycle-bin): RESERVE the freed index while in trash — never reused (nextFreeSlotIndex
             // skips DeletedSlots), so a placed copy still wearing slot_N can't inherit a future block's skin;
@@ -186,88 +189,81 @@ public final class SlotManager {
         BlockToleranceStore.renameId(oldId, newId);
         GuessModeStore.renameId(oldId, newId); // Group 30 — keep a disguise reference valid across reid
         CategoryDisplayBlockManager.renameId(oldId, newId); // G07 dangling-ref audit — a category's display block must follow its id
+        CategoryMembershipStore.renameBlockId(oldId, newId); // G11 — memberships are id-keyed, so they move too
+        saveAll();
+        return updated;
+    }
+
+    /**
+     * The ONE setter rail every attribute setter below runs on: resolve the id case-insensitively, apply
+     * the change to the immutable snapshot, re-key both maps under the STORED id (the G25-family fix, so
+     * /cb setshape works whatever case you type), persist, and hand back the new data — or null when no
+     * such block exists. The whole read-modify-write holds this class's monitor, so a setter is atomic.
+     *
+     * These were eight byte-identical copies differing only in their withX call; one rail means they
+     * cannot drift apart (an id-keying or save fix has a single place to land).
+     */
+    private static synchronized SlotData mutate(String customId, UnaryOperator<SlotData> change) {
+        SlotData d = getById(customId);
+        if (d == null) return null;
+        SlotData updated = change.apply(d);
+        BY_ID.put(d.customId(), updated);
+        BY_SLOT.put(updated.slotKey(), updated);
         saveAll();
         return updated;
     }
 
     /** Set a block's light emission (0..15, clamped). Returns the new data, or null. */
-    public static synchronized SlotData setGlow(String customId, int level) {
-        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
-        if (d == null) return null;
-        SlotData updated = d.withGlow(level);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
-    }
+    public static SlotData setGlow(String customId, int level) { return mutate(customId, d -> d.withGlow(level)); }
 
     /** Set a block's break hardness (negative = unbreakable, 0 = instant). Returns new data or null. */
-    public static synchronized SlotData setHardness(String customId, float hardness) {
-        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
-        if (d == null) return null;
-        SlotData updated = d.withHardness(hardness);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
-    }
+    public static SlotData setHardness(String customId, float hardness) { return mutate(customId, d -> d.withHardness(hardness)); }
 
     /** Set a block's break/step/place sound group (see SlotBlock.getSoundGroup). Returns new data or null. */
-    public static synchronized SlotData setSoundType(String customId, String soundType) {
-        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
-        if (d == null) return null;
-        SlotData updated = d.withSoundType(soundType);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
-    }
+    public static SlotData setSoundType(String customId, String soundType) { return mutate(customId, d -> d.withSoundType(soundType)); }
 
     /** Toggle a block's collision (true = passable/walk-through). Returns new data or null. */
-    public static synchronized SlotData setNoCollision(String customId, boolean noCollision) {
-        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
-        if (d == null) return null;
-        SlotData updated = d.withNoCollision(noCollision);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
+    public static SlotData setNoCollision(String customId, boolean noCollision) { return mutate(customId, d -> d.withNoCollision(noCollision)); }
+
+    /**
+     * Assign a block to a category ("" = uncategorized), REPLACING whatever it was in.
+     *
+     * G11: real membership lives in {@link CategoryMembershipStore} now, so this writes both — the
+     * legacy one-word field and a one-category membership set. That keeps every caller that still
+     * speaks the old single-category language (studio create, template apply, ZIP/vault import,
+     * trash restore, the Arabic bootstrap) landing correctly in the new model without each one
+     * having to be reworked. Command paths that want to ADD a membership call the membership store
+     * directly instead of this.
+     */
+    public static SlotData setCategory(String customId, String category) {
+        SlotData d = mutate(customId, x -> x.withCategory(category));
+        if (d != null) CategoryMembershipStore.replaceAll(d.customId(), category);
+        return d;
     }
 
-    /** Assign a block to a category ("" = uncategorized). Returns new data or null. */
-    public static synchronized SlotData setCategory(String customId, String category) {
-        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
-        if (d == null) return null;
-        SlotData updated = d.withCategory(category);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
+    /**
+     * Stamp the legacy display-only category field WITHOUT touching membership.
+     *
+     * The one caller is {@link CategoryMembershipStore}'s legacy shadow, which derives this value
+     * FROM the membership set — routing it through {@link #setCategory} would immediately overwrite
+     * the set it was derived from. Not a general-purpose setter; nothing else should call it.
+     */
+    static SlotData setCategoryShadow(String customId, String category) {
+        return mutate(customId, d -> d.withCategory(category));
     }
+
+    /** G10 §C: set a block's stored background ("black" / "transparent" / "#RRGGBB"). Returns new data
+     *  or null. This records the CHOICE only — the caller re-bakes the texture (BackgroundService) and
+     *  rebuilds the pack, because the pixels change, not just the metadata. */
+    public static SlotData setBackground(String customId, String background) { return mutate(customId, d -> d.withBackground(background)); }
 
     /** Set a block's shape (see BlockShapes; null/blank → full). Returns new data or null.
      *  The caller rebuilds the pack — the model changes, unlike glow/sound which are live. */
-    public static synchronized SlotData setShape(String customId, String shape) {
-        SlotData d = getById(customId); // case-insensitive resolve; /cb setshape works whatever case you type (G08/G25 fix)
-        if (d == null) return null;
-        SlotData updated = d.withShape(shape);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
-    }
+    public static SlotData setShape(String customId, String shape) { return mutate(customId, d -> d.withShape(shape)); }
 
     /** Set a block's animation state (AnimData.NONE = make it static again). Returns new data or null.
      *  The caller rebuilds the pack — the .mcmeta + model change, like setShape. */
-    public static synchronized SlotData setAnim(String customId, AnimData anim) {
-        SlotData d = getById(customId); // case-insensitive resolve; key by the STORED id (G25-family fix)
-        if (d == null) return null;
-        SlotData updated = d.withAnim(anim);
-        BY_ID.put(d.customId(), updated);
-        BY_SLOT.put(updated.slotKey(), updated);
-        saveAll();
-        return updated;
-    }
+    public static SlotData setAnim(String customId, AnimData anim) { return mutate(customId, d -> d.withAnim(anim)); }
 
     /** Copy a block into a new free slot under {@code newId}. Returns the new data, or null. */
     /**

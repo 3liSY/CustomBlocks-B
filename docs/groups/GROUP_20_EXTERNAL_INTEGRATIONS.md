@@ -23,6 +23,7 @@ Discord is the server's notification connection. G20 owns the events, configurat
 | Discord event model, defaults, templates, chat helpers, batching, and webhook delivery | Discord configuration Screen: G21 |
 | Cloud request identity, worker contract, and graceful network failure behavior | Server backups and local recovery: G09 |
 | Future vault transport of block-adjacent configurations | Asset conversion and animation data production: G05 and G14 |
+| Category vault share/import transport (not yet built) | Category schema, membership, and merge rules: G11 |
 
 ## Direction
 
@@ -145,6 +146,7 @@ This Group defines the mod-to-worker contract. The owner deploys and operates th
 | --- | --- | --- |
 | G05 | Asset delivery | Vault transports ready source assets; it does not rebuild resource packs. |
 | G09 | Backup safety | A local backup completes before optional cloud sync; remote failure never invalidates the local copy. |
+| G11 | Category vault share/import | G20 transports validated category artifacts (TG20 §K, not yet built); G11 owns their schema and local merge rules. |
 | G12 | Category export | Both routes can share the existing zip conventions without becoming duplicate feature owners. |
 | G14 | Animation data | Animated vault payloads preserve the grid texture and `grid.json` sidecar needed by the renderer. |
 | G16 | Diagnostics | Cloud and Discord incidents use understandable diagnostic reporting without leaking sensitive configuration. |
@@ -194,6 +196,7 @@ This Group defines the mod-to-worker contract. The owner deploys and operates th
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G09 Backup and Recovery](GROUP_09_BACKUP_SAFETY.md)
+- [G11 Categories](GROUP_11_CATEGORY.md)
 - [G12 Export and Marketplace](GROUP_12_EXPORT_MARKETPLACE.md)
 - [G14 Animation and Video](GROUP_14_ANIMATION_VIDEO.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

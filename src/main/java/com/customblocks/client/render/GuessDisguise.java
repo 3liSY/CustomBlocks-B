@@ -28,10 +28,13 @@ package com.customblocks.client.render;
 import com.customblocks.CustomBlocksMod;
 import com.customblocks.block.SlotBlock;
 import com.customblocks.client.ClientGuessState;
+import com.customblocks.client.ClientPlacedMask;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.block.BlockState;
+import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.RenderLayer;
+import net.minecraft.client.render.model.json.ModelTransformationMode;
 import net.minecraft.client.render.VertexConsumer;
 import net.minecraft.client.render.VertexConsumerProvider;
 import net.minecraft.client.util.math.MatrixStack;
@@ -68,6 +71,42 @@ public final class GuessDisguise {
     public static boolean blinds(BlockState state) {
         if (state == null || !ClientGuessState.localActive()) return false;
         return state.getBlock() instanceof SlotBlock sb && ClientGuessState.localDisguisesSlot(sb.getSlotIndex());
+    }
+
+    /**
+     * §H Placed Mask Mode — must this PLACED block be drawn as the bundled "?" because a runner placed it
+     * while the mode was on and the local player is not that runner? The predicate is pure viewer identity
+     * and it was already applied server-side ({@code PlacedMaskStore.feedFor}), so this is just a lookup:
+     * anything in {@link ClientPlacedMask} is a block this client must hide. It is entirely independent of
+     * §A — a watcher who is not in guess mode at all still gets it.
+     */
+    public static boolean maskedWorld(net.minecraft.world.World world, net.minecraft.util.math.BlockPos pos) {
+        return ClientPlacedMask.masked(world, pos);
+    }
+
+    /**
+     * §H Placed Mask Mode — must this ITEM render be replaced with the "?" because it is the DROP a masked
+     * block rolled? Deliberately limited to the two modes where an item exists in the world on its own — the
+     * dropped entity (GROUND) and an item frame (FIXED) — so a stack that still carries the tag can never
+     * disguise a hotbar slot, an inventory icon or a held item, which §H's boundary rules out. The runner who
+     * made the placement is excluded, so their own drop looks normal to them.
+     */
+    public static boolean maskedDrop(ItemStack stack, ModelTransformationMode mode) {
+        if (mode != ModelTransformationMode.GROUND && mode != ModelTransformationMode.FIXED) return false;
+        String owner = com.customblocks.core.PlacedMaskTag.owner(stack);
+        if (owner == null) return false;
+        MinecraftClient mc = MinecraftClient.getInstance();
+        return mc == null || mc.player == null || !owner.equals(mc.player.getUuidAsString());
+    }
+
+    /**
+     * The §R non-visual gate, position aware: is this block one whose tells (outline shape, break/mining
+     * particles, break sound) must be spoofed for the local player — either because THEY are a flagged §A
+     * holder, or because it sits under someone else's §H placed mask? The two directions share every seam
+     * from here down, which is exactly what the Group doc means by "one render seam".
+     */
+    public static boolean blindsAt(net.minecraft.util.math.BlockPos pos, BlockState state) {
+        return blinds(state) || ClientPlacedMask.maskedHere(pos);
     }
 
     /**

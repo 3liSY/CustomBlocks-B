@@ -70,6 +70,10 @@ public final class BackgroundRemover {
     /** Recolour only — max passes the dark ring may grow inward = its depth cap in px. Bounds the
      *  absorb so it can never chase a dark subject body, and self-stops at the first non-dark ring. */
     private static final int RING_PASSES = 4;
+    /** Morphology guard floor: a pixel at least this far (ΔE) from the background colour is subject art
+     *  and is never swallowed by the Stage 1c close, however thin the feature is. Scales with the
+     *  player's strength (2× tol) so a loose setting still protects genuinely distinct colours. */
+    private static final double MORPH_GUARD_MIN_DE = 15.0;
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
@@ -123,6 +127,15 @@ public final class BackgroundRemover {
 
             boolean[][] isBg = new boolean[w][h];
 
+            // ΔE of every pixel to the background colour — used by the morphology guard (Stage 1c) and
+            // the anti-fringe peel (Stage 2). Computed once; rgbToLab is the expensive part of this file.
+            double[][] dToBg = new double[w][h];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    dToBg[x][y] = deltaE(rgbToLab(img.getRGB(x, y)), bgLab);
+                }
+            }
+
             // Stage 1 — BFS flood-fill from every border pixel that matches the background.
             Queue<int[]> queue = new ArrayDeque<>();
             for (int x = 0; x < w; x++) {
@@ -145,16 +158,24 @@ public final class BackgroundRemover {
                 }
             }
 
-            // Stage 1b (CLOSED + SMART) — remove enclosed areas matching the bg colour, even if
-            // they aren't edge-connected (a logo's trapped inner background, for example).
+            // Stage 1b (CLOSED + SMART) — absorb background-coloured POCKETS the edge flood cannot reach:
+            // the hole inside a letter "O", the gap between two glyphs. This used to be a plain per-pixel
+            // colour key over the whole image, which is why "BgRemove&More" ate into artwork — every dark
+            // shading pixel inside a subject matches a dark background colour, so a chrome logo's shadow
+            // lines were deleted and the repainted background showed straight through the subject. A
+            // pocket is a REGION, not a colour, so the pixels are grouped into connected components and a
+            // component is only absorbed when it is thick enough to be a real enclosed area rather than a
+            // hairline of subject shading (BgMask.absorbEnclosedPockets).
             if (CLOSED.equals(m) || smart) {
+                boolean[][] pocket = new boolean[w][h];
                 for (int y = 0; y < h; y++) {
                     for (int x = 0; x < w; x++) {
                         if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, bgLab, tol)) {
-                            isBg[x][y] = true;
+                            pocket[x][y] = true;
                         }
                     }
                 }
+                BgMask.absorbEnclosedPockets(isBg, pocket, w, h);
             }
 
             // Stage 1c — despeckle the background mask. This is the fix for the old "tiny edge
@@ -162,7 +183,19 @@ public final class BackgroundRemover {
             // morphological close (dilate→erode) bridges the hairline gaps and pinhole specks that
             // a near-tolerance pixel leaves behind and that wall off the flood-fill, then any tiny
             // isolated foreground island left over is dropped into the background.
-            BgMask.despeckle(isBg, w, h);
+            //
+            // The close is colour-GUARDED: a pixel whose colour is plainly not the background can never
+            // be swallowed by morphology. Without the guard the dilate step closes over any subject
+            // feature only 1-2 px wide (a thin outline, a small glyph stroke) and the erode cannot
+            // reopen it, so fine detail silently disappeared from the bake.
+            double guardDe = Math.max(tol * 2.0, MORPH_GUARD_MIN_DE);
+            boolean[][] protect = new boolean[w][h];
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    protect[x][y] = !isBg[x][y] && dToBg[x][y] > guardDe;
+                }
+            }
+            BgMask.despeckle(isBg, protect, w, h);
 
             // Stage 1d (SMART only) — keep just the single largest connected subject and drop every
             // other free-floating foreground blob into the background. This is the offline "smart"
@@ -182,36 +215,7 @@ public final class BackgroundRemover {
             // FRINGE_PASSES caps the rim depth, PEEL_CAP stops a long gentle slope being chased deep
             // into a real subject. Skipped when the bg was transparent (no colour halo to shave).
             if (bgA >= OPAQUE_THRESHOLD) {
-                double[][] dToBg = new double[w][h];
-                for (int y = 0; y < h; y++) {
-                    for (int x = 0; x < w; x++) {
-                        dToBg[x][y] = deltaE(rgbToLab(img.getRGB(x, y)), bgLab);
-                    }
-                }
-                for (int pass = 0; pass < FRINGE_PASSES; pass++) {
-                    boolean[][] fringe = new boolean[w][h];
-                    boolean any = false;
-                    for (int y = 0; y < h; y++) {
-                        for (int x = 0; x < w; x++) {
-                            if (isBg[x][y] || dToBg[x][y] > PEEL_CAP) continue;
-                            for (int[] d : DIRS) {
-                                int nx = x + d[0], ny = y + d[1];
-                                if (nx < 0 || ny < 0 || nx >= w || ny >= h || !isBg[nx][ny]) continue;
-                                // inward neighbour = the pixel opposite the background side
-                                int ix = x - d[0], iy = y - d[1];
-                                double inward = (ix >= 0 && iy >= 0 && ix < w && iy < h)
-                                        ? dToBg[ix][iy] : Double.POSITIVE_INFINITY;
-                                if (dToBg[x][y] < inward - PEEL_MARGIN) { fringe[x][y] = true; any = true; break; }
-                            }
-                        }
-                    }
-                    if (!any) break;
-                    for (int y = 0; y < h; y++) {
-                        for (int x = 0; x < w; x++) {
-                            if (fringe[x][y]) isBg[x][y] = true;
-                        }
-                    }
-                }
+                BgMask.peelFringe(isBg, dToBg, w, h, FRINGE_PASSES, PEEL_CAP, PEEL_MARGIN);
             }
 
             // Stage 2e (RECOLOUR only — forcedFill set, e.g. the Triangle colour-variant tool) — absorb
@@ -219,33 +223,20 @@ public final class BackgroundRemover {
             // reaches the subject edge. Without this a thin black outline survives between the subject
             // and the repainted background ("the triangle leaves black edges that don't recolour"): the
             // flood-fill (tight tolerance) + gradient peel above don't always reach that ring. Guard:
-            // only NEAR-BLACK pixels that already TOUCH the background are taken, grown a few passes
-            // inward along dark pixels only — bright subject art is never eaten (CLAUDE.md §7). Skipped
-            // for the smart-fill (retexture) path, which keeps its own black/white silhouette logic.
+            // only NEAR-BLACK opaque pixels are eligible, and they are grown inward from the background
+            // a few passes only — bright subject art is never eaten (CLAUDE.md §7). Skipped for the
+            // smart-fill (retexture) path, which composites onto black where such a ring is invisible.
             if (forcedFill != null) {
-                for (int pass = 0; pass < RING_PASSES; pass++) {
-                    boolean[][] grow = new boolean[w][h];
-                    boolean any = false;
-                    for (int y = 0; y < h; y++) {
-                        for (int x = 0; x < w; x++) {
-                            if (isBg[x][y]) continue;
-                            int px = img.getRGB(x, y);
-                            if (((px >>> 24) & 0xFF) < OPAQUE_THRESHOLD) continue; // transparent → Stage 3 fills it
-                            int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
-                            if (Math.max(r, Math.max(g, b)) > RING_DARK_MAX) continue; // bright → subject, keep
-                            for (int[] d : DIRS) {
-                                int nx = x + d[0], ny = y + d[1];
-                                if (nx >= 0 && nx < w && ny >= 0 && ny < h && isBg[nx][ny]) { grow[x][y] = true; any = true; break; }
-                            }
-                        }
-                    }
-                    if (!any) break;
-                    for (int y = 0; y < h; y++) {
-                        for (int x = 0; x < w; x++) {
-                            if (grow[x][y]) isBg[x][y] = true;
-                        }
+                boolean[][] darkRing = new boolean[w][h];
+                for (int y = 0; y < h; y++) {
+                    for (int x = 0; x < w; x++) {
+                        int px = img.getRGB(x, y);
+                        if (((px >>> 24) & 0xFF) < OPAQUE_THRESHOLD) continue; // transparent → Stage 3 fills it
+                        int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
+                        darkRing[x][y] = Math.max(r, Math.max(g, b)) <= RING_DARK_MAX;
                     }
                 }
+                BgMask.growInto(isBg, darkRing, w, h, RING_PASSES);
             }
 
             // Background is always plain BLACK (owner: content is composed on black backgrounds, so the
@@ -344,24 +335,38 @@ public final class BackgroundRemover {
         return snapBackgroundColor(png, mode, tolerance, -1);
     }
 
-    /** Snap near-fill-colour pixels after resize. {@code fillRgb} = -1 for smart (detect from corners). */
+    /**
+     * Snap near-fill-colour pixels after resize. {@code fillRgb} = -1 for smart (detect from corners).
+     *
+     * <p>This is the LAST step of every base (non-recolour) bake, so it also owns the guarantee that a
+     * baked block texture is fully OPAQUE. Slot blocks draw on the alpha-tested cutout layer: a texel
+     * left semi-transparent by the Lanczos resample flickers in and out of the alpha test per mip level,
+     * which reads in-world as a glitched coloured hairline tracing the subject — the artifact colour
+     * variants never showed, because their rail always ends in {@code ImageProcessor.fillBackground}.
+     * Leftover alpha (source transparency, and the transparent padding {@code toBlockPng} adds around a
+     * non-square picture) is therefore composited onto the fill here even when background removal is off,
+     * which is the only path that could previously hand the atlas a texture with alpha.
+     */
     public static byte[] snapBackgroundColor(byte[] png, String mode, int tolerance, int fillRgb) {
-        if (NONE.equals(normalize(mode)) || tolerance <= 0) return png;
         try {
             BufferedImage read = ImageIO.read(new ByteArrayInputStream(png));
             if (read == null) return png;
             BufferedImage img = toArgb(read);
             int w = img.getWidth(), h = img.getHeight();
+            // Snapping needs an active mode + strength; flattening alpha to opaque always runs.
+            boolean snap = !NONE.equals(normalize(mode)) && tolerance > 0;
             int targetR, targetG, targetB;
             if (fillRgb >= 0) {
                 targetR = (fillRgb >> 16) & 0xFF;
                 targetG = (fillRgb >> 8) & 0xFF;
                 targetB = fillRgb & 0xFF;
             } else {
-                // Smart: read the fill from the corners and bail if it isn't near-black.
+                // Smart: read the fill from the corners and skip the snap if it isn't near-black (a dark
+                // subject must not be destroyed). The flatten below still uses black — the project's
+                // default background — because that is what an opaque bake composites onto.
                 int bg = sampleCornerBackground(img, w, h);
                 if (((bg >> 16) & 0xFF) > SNAP_MAX || ((bg >> 8) & 0xFF) > SNAP_MAX || (bg & 0xFF) > SNAP_MAX) {
-                    return png; // non-black fill → nothing to snap
+                    snap = false; // non-black fill → nothing to snap
                 }
                 targetR = 0; targetG = 0; targetB = 0;
             }
@@ -369,6 +374,17 @@ public final class BackgroundRemover {
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
                     int px = img.getRGB(x, y);
+                    int a = (px >>> 24) & 0xFF;
+                    if (a != 255) { // flatten: composite onto the fill so the cutout layer never sees alpha
+                        if (a == 0) { img.setRGB(x, y, target); continue; }
+                        double fa = a / 255.0, fb = 1.0 - fa;
+                        int cr = clamp255((int) Math.round(((px >> 16) & 0xFF) * fa + targetR * fb));
+                        int cg = clamp255((int) Math.round(((px >> 8)  & 0xFF) * fa + targetG * fb));
+                        int cb = clamp255((int) Math.round(( px        & 0xFF) * fa + targetB * fb));
+                        px = 0xFF000000 | (cr << 16) | (cg << 8) | cb;
+                        img.setRGB(x, y, px);
+                    }
+                    if (!snap) continue;
                     int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
                     if (Math.abs(r - targetR) <= SNAP_MAX && Math.abs(g - targetG) <= SNAP_MAX && Math.abs(b - targetB) <= SNAP_MAX) {
                         img.setRGB(x, y, target);

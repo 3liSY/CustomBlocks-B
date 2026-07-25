@@ -157,7 +157,16 @@ export default {
       if (request.method === "POST" && parts.length === 1) {
         const code = makeCode();
         const putUrl = await presignR2(env, "PUT", key(code), 3600); // valid 1h
+        // Remember the human name for this code so a later pull can restore it under the right name.
+        const name = url.searchParams.get("name");
+        if (name && env.VAULT) { try { await env.VAULT.put("bkpname:" + code, name); } catch (e) {} }
         return json({ code, url: putUrl });
+      }
+      // Name lookup for a code:  GET /backup/<code>/name  → the stored name (plain text, may be empty).
+      if (request.method === "GET" && parts.length === 3 && parts[2] === "name") {
+        let name = "";
+        if (env.VAULT) { try { name = (await env.VAULT.get("bkpname:" + parts[1])) || ""; } catch (e) {} }
+        return text(name);
       }
       // Download/restore by code → redirect to a presigned GET.
       if (request.method === "GET" && parts.length === 2) {

@@ -10,25 +10,26 @@
 
 ## Purpose
 
-Categories should work as a durable collection model, not just a single label. Players need a reliable baseline for assigning, giving, renaming, merging, describing, and decorating categories today, plus a planned path to multiple memberships, a main visible category, trees, and rich exportable metadata.
+Categories should work as a durable collection model, not just a single label. Players need a reliable baseline for assigning, giving, renaming, merging, describing, and decorating categories today, plus a planned path to multiple, equal memberships and rich exportable metadata. Categories are flat: there is no parent/child nesting and no membership is a stored "main".
 
-This Group owns category records, assignments, commands, migration rules, and category-specific behavior. It does not own shared Screen layout, export/download transport, Vault connectivity, or a made-up bulk retexture command.
+This Group owns category records, assignments, commands, migration rules, and category-specific behavior. It does not own shared Screen layout, export/download transport, or Vault connectivity. Bulk retexture is not a category feature at all and no category surface offers it.
 
 ## Ownership
 
 | Owns | Does not own |
 | --- | --- |
-| Category data, assignment, commands, tree rules, customization, and migration | Shared Screen framework and Create Studio host surface: G27 |
+| Category data, assignment, commands, customization, and first-load conversion | Shared Screen framework and Create Studio host surface: G27 |
 | Current category actions and future multi-category model | ZIP/download transport: G12 |
 | Category export/import metadata | Vault sharing and remote import transport: G20 |
-| Create-time category hint and category display/icon behavior | A separate `bulkretexture` feature: G10 with G07 if approved |
+| Create-time category hint and category display/icon behavior | Any bulk retexture flow: scrapped 2026-07-25, no owner |
 | Category delete semantics | Generic block selection and bulk operations: G07 |
+| Category data and mutation services consumed by a Screen | CategoryHubScreen, the Create-workspace Category tab, and the Export Dashboard Screen: G27 |
 
 ## Direction
 
-The existing unified `/cb category <action>` commands and `/cb setcategory` remain the reliable baseline. Player browsing moves to `CategoryHubScreen`, and the wider Category workspace inside `/cb create` becomes the future host for creation and advanced editing. A cramped side panel is not an acceptable substitute.
+The existing unified `/cb category <action>` commands and `/cb setcategory` remain the reliable baseline. Player browsing, category creation, and advanced editing happen through G27 Screens (`CategoryHubScreen` and the Create-workspace Category tab); G11 supplies the data and mutation paths those Screens call.
 
-The target model permits multiple category memberships with exactly one main category for the visible badge/icon. Existing assignments must migrate without loss. Category customization, hierarchy, and export metadata remain category data even when another group provides the Screen or transport.
+The target model permits multiple, equal category memberships; there is no main category, no nesting, and no stored badge priority between memberships. Existing assignments must migrate without loss. Category customization and export metadata remain category data even when G27 provides the Screen or G12/G20 provide transport.
 
 ## Locked Decisions
 
@@ -36,13 +37,35 @@ The target model permits multiple category memberships with exactly one main cat
 | --- | --- | --- |
 | 2026-06-14 | Scattered category verbs are replaced by `/cb category <action>`. | Rename, merge, delete, color, description, icon, sort, lock, give, export, share, import, info, list, and edit use one command family. |
 | 2026-06-14 | Auto-categorize is a create-time hint only. | The standalone `/cb autocategorize` command does not return. |
-| 2026-06-30 | Blocks may have multiple categories and one main category. | Browsing/filtering can use all memberships while the main category supplies the default badge/icon. |
-| 2026-06-30 | Categories may be empty and form an unlimited tree. | The UI warns beyond two nesting levels but data does not impose an artificial cap. |
-| 2026-06-30 | Existing categories and assignments migrate without loss. | The new model cannot discard a category, a block assignment, or a style record. |
+| 2026-07-25 | Blocks may have multiple categories; none is a stored "main". | Browsing/filtering can use any or all memberships; no membership carries a badge priority over another. |
+| 2026-07-25 | A category delete may destroy blocks, but only behind `/cb confirm` and as one undoable batch. | The block-destroying delete modes are in scope; a bare `delete` keeps today's uncategorize-only behavior. |
+| 2026-07-25 | A category stores the display name as typed plus a lowercase key used for matching. | `Arabic Letters` displays as typed while `arabic letters` still resolves it; names stop being forced lowercase. |
+| 2026-07-25 | Hidden, locked, and permission-gated categories are scrapped. | Every category stays visible and editable for everyone; no visibility or permission field enters the category record. |
+| 2026-07-25 | Per-category sounds, particles, accent colour, badges, and auto-add rules are scrapped. | The category record keeps only display name, key, parent, icon, colour tag, description, and order; nothing joins a category unasked. |
+| 2026-06-30 | Categories may be empty. | A category exists as its own record and does not vanish when its last block leaves. |
+| 2026-07-25 | Categories are flat; there is no parent/child nesting. | No category has a parent field; every category is top-level and none can contain another. |
+| 2026-07-25 | Delete offers exactly three modes: category only, exclusively-owned blocks, or move blocks first. | "Exclusively-owned" means a block with no other membership, decided from multi-membership data, not from a tree. |
+| 2026-07-25 | A category is created explicitly by command and implicitly by assigning a block to an unknown name. | `/cb category create` makes an empty category; today's assign-and-it-appears habit keeps working. |
+| 2026-07-25 | `/cb setcategory <blockId> <category>...` takes several categories at once; `/cb category set` and `/cb category remove` act on one membership. | Multi-membership is typed in one command, and a single add or removal has its own explicit verb. |
+| 2026-07-25 | Every category argument tab-completes to existing category names. | Names are picked from a list rather than retyped, so a typo cannot silently create a category. |
+| 2026-07-25 | Today's `sort` becomes `filter`, applying to the category listing and to a category's blocks with a separate mode set for each. | Category modes are alphabetical, newest-to-oldest, oldest-to-newest, most blocks first, grouped by colour tag, and hide-empty; count, colour, and emptiness cannot apply to blocks. |
+| 2026-07-25 | `/cb setcategory` adds memberships instead of replacing them. | Assigning a block somewhere new never silently removes it from where it already is; clearing a membership needs `/cb category remove`. |
+| 2026-07-25 | Every block always belongs to at least one category; the built-in `Uncategorized` category is the default and cannot be deleted or removed as a block's last membership. | A block can never end up with zero categories. `/cb category remove` on a block's last real category leaves it in `Uncategorized` instead of erroring. |
+| 2026-07-25 | Two typed names that normalize to the same key is a rejected creation, not a silent merge. | `/cb category create` (and implicit creation) errors and names the existing category holding that key; the caller must pick a genuinely different name. |
+| 2026-07-25 | The default `filter` order, with no mode given, is alphabetical for both categories and blocks inside a category. | Matches today's `/cb category list` behavior; nothing changes for existing habits until a mode is explicitly requested. |
+| 2026-07-25 | `/cb category info <name>` shows the block count by default and a full block listing when asked. | `/cb category info <name>` gives count/icon/colour/description; `/cb category info <name> list` (or an equivalent explicit argument) adds the block names. |
+| 2026-07-25 | Merging a category into another that a block already belongs to just drops the duplicate membership. | Merge is a set union; no error or special-cased report for blocks that were already in both. |
+| 2026-07-25 | Category commands (create, rename, merge, delete, and the rest) stay open to any player, with no new permission check. | Categories remain a creative-organization tool, not an admin-gated one, matching today's behavior. |
+| 2026-07-25 | `/cb category delete <name>` removes only that one membership from every affected block; other memberships are untouched. | A block with no other membership left falls to `Uncategorized`, consistent with the 3-mode delete and the remove-to-Uncategorized rule. |
+| 2026-07-25 | Category templates are scrapped. | No command copies one category's setup onto another; each category is configured directly. |
+| 2026-07-25 | There is no migration phase; a first-load conversion runs only if a legacy category word is found and is a no-op otherwise. | Owner confirmed no category data is in use, so the backup/confirm/report gating is dropped while stray assignments are still converted rather than lost. |
 | 2026-06-30 | Category creation exists in commands and GUI. | The Create workspace is a real creation path, not a read-only browser. |
-| 2026-07-09 | Category browsing moves from old chest menus to `CategoryHubScreen`. | Browser/detail/edit routing must not keep competing player UI paths. |
-| 2026-07-10 | The wider Create Studio Category workspace replaces the rejected cramped sample. | Category editing uses adequate canvas space before the full migration proceeds. |
 | 2026-07-12 | Category export includes category style, tree, assignment, and relevant block metadata. | A category share/import is more than a list of names. |
+| 2026-07-25 | Every category Screen (`CategoryHubScreen`, the Create-workspace Category tab, and the Export Dashboard) moves to G27. | G11 keeps category data, mutation, and export contents; G27 owns their Screen presentation. See [G27 §N](GROUP_27_SCREENS.md). |
+| 2026-07-25 | Bulk retexture is removed from the category editor and is not deferred to any group. | `CategoryEditMenu` no longer shows the tile and no `bulkretexture` route is planned. |
+| 2026-07-25 | The rework is exposed through commands only until the G27 category Screens exist. | Existing chest category menus keep the current single-category view; no new model work is spent on them. |
+| 2026-07-25 | The legacy one-word `SlotData.category` field stays, as a derived display shadow of the membership set. | Every membership change restamps it with the alphabetically-first real membership by typed name, or `""` when the block sits in `Uncategorized` alone. It is computed, never chosen, and no read path treats it as truth, so it is not a stored main. It keeps the not-yet-reworked surfaces (HUD, Arabic chest menus, exports, blueprint lore, Bulk Workbench, Category Hub) readable and is deleted when G27 moves them onto the membership store. |
+| 2026-07-25 | `/cb bulkcategory` becomes additive, matching `/cb setcategory`. | The same word means "add" in both; `none` still clears every membership, so re-filing in bulk is an explicit clear-then-add. |
 
 ## Feature Plan
 
@@ -59,69 +82,54 @@ Players can organize blocks, work with a category, and maintain its basic detail
 - `/cb categories` is the player category entry point; console callers receive text rather than a Screen attempt.
 - A display block, color tag, description, and ordering make categories recognizable.
 - Category give reports inventory overflow honestly.
+- `/cb category give <category>` hands out every block that has that category as any membership, since no membership is a stored main.
+- `/cb category info <name>` gives a count by default and a full block listing when explicitly asked.
 
 **Requirements**
 
 - Category records and assignments persist under the established data-path contract.
-- Rename and merge update affected assignments consistently.
+- Rename and merge update affected assignments consistently; a merge that would duplicate a membership just drops the duplicate.
+- Category commands stay open to any player; no permission gate is added around create, rename, merge, or delete.
 - Display-block selection uses the category editing flow rather than removed standalone set/clear commands.
 - Create-time hints can suggest a category but never silently force one on the player.
-- The Category Bulk Retexture tile is removed or disabled until it points to a real supported flow.
+- No category surface offers a bulk retexture action; the tile is removed, not hidden behind a flag.
 
 **Boundary**
 
 This baseline stays usable while the broader category model is built. It does not claim that a missing UI action exists.
 
-### B. CategoryHub and Create Workspace
+### B. Multi-Category Model and Delete Safety
 
 **Player outcome**
 
-Players can browse categories and blocks in a proper Screen, then create or edit categories from a spacious workspace inside `/cb create`.
+Creators can build useful flat category collections and share blocks across them without losing an existing block or deleting more than they intended.
 
 **Experience**
 
-- `CategoryHubScreen` lists categories with counts, icons, browse/edit actions, and category detail.
-- A block row supports category-appropriate give, edit, and remove actions.
-- The Create Category workspace uses the main canvas rather than a narrow panel.
-- A player can select/create a category, set a main category, and edit visible style fields without hiding existing records.
+- A block can belong to multiple categories with no main/badge priority between them.
+- Categories are flat: no category has a parent, and none can contain another.
+- Categories can carry a typed display name plus a matching key, icon, colour tag, description, and order.
+- A `filter` replaces today's `sort` and applies both to the category listing and to the blocks inside a category, with its own mode set for each.
+- Category-listing modes: alphabetical, newest-to-oldest, oldest-to-newest, most blocks first, grouped by colour tag, and hide-empty.
+- Block-listing modes inside a category: alphabetical, newest-to-oldest, and oldest-to-newest.
+- `/cb setcategory <blockId> <category>...` accepts several categories at once; `/cb category set` and `/cb category remove` handle one membership at a time.
+- Every category argument tab-completes to the existing category names.
+- Delete presents three separate choices: remove the category only, remove only its exclusively-owned blocks, or move its blocks elsewhere first.
+- Every block always carries at least one category; the built-in `Uncategorized` category is where a block lands when its last real membership is removed, and it cannot itself be deleted.
+- `/cb category delete <name>` removes only that membership from each affected block, leaving any other memberships untouched.
 
 **Requirements**
 
-- Browser routes retire the old chest-menu target without breaking console fallback.
-- G27 Screen code receives category data and invokes G11 mutation paths rather than reimplementing them.
-- The workspace maintains a stable difference between current baseline records and the new multi-category model during migration.
-- Screen copy and shortcuts make browse, edit, delete, and modifier actions discoverable without clutter.
-
-**Boundary**
-
-G27 owns the reusable screen/Studio presentation. G11 owns what a category means and how its edits are applied.
-
-### C. Multi-Category Model and Safety
-
-**Player outcome**
-
-Creators can build useful category trees and shared collections without losing an existing block or deleting more than they intended.
-
-**Experience**
-
-- A block can belong to multiple categories while showing one main category by default.
-- Parent views include child-category blocks.
-- Categories can carry name/key, parent, icon, accent, badge, description, style, order, hidden/locked state, permissions, sounds, particles, and auto-add rules.
-- Templates and reordering help creators repeat a category style.
-- Delete presents separate choices: remove category only, remove only exclusively-owned blocks, remove all shown tree blocks, or move blocks first.
-
-**Requirements**
-
-- Category migration creates real records for current assignments before expanding the model.
+- A first-load conversion turns any leftover legacy category word into a real record; with none present it does nothing and is not a gate on the rest of the model.
 - Delete confirms its chosen mode and never treats shared blocks as exclusive by mistake.
-- Export/import carries tree, memberships, main category, and permitted customization data.
-- Extra memberships remain browse/filter data unless a later explicit setting expands visible badges.
+- Whether export/import carries multi-membership data is undecided and flagged `Discussion ✏️` in G12 and G20; the record model does not wait on it.
+- No membership carries a stored priority; a listing, icon, or badge picks from the category being browsed rather than reading a "main" field.
 
 **Boundary**
 
-This is a category data-model evolution, not a blanket change to every block-management surface.
+This is a category data-model evolution, not a blanket change to every block-management surface. It reaches players through commands until the G27 category Screens exist; the current chest category menus keep the single-category view.
 
-### D. Export, Share, and Import
+### C. Export, Share, and Import
 
 **Player outcome**
 
@@ -130,7 +138,7 @@ Creators can export a complete category locally, then later share or import it t
 **Experience**
 
 - `/cb category export <category>` produces a ZIP with category metadata, assignments, and required assets.
-- A player flow offers the same export result as the command route.
+- The G27 Export Dashboard Screen calls this same export route rather than reimplementing it.
 - `/cb category share` and `import` become available only when the G20 Vault path is ready.
 - Import handles existing IDs through a deliberate conflict-resolution flow.
 
@@ -142,26 +150,29 @@ Creators can export a complete category locally, then later share or import it t
 
 **Boundary**
 
-G11 defines category contents. G12 owns export/download experience and G20 owns remote share/import transport.
+G11 defines category contents. G27 owns the Export Dashboard Screen, G12 owns the download/share transport, and G20 owns remote share/import transport.
 
 ## Cross-Group Contracts
 
 | Group | Connection | Promise |
 | --- | --- | --- |
 | G07 | Bulk category action | G07 supplies selection/confirmation; G11 applies consistent category assignment rules. |
-| G10 | Bulk Retexture decision | No category UI advertises a missing retexture command; any future supported flow uses G10 image logic. |
+| G10 | Retexture ownership | Category surfaces never offer bulk retexture; single-block retexture stays a G10 image path reached from block editing. |
 | G12 | Local export | G11 builds category contents; G12 owns safe download/share presentation. |
 | G20 | Vault share/import | G20 transports validated category artifacts; G11 owns their schema and local merge rules. |
-| G27 | Hub and Create workspace | G27 supplies Screen/Studio presentation; G11 supplies category data and mutations. |
+| G27 | CategoryHub, Create-workspace, and Export Dashboard Screens | G27 owns their Screen/Studio presentation; G11 supplies category data, mutations, and export contents. |
 | G28 | History | Category edits expose clear reversible actions where the history contract supports them. |
 
 ## Technical Contract
 
-- G11 is the source of category record, membership, main-category, parent-tree, style, and assignment semantics.
+- G11 is the source of category record, membership, display, and assignment semantics. Categories are flat; no record carries a parent, and no membership is a stored main.
 - Current command registration uses `/cb category <action>` plus `/cb setcategory`; removed scattered verbs and `/cb autocategorize` are not reintroduced.
 - Category UI routes call G11 services/commands and preserve a text-only console fallback.
-- Migration must create durable records from existing category assignments before enabling richer memberships and parent trees.
-- A delete operation states its exact scope and distinguishes uncategorizing, exclusive deletion, tree deletion, and move-then-delete.
+- A first-load conversion creates durable records from any leftover legacy category assignment; it is not a prerequisite for the multi-membership model, which stands on the record model alone.
+- Membership is a set per block in its own store; `SlotData.category` survives only as a derived display shadow of that set and is never read back as truth. Both stores fold a typed name to its key the same way — lower-case, with spaces, hyphens, and underscores treated alike — so a name that resolves in one resolves in the other, and a separator swap is a key collision rather than a second category.
+- A membership change is its own undo step carrying both whole sets, because a snapshot pair could only restore the display shadow.
+- A delete operation states its exact scope and distinguishes uncategorizing, exclusive deletion, and move-then-delete.
+- Category listing order comes from a stored per-category creation time; block order inside a category uses the slot index, which is already monotonic per creation because deleted indices are permanently reserved.
 - Category export serializes validated category metadata with required block references/assets; remote upload/download remains outside the local schema layer.
 - Category storage follows the shared `config/customblocks/data/` path convention.
 
@@ -172,9 +183,8 @@ G11 defines category contents. G12 owns export/download experience and G20 owns 
 | Idea | Why it is deferred | Owner if revived |
 | --- | --- | --- |
 | Vault share/import | Requires the G20 remote service and a conflict-resolution route. | G20 with G11 |
-| Complete multi-category migration | Needs owner review of the wide workspace before replacing current category routing. | G11 with G27 |
-| Category templates and advanced style effects | Depend on the stable new category record model. | G11 |
-| Bulk Retexture tile | No real command or shared backend exists yet. | G10 with G07 |
+| Multi-category routing in the existing chest menus | Commands come first; the chest menus keep the single-category view until G27 Screens exist. | G11 with G27 |
+| Category export carrying tree and multi-memberships | Flagged `Discussion ✏️` for G12 and G20; not designed in G11. | G12 and G20 with G11 |
 
 </details>
 
@@ -188,6 +198,20 @@ G11 defines category contents. G12 owns export/download experience and G20 owns 
 | 2026-06-14 | `/cb autocategorize` was a standalone command. | Categorization suggestion is a create-time hint only. |
 | 2026-06-30 | A cramped narrow Category tab was the proposed Create experience. | The wider workspace uses the main Studio canvas. |
 | 2026-07-09 | Old chest category menus were the intended browser. | `CategoryHubScreen` is the intended player browser. |
+| 2026-07-10 | The wider Create Studio Category workspace was tracked as a G11 decision. | Screen ownership moved to G27; see [G27 §N](GROUP_27_SCREENS.md). |
+| 2026-07-25 | G11 tracked CategoryHubScreen, the Create-workspace Category tab, and the Export Dashboard as its own Screen work. | All three moved to G27; G11 keeps only category data, mutation, and export contents. |
+| 2026-07-25 | A category Bulk Retexture tile was deferred to G10 with G07 for a future supported flow. | The tile is removed from `CategoryEditMenu` and the idea is scrapped, not deferred. |
+| 2026-07-25 | Category records were to carry hidden/locked state and permissions. | Owner rejected them as clutter; visibility and permission gating are out of the category model entirely. |
+| 2026-07-25 | Category records were to carry sounds, particles, an accent colour, a per-block badge, and auto-add rules. | All five rejected as clutter; the existing icon and colour tag are the category's visual identity and membership is always deliberate. |
+| 2026-06-30 | The tree was unlimited in depth, with the UI warning past two levels. | Superseded same day: a two-level hard cap. |
+| 2026-07-25 | Nesting became a two-level hard cap, a parent listing named its sub-categories, and delete refused while children existed. | All dropped same day: categories are flat, no record carries a parent, and nothing in the model refers to a tree. |
+| 2026-06-30 | Delete had a fourth mode that removed every block shown in the tree. | Dropped: there is no tree for a tree-wide delete to reach. |
+| 2026-06-30 | A gated migration had to create records for existing assignments before the model could expand. | Owner confirmed no category data is in use; a no-op-unless-needed first-load conversion replaces the migration phase and gates nothing. |
+| 2026-06-30 | Templates and reordering would let a creator repeat a category style. | Templates are scrapped; reordering becomes a `filter` with named listing modes. |
+| 2026-06-14 | `/cb setcategory <id> <category>` replaced whatever category a block was in. | It adds a membership instead; re-filing a block now needs an explicit removal or replace verb. |
+| 2026-07-12 | G11 assumed category export would carry tree, memberships, and customization data. | Undecided; flagged `Discussion ✏️` for G12 and G20 rather than designed inside G11. |
+| 2026-06-14 | An empty string meant "uncategorized"; no category record existed for it. | A real `Uncategorized` category record is the default and cannot be deleted; a block is never in a bare empty state. |
+| 2026-06-30 | A block had one main category chosen by position, promoted automatically when removed. | Dropped same day: no membership is a stored main; browsing/badges pick from context, not a saved priority. |
 
 </details>
 

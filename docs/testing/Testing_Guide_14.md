@@ -88,16 +88,22 @@
 
 | | |
 | --- | --- |
+> G10's half landed 2026-07-25: backgrounds store and re-bake, with black and colour working. A see-through background is refused everywhere until this section is built, so this is the last thing standing between it and a working transparent option. Build detail is in the group document.
+
+| | |
+| --- | --- |
 | **Check** | Slot blocks render on the cutout layer when G10 background transparency requires it. |
 | **Pass rule** | Transparent, black default, shaped-block, and existing-solid rows pass twice with G10. |
 | **Pass mark** | ✅ `YYYY-MM-DD` |
-| **Blocked** | G10 owns the background attribute; G14 owns only the render-layer registration. |
+| **Blocked** | Not blocked by G10 any more — G10 §C is built. This is G14 build work. |
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| F1 | Set a block background to transparent after G10 build. | Transparent pixels show through correctly. | 🎯 | 🎯 |
-| F2 | Inspect a normal black-background block. | Existing solid blocks still look black, not unexpectedly see-through. | 🎯 | 🎯 |
-| F3 | Test a shaped transparent block. | Cutout layer does not create broken interior artifacts. | 🎯 | 🎯 |
+| F0 | Before this is built: type `/cb setbg g10a transparent`. | It says no — use black or a colour. Block unchanged. (Moved from G10's background tests on 2026-07-25 — the refusal exists because of this section.) | 🎯 | 🎯 |
+| F1 | Set a block background to transparent once this is built. | Transparent pixels show through correctly. | ⏳ | ⏳ |
+| F2 | Inspect a normal black-background block. | Existing solid blocks still look black, not unexpectedly see-through. | ⏳ | ⏳ |
+| F3 | Test a shaped transparent block. | Cutout layer does not create broken interior artifacts. | ⏳ | ⏳ |
+| F4 | Check an off-atlas (large/animated) block after the change. | Its alpha behaves the same way as an atlas block's, not the opposite. | ⏳ | ⏳ |
 
 ## G - Showcase / cycler block - Designed ⏳
 

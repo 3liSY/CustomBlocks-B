@@ -192,7 +192,7 @@ public class CustomBlocksClient implements ClientModInitializer {
                     }
                     case BACKUP_SCREEN  -> {
                         // Group 09 §G09-A4: refresh the open Backup Screen in place (an action must never
-                        // close it), or open it fresh. data = BackupManager.screenJson().
+                        // close it), or open it fresh. data = BackupView.screenJson().
                         if (context.client().currentScreen instanceof com.customblocks.client.gui.BackupScreen s) s.refresh(data);
                         else context.client().setScreen(new com.customblocks.client.gui.BackupScreen(data));
                     }
@@ -224,6 +224,14 @@ public class CustomBlocksClient implements ClientModInitializer {
                 com.customblocks.network.payloads.GuessModePayload.ID, (payload, context) ->
                         context.client().execute(() -> ClientGuessState.populate(payload.json())));
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ClientGuessState.clear());
+
+        // Group 30 §H — PlacedMaskPayload → the positions THIS viewer must draw as the bundled "?" (the
+        // server already filtered the runner's own placements out). FULL replaces; ADD/DEL are the
+        // per-placement / per-break deltas that keep a big masked build from re-sending itself every time.
+        ClientPlayNetworking.registerGlobalReceiver(
+                com.customblocks.network.payloads.PlacedMaskPayload.ID, (payload, context) ->
+                        context.client().execute(() -> ClientPlacedMask.apply(payload.op(), payload.dims())));
+        ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> ClientPlacedMask.clear());
 
         // ChatPrefillPayload → open the chat input with the command already typed (Group 04,
         // sent when a command is clicked in the /cb help chest GUI).

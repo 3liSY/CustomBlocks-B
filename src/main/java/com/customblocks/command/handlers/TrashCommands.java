@@ -5,8 +5,8 @@
  *
  * Restore is orchestrated here (the GUI's per-entry "Restore" button calls guiRestore): it recreates the
  * block through the SAME tested SlotManager.create + setters that /cb create / dupe use, writes the saved
- * texture + source back, removes the trash entry, then rebuilds + pushes the pack. Pin / delete-permanently
- * are pure data ops the GUI does directly against TrashManager.
+ * texture + source + source link back, removes the trash entry, then rebuilds + pushes the pack. Pin /
+ * delete-permanently are pure data ops the GUI does directly against TrashManager.
  *
  * Depends on: TrashManager, SlotManager, SlotData, TextureStore, ResourcePackServer, GuiRouter, Nav, Chat.
  * Called by:  CommandRegistrar; TrashEntryMenu (guiRestore).
@@ -105,11 +105,13 @@ public final class TrashCommands {
             index = created.index();
         }
 
-        // Put the texture + original source image back into the (re)used slot.
+        // Put the texture + original source image + source link back into the (re)used slot.
         byte[] tex = TrashManager.textureBytes(entryId);
         if (tex != null) TextureStore.save(index, tex);
         byte[] source = TrashManager.sourceBytes(entryId);
         if (source != null) TextureStore.saveSource(index, source);
+        String url = TrashManager.urlText(entryId);
+        if (url != null) TextureStore.saveUrl(index, url);
 
         // A restore un-tombstones the id (it can heal again) and clears its stale marker label; the block
         // is live again, so its "Deleted: <name>" markers heal back into it (loaded now, far on chunk-load).
@@ -122,9 +124,18 @@ public final class TrashCommands {
         ResourcePackServer.updatePack();
         ResourcePackServer.syncToAll();
         HudSync.broadcast(server); // restored identity shows live for everyone, no rejoin
+        // G06 §D2: a block with a texture but no source looks perfect and still refuses /cb setbg,
+        // /cb resize and /cb variants. Say so at restore time rather than letting the player find out
+        // three commands later.
+        String gap = tex == null
+                ? " " + CbFmt.DIM + "(no saved texture — it'll look untextured until retextured)."
+                : (source == null
+                        ? " " + CbFmt.DIM + "(no original picture was stored, so background/resize/variants "
+                          + "need /cb retexture " + e.customId() + " <link> first)."
+                        : ".");
         Chat.success(src, "Restored \"" + e.customId() + "\" from the trash"
                 + (reuse ? " " + CbFmt.DIM + "(slot " + slot + ")" : "")
-                + (tex == null ? " " + CbFmt.DIM + "(no saved texture — it'll look untextured until retextured)." : "."));
+                + gap);
         GuiRouter.back(player); // pop the entry screen → refreshed trash list
     }
 

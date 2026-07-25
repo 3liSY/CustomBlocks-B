@@ -42,12 +42,20 @@ public final class BulkConfirm {
         return u != null ? u : CONSOLE;
     }
 
-    /** Hold {@code action} until the actor runs /cb confirm (replaces any earlier pending). */
+    /**
+     * Hold {@code action} until the actor runs /cb confirm. There is only ONE pending slot per actor, so
+     * a second request replaces the first — say so out loud. Silently swallowing the earlier request let a
+     * player queue "overwrite A", queue "overwrite B", then type /cb confirm still believing A was held and
+     * overwrite the wrong blocks; the whole point of the hold is that a destructive batch never surprises.
+     */
     public static void request(ServerCommandSource src, Runnable action, String summary) {
-        PENDING.put(key(src), new Pending(action, System.currentTimeMillis() + WINDOW_MS, summary));
+        Pending old = PENDING.put(key(src), new Pending(action, System.currentTimeMillis() + WINDOW_MS, summary));
+        if (old != null && System.currentTimeMillis() <= old.expiresAt()) {
+            Chat.info(src, "This replaces your earlier pending action (" + old.summary() + ") — that one will NOT run.");
+        }
     }
 
-    /** /cb confirm — run the held action if it hasn't expired. */
+    /** /cb confirm — run the held action if it hasn't expired, naming it so the actor sees what ran. */
     public static int confirm(ServerCommandSource src) {
         Pending p = PENDING.remove(key(src));
         if (p == null) { Chat.info(src, "Nothing to confirm."); return 0; }
@@ -55,6 +63,7 @@ public final class BulkConfirm {
             Chat.info(src, "That bulk confirmation expired — run it again.");
             return 0;
         }
+        Chat.info(src, "Confirmed: " + p.summary() + ".");
         p.action().run();
         return 1;
     }

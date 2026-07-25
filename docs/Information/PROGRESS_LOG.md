@@ -7,6 +7,115 @@
 
 ---
 
+## Group 11 · Categories — multi-membership rework, §A built in one pass · 2026-07-25 (🟢 build-green — NOT confirmed in-game)
+
+> Built from the (now consumed) `G11_REWORK_HANDOFF.md` against G11 §B and TG11 §A rows A1–A11.
+> Commands only — the chest category menus keep their single-category view, per G11's "commands
+> only until G27 Screens exist" decision. Jar builds green (JDK 21); nothing confirmed in-game.
+
+### 1. Membership is a set, not a word on the block
+- New `core/CategoryMembershipStore.java`: `blockId → LinkedHashSet<categoryKey>`, persisted to
+  `config/customblocks/data/category_membership.json` (atomic write, same shape as the metadata store).
+- `uncategorized` is a built-in floor key: `of()` never returns an empty set, `remove()` refuses to
+  strip the floor, and dropping a block's last real category lands it there instead of erroring (A2).
+- `blocksIn()` skips ids that no longer resolve rather than deleting their rows — a trashed block
+  keeps its memberships so `/cb trash restore` is lossless, and a stale row can't surface as a phantom.
+- Reid follows: `SlotManager.reId` now calls `renameBlockId` alongside the other id-keyed migrations.
+
+### 2. The key normalizer folds separators
+- `key()` = lower-case + every run of spaces/hyphens/underscores folded to one space, shared by both
+  stores. This is what makes `arabic letters` resolve `Arabic Letters` **and** makes `arabic-letters`
+  a key collision rather than a silent second category (A7). Plain lower-casing could not do both.
+- Collision vs. resolve is decided by `collisionFor()`: same key + case-only difference resolves;
+  same key + any other difference is refused, naming the existing category.
+
+### 3. The legacy field became a display shadow (owner decision, 2026-07-25)
+- `SlotData.category` stays and is restamped on every membership change with the alphabetically-first
+  real membership by typed name (`""` when only the floor). Derived, never chosen, never read back as
+  truth — so it is not a stored main. It keeps the HUD, Arabic chest menus, exports, blueprint lore,
+  Bulk Workbench and the Category Hub readable until G27 moves them onto the membership store.
+- Dual-write the other way too: `SlotManager.setCategory` (and `createNoSave`) mirror into the
+  membership store with replace semantics, so studio create, template apply, ZIP/vault import, trash
+  restore and the Arabic bootstrap all land in the new model without each being reworked.
+- **Lock order matters here.** A mutator holds the store's monitor only while editing the map, and
+  shadows *after* releasing it — `SlotManager.createNoSave` already runs the other way round
+  (SlotManager's monitor held while calling into the store), so shadowing inside the lock would close
+  that cycle into a deadlock. There is a banner over the mutation section saying so.
+
+### 4. Undo got `Kind.CATEGORY` — it genuinely doesn't fit MODIFY
+- Membership isn't on `SlotData`, so a before/after snapshot pair could only restore the shadow: undo
+  would *look* like it worked while the real memberships stayed changed. New `Membership(id, before,
+  after)` payload carries both whole sets; `HistoryCommands` restores via `restoreSet`.
+- Without this, `/cb setcategory` and `/cb bulkcategory` would have silently lost the undo they have
+  today — a regression, not a gap. `Op` gained a 10th field with back-compat constructors, so no
+  existing caller changed.
+
+### 5. Commands
+- `/cb setcategory <id> <cat>…` **adds** memberships now, several at a time; multi-word names are
+  quoted (`"Arabic Letters"`) or the tokenizer would read them as two. `none` still clears (A1).
+- New `/cb category create|set|remove`; `delete <name> [category|exclusive|move <target>]` — bare
+  delete keeps today's strip-the-category meaning (A3), `exclusive` destroys only blocks with no other
+  membership behind `/cb confirm` as one undo batch (A4), `move` re-files first (A5).
+- `filter` replaced `sort`: `/cb category filter <cat> <mode>` orders blocks (A8), `/cb category list
+  <mode>` orders the category listing — `filter` had to keep A8's literal syntax, so the category half
+  needed its own home. Default is alphabetical for both.
+- `info <name> [list]` (A11); `give` now hands out every block holding the category as any membership (A10).
+- Tab-complete reads the real category records, so an empty category still completes (A9).
+- `/cb bulkcategory` made additive to match `setcategory` (owner call — the same word meaning "replace"
+  in bulk and "add" singly was the confusing option).
+
+### 6. First-load conversion
+- `runFirstLoadConversionIfNeeded()` runs right after `SlotManager.loadAll()`. No backup, no confirm,
+  no report — the owner confirmed no category data is in use. Converts any stray legacy word (the 224
+  bundled Arabic blocks, mainly) and always writes the file, which is its own "already ran" marker.
+
+### 7. Line gate fallout
+- `HistoryCommands.java` hit 414 lines and failed `monolithGate` on the first jar build. Its pure
+  formatting half (`describe`/`diff` + helpers) moved to `HistoryDescribe.java`; no behaviour change.
+
+### Files touched
+- New: `core/CategoryMembershipStore.java`, `core/CategoryFilters.java`,
+  `command/handlers/CategoryMemberCommands.java`, `command/handlers/HistoryDescribe.java`
+- Reworked: `core/CategoryService.java`, `core/CategoryMetadataStore.java`, `core/SlotManager.java`,
+  `core/UndoManager.java`, `command/handlers/CategoryCommands.java`,
+  `command/handlers/AttributeCommands.java`, `command/handlers/BulkCategoryCommands.java`,
+  `command/handlers/HistoryCommands.java`, `CustomBlocksMod.java`
+
+### Status
+Jar builds green (JDK 21), every gate passing. TG11 §A → `Built 🎯`, all A1–A11 cells left at `🎯`.
+NOT confirmed in-game.
+
+### Still open
+- Export/import still carries one category per block — parked `Discussion ✏️` in TG12 §A / TG20 §K.
+- Chest category menus untouched; the display shadow is what keeps them readable until G27.
+
+---
+
+## Group 34 · Wheel of Fortune — pre-test tweak pass: vivid+solid face, prize out front, claimable · 2026-07-23 (🟢 build-green — NOT confirmed in-game)
+
+> Owner tweak pass before first in-game test, from two screenshots (drab hollow wheel vs. a vivid filled reference).
+
+### 1. Wedge colours — vivid + more of them
+- `WheelRing.WEDGE_COLORS` 4 → **10** saturated concretes (`BLUE, LIME, MAGENTA, ORANGE, LIGHT_BLUE, RED, PURPLE, GREEN, PINK, CYAN`), warm/cool alternating so no two neighbours muddy. 100 ÷ 10 = clean seam. Old set read dark-red / olive-yellow / teal (muddy).
+
+### 2. Solid filled face (no transparent hole behind the arrow)
+- Wedges now span centre→rim instead of a hollow `INNER_R=6` band: added `WEDGE_INNER_R=0.5` + `WEDGE_CENTER_R`; `WEDGE_LEN` measures from the 0.5 stub. The stub hides under the arrow pivot.
+- `WEDGE_WIDTH` now measured at `OUTER_R` (was `ICON_R`), so slices tile edge-to-edge at the rim (no sky gaps) and overlap inward → gap-free disc. Icon ring radius unchanged.
+
+### 3. Prize moved off the arrow + claimable (overrides the item-F show-only lock)
+- `DEPTH_POPUP` 1.10 → **2.00**: the win popup floats 2 blocks out front, clear of the in-plane arrow.
+- New `Part.CLAIM` hitbox over the popup (`popupIconPos` shared by icon + box). **Right-click** the prize claims it — middle-click can't (creative-only, client-side, no server packet).
+- Claim rules: only the spinner (`spinner` UUID recorded in `startSpin(world, player)`), **1 item**, **once** (`prizeClaimed`); popup stays until next spin. Both persisted in NBT.
+- Guarded two regressions the front box introduces: dead-centre right-click still **spins** when no prize is showing (`hasPrize()` fall-through); left-click still **removes** the wheel (CLAIM counts as hub, only RIM left-clicks are redirected).
+
+### Files touched
+- `wheel/WheelRing.java`, `wheel/WheelDisplayVisual.java`, `wheel/WheelBlockEntity.java`, `wheel/WheelBlock.java`
+
+### Status
+Compiles + jar builds green (JDK 21). New TG §G (claim) + §A5/§D/§F4 rows added. NOT confirmed in-game.
+
+---
+
 ## Group 34 · Wheel of Fortune — v2 realism rebuild, §A–§F built in one pass · 2026-07-23 (🟢 build-green — NOT confirmed in-game)
 
 > Full rewrite of the `wheel/` package to the v2 spec locked in the owner's 30-question design pass. The v1

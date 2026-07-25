@@ -286,6 +286,9 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
         // G08 §J — stamp the directional orientation captured in getPlacementState onto the BlockEntity
         // (data-only, no block-state); server-authoritative + predicting client. No-op for non-directional.
         DirectionalPlacement.stamp(world, pos, placer, resolveShape(slotIndex, slotKey));
+        // G30 §H — a Placed Mask runner's own placements are recorded HERE (per placement, never inferred
+        // from block type) so the mask is exact and fully reversible. No-op for everyone else.
+        com.customblocks.core.PlacedMaskHooks.onPlaced(world, pos, placer);
         // Session-aware gate (CP3b): a remote client's own SlotManager is stale — the flow's
         // helper consults the synced cache there, so the prediction actually fires.
         if (com.customblocks.arabic.ArabicSlotJoinFlow.isArabicSlot(world, slotIndex, slotKey)) {
@@ -300,6 +303,10 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
         boolean removed = !state.isOf(newState.getBlock());
         super.onStateReplaced(state, world, pos, newState, moved);
         if (!removed) return;
+        // G30 §H — the block is gone, so its mask record goes with it and every watcher unmasks live. A swap
+        // to ANOTHER slot block in place (an Arabic word re-flowing its forms) is not a removal: keep the mask.
+        if (!(newState.getBlock() instanceof SlotBlock))
+            com.customblocks.core.PlacedMaskHooks.onRemoved(world, pos);
         if (com.customblocks.arabic.ArabicSlotJoinFlow.isArabicSlot(world, slotIndex, slotKey)) {
             com.customblocks.arabic.ArabicSlotJoinFlow.onBreak(world, pos);
         }
@@ -330,7 +337,12 @@ public class SlotBlock extends Block implements BlockEntityProvider, CbBlock {
     @Override
     public List<ItemStack> getDroppedStacks(BlockState state, net.minecraft.loot.context.LootContextParameterSet.Builder builder) {
         Item item = asItem();
-        return item == net.minecraft.item.Items.AIR ? List.of() : List.of(new ItemStack(item));
+        if (item == net.minecraft.item.Items.AIR) return List.of();
+        List<ItemStack> drops = List.of(new ItemStack(item));
+        // G30 §H — a drop rolled by a MASKED block carries the runner tag, so the item on the floor stays a
+        // "?" for watchers (stripped again the moment anyone picks it up). No-op for an unmasked block.
+        com.customblocks.core.PlacedMaskHooks.stampDrops(builder, drops);
+        return drops;
     }
 
     /**

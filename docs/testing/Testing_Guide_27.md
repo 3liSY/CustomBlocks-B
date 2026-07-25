@@ -4,8 +4,8 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Studio baseline exists; new upgrades, shared browser filters, Editing/Text tabs, and the wider screen migration still need owner tests or build work. |
-| **Progress** | 🟩🟩🟥🟥🟥🟥🟥🟥🟥🟥 20% |
+| **Verdict** | Studio baseline exists; new upgrades, shared browser filters, Editing/Text tabs, category Screens, and the wider screen migration still need owner tests or build work. |
+| **Progress** | 🟩🟩🟩🟥🟥🟥🟥🟥🟥🟥 30% |
 | **Last tested** | 2026-07-12 |
 | **Jar** | `customblocks-1.0.0.jar` |
 
@@ -13,6 +13,7 @@
 
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
+| Q | Background Studio, palette, and coloring engine flows (from G10) | Built 🎯 | - |
 | B | Studio five-fix upgrade set | Built 🎯 | Discussion ✏️ |
 | C | HUD templates and shape backgrounds | Built 🎯 | Discussion ✏️ |
 | D | Bulk Operations Hub screens | Built 🎯 | Discussion ✏️ |
@@ -23,7 +24,13 @@
 | I | Screen toasts and unified feedback style | Designed ⏳ | Discussion ✏️ |
 | J | Wider screen migration set | Designed ⏳ | Discussion ✏️ |
 | L | Shared browser Animated filter and animation route | Designed ⏳ | Discussion ✏️ |
+| S | `/cb create` Category workspace (from G11) | Built 🎯 | Polish 🎨 |
 | M | Omni-Tool mode-switch Screen | Planned 📜 | Discussion ✏️ |
+| N | Backup and Trash Screen migration (from G09) | Planned 📜 | Discussion ✏️ |
+| O | Advanced Recolor Hub screen (from G10) | Planned 📜 | Discussion ✏️ |
+| P | Color-family builder Screen (from G10) | Planned 📜 | Discussion ✏️ |
+| R | CategoryHubScreen routing for category browser (from G11) | Designed ⏳ | - |
+| T | Export Dashboard Screen replacement (from G11) | Designed ⏳ | - |
 | A | Block Creation Studio baseline | Done ✅ | - |
 | K | Premium future screen ideas | Planned 📜 | Parked 💤 |
 
@@ -39,7 +46,7 @@
 - Keep one static PNG block, one transparent PNG, one GIF/animated block, and one shaped block.
 - Screen layout must follow the red/black/lime G27 standard.
 - Logic owned by other groups stays there; G27 tests the Screen and user flow.
-- Text creation uses G13 backend; Editing tab uses G10/G14 texture behavior; Testing Center UI support stays with G16.
+- Text creation uses G13 backend; Editing tab uses G10/G14 texture behavior; Testing Center UI support stays with G16; category Screens (§R/§S/§T) call G11 data and mutation paths.
 
 ## A - Block Creation Studio baseline - Done ✅
 
@@ -101,7 +108,7 @@
 | **Pass rule** | Chrome, search, filter chips, the new **Category ▾** filter, **combined** filters, rotating cube grid, selection, left info panel, history popup, actions rail, result preview, confirm, progress sweep, and undo/redo rows pass twice. |
 | **Pass mark** | ✅ `YYYY-MM-DD` |
 | **How to open** | Type `/cb bulk` in chat — opens the Bulk Operations Hub screen directly. |
-| **Built (2026-07-20)** | Moved here from G07 §B. The natural-language "ask" command bar (`BulkNlParser` / `BulkNlBar`) was **ripped entirely** — it mis-targeted (e.g. "glow 10 all red" ticked *all* blocks, ignoring "red"). Replaced by a **Category ▾** filter button in the Blocks List chip row that lists your real categories; it **combines (AND)** with the All/Favorites/Locked/Selected chip. The freed top strip was reclaimed (content moved up). |
+| **Built (2026-07-20)** | The typed "ask" command bar is gone; targeting is ticking plus filters, and a **Category ▾** filter combines (AND) with the All/Favorites/Locked/Selected chip. |
 | **Blocked** | Built to spec but not owner-tested in game. |
 
 | # | Action | Expected result | SP | MP |
@@ -115,6 +122,7 @@
 | D7 | Click **Category ▾** and pick a category (e.g. red). | The grid shows only blocks in that category; the button shows the picked category. Pick "All categories" to clear it. | 🎯 | 🎯 |
 | D8 | Turn on a chip (Locked or Favorites or Selected) **and** a Category together. | The grid shows only blocks matching **both** — e.g. Locked + red = only locked red blocks. | 🎯 | 🎯 |
 | D9 | Select blocks via ticks/filters, switch to Bulk Actions, Execute. | Only the ticked blocks are affected — nothing silently acts on the whole list. | 🎯 | 🎯 |
+| D10 | Place 3 blocks, tick those 3 in Blocks List, close the screen, then type `/cb setbg selected green`. | All 3 turn green; one `/cb undo` puts all 3 back. Tests that the screen's tick selection survives to a chat command. (Moved from G10's background tests on 2026-07-25; the setbg logic itself stays G10.) | 🎯 | 🎯 |
 
 ## E - Studio Editing tab with Paint and Resize - Designed ⏳
 
@@ -263,6 +271,115 @@
 
 *(No test rows yet — design discussion pending.)*
 
+## N - Backup and Trash Screen migration (from G09) - Planned 📜
+
+| | |
+| --- | --- |
+| **Check** | Moved here 2026-07-23: G09's backup engine is rebuilt and complete at the command/data layer (whole-tree deduped snapshots, kind-based retention, verify, preview/contents, granular restore, cloud pull). The remaining work is the Screen surface, owned by G27. |
+| **Pass rule** | Not designed yet — layout and scope need Discussion before build: multi-select delete on the Backup Screen; surfacing the new metadata (kind, reason/note, size, a health dot from `/cb backup verify`, preview/contents/granular-restore actions); a new Trash Screen; and retiring the old backup, trash, and safety chest menus. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+| **Blocked** | Design not locked. Needs owner discussion: exact layout/tabs, whether per-block "restore just this block from backup X" is in-scope, and cutover order (Screen accepted before chest removal). G09 keeps persistence/restore/retention semantics. |
+
+**Also folded in from G09 (2026-07-23):**
+- **Auto-backup config gate (was TG9 §C4-C6):** `autoBackupTime`, `autoBackupBudgetMB`, and the `/cb config` confirmation gate aren't exposed as testable options today — owner wants them reachable purely in-game, no file editing. Scope as config-screen controls here rather than raw config keys. G09 keeps the interval/keep-count/prune logic itself (already confirmed, TG9 §C1-C3); only the missing config-exposure UI moves here.
+- **Preview / contents / granular restore (was TG9 §J):** currently three separate console commands (`preview`, `contents`, scoped `load <name> <item>`) with no screen. Owner does not want a console/file workflow. Scope as preview + per-item restore buttons on the Backup Screen.
+
+*(No test rows yet — design discussion pending.)*
+
+## O - Advanced Recolor Hub screen (from G10) - Planned 📜
+
+> Moved from G10's Advanced Recolor Hub scope (2026-07-24): spec fully locked, nothing built. This is the full 11-tile Recoloring Hub screen (selection/operations/layout/undo), **not** the same thing as the live `/cb bulkrecolor` command — that's a separate single hue-shift op, already built and shipped, and it stays where it is. Command-name overlap between this future Hub and the existing `/cb bulkrecolor` is unresolved — pick the Hub's actual command/route as part of Discussion before build (do not assume it reuses `/cb bulkrecolor`).
+
+| | |
+| --- | --- |
+| **Check** | A dedicated advanced screen for bulk recolor operations, distinct from G07's existing single hue-shift command. |
+| **Pass rule** | Not designed yet — selection, operations, layout, command/route naming, safety, progress/cancel behavior, and undo all need Discussion before build. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+| **Blocked** | Design not locked. Needs owner discussion: final command/route (must not silently collide with G07's live `/cb bulkrecolor`), screen layout per G27 red/black/lime standard, selection flow, and relationship (if any) to G10's still-undesigned unified `background` attribute. |
+
+*(No test rows yet — design discussion pending.)*
+
+## P - Color-family builder Screen (from G10) - Planned 📜
+
+> Moved from G10's colour-family scope (2026-07-24): the `/cb colorvariants` command/service rail stays in G10 — confirmed built. This is only the future GUI that gathers source/color-set/preview inputs and calls that same command rail (must not duplicate image logic in the screen). The existing colour-variants chest menu only lists families today — a starting point to replace, not a finished builder.
+
+| | |
+| --- | --- |
+| **Check** | A Screen supplies source, color set, preview, and create/regen/delete flow, calling G10's existing command rail rather than reimplementing it. |
+| **Pass rule** | Not designed yet — layout, input flow, overwrite-guard UI, and delete-confirmation UI all need Discussion before build. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+| **Blocked** | Design not locked. Needs owner discussion: screen trigger/route (from `/cb create` Studio? standalone?), layout per G27 red/black/lime standard, how overwrite-guard and delete-confirm surface in a Screen vs the current chat-confirm flow, and whether `ColorVariantsMenu` is replaced outright or extended. |
+
+*(No test rows yet — design discussion pending.)*
+
+## Q - Background Studio, palette, and coloring engine flows (from G10) - Built 🎯
+
+> Moved from G10's stored-background scope (2026-07-24): whole section requires the Background Studio screen, so ownership moves here entirely. Audited as fully wired — no placeholder or dead buttons.
+
+| | |
+| --- | --- |
+| **Check** | Background removal, fill color, palette, and color-variant operations all work through the Background Studio screen and its supporting commands. |
+| **Pass rule** | Background, fill color, palette persistence, variant creation, and undo rows pass twice. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+
+**How to open the panel:** type `/cb bgstudio <id>` on a block, or just `/cb bgstudio` to pick a block from a list first.
+
+**Panel buttons, in plain terms:**
+- 4 mode tiles at the top: **Keep background** (do nothing), **Remove background** (cuts only the outer edge background), **Remove background + gaps** (also cuts background trapped inside the subject, e.g. inside a letter "O"), **Smart auto** (claims to pick automatically — it does not, it just applies a hidden fixed strength). When G10 §H lands these become **Auto** and **Off**, and Smart auto is deleted outright.
+- **Strength +/− 5%** buttons: how loosely a color counts as "background". Being deleted — see the Q3 note below.
+- **Fill color**: left-click a color swatch to type a name or hex code in an anvil; right-click resets to black (`#000000`).
+- 4 quick-fill slots: these pull from your saved Palette (set up separately via `/cb coloring` → Palette tab). Click one to use that color as fill instantly.
+- There is no separate "make color variant" button on this panel — that's the separate `/cb colorvariants` command (G10 §F).
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| Q1 | Open `/cb bgstudio g10a`. Click **Remove background** tile. Right-click the fill color swatch (resets to black). Apply. | Background turns black. Run `/cb undo` — background restores to original. | 🎯 | 🎯 |
+| Q2 | Same panel. Left-click the fill color swatch, type `red` (or a hex like `#FF0000`) in the anvil, confirm, apply. | Removed background bakes to red instead of black. | 🎯 | 🎯 |
+| Q3 | ~~Tolerance persistence~~ — do not run. `/cb tolerance`, the strength buttons, and the per-block store are all being deleted by [G10 §H](../groups/GROUP_10_COLOR_IMAGE.md). Testing that they persist would be testing something on its way out. This row is replaced by G10 §H2, which checks the buttons are gone. | 💤 | 💤 |
+| Q4 | Open `/cb coloring` → Palette tab. Save a color, close, reopen the tab. | Saved color is still there. It also appears as a clickable quick-fill slot in Background Studio (see Q2). | 🎯 | 🎯 |
+| Q5 | Run `/cb colorvariants g10a Test <link>` (there's no in-panel button, see note above). | A red/green/yellow variant family is created from `g10a`. `/cb undo` removes it. | 🎯 | 🎯 |
+
+## R - CategoryHubScreen routing for category browser (from G11) - Designed ⏳
+
+> Moved from G11 (2026-07-25): G11 keeps category data, records, and mutation paths; this Screen calls those paths rather than reimplementing them.
+
+| | |
+| --- | --- |
+| **Check** | Category browser entry points route to `CategoryHubScreen` instead of the old chest menus. |
+| **Pass rule** | Categories list, category detail, block row, edit, remove, give, and console fallback pass twice. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+| **Blocked** | CategoryHubScreen exists, but the old `/cb categories` and category browser routing still need migration. |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| R1 | Run `/cb categories` as a player. | CategoryHubScreen opens with all categories, counts, icons, and browse/edit affordances. | 🎯 | 🎯 |
+| R2 | Open `testcat`. | The screen shows `g11a`, `g11b`, and `g11c`, with category controls available. | 🎯 | 🎯 |
+| R3 | Click a block row. | Give, edit, and remove-from-category actions are available in-screen. | 🎯 | 🎯 |
+| R4 | Run the same command from console. | Console receives a text list instead of a screen open attempt. | ➖ | 🎯 |
+
+## S - `/cb create` Category workspace (from G11) - Built 🎯
+
+> Moved from G11 (2026-07-25): G11 keeps category records and mutation rules; this workspace calls them rather than reimplementing them.
+
+| | |
+| --- | --- |
+| **Check** | The wide Category workspace inside `/cb create` supports the new category system without replacing the current system prematurely. |
+| **Pass rule** | Create-tab assignment, category creation, icon/style fields, preview, and migration-safety rows pass twice. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| S1 | Open `/cb create` and switch to the Category workspace. | Wide workspace appears instead of the rejected cramped panel. | 🎯 | 🎯 |
+| S2 | Assign a new block to an existing category from the workspace. | Block saves with the selected main category and appears in category browsing. | 🎯 | 🎯 |
+| S3 | Create a new category from the workspace. | Category record is created without deleting or hiding existing categories. | 🎯 | 🎯 |
+| S4 | Edit icon/color/description-style fields if present. | Category customization persists and exports as category metadata. | 🎯 | 🎯 |
+
+## T - Export Dashboard Screen replacement (from G11) - Designed ⏳
+
+> Moved from G11 (2026-07-25): G11 keeps the export ZIP contents and schema, G12 owns the ZIP artifact and download link (TG12 §A); this Screen only needs to reach the same export result through a GUI entry point.
+
+*(No test rows yet — design discussion pending.)*
+
 ---
 
 # Archive
@@ -281,7 +398,9 @@
 
 <details><summary>📜 <b>Planned</b></summary>
 
-*(none)*
+- §N Backup and Trash Screen migration — 📜 `2026-07-23`: G09 backend complete; Screen scope/layout needs owner discussion before build (multi-select delete, backup metadata surface, Trash Screen, chest-menu retirement).
+- §O Advanced Recolor Hub screen — 📜 `2026-07-24`: Moved from G10 §G; spec locked, nothing built. Command/route naming still unresolved against G07's live `/cb bulkrecolor` hue-shift op.
+- §P Color-family builder Screen — 📜 `2026-07-24`: Moved from G10 §F; command rail stays in G10, only the GUI moved. Layout/trigger/overwrite-guard UI need Discussion before build.
 
 </details>
 
@@ -307,6 +426,8 @@
 - [ ] Remove temporary HUD layouts created only for tests.
 - [ ] Keep G13 backend failures out of G27 unless the Screen routed them incorrectly.
 - [ ] Keep image/animation data failures linked to G10/G14 when Editing tab exposes them.
+- [ ] Keep category data/export failures linked to G11 unless §R/§S/§T routed them incorrectly.
 - [ ] Delete old routes only after owner confirms the replacement Screen in game.
+- [ ] Delete `g11a`, `g11b`, `g11c`, and temporary categories after §R/§S testing.
 
 </details>

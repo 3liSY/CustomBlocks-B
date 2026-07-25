@@ -10,7 +10,6 @@
  */
 package com.customblocks.command.handlers;
 
-import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
 import com.customblocks.core.AnimData;
@@ -25,7 +24,6 @@ import com.customblocks.core.onboarding.FirstUseHints;
 import com.customblocks.ai.AiTextureGenerator;
 import com.customblocks.image.AnimationDecoder;
 import com.customblocks.image.BackgroundRemover;
-import com.customblocks.image.CheckerboardDetector;
 import com.customblocks.image.ImageDownloader;
 import com.customblocks.image.ImageProcessor;
 import com.customblocks.network.HudSync;
@@ -45,10 +43,11 @@ public final class CreationCommands {
 
     private CreationCommands() {} // static-only
 
-    /** G10-6: shown when a "transparent" source was really a flattened preview (checkerboard baked in) → cleaned to black. */
-    private static final String FLAT_CHECKER_NOTE =
-            CbFmt.VALUE + "Heads-up:" + CbFmt.RESET + " that was a flattened " + CbFmt.ITALIC + "preview" + CbFmt.RESET + " image (transparency checkerboard baked in), so the "
-            + "background was cleaned to black. For a crisper result, grab the site's real " + CbFmt.OK + "transparent PNG" + CbFmt.RESET + " download.";
+    // G10 §G (owner, 2026-07-25): creating/retexturing prints ONLY the fetching line and the result line.
+    // The old "that was a flattened preview image…" and "…it was enlarged, so fine details may look soft"
+    // heads-ups are gone as chat noise. The BEHAVIOUR they described is untouched: CheckerboardDetector
+    // still flattens a preview grid to black inside BackgroundRemover, and a small picture is still
+    // enlarged by ImageProcessor.toBlockPng. Only the two chat lines were removed.
 
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
         // Forms: /cb create <id> [<name>] [<url>] — id-only (name=id), +name, or +name+url (texture in one
@@ -191,9 +190,6 @@ public final class CreationCommands {
                 png = bgArgb != null ? ImageProcessor.fillBackground(png, bgArgb)
                         : BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode, CustomBlocksConfig.backgroundTolerance);
                 final byte[] finalPng = png;
-                // §5c heads-up if the picture is smaller than the block size (computed off-thread, shown below).
-                final String smallNote = ImageProcessor.smallSourceNote(raw, CustomBlocksConfig.textureSize);
-                final boolean flatChecker = CheckerboardDetector.isFlattened(raw); // G10-6: flattened-preview source?
                 server.execute(() -> {
                     try {
                         // Re-check on the server thread — the id could have been taken while downloading.
@@ -209,8 +205,6 @@ public final class CreationCommands {
                         UndoManager.recordCreate(actor(src), d);
                         if (postApply != null) postApply.accept(d); // studio shape/attrs before the rebuild
                         ResourcePackServer.updatePack();
-                        if (smallNote != null) Chat.info(src, smallNote); // §5c small-source heads-up
-                        if (flatChecker) Chat.info(src, FLAT_CHECKER_NOTE); // G10-6 heads-up
                         Chat.successWith(src, "Block \"" + id + "\"" + (name == null ? "" : " (\"" + name + "\")")
                                         + " created" + (CustomBlocksConfig.silentPack
                                         ? " — it'll show in a moment."
@@ -362,9 +356,6 @@ public final class CreationCommands {
                 // Restore a true black after the resize blends the edges (no-op when off).
                 png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode,
                         CustomBlocksConfig.backgroundTolerance);
-                // §5c heads-up if the picture is smaller than the block size (computed off-thread, shown below).
-                final String smallNote = ImageProcessor.smallSourceNote(raw, CustomBlocksConfig.textureSize);
-                final boolean flatChecker = CheckerboardDetector.isFlattened(raw); // G10-6: flattened-preview source?
                 TextureStore.save(index, png);
                 // Keep the ORIGINAL image so the block can later be re-rendered at a different
                 // texture size from real pixels (see the retexture-all NOTE on retexture()).
@@ -377,8 +368,6 @@ public final class CreationCommands {
                         if (cur != null && cur.isAnimated()) SlotManager.setAnim(id, AnimData.NONE); // still image → no animation
                         recordRetexture(src, beforeSlot, beforeTex, id, afterTex);
                         ResourcePackServer.updatePack();
-                        if (smallNote != null) Chat.info(src, smallNote); // §5c small-source heads-up
-                        if (flatChecker) Chat.info(src, FLAT_CHECKER_NOTE); // G10-6 heads-up
                         Chat.success(src, CustomBlocksConfig.silentPack
                                 ? "Texture applied to \"" + id + "\". It'll show on the block in a moment."
                                 : "Texture applied to \"" + id + "\" — accept the resource pack prompt to see it.");
