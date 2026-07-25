@@ -42,38 +42,27 @@ public final class BackgroundRemover {
     public static final String SMART  = "smart";   // offline subject isolation (Group 10 — pure Java)
 
     /**
-     * Player-facing strength 0-100 maps linearly onto CIE-LAB ΔE [0, MAX_DELTA_E]. Kept at 22
-     * (was 40): at 40, strength 55 = ΔE 22 ate a near-white subject only ~ΔE 13 from its gray
-     * background (Test 4 — the "6" vanished). 22 caps the strongest setting at a separation
-     * genuine subjects clear; truly low-contrast images still can't be split by colour alone.
+     * Player-facing strength 0-100 maps linearly onto a CIEDE2000 ΔE [0, MAX_DELTA_E].
+     *
+     * <p>Derivation (G10 §H Jar A, 2026-07-25, tools/render_preview/DeltaESweep.java): the old scale
+     * capped CIE76 at 22, so the default strength 30 split background from subject at CIE76 ≤ 6.6.
+     * Sweeping the ΔE00 threshold over every opaque pixel of the seven baseline pictures against
+     * that split gives a stability plateau at ΔE00 4.10-4.40 (≤ 0.024% of 21.97M pixels disagreeing,
+     * cliff at 4.80); the plateau centre 4.25 ÷ 0.30 = 14.2. The default strength therefore keeps
+     * meaning what it meant, and every other strength scales around it on the uniform metric.
      */
-    private static final double MAX_DELTA_E = 22.0;
-    /** Anti-fringe peel ceiling: never shave a pixel whose ΔE to the background already exceeds this
-     *  — it is clearly subject, not halo. Only bounds a long gentle slope; the gradient test is the
-     *  real gate. */
-    private static final double PEEL_CAP = 45.0;
-    /** Minimum ΔE a ring must descend toward the bg (vs the pixel just inside it) to count as feather
-     *  rather than flat subject. Keeps a solid pale edge from being mistaken for a halo. */
-    private static final double PEEL_MARGIN = 1.5;
-    /** Max anti-fringe peel passes = rim depth cap in px. The gradient test self-stops at the subject
-     *  body well before this on a clean edge; the cap only bounds a wide feather (e.g. a stock photo
-     *  cut out onto white with a soft glow). */
-    private static final int FRINGE_PASSES = 8;
+    private static final double MAX_DELTA_E = 14.2;
     /** Alpha below this counts as transparent → background. */
     private static final int OPAQUE_THRESHOLD = 128;
     private static final int BLACK = 0xFF000000;
     /** After resize, pixels with every channel ≤ this snap to pure black (kills bicubic gray halos). */
     private static final int SNAP_MAX = 24;
-    /** Recolour only — a leftover anti-alias pixel this dark (HSV value ≤) counts as the black ring
-     *  hugging the subject, not subject art, so the new fill colour may reach through it. */
-    private static final int RING_DARK_MAX = 80;
-    /** Recolour only — max passes the dark ring may grow inward = its depth cap in px. Bounds the
-     *  absorb so it can never chase a dark subject body, and self-stops at the first non-dark ring. */
-    private static final int RING_PASSES = 4;
-    /** Morphology guard floor: a pixel at least this far (ΔE) from the background colour is subject art
-     *  and is never swallowed by the Stage 1c close, however thin the feature is. Scales with the
-     *  player's strength (2× tol) so a loose setting still protects genuinely distinct colours. */
-    private static final double MORPH_GUARD_MIN_DE = 15.0;
+    /** Hysteresis ratio between the weak and strong background thresholds (weak = ratio × tol).
+     *  A weak pixel joins the background only by connecting to an already-accepted pixel, so an
+     *  edge survives its own momentary dips without the geometric close that ate thin features.
+     *  2:1 is Canny's recommended high:low threshold ratio (Canny 1986, §VI suggests 2:1-3:1);
+     *  the conservative end is taken because the flood expands regions, not thin edge chains. */
+    private static final double HYSTERESIS_RATIO = 2.0;
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
@@ -127,16 +116,13 @@ public final class BackgroundRemover {
 
             boolean[][] isBg = new boolean[w][h];
 
-            // ΔE of every pixel to the background colour — used by the morphology guard (Stage 1c) and
-            // the anti-fringe peel (Stage 2). Computed once; rgbToLab is the expensive part of this file.
-            double[][] dToBg = new double[w][h];
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    dToBg[x][y] = deltaE(rgbToLab(img.getRGB(x, y)), bgLab);
-                }
-            }
-
-            // Stage 1 — BFS flood-fill from every border pixel that matches the background.
+            // Stage 1 — hysteresis flood-fill (G10 §H). Seeds are border pixels that STRONGLY match
+            // the background (ΔE ≤ tol); the flood then also accepts WEAK pixels (ΔE ≤ 2·tol) that
+            // connect to an already-accepted one. A background edge survives its own near-tolerance
+            // dips — the hairline gaps the old geometric close existed to bridge — while a pixel
+            // plainly far from the background colour can never be swallowed, however thin the
+            // feature it sits on. That replaces both the close and its colour guard.
+            final double weakTol = tol * HYSTERESIS_RATIO;
             Queue<int[]> queue = new ArrayDeque<>();
             for (int x = 0; x < w; x++) {
                 seed(img, isBg, queue, x, 0, bgA, bgLab, tol);
@@ -151,7 +137,7 @@ public final class BackgroundRemover {
                 for (int[] d : DIRS) {
                     int nx = p[0] + d[0], ny = p[1] + d[1];
                     if (nx >= 0 && nx < w && ny >= 0 && ny < h && !isBg[nx][ny]
-                            && isBackground(img.getRGB(nx, ny), bgA, bgLab, tol)) {
+                            && isBackground(img.getRGB(nx, ny), bgA, bgLab, weakTol)) {
                         isBg[nx][ny] = true;
                         queue.add(new int[]{nx, ny});
                     }
@@ -178,24 +164,13 @@ public final class BackgroundRemover {
                 BgMask.absorbEnclosedPockets(isBg, pocket, w, h);
             }
 
-            // Stage 1c — despeckle the background mask. This is the fix for the old "tiny edge
-            // pixels block removal" bug, and it never touches the colour tolerance: a 1-pixel
-            // morphological close (dilate→erode) bridges the hairline gaps and pinhole specks that
-            // a near-tolerance pixel leaves behind and that wall off the flood-fill, then any tiny
-            // isolated foreground island left over is dropped into the background.
-            //
-            // The close is colour-GUARDED: a pixel whose colour is plainly not the background can never
-            // be swallowed by morphology. Without the guard the dilate step closes over any subject
-            // feature only 1-2 px wide (a thin outline, a small glyph stroke) and the erode cannot
-            // reopen it, so fine detail silently disappeared from the bake.
-            double guardDe = Math.max(tol * 2.0, MORPH_GUARD_MIN_DE);
-            boolean[][] protect = new boolean[w][h];
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    protect[x][y] = !isBg[x][y] && dToBg[x][y] > guardDe;
-                }
-            }
-            BgMask.despeckle(isBg, protect, w, h);
+            // Stage 1c — area opening (G10 §H): drop tiny isolated foreground islands into the
+            // background, judged by component SIZE, never by width. A long hair-thin outline is a
+            // large component and survives; an isolated speck of checker residue does not. The old
+            // guarded morphological close is gone — hysteresis above already bridges the
+            // near-tolerance gaps the close existed for, without geometry that could swallow a
+            // feature 1-2 px wide.
+            BgMask.despeckle(isBg, w, h);
 
             // Stage 1d (SMART only) — keep just the single largest connected subject and drop every
             // other free-floating foreground blob into the background. This is the offline "smart"
@@ -204,64 +179,28 @@ public final class BackgroundRemover {
             // a clear central subject far better than corners/flood alone.
             if (smart) BgMask.keepLargestForeground(isBg, w, h);
 
-            // Stage 2 — anti-fringe peel: shave the soft anti-aliased halo a photo carries against a
-            // flat page (a moon feathered onto white, say) WITHOUT eating a crisp subject edge. The
-            // gate is the edge SHAPE, not colour alone: peel an edge pixel only where the image is a
-            // gradient *descending toward the background* — this pixel is closer to the bg colour than
-            // the pixel just inside it. That climbs a feather ring by ring and stops dead at the flat
-            // subject body, however pale that body is (a flat light-grey logo edge isn't a descending
-            // gradient, so it keeps its 1-px anti-alias and no more). Distances are precomputed from
-            // the ORIGINAL pixels, so every pass reads the true gradient as the outer ring is removed;
-            // FRINGE_PASSES caps the rim depth, PEEL_CAP stops a long gentle slope being chased deep
-            // into a real subject. Skipped when the bg was transparent (no colour halo to shave).
-            if (bgA >= OPAQUE_THRESHOLD) {
-                BgMask.peelFringe(isBg, dToBg, w, h, FRINGE_PASSES, PEEL_CAP, PEEL_MARGIN);
-            }
-
-            // Stage 2e (RECOLOUR only — forcedFill set, e.g. the Triangle colour-variant tool) — absorb
-            // the leftover near-black anti-alias ring that hugs the subject so the NEW fill colour
-            // reaches the subject edge. Without this a thin black outline survives between the subject
-            // and the repainted background ("the triangle leaves black edges that don't recolour"): the
-            // flood-fill (tight tolerance) + gradient peel above don't always reach that ring. Guard:
-            // only NEAR-BLACK opaque pixels are eligible, and they are grown inward from the background
-            // a few passes only — bright subject art is never eaten (CLAUDE.md §7). Skipped for the
-            // smart-fill (retexture) path, which composites onto black where such a ring is invisible.
-            if (forcedFill != null) {
-                boolean[][] darkRing = new boolean[w][h];
-                for (int y = 0; y < h; y++) {
-                    for (int x = 0; x < w; x++) {
-                        int px = img.getRGB(x, y);
-                        if (((px >>> 24) & 0xFF) < OPAQUE_THRESHOLD) continue; // transparent → Stage 3 fills it
-                        int r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
-                        darkRing[x][y] = Math.max(r, Math.max(g, b)) <= RING_DARK_MAX;
-                    }
-                }
-                BgMask.growInto(isBg, darkRing, w, h, RING_PASSES);
-            }
+            // G10 §H Jar A — the anti-fringe peel and the recolour dark-ring absorb are DELETED, not
+            // kept "just in case". Both were compensations chasing the dark rim the old gamma-space
+            // blend painted along anti-aliased edges; the blend is fixed (LinearBlend), so the rim
+            // they chased no longer exists. Removal was reviewed as a golden diff — see the
+            // Jar A entry in PROGRESS_LOG.md for the evidence.
 
             // Background is always plain BLACK (owner: content is composed on black backgrounds, so the
             // subject reads on black as-is). The old smart dark-subject specials — the whole-bg WHITE FLIP
             // (Tux rectangle) and the thin WHITE KEYLINE (blobbed thin strokes / hid solid-dark subjects)
             // — are removed: no flip, no outline. The recolour path (forcedFill) keeps its own fill.
             int fill = forcedFill != null ? forcedFill : BLACK;
-            int fillR = (fill >> 16) & 0xFF, fillG = (fill >> 8) & 0xFF, fillB = fill & 0xFF;
 
             // Stage 3 — paint the background the base fill; flatten any leftover transparency to opaque,
-            // composited against that fill so anti-aliased edges resolve toward the background rather
-            // than washing out to gray.
+            // composited against that fill IN LINEAR LIGHT (G10 §H) so anti-aliased edges resolve toward
+            // the background without the dark rim a gamma-space blend draws against a dark fill.
             for (int y = 0; y < h; y++) {
                 for (int x = 0; x < w; x++) {
                     if (isBg[x][y]) { img.setRGB(x, y, fill); continue; }
                     int px = img.getRGB(x, y);
                     int a = (px >>> 24) & 0xFF;
                     if (a == 255) continue;             // already opaque
-                    if (a == 0) { img.setRGB(x, y, fill); continue; } // transparent, not bg → fill
-                    // out = src * (a/255) + fill * (1 - a/255)
-                    double fa = a / 255.0, fb = 1.0 - fa;
-                    int r = clamp255((int) Math.round(((px >> 16) & 0xFF) * fa + fillR * fb));
-                    int g = clamp255((int) Math.round(((px >> 8)  & 0xFF) * fa + fillG * fb));
-                    int b = clamp255((int) Math.round(( px        & 0xFF) * fa + fillB * fb));
-                    img.setRGB(x, y, 0xFF000000 | (r << 16) | (g << 8) | b);
+                    img.setRGB(x, y, LinearBlend.over(px, fill)); // transparent or mixed → fill/composite
                 }
             }
 
@@ -377,11 +316,7 @@ public final class BackgroundRemover {
                     int a = (px >>> 24) & 0xFF;
                     if (a != 255) { // flatten: composite onto the fill so the cutout layer never sees alpha
                         if (a == 0) { img.setRGB(x, y, target); continue; }
-                        double fa = a / 255.0, fb = 1.0 - fa;
-                        int cr = clamp255((int) Math.round(((px >> 16) & 0xFF) * fa + targetR * fb));
-                        int cg = clamp255((int) Math.round(((px >> 8)  & 0xFF) * fa + targetG * fb));
-                        int cb = clamp255((int) Math.round(( px        & 0xFF) * fa + targetB * fb));
-                        px = 0xFF000000 | (cr << 16) | (cg << 8) | cb;
+                        px = LinearBlend.over(px, target); // linear light — no dark rim against a dark fill
                         img.setRGB(x, y, px);
                     }
                     if (!snap) continue;
@@ -439,9 +374,7 @@ public final class BackgroundRemover {
         return out;
     }
 
-    private static int clamp255(int v) { return v < 0 ? 0 : Math.min(255, v); }
-
-    // ── CIE-LAB (sRGB → XYZ → L*a*b*, D65) + Euclidean ΔE — recycled verbatim ───
+    // ── CIE-LAB (sRGB → XYZ → L*a*b*, D65); distance is CIEDE2000 via CieDe2000 ───
     private static double[] rgbToLab(int argb) {
         double rF = ((argb >> 16) & 0xFF) / 255.0;
         double gF = ((argb >> 8)  & 0xFF) / 255.0;
@@ -466,7 +399,8 @@ public final class BackgroundRemover {
         return new double[]{(116.0 * y) - 16.0, 500.0 * (x - y), 200.0 * (y - z)};
     }
 
+    /** CIEDE2000 (G10 §H) — uniform across the palette, unlike the old Euclidean CIE76. */
     private static double deltaE(double[] a, double[] b) {
-        return Math.sqrt(Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2) + Math.pow(a[2] - b[2], 2));
+        return CieDe2000.of(a, b);
     }
 }

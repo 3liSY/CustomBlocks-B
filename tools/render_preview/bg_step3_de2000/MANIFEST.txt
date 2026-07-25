@@ -1,0 +1,52 @@
+# G10 §H golden baselines — background pipeline
+# texture size 512, default tolerance 30, fill #EE3333
+# picture | variant | out bytes | ms | sha256 | vs baseline
+1_transparent.png | off | 150860 | 467 | c851e40cff3d7faff44559d9bfbe84ec50bc3863108651527e44ae77f56e0c1b | identical
+1_transparent.png | edges | 142714 | 299 | 8d0b41757712b63e0c779b6d14c4715246c138068d3d236c70bcf726a8a451b2 | identical
+1_transparent.png | closed | 142714 | 372 | 8d0b41757712b63e0c779b6d14c4715246c138068d3d236c70bcf726a8a451b2 | identical
+1_transparent.png | smart | 145867 | 258 | 8f527255b912089b833605259d1fd33d1a90e6800c47b7f0ff44f35fd528372e | identical
+1_transparent.png | edges_fill | 145809 | 219 | cb78f290b9a65dba217437796964363c6733b6bf8ac15dd75492e72df7f9da5c | identical
+1_transparent.png | setbg | 143039 | 272 | 4d29235d47874d52b5dca8c60549c0584290b8e11e39cc1dd0c26a1783e2f265 | identical
+1_transparent.png | variant | 151504 | 220 | 04d0381ed7e4d76b4588da045feb4f04f5cff5e696201501623728f9fd8eb78b | identical
+2_chrome_logo.png | off | 128791 | 324 | ae12718b6593c674d9ce625adced0e582167a8a0c7346ce6b7854f167223198a | identical
+2_chrome_logo.png | edges | 126619 | 525 | dbe1f1812be2e4e13af47dd0b017a377893f7da3dc594e1527f6d535769df24e | 1388 px moved, max 128
+2_chrome_logo.png | closed | 126619 | 528 | dbe1f1812be2e4e13af47dd0b017a377893f7da3dc594e1527f6d535769df24e | 1388 px moved, max 128
+2_chrome_logo.png | smart | 128214 | 521 | bc5b51c7f5b8c9d68d6a36304be9069c27251583aed04567721179749aaaa080 | 1728 px moved, max 113
+2_chrome_logo.png | edges_fill | 128214 | 459 | bc5b51c7f5b8c9d68d6a36304be9069c27251583aed04567721179749aaaa080 | 1728 px moved, max 113
+2_chrome_logo.png | setbg | 127264 | 528 | db7c34cdbf1b2dbd1a98173cb3a39bdde794f90d4e0c51952f78379610084bf5 | 1416 px moved, max 109
+2_chrome_logo.png | variant | 129166 | 471 | f8a4b73507727a56ff20271b3ba568610e82ba66f01cacb73a74f7922d9b477a | 2241 px moved, max 109
+3_tux.png | off | 142575 | 66 | 8b18c2e4eeb79daffc65ef0104d22d8104557403529f059131de2e863da77096 | identical
+3_tux.png | edges | 121879 | 85 | 4eb7565413a27daf7921b1bf4621eb7fee28b99184f77fd3a328edf9d70d4632 | identical
+3_tux.png | closed | 121879 | 83 | 4eb7565413a27daf7921b1bf4621eb7fee28b99184f77fd3a328edf9d70d4632 | identical
+3_tux.png | smart | 142504 | 101 | 60f06f3564cf677cd543d25adf8d0446f02a79026477347201a7aebfbe60abeb | identical
+3_tux.png | edges_fill | 143818 | 80 | e22c53fce3d3f0f1d5787b10e8f50064f3584134f26a88a15b820f30dfb47443 | identical
+3_tux.png | setbg | 144162 | 102 | 97ec057c8074c4fb11a7d7cb5792f8e963925af1c1c6926fae5e5998e28f451e | identical
+3_tux.png | variant | 152461 | 140 | 0bdc7aea24c4eb53482506d527c92bc546e2fd1ba7a3fc77f04c1357c3e6acea | identical
+4_chrome_jpeg.jpg | off | 141654 | 127 | c6c4b9849bc588a5a6c66e9a67cf769531ea6dbc220a786978f1aec6e9f2b1fe | identical
+4_chrome_jpeg.jpg | edges | 138707 | 188 | 87a74a506d3d798df89b3378fcd5a851102d9306f189bee7b6567345d8d64110 | 1198 px moved, max 190
+4_chrome_jpeg.jpg | closed | 138707 | 201 | 87a74a506d3d798df89b3378fcd5a851102d9306f189bee7b6567345d8d64110 | 1198 px moved, max 190
+4_chrome_jpeg.jpg | smart | 140659 | 217 | 37f57f56b2d839204f1f0157e7a985fa0c6b6d7eeabfd786e3ba5f8fc90b1cea | 1893 px moved, max 175
+4_chrome_jpeg.jpg | edges_fill | 140659 | 186 | 37f57f56b2d839204f1f0157e7a985fa0c6b6d7eeabfd786e3ba5f8fc90b1cea | 1893 px moved, max 175
+4_chrome_jpeg.jpg | setbg | 139735 | 204 | 4f66df254c853f2da6d0d03f2f4a44a7f3f6d2af18b8eff54ebaa4592f02a7ae | 1501 px moved, max 248
+4_chrome_jpeg.jpg | variant | 143496 | 191 | 178cedf0dd4e2f788946071433c2a7242531b7acd5a2f047cc237e83be1f2871 | 2400 px moved, max 255
+5_periodic_table.png | off | 163920 | 1107 | e3f7419a118e854b527a5706091ac5612392100e45eb518e5e1a067c5946d03d | identical
+5_periodic_table.png | edges | 144020 | 13446 | 0f7303180c3d376732fb8ef6792ef187b6abe2ea0a3fa8044d607bc01d01da25 | 735 px moved, max 35
+5_periodic_table.png | closed | 143469 | 16434 | 7e4712b909c7e3074487a54944cdfc3defafa78813124402cdb5e945287431c9 | 703 px moved, max 35
+5_periodic_table.png | smart | 108695 | 14041 | 87b5a6851532882ffcbd4e4f13ef1ea3b29c32a536d60a933670ff4a30e985bd | identical
+5_periodic_table.png | edges_fill | 146967 | 13616 | 1a604b0b885984376e2fe3a860ce7eca43aa96b9506a88a65ac97ca91558eeeb | 1810 px moved, max 19
+5_periodic_table.png | setbg | 147802 | 14597 | 494afb48cf545309d9a087369f03c6c0cac4523e7a1a40a1e543eb33272a0dcf | 1997 px moved, max 150
+5_periodic_table.png | variant | 155070 | 14749 | 3b79ba7989921366e73ffd6b0e8c143dad97e0748e1f596e24a9ed7121b9e9a4 | 3834 px moved, max 150
+6_stripes.png | off | 3083 | 50 | adce1e0e614b75757a3b81ab6faf8a39d9c24fddc950ab34c88599baa5198264 | identical
+6_stripes.png | edges | 2995 | 370 | 671cb98454768928beb119c25d3547d5c2b9de4bbe1830a80051bd87ab2ec59e | 534 px moved, max 31
+6_stripes.png | closed | 2995 | 437 | 671cb98454768928beb119c25d3547d5c2b9de4bbe1830a80051bd87ab2ec59e | 534 px moved, max 31
+6_stripes.png | smart | 2328 | 475 | 479afe77f24c3294a4990586a0c5436fb0c8ba97d730211ce9dd2f45c9c474fd | 356 px moved, max 31
+6_stripes.png | edges_fill | 3155 | 344 | 7d6eadf0ab5fb32187dad05adeb1556326129e57cab8c121d806e91316eabe68 | 712 px moved, max 31
+6_stripes.png | setbg | 3083 | 368 | cec2ed071740123e210fbb83d64e108a4a1a694c608c0e2c31c5c18fc6bdf775 | 178 px moved, max 12
+6_stripes.png | variant | 3131 | 362 | 17c164eb2bcd2a928869ccfc2a063cad01c439d56e0dff7880ec7a4638c1cc63 | 712 px moved, max 30
+7_letter_o.jpg | off | 67722 | 215 | 4d768ce1c843baad51d792f6ed7f4d40b1d7917fb28d2d7f1f7a4522144cb238 | identical
+7_letter_o.jpg | edges | 51556 | 537 | a1f33c05dee6f8be8424324c4168767cba344b398d6c78c1e41f5f789aa92a34 | 2903 px moved, max 255
+7_letter_o.jpg | closed | 35961 | 569 | 746878cdcf6b6c22335d922a718f382e291f3f0520e0ceb12284fc9ad650e412 | 5587 px moved, max 255
+7_letter_o.jpg | smart | 33003 | 577 | 2b3b02a91e319f746f2cabf1a7c7c8a1cc78ef2caef83800b4a52645b373c452 | 6757 px moved, max 255
+7_letter_o.jpg | edges_fill | 54044 | 556 | 56f6fc6095274a6ee0c6cbe26c1435c190562a2b9f6faa8ced5fa8178cd3d5bd | 4074 px moved, max 255
+7_letter_o.jpg | setbg | 51491 | 556 | ba4f649d12e93b14e33e881416ee8e4f436e31eaca3e3a46e3fb5cce1dc8790c | 2981 px moved, max 238
+7_letter_o.jpg | variant | 55931 | 562 | 20ec12d62aa944a05bda44a53111a784ec49de341135fe4e77c1e0b444d74bc3 | 4724 px moved, max 238

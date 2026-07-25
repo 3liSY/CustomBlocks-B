@@ -130,18 +130,32 @@ public final class ImageProcessor {
      * semi-transparent pixel takes (some of) the background colour. Used by the Block Creation Studio's
      * "background colour" so a logo with transparent areas sits on a solid backdrop instead of replacing
      * the image. {@code bgArgb} should be fully opaque (0xFFrrggbb).
+     *
+     * <p>The blend runs in LINEAR LIGHT (G10 §H) — the old Graphics2D SrcOver composite mixed the
+     * transfer-encoded bytes, which darkens every semi-transparent edge pixel against a dark backdrop.
      */
     public static byte[] fillBackground(byte[] png, int bgArgb) throws Exception {
         BufferedImage src = ImageIO.read(new ByteArrayInputStream(png));
         if (src == null) throw new Exception("Could not read the texture to apply a background colour.");
-        BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g = out.createGraphics();
-        g.setColor(new java.awt.Color(0xFF000000 | (bgArgb & 0xFFFFFF), true));
-        g.fillRect(0, 0, out.getWidth(), out.getHeight());
-        g.drawImage(src, 0, 0, null);
-        g.dispose();
+        BufferedImage argb = src.getType() == BufferedImage.TYPE_INT_ARGB ? src : toArgbCopy(src);
+        BufferedImage out = new BufferedImage(argb.getWidth(), argb.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        int fill = bgArgb & 0xFFFFFF;
+        for (int y = 0; y < argb.getHeight(); y++) {
+            for (int x = 0; x < argb.getWidth(); x++) {
+                out.setRGB(x, y, LinearBlend.over(argb.getRGB(x, y), fill));
+            }
+        }
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
         ImageIO.write(out, "PNG", baos);
         return baos.toByteArray();
+    }
+
+    /** Redraw any decoded image type into TYPE_INT_ARGB so getRGB reads true per-pixel alpha. */
+    private static BufferedImage toArgbCopy(BufferedImage src) {
+        BufferedImage out = new BufferedImage(src.getWidth(), src.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        g.drawImage(src, 0, 0, null);
+        g.dispose();
+        return out;
     }
 }

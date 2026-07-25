@@ -5,9 +5,29 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 241 sessions · 2026-06-09 → 2026-07-25 · ✅ 44 confirmed · 🟡 152 built/pending · 📝 21 docs · ⛔ 7 reverted
+**At a glance:** 242 sessions · 2026-06-09 → 2026-07-25 · ✅ 44 confirmed · 🟡 153 built/pending · 📝 21 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
+
+---
+
+## G10 §H Jar A — colour-math correctness built: CIEDE2000, linear-light blending, hysteresis flood, area opening; peel + ring absorb deleted · 2026-07-25 (🟡 built, pending in-game)
+
+Second half of the same working day as the goldens session below; every change here was reviewed as a byte-level diff against those baselines (`BgGoldenPreview <in> <out> <baseline>`), stage by stage. `/cb tolerance` is untouched — its rip and the cascade are Jar B. Build green on JDK 21 (note: `gradlew` is a minimal `exec java` script that IGNORES `JAVA_HOME` — put the JDK 21 `bin` first on `PATH` instead).
+
+**New `image/CieDe2000.java`** implements Sharma-Wu-Dalal 2005 and passes all 34 published test pairs within 5e-5, symmetric (`tools/render_preview/CieDe2000Check.java` — run it after any edit to the formula). `BackgroundRemover.deltaE` now delegates to it.
+
+**`MAX_DELTA_E` re-derived 22 → 14.2** (`tools/render_preview/DeltaESweep.java`): the old default strength 30 split bg/subject at CIE76 ≤ 6.6; sweeping the ΔE00 threshold against that split over every opaque pixel of the 7 baselines gives a stability plateau 4.10-4.40 (≤ 0.024% of 21.97M px disagreeing, cliff at 4.80); plateau centre 4.25 ÷ 0.30 = 14.2. Default keeps its meaning; the scale under it becomes uniform.
+
+**New `image/LinearBlend.java`** (decode sRGB → mix by coverage → re-encode; 256-entry decode LUT). Wired at all three gamma-space fill-composite sites: `BackgroundRemover` Stage 3, the `snapBackgroundColor` flatten, and `ImageProcessor.fillBackground` (Graphics2D SrcOver replaced by an explicit loop). Golden diff footprint: ONLY pictures with genuine partial alpha moved (the glass-dice picture on every rail; Tux only on `off`, whose alpha now flattens at the snap); everything else byte-identical, max channel delta ~74 at half-coverage-over-black — the textbook gamma-blend error.
+
+**Hysteresis flood replaces the guarded morphological close** (G10 §H requirement): border seeds must match STRONG (ΔE ≤ tol); the flood then accepts WEAK pixels (≤ 2·tol, Canny's conservative high:low ratio) only by connectivity. `BgMask.despeckle` is now the pure area opening (`dropForegroundSpecks`); `morphClose`, its guard, and `MORPH_GUARD_MIN_DE` are gone. Tux proof: `edges` bake byte-identical, but `setbg`/`variant` recovered ~1-2k near-black outline pixels the close had been nibbling (invisible on black, visible on red).
+
+**Peel + ring absorb DELETED, evidence-first** (`FRINGE_PASSES`/`PEEL_CAP`/`PEEL_MARGIN`, `RING_DARK_MAX`/`RING_PASSES`, `BgMask.peelFringe`/`growInto`, plus the long-dead `dilateInto` from the removed keyline): with the blend fixed, deleting them showed **no fringe regression on any of the 7 pictures** and three clear wins — Tux keeps his full outline in variants, the periodic table's title/text stopped being eaten next to removed background (ring absorb was chewing 4 px into any dark art touching bg), and the JPEG chrome logo bakes clean. Also deleted the whole-image `dToBg` precompute (only guard + peel read it) — the 6000×3300 stress bake dropped ~11 s → ~4.5 s, paying back CIEDE2000's ~2.5× per-pixel cost with interest.
+
+**Owner-facing evidence:** `tools/render_preview/bg_jarA_final/` holds the full re-bake (9 of 49 bakes byte-identical to the goldens, the rest are the intended improvements) and `OWNER_BEFORE_AFTER.png` — Tux variant, periodic-table variant, chrome JPEG, before vs after.
+
+**Jar B reminders:** `snapBackgroundColor`'s `tolerance > 0` snap gate still exists (rip table); `SNAP_MAX`, corner sampling, pockets, `keepLargestForeground` untouched; recolour rails still substitute `tol : 30`— all Jar B scope. TG10 §H stays `Designed ⏳` (the cascade/bgpick/rip does not exist); only the TG verdict line was refreshed.
 
 ---
 

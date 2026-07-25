@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Six sections are confirmed; nothing is runnable now because §E is parked and §H is unbuilt, both waiting on `/cb tolerance` being replaced by automatic detection. |
+| **Verdict** | Six sections are confirmed; §H's colour-math groundwork is built and awaits in-game checking, while the tolerance rip and the cascade are still to be built. |
 | **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 75% |
 | **Last tested** | 2026-07-25 |
 | **Jar** | `customblocks-1.0.0.jar` |
