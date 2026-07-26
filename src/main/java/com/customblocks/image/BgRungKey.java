@@ -42,7 +42,7 @@ final class BgRungKey {
      * precisely what a JND measures. A background that needs a looser bar than human eyesight is not
      * a known key, and handing such a picture down to rung 3 is the correct outcome.
      */
-    private static final double JND = 2.3;
+    static final double JND = 2.3;
 
     /**
      * Fraction of one side's pixels that must read as the candidate tone for the border to count as

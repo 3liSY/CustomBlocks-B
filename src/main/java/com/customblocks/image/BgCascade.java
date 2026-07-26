@@ -94,10 +94,20 @@ final class BgCascade {
             declines.add("rung 2: keying " + keySource + " " + bad);
         }
 
-        // ── Rungs 3-4 — measurement and statistics ────────────────────────────────────────────
-        // Built in the following slices; until then the cascade honestly reports that it ran out of
+        // ── Rung 3 — boundary-connectivity saliency ───────────────────────────────────────────
+        boolean[][] salient = BgRungSaliency.mask(img, w, h);
+        if (salient == null) {
+            declines.add("rung 3: no area sits against the picture edge clearly enough to be the background");
+        } else {
+            String bad = BgQc.reject(salient, w, h);
+            if (bad == null) return new Result(salient, 3, "found the area wrapping the picture edge", false);
+            declines.add("rung 3: the wrapping area " + bad);
+        }
+
+        // ── Rung 4 — estimator ensemble ───────────────────────────────────────────────────────
+        // Built in the following slice; until then the cascade honestly reports that it ran out of
         // rungs rather than falling back on a threshold, which is the behaviour being replaced.
-        declines.add("rungs 3-4: not available yet");
+        declines.add("rung 4: not available yet");
 
         return new Result(null, 0, String.join("; ", declines), false);
     }

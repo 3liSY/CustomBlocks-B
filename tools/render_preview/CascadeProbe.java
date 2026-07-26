@@ -30,6 +30,8 @@ public final class CascadeProbe {
 
     public static void main(String[] args) throws Exception {
         File inDir = new File(args.length > 0 ? args[0] : "tools/render_preview/bg_in");
+        File maskDir = args.length > 1 ? new File(args[1]) : null;
+        if (maskDir != null) maskDir.mkdirs();
         File[] files = inDir.listFiles((d, n) -> {
             String s = n.toLowerCase();
             return s.endsWith(".png") || s.endsWith(".jpg") || s.endsWith(".jpeg");
@@ -63,6 +65,11 @@ public final class CascadeProbe {
             if (r.decided()) {
                 System.out.printf("  DECIDED by rung %d - %s%n", r.rung(), r.note());
                 System.out.printf("  background covers %.1f%% of the picture%n", coverage(r.mask(), w, h));
+                if (maskDir != null) {
+                    File png = new File(maskDir, strip(f.getName()) + "__rung" + r.rung() + ".png");
+                    ImageIO.write(overlay(img, r.mask(), w, h), "PNG", png);
+                    System.out.println("  mask -> " + png.getName());
+                }
             } else if (r.namedKeyAbsent()) {
                 System.out.println("  REFUSED - " + r.note());
             } else {
@@ -71,6 +78,24 @@ public final class CascadeProbe {
             }
             System.out.println("  " + ms + " ms\n");
         }
+    }
+
+    /** What the cascade decided, drawn so a human can check it: background tinted magenta, subject
+     *  left alone. Magenta because nothing in the baseline set contains it, so any tinted pixel is
+     *  unambiguously a mask decision rather than picture content. */
+    private static BufferedImage overlay(BufferedImage img, boolean[][] mask, int w, int h) {
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                out.setRGB(x, y, mask[x][y] ? 0xFF00FF : (img.getRGB(x, y) & 0xFFFFFF));
+            }
+        }
+        return out;
+    }
+
+    private static String strip(String name) {
+        int dot = name.lastIndexOf('.');
+        return dot < 0 ? name : name.substring(0, dot);
     }
 
     private static double coverage(boolean[][] mask, int w, int h) {
