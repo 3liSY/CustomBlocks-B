@@ -11,9 +11,9 @@
  * <p>Three guards stand between a vote and an accepted mask:
  * <ol>
  *   <li>outliers are dropped by z-score, and a majority of the five must survive;
- *   <li>the survivors must agree to within a JND — thresholds closer than that produce cuts nobody
- *       could tell apart, so they are the same answer; further apart they are genuinely different
- *       answers and there is no consensus to take;
+ *   <li>the survivors must agree, judged by consequence: the pixels lying between the lowest and
+ *       highest proposal must not add up to an area that counts, so whichever proposal you took the
+ *       mask would be the same;
  *   <li>the chosen value is the centre of the widest STABLE run inside the agreement band, not any
  *       one estimator's point, so the same picture re-saved or re-compressed lands on it again.
  * </ol>
@@ -23,7 +23,6 @@
  */
 package com.customblocks.image;
 
-import java.awt.image.BufferedImage;
 
 final class BgRungEnsemble {
 
@@ -72,15 +71,15 @@ final class BgRungEnsemble {
     private static final int MIN_SURVIVORS = 3;
 
     /** Rung 4's proposed mask, or {@code null} when the estimators do not reach a consensus. */
-    static boolean[][] mask(BufferedImage img, int w, int h) {
-        Integer ref = BgRungKey.borderTone(img, w, h);
+    static boolean[][] mask(int[] px, int w, int h) {
+        Integer ref = BgRungKey.borderTone(px, w, h);
         if (ref == null) return null;
 
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(ref));
         long[] hist = new long[BINS];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                double d = dist.of(img.getRGB(x, y));
+                double d = dist.of(px[y * w + x]);
                 if (d > FLOOR) hist[bin(d)]++;
             }
         }
@@ -101,7 +100,7 @@ final class BgRungEnsemble {
 
         int consensus = borda(kept);
         int cut = stablePlateauCentre(hist, lo, hi, consensus);
-        return BgRungKey.regionWalk(img, w, h, ref, deltaE(cut));
+        return BgRungKey.regionWalk(px, w, h, ref, deltaE(cut));
     }
 
     /**

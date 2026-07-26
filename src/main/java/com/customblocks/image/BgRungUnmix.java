@@ -33,7 +33,6 @@
  */
 package com.customblocks.image;
 
-import java.awt.image.BufferedImage;
 
 final class BgRungUnmix {
 
@@ -61,14 +60,33 @@ final class BgRungUnmix {
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
-     * Subject coverage per pixel, 0-255: 0 is entirely background, 255 entirely subject, and values
-     * between are the band's real fractional coverage. Away from the boundary this is exactly the
-     * binary mask; only the band is refined.
+     * Smallest coverage worth keeping. Below 1/255 the subject's contribution cannot be represented in
+     * an 8-bit channel at all, so the pixel is simply background — and recovering a subject colour
+     * from a coverage that small would divide by near-zero and amplify noise into an arbitrary colour.
      */
-    static int[][] refine(BufferedImage img, boolean[][] isBg, int w, int h) {
-        int[][] alpha = new int[w][h];
-        for (int x = 0; x < w; x++) {
-            for (int y = 0; y < h; y++) alpha[x][y] = isBg[x][y] ? 0 : 255;
+    private static final double MIN_COVERAGE = 1.0 / 255.0;
+
+    /**
+     * The picture re-expressed as {@code ARGB} where the ALPHA channel is subject coverage (0 entirely
+     * background, 255 entirely subject) and the RGB is the subject's OWN colour with the background
+     * mixed back out of it.
+     *
+     * <p>Returning the recovered colour matters as much as the coverage. A band pixel's stored colour
+     * is a mixture that already contains the old background; compositing that mixture onto a new fill
+     * would lay the old background over the new one and leave a halo of the original colour tracing
+     * every edge — the classic matting error. Solving {@code F = (P - (1-a)B) / a} first, then
+     * compositing F at coverage {@code a}, replaces the old background instead of layering over it.
+     *
+     * <p>The result is shaped so {@link LinearBlend#over} consumes it directly: coverage is already in
+     * the alpha channel, where that method expects its mix weight.
+     */
+    static int[] refine(int[] px, boolean[][] isBg, int w, int h) {
+        int[] out = new int[w * h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int rgb = px[y * w + x] & 0xFFFFFF;
+                out[y * w + x] = isBg[x][y] ? rgb : (0xFF000000 | rgb);
+            }
         }
 
         boolean[][] band = band(isBg, w, h);
@@ -76,8 +94,8 @@ final class BgRungUnmix {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 if (!band[x][y]) continue;
-                double[] bg = solidMean(img, isBg, band, w, h, x, y, true);
-                double[] fg = solidMean(img, isBg, band, w, h, x, y, false);
+                double[] bg = solidMean(px, isBg, band, w, h, x, y, true);
+                double[] fg = solidMean(px, isBg, band, w, h, x, y, false);
                 if (bg == null || fg == null) continue; // nothing to interpolate between — keep the mask
 
                 // Indistinguishable endpoints make the projection meaningless: dividing by a
@@ -85,17 +103,23 @@ final class BgRungUnmix {
                 if (CieDe2000.of(BackgroundRemover.rgbToLab(pack(fg)),
                                  BackgroundRemover.rgbToLab(pack(bg))) <= BgRungKey.JND) continue;
 
-                int px = img.getRGB(x, y);
-                double pr = LinearBlend.toLinear(px >> 16), pg = LinearBlend.toLinear(px >> 8),
-                       pb = LinearBlend.toLinear(px);
+                int p = px[y * w + x];
+                double pr = LinearBlend.toLinear(p >> 16), pg = LinearBlend.toLinear(p >> 8),
+                       pb = LinearBlend.toLinear(p);
                 double dr = fg[0] - bg[0], dg = fg[1] - bg[1], db = fg[2] - bg[2];
                 double denom = dr * dr + dg * dg + db * db;
                 if (denom <= 0) continue;
                 double a = ((pr - bg[0]) * dr + (pg - bg[1]) * dg + (pb - bg[2]) * db) / denom;
-                alpha[x][y] = (int) Math.round(255.0 * Math.max(0.0, Math.min(1.0, a)));
+                a = Math.max(0.0, Math.min(1.0, a));
+                if (a < MIN_COVERAGE) { out[y * w + x] = p & 0xFFFFFF; continue; } // background
+                int fr = encode((pr - (1 - a) * bg[0]) / a);
+                int fgn = encode((pg - (1 - a) * bg[1]) / a);
+                int fb = encode((pb - (1 - a) * bg[2]) / a);
+                int cov = (int) Math.round(255.0 * a);
+                out[y * w + x] = (cov << 24) | (fr << 16) | (fgn << 8) | fb;
             }
         }
-        return alpha;
+        return out;
     }
 
     /** Pixels within {@link #BAND_RADIUS} of the mask boundary, on either side of it. */
@@ -142,7 +166,7 @@ final class BgRungUnmix {
      * on purpose: they are the mixtures being solved for, so averaging them in would make the
      * endpoints drift toward the answer.
      */
-    private static double[] solidMean(BufferedImage img, boolean[][] isBg, boolean[][] band,
+    private static double[] solidMean(int[] px, boolean[][] isBg, boolean[][] band,
                                       int w, int h, int cx, int cy, boolean wantBg) {
         double r = 0, g = 0, b = 0;
         int n = 0;
@@ -151,10 +175,10 @@ final class BgRungUnmix {
         for (int y = y0; y <= y1; y++) {
             for (int x = x0; x <= x1; x++) {
                 if (band[x][y] || isBg[x][y] != wantBg) continue;
-                int px = img.getRGB(x, y);
-                r += LinearBlend.toLinear(px >> 16);
-                g += LinearBlend.toLinear(px >> 8);
-                b += LinearBlend.toLinear(px);
+                int p = px[y * w + x];
+                r += LinearBlend.toLinear(p >> 16);
+                g += LinearBlend.toLinear(p >> 8);
+                b += LinearBlend.toLinear(p);
                 n++;
             }
         }

@@ -22,7 +22,6 @@
  */
 package com.customblocks.image;
 
-import java.awt.image.BufferedImage;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Map;
@@ -59,19 +58,19 @@ final class BgRungKey {
      * of that tone within a JND. Requiring all four sides is what separates a background from a large
      * flat area of the subject that happens to touch one edge.
      */
-    static Integer flatBorderTone(BufferedImage img, int w, int h) {
-        Integer candidate = borderTone(img, w, h);
+    static Integer flatBorderTone(int[] px, int w, int h) {
+        Integer candidate = borderTone(px, w, h);
         if (candidate == null) return null;
 
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(candidate));
         int topHits = 0, bottomHits = 0, leftHits = 0, rightHits = 0;
         for (int x = 0; x < w; x++) {
-            if (dist.of(img.getRGB(x, 0)) <= JND) topHits++;
-            if (dist.of(img.getRGB(x, h - 1)) <= JND) bottomHits++;
+            if (dist.of(px[x]) <= JND) topHits++;
+            if (dist.of(px[(h - 1) * w + x]) <= JND) bottomHits++;
         }
         for (int y = 0; y < h; y++) {
-            if (dist.of(img.getRGB(0, y)) <= JND) leftHits++;
-            if (dist.of(img.getRGB(w - 1, y)) <= JND) rightHits++;
+            if (dist.of(px[y * w]) <= JND) leftHits++;
+            if (dist.of(px[y * w + w - 1]) <= JND) rightHits++;
         }
         boolean allSides = topHits > w * SIDE_MAJORITY && bottomHits > w * SIDE_MAJORITY
                 && leftHits > h * SIDE_MAJORITY && rightHits > h * SIDE_MAJORITY;
@@ -83,15 +82,15 @@ final class BgRungKey {
      * accepts it once the four-side majority test above passes; rung 4, which is allowed to be less
      * certain, uses it as the reference colour its histogram measures distance from.
      */
-    static Integer borderTone(BufferedImage img, int w, int h) {
+    static Integer borderTone(int[] px, int w, int h) {
         Map<Integer, Integer> tally = new HashMap<>();
         for (int x = 0; x < w; x++) {
-            tally.merge(img.getRGB(x, 0) | 0xFF000000, 1, Integer::sum);
-            tally.merge(img.getRGB(x, h - 1) | 0xFF000000, 1, Integer::sum);
+            tally.merge(px[x] | 0xFF000000, 1, Integer::sum);
+            tally.merge(px[(h - 1) * w + x] | 0xFF000000, 1, Integer::sum);
         }
         for (int y = 1; y < h - 1; y++) {
-            tally.merge(img.getRGB(0, y) | 0xFF000000, 1, Integer::sum);
-            tally.merge(img.getRGB(w - 1, y) | 0xFF000000, 1, Integer::sum);
+            tally.merge(px[y * w] | 0xFF000000, 1, Integer::sum);
+            tally.merge(px[y * w + w - 1] | 0xFF000000, 1, Integer::sum);
         }
         Integer candidate = null;
         int best = -1;
@@ -106,13 +105,13 @@ final class BgRungKey {
      * stray pixels, judged by the same geometric floor the QC gate uses. This is what lets a
      * {@code /cb bgpick} colour that matches nothing be refused out loud.
      */
-    static boolean present(BufferedImage img, int w, int h, int key) {
+    static boolean present(int[] px, int w, int h, int key) {
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(key));
         long floor = BgQc.areaFloor(w, h);
         long hits = 0;
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (dist.of(img.getRGB(x, y)) <= JND && ++hits > floor) return true;
+                if (dist.of(px[y * w + x]) <= JND && ++hits > floor) return true;
             }
         }
         return false;
@@ -122,8 +121,8 @@ final class BgRungKey {
      * Rung 2's proposed mask: flood inward from every border pixel matching {@code key}, then absorb
      * enclosed pockets of the key colour that are thick enough to be real areas.
      */
-    static boolean[][] mask(BufferedImage img, int w, int h, int key) {
-        return regionWalk(img, w, h, key, JND);
+    static boolean[][] mask(int[] px, int w, int h, int key) {
+        return regionWalk(px, w, h, key, JND);
     }
 
     /**
@@ -133,25 +132,25 @@ final class BgRungKey {
      * threshold its estimators derived. One walk serves both so the region-versus-pixel rule and the
      * pocket thickness gate cannot drift apart between rungs.
      */
-    static boolean[][] regionWalk(BufferedImage img, int w, int h, int key, double tol) {
+    static boolean[][] regionWalk(int[] px, int w, int h, int key, double tol) {
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(key));
         boolean[][] isBg = new boolean[w][h];
         Queue<int[]> queue = new ArrayDeque<>();
 
         for (int x = 0; x < w; x++) {
-            seed(img, isBg, queue, x, 0, dist, tol);
-            seed(img, isBg, queue, x, h - 1, dist, tol);
+            seed(px, w, isBg, queue, x, 0, dist, tol);
+            seed(px, w, isBg, queue, x, h - 1, dist, tol);
         }
         for (int y = 1; y < h - 1; y++) {
-            seed(img, isBg, queue, 0, y, dist, tol);
-            seed(img, isBg, queue, w - 1, y, dist, tol);
+            seed(px, w, isBg, queue, 0, y, dist, tol);
+            seed(px, w, isBg, queue, w - 1, y, dist, tol);
         }
         while (!queue.isEmpty()) {
             int[] p = queue.poll();
             for (int[] d : DIRS) {
                 int nx = p[0] + d[0], ny = p[1] + d[1];
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h || isBg[nx][ny]) continue;
-                if (dist.of(img.getRGB(nx, ny)) > tol) continue;
+                if (dist.of(px[ny * w + nx]) > tol) continue;
                 isBg[nx][ny] = true;
                 queue.add(new int[]{nx, ny});
             }
@@ -160,16 +159,16 @@ final class BgRungKey {
         boolean[][] pocket = new boolean[w][h];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (!isBg[x][y] && dist.of(img.getRGB(x, y)) <= tol) pocket[x][y] = true;
+                if (!isBg[x][y] && dist.of(px[y * w + x]) <= tol) pocket[x][y] = true;
             }
         }
         BgMask.absorbEnclosedPockets(isBg, pocket, w, h);
         return isBg;
     }
 
-    private static void seed(BufferedImage img, boolean[][] isBg, Queue<int[]> q,
+    private static void seed(int[] px, int w, boolean[][] isBg, Queue<int[]> q,
                              int x, int y, BgDist dist, double tol) {
-        if (!isBg[x][y] && dist.of(img.getRGB(x, y)) <= tol) {
+        if (!isBg[x][y] && dist.of(px[y * w + x]) <= tol) {
             isBg[x][y] = true;
             q.add(new int[]{x, y});
         }

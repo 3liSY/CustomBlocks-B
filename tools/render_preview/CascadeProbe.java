@@ -72,7 +72,7 @@ public final class CascadeProbe {
                 long soft = 0;
                 for (int x = 0; x < w; x++) {
                     for (int y = 0; y < h; y++) {
-                        int a = r.alpha()[x][y];
+                        int a = (r.unmixed()[y * w + x] >>> 24) & 0xFF;
                         if (a > 0 && a < 255) soft++;
                     }
                 }
@@ -81,7 +81,7 @@ public final class CascadeProbe {
                 if (maskDir != null) {
                     File png = new File(maskDir, strip(f.getName()) + "__rung" + r.rung() + ".png");
                     ImageIO.write(overlay(img, r.mask(), w, h), "PNG", png);
-                    ImageIO.write(greyscale(r.alpha(), w, h), "PNG",
+                    ImageIO.write(greyscale(r.unmixed(), w, h), "PNG",
                             new File(maskDir, strip(f.getName()) + "__coverage.png"));
                     System.out.println("  mask -> " + png.getName());
                 }
@@ -97,7 +97,7 @@ public final class CascadeProbe {
             // ensemble's own answer would otherwise never be seen on real content — only on the
             // synthetic histograms of BgThresholdsCheck. Diagnostic only; it is not what the mod bakes.
             dumpEnsembleVotes(img, w, h);
-            boolean[][] r4 = BgRungEnsemble.mask(img, w, h);
+            boolean[][] r4 = BgRungEnsemble.mask(img.getRGB(0, 0, w, h, null, 0, w), w, h);
             if (r4 == null) {
                 System.out.println("  [rung 4 alone] no consensus");
             } else {
@@ -119,14 +119,15 @@ public final class CascadeProbe {
      * so if the rung's own binning ever changes this must be updated alongside it.
      */
     private static void dumpEnsembleVotes(BufferedImage img, int w, int h) {
-        Integer ref = BgRungKey.borderTone(img, w, h);
+        Integer ref = BgRungKey.borderTone(img.getRGB(0, 0, w, h, null, 0, w), w, h);
         if (ref == null) { System.out.println("  [rung 4 votes] no border tone"); return; }
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(ref));
+        final int[] raster = img.getRGB(0, 0, w, h, null, 0, w);
         final double floor = BgRungKey.JND;
         long[] hist = new long[256];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                double d = dist.of(img.getRGB(x, y));
+                double d = dist.of(raster[y * w + x]);
                 if (d <= floor) continue;
                 int b = (int) ((d - floor) / (100.0 - floor) * 256);
                 hist[Math.max(0, Math.min(255, b))]++;
@@ -159,11 +160,11 @@ public final class CascadeProbe {
 
     /** Rung 5's coverage as greyscale: white is fully subject, black fully background, and the grey
      *  fringe between them is the fractional coverage a binary mask has to throw away. */
-    private static BufferedImage greyscale(int[][] alpha, int w, int h) {
+    private static BufferedImage greyscale(int[] unmixed, int w, int h) {
         BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                int a = alpha[x][y];
+                int a = (unmixed[y * w + x] >>> 24) & 0xFF;
                 out.setRGB(x, y, (a << 16) | (a << 8) | a);
             }
         }

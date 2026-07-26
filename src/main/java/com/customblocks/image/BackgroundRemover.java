@@ -100,126 +100,49 @@ public final class BackgroundRemover {
         return process(input, m, tolerance, 0xFF000000 | (fillRgb & 0xFFFFFF));
     }
 
-    /** Shared pipeline: detect the background, then paint it {@code forcedFill} (or smart fill when null). */
+    /**
+     * Shared pipeline: decide the background with the cascade, then paint it {@code forcedFill}
+     * (or plain black when null).
+     *
+     * <p>G10 §H: the removal threshold is no longer supplied by the player. Everything the old
+     * hysteresis flood did from a 0-100 strength — seeding from the border, growing by colour,
+     * absorbing enclosed pockets, shaving the edge — now happens inside BgCascade, which derives what
+     * it needs from the picture and reports honestly when it cannot. The {@code tolerance} parameter is
+     * therefore ignored on this path and is removed from every signature in the following slice.
+     *
+     * <p>When the cascade declines, the ORIGINAL bytes are returned. That is the designed outcome, not
+     * a failure: a picture the cascade will not damage on a guess bakes unchanged, and the player is
+     * pointed at {@code /cb bgpick} to supply the one fact that was missing.
+     */
     private static byte[] process(byte[] input, String mode, int tolerance, Integer forcedFill) {
         input = CheckerboardDetector.flattenToBlack(input); // G10-6: flattened-preview checkerboard → black in EVERY mode (no-op otherwise)
         String m = normalize(mode);
-        final boolean smart = SMART.equals(m);
-        if (NONE.equals(m)) return input; // off
-        // Smart mode auto-picks a sensible strength when none is given; the classic modes need one.
-        int effTol = tolerance > 0 ? tolerance : (smart ? 35 : 0);
-        if (effTol <= 0) return input; // off
-        // Map the player-facing 0-100 strength onto a CIE-LAB ΔE distance.
-        final double tol = Math.max(0, Math.min(100, effTol)) / 100.0 * MAX_DELTA_E;
+        if (NONE.equals(m)) return input; // Off — honoured on a normal bake
         try {
             BufferedImage src = ImageIO.read(new ByteArrayInputStream(input));
             if (src == null) return input; // unreadable here → let toBlockPng surface the real error
             int w = src.getWidth(), h = src.getHeight();
             BufferedImage img = toArgb(src);
 
-            int bgArgb = sampleCornerBackground(img, w, h);
-            int bgA = (bgArgb >>> 24) & 0xFF;
-            double[] bgLab = rgbToLab(bgArgb);
-            BgDist dist = new BgDist(bgLab);
+            BgCascade.Result decision = BgCascade.decide(input, img, w, h, null);
+            if (!decision.decided()) return input; // no rung could support an answer — leave it alone
 
-            boolean[][] isBg = new boolean[w][h];
-
-            // Stage 1 — hysteresis flood-fill (G10 §H). Seeds are border pixels that STRONGLY match
-            // the background (ΔE ≤ tol); the flood then also accepts WEAK pixels (ΔE ≤ 2·tol) that
-            // connect to an already-accepted one, but a weak RUN is capped at WEAK_MAX_RUN px — the
-            // tier bridges hairline gaps the way the old radius-1 close did, and touching strong
-            // ground resets the run. A background edge survives its own near-tolerance dips, a pixel
-            // plainly far from the background can never be swallowed, and the flood cannot tunnel
-            // region-deep through the sub-threshold noise gaps of a JPEG shadow.
-            final double weakTol = tol * HYSTERESIS_RATIO;
-            byte[][] weakRun = new byte[w][h]; // 0 for strong/unvisited; weak pixels carry their run length
-            Queue<int[]> queue = new ArrayDeque<>();
-            for (int x = 0; x < w; x++) {
-                seed(img, isBg, queue, x, 0, bgA, dist, tol);
-                seed(img, isBg, queue, x, h - 1, bgA, dist, tol);
+            // Paint the background the base fill and composite the edge band's real coverage onto it,
+            // IN LINEAR LIGHT (G10 §H) so anti-aliased edges resolve toward the background without the
+            // dark rim a gamma-space blend draws against a dark fill. The cascade has already mixed the
+            // old background out of those edge pixels, so this lays the subject on the NEW fill rather
+            // than over the old colour — which is what stops a halo of the original background tracing
+            // the subject.
+            final int fill = forcedFill != null ? forcedFill : BLACK;
+            // Composited in place and written back in ONE bulk call. Per-pixel setRGB goes through the
+            // colour model on every call, which on a multi-megapixel picture costs several times the
+            // composite itself; the coverage grid is already a private array, so it doubles as the
+            // output buffer and no extra allocation is needed.
+            final int[] composited = decision.unmixed();
+            for (int i = 0; i < composited.length; i++) {
+                composited[i] = LinearBlend.over(composited[i], fill);
             }
-            for (int y = 1; y < h - 1; y++) {
-                seed(img, isBg, queue, 0, y, bgA, dist, tol);
-                seed(img, isBg, queue, w - 1, y, bgA, dist, tol);
-            }
-            while (!queue.isEmpty()) {
-                int[] p = queue.poll();
-                int run = weakRun[p[0]][p[1]];
-                for (int[] d : DIRS) {
-                    int nx = p[0] + d[0], ny = p[1] + d[1];
-                    if (nx < 0 || nx >= w || ny < 0 || ny >= h || isBg[nx][ny]) continue;
-                    int px = img.getRGB(nx, ny);
-                    if (isBackground(px, bgA, dist, tol)) {          // strong — always joins, resets the run
-                        isBg[nx][ny] = true;
-                        queue.add(new int[]{nx, ny});
-                    } else if (run < WEAK_MAX_RUN && isBackground(px, bgA, dist, weakTol)) {
-                        isBg[nx][ny] = true;
-                        weakRun[nx][ny] = (byte) (run + 1);
-                        queue.add(new int[]{nx, ny});
-                    }
-                }
-            }
-
-            // Stage 1b (CLOSED + SMART) — absorb background-coloured POCKETS the edge flood cannot reach:
-            // the hole inside a letter "O", the gap between two glyphs. This used to be a plain per-pixel
-            // colour key over the whole image, which is why "BgRemove&More" ate into artwork — every dark
-            // shading pixel inside a subject matches a dark background colour, so a chrome logo's shadow
-            // lines were deleted and the repainted background showed straight through the subject. A
-            // pocket is a REGION, not a colour, so the pixels are grouped into connected components and a
-            // component is only absorbed when it is thick enough to be a real enclosed area rather than a
-            // hairline of subject shading (BgMask.absorbEnclosedPockets).
-            if (CLOSED.equals(m) || smart) {
-                boolean[][] pocket = new boolean[w][h];
-                for (int y = 0; y < h; y++) {
-                    for (int x = 0; x < w; x++) {
-                        if (!isBg[x][y] && isBackground(img.getRGB(x, y), bgA, dist, tol)) {
-                            pocket[x][y] = true;
-                        }
-                    }
-                }
-                BgMask.absorbEnclosedPockets(isBg, pocket, w, h);
-            }
-
-            // Stage 1c — area opening (G10 §H): drop tiny isolated foreground islands into the
-            // background, judged by component SIZE, never by width. A long hair-thin outline is a
-            // large component and survives; an isolated speck of checker residue does not. The old
-            // guarded morphological close is gone — hysteresis above already bridges the
-            // near-tolerance gaps the close existed for, without geometry that could swallow a
-            // feature 1-2 px wide.
-            BgMask.despeckle(isBg, w, h);
-
-            // Stage 1d (SMART only) — keep just the single largest connected subject and drop every
-            // other free-floating foreground blob into the background. This is the offline "smart"
-            // win: a busy/cluttered background that the colour flood can't fully reach is removed
-            // because only the main subject survives. Pure heuristic — never neural — but it isolates
-            // a clear central subject far better than corners/flood alone.
-            if (smart) BgMask.keepLargestForeground(isBg, w, h);
-
-            // Stage 2 — anti-fringe peel (BgFringe): shave the descending-gradient halo a SOURCE
-            // image carries against its own flat background, without eating a crisp subject edge.
-            // Skipped when the bg was transparent (no colour halo to shave).
-            if (bgA >= OPAQUE_THRESHOLD) {
-                BgFringe.peel(img, isBg, dist, w, h);
-            }
-
-            // Background is always plain BLACK (owner: content is composed on black backgrounds, so the
-            // subject reads on black as-is). The old smart dark-subject specials — the whole-bg WHITE FLIP
-            // (Tux rectangle) and the thin WHITE KEYLINE (blobbed thin strokes / hid solid-dark subjects)
-            // — are removed: no flip, no outline. The recolour path (forcedFill) keeps its own fill.
-            int fill = forcedFill != null ? forcedFill : BLACK;
-
-            // Stage 3 — paint the background the base fill; flatten any leftover transparency to opaque,
-            // composited against that fill IN LINEAR LIGHT (G10 §H) so anti-aliased edges resolve toward
-            // the background without the dark rim a gamma-space blend draws against a dark fill.
-            for (int y = 0; y < h; y++) {
-                for (int x = 0; x < w; x++) {
-                    if (isBg[x][y]) { img.setRGB(x, y, fill); continue; }
-                    int px = img.getRGB(x, y);
-                    int a = (px >>> 24) & 0xFF;
-                    if (a == 255) continue;             // already opaque
-                    img.setRGB(x, y, LinearBlend.over(px, fill)); // transparent or mixed → fill/composite
-                }
-            }
+            img.setRGB(0, 0, w, h, composited, 0, w);
 
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             ImageIO.write(img, "PNG", out);

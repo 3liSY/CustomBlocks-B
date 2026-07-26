@@ -18,8 +18,6 @@
  */
 package com.customblocks.image;
 
-import java.awt.image.BufferedImage;
-
 final class BgRungAlpha {
 
     private BgRungAlpha() {} // static-only
@@ -33,18 +31,25 @@ final class BgRungAlpha {
      * Rung 1's proposed mask, or {@code null} when the file's alpha carries no information.
      * A pixel is background where its alpha falls below the project's opacity cutoff.
      */
-    static boolean[][] mask(BufferedImage img, int w, int h) {
-        final int first = (img.getRGB(0, 0) >>> 24) & 0xFF;
+    static boolean[][] mask(int[] px, int w, int h) {
+        // Cheap pass first: a constant alpha channel is the common case (every JPEG, every opaque PNG),
+        // and finding out costs one scan with no allocation. Only a file that actually varies pays for
+        // the mask array — which on a large picture is megabytes.
+        final int first = px[0] >>> 24;
         boolean varies = false;
+        for (int i = 0; i < px.length; i++) {
+            if ((px[i] >>> 24) != first) { varies = true; break; }
+        }
+        if (!varies) return null; // a single constant alpha is not authored intent
+
         boolean[][] mask = new boolean[w][h];
         for (int y = 0; y < h; y++) {
+            int row = y * w;
             for (int x = 0; x < w; x++) {
-                int a = (img.getRGB(x, y) >>> 24) & 0xFF;
-                if (a != first) varies = true;
-                mask[x][y] = a < BackgroundRemover.OPAQUE_THRESHOLD;
+                mask[x][y] = ((px[row + x] >>> 24) & 0xFF) < BackgroundRemover.OPAQUE_THRESHOLD;
             }
         }
-        return varies ? mask : null; // a single constant alpha is not authored intent
+        return mask;
     }
 
     /**

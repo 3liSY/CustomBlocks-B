@@ -7,7 +7,7 @@
  * past it, distances are computed directly; outputs are identical with any cap value.
  *
  * Depends on: CieDe2000, BackgroundRemover.rgbToLab (the project's one sRGB→Lab).
- * Called by:  image/BackgroundRemover (flood, pockets), image/BgFringe (peel).
+ * Called by:  image/BgRungKey (region walk, pockets), image/BgRungSaliency, image/BgRungEnsemble.
  */
 package com.customblocks.image;
 

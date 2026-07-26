@@ -24,7 +24,6 @@
  */
 package com.customblocks.image;
 
-import java.awt.image.BufferedImage;
 import java.util.HashMap;
 
 final class BgRungSaliency {
@@ -60,12 +59,10 @@ final class BgRungSaliency {
     private static final int LAB_CAP = 1 << 17;
 
     /** Rung 3's proposed mask, or {@code null} when the layout does not separate cleanly. */
-    static boolean[][] mask(BufferedImage img, int w, int h) {
+    static boolean[][] mask(int[] px, int w, int h) {
         final int n = w * h;
         int[] argb = new int[n];
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) argb[y * w + x] = img.getRGB(x, y) | 0xFF000000;
-        }
+        for (int i = 0; i < n; i++) argb[i] = px[i] | 0xFF000000;
 
         int[] label = new int[n];
         java.util.Arrays.fill(label, -1);
@@ -89,11 +86,11 @@ final class BgRungSaliency {
             stack[top++] = start;
             while (top > 0) {
                 int p = stack[--top];
-                int px = p % w, py = p / w;
+                int cx = p % w, cy = p / w;
                 area[id]++;
-                if (px == 0 || py == 0 || px == w - 1 || py == h - 1) onBorder[id]++;
+                if (cx == 0 || cy == 0 || cx == w - 1 || cy == h - 1) onBorder[id]++;
                 for (int[] d : DIRS) {
-                    int nx = px + d[0], ny = py + d[1];
+                    int nx = cx + d[0], ny = cy + d[1];
                     if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
                     int q = ny * w + nx;
                     if (label[q] >= 0) continue;

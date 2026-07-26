@@ -76,8 +76,8 @@ All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehav
 | --- | --- |
 | **Check** | Backgrounds come off with no strength setting anywhere, and an unsure result says so instead of damaging the picture. |
 | **Pass rule** | Every row passes with no number typed anywhere. |
-| **Pass mark** | ⏳ being built — all 5 rungs exist, nothing wired in yet |
-| **Blocked** | Not testable until the detector replaces the knob; `/cb tolerance` still answers in this jar by design. |
+| **Pass mark** | ⏳ detector now does the removing; knob still present, `/cb bgpick` not built |
+| **Blocked** | The HB1-HB8 knob rows and HB22-HB25 `/cb bgpick` rows need the remaining slices. |
 
 **The knob is gone**
 
