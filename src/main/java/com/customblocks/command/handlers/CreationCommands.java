@@ -183,7 +183,14 @@ public final class CreationCommands {
                 // Group 14 — if the download is an actually-animated GIF/WebP, build an animated block
                 // (vertical strip + .mcmeta) and stop here. Returns false → fall through to static.
                 if (AnimCommands.maybeCreateAnimated(src, id, name, raw, url, server, postApply)) { endOp.run(); return; }
-                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode);
+                BackgroundRemover.Applied bg = BackgroundRemover.applyReporting(raw, CustomBlocksConfig.backgroundMode);
+                byte[] cleaned = bg.png();
+                if (bg.declined()) {
+                    // §H: an honest refusal must SAY so, or an unchanged bake reads as a bug.
+                    final String why = bg.declineNote();
+                    server.execute(() -> Chat.info(src, "Left \"" + id + "\" as it is — not sure what the background was ("
+                            + why + "). Tell it with /cb bgpick " + id + " <colour>."));
+                }
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 // Studio "background" colour fills behind the image's transparent pixels (else snap-to-black).
                 png = bgArgb != null ? ImageProcessor.fillBackground(png, bgArgb)
@@ -349,7 +356,14 @@ public final class CreationCommands {
                 }
                 // Static source → bake a square block texture (M1: strip the background to opaque black
                 // first, BEFORE the resize/pad so corner sampling reads the real background).
-                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode);
+                BackgroundRemover.Applied bg = BackgroundRemover.applyReporting(raw, CustomBlocksConfig.backgroundMode);
+                byte[] cleaned = bg.png();
+                if (bg.declined()) {
+                    // §H: an honest refusal must SAY so, or an unchanged bake reads as a bug.
+                    final String why = bg.declineNote();
+                    server.execute(() -> Chat.info(src, "Left \"" + id + "\" as it is — not sure what the background was ("
+                            + why + "). Tell it with /cb bgpick " + id + " <colour>."));
+                }
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 // Restore a true black after the resize blends the edges (no-op when off).
                 png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode);

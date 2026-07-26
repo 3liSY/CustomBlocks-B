@@ -108,6 +108,12 @@ final class BgCascade {
             boolean[][] keyed = BgRungKey.mask(px, w, h, key);
             String bad = clean(keyed, w, h);
             if (bad == null) return unmixed(px, keyed, w, h, 2, "matched " + keySource);
+            if (pickedKey != null) {
+                // The player asserted a fact. If keying it does not produce a sane background, the honest
+                // answer is that their colour does not work — NOT to ignore them and start guessing with
+                // the lower rungs, which is what falling through would do.
+                return new Result(null, null, 0, "keying that colour " + bad, false);
+            }
             declines.add("rung 2: keying " + keySource + " " + bad);
         }
 

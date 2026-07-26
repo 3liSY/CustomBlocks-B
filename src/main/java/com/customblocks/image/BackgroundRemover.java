@@ -68,6 +68,85 @@ public final class BackgroundRemover {
     }
 
     /**
+     * A bake plus, when the cascade declined, the reason — so a caller can TELL the player instead of
+     * handing back unchanged bytes that look like nothing happened.
+     *
+     * @param png     the bake; the original bytes unchanged when the cascade declined
+     * @param declineNote why no background was removed, or {@code null} when some was
+     */
+    public record Applied(byte[] png, String declineNote) {
+        public boolean declined() { return declineNote != null; }
+    }
+
+    /**
+     * Same as {@link #apply(byte[], String)} but reports a decline. §H requires the player to be told
+     * which picture confused the detector and pointed at {@code /cb bgpick}; a byte array alone cannot
+     * say that, and silently returning the original is what makes an honest refusal look like a bug.
+     */
+    public static Applied applyReporting(byte[] input, String mode) {
+        byte[] flat = CheckerboardDetector.flattenToBlack(input);
+        if (NONE.equals(normalize(mode))) return new Applied(input, null); // Off: not a decline
+        try {
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(flat));
+            if (src == null) return new Applied(input, null); // toBlockPng surfaces the real error
+            int w = src.getWidth(), h = src.getHeight();
+            BufferedImage img = toArgb(src);
+            BgCascade.Result decision = BgCascade.decide(flat, img, w, h, null);
+            if (!decision.decided()) return new Applied(input, decision.note());
+            return new Applied(process(input, mode, null), null);
+        } catch (Exception e) {
+            return new Applied(input, null);
+        }
+    }
+
+    /**
+     * Outcome of a {@code /cb bgpick} re-bake.
+     *
+     * @param png     the new texture, or {@code null} when nothing was baked
+     * @param refusal a player-facing reason when {@code png} is null; never null then
+     */
+    public record Keyed(byte[] png, String refusal) {
+        public boolean ok() { return png != null; }
+    }
+
+    /**
+     * {@code /cb bgpick}: remove the background using a colour the PLAYER named, rather than one the
+     * cascade worked out. The colour seeds rung 2 as a known key, which promotes the picture to the
+     * most certain rung that can use it — an escape hatch that supplies the missing fact instead of
+     * re-running the same algorithm and hoping.
+     *
+     * <p>It refuses out loud in two distinct cases, because they need different answers from the
+     * player: the named colour is not in the picture (wrong colour — pick another), or the keyed
+     * region failed the shape gate (right colour, but keying it would not produce a sane background).
+     */
+    public static Keyed applyNamedKey(byte[] input, int keyRgb, Integer fillRgb) {
+        byte[] flat = CheckerboardDetector.flattenToBlack(input);
+        try {
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(flat));
+            if (src == null) return new Keyed(null, "that picture could not be read");
+            int w = src.getWidth(), h = src.getHeight();
+            BufferedImage img = toArgb(src);
+
+            BgCascade.Result decision =
+                    BgCascade.decide(flat, img, w, h, 0xFF000000 | (keyRgb & 0xFFFFFF));
+            if (!decision.decided()) return new Keyed(null, decision.note());
+
+            final int fill = fillRgb != null ? (0xFF000000 | (fillRgb & 0xFFFFFF)) : BLACK;
+            final int[] composited = decision.unmixed();
+            for (int i = 0; i < composited.length; i++) {
+                composited[i] = LinearBlend.over(composited[i], fill);
+            }
+            img.setRGB(0, 0, w, h, composited, 0, w);
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(img, "PNG", out);
+            return new Keyed(out.toByteArray(), null);
+        } catch (Exception e) {
+            return new Keyed(null, "that picture could not be processed");
+        }
+    }
+
+    /**
      * The recolour rail (colour variants, colour families, the bundled Arabic sets): find the
      * background and paint it {@code fillRgb} (0xRRGGBB).
      *

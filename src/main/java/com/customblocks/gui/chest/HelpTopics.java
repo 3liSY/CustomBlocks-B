@@ -90,6 +90,7 @@ public final class HelpTopics {
                     new Topic("bgstudio", "/cb bgstudio <id>", "Remove or replace a texture's background"),
                     new Topic("setbg", "/cb setbg <id> <black|colour>", "Set a block's background colour"),
                     new Topic("setbackground", "/cb setbackground <id> <black|colour>", "Alias of /cb setbg"),
+                    new Topic("bgpick", "/cb bgpick <id> <colour>", "Name a picture's background colour when the mod wasn't sure"),
                     new Topic("exportpng", "/cb exportpng <id>", "Save a block's texture as a .png"))),
 
             new Category("Bulk", Items.HOPPER, "Do one thing to many blocks at once", List.of(

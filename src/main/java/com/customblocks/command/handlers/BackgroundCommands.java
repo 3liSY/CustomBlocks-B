@@ -1,9 +1,16 @@
 /**
- * BackgroundCommands.java — G10 §C: /cb setbg (alias /cb setbackground).
+ * BackgroundCommands.java — G10 §C: /cb setbg (alias /cb setbackground), and §H: /cb bgpick.
  *
  *   /cb setbg <id> <value>       — one block.
  *   /cb setbg <scope> <value>    — a chosen selection or every block, using the SAME scope grammar
  *                                  as the bulk commands (all, selected, cat:foo, ...).
+ *   /cb bgpick <id> <colour>     — name the BACKGROUND colour of one block's picture, for when the
+ *                                  automatic detector said it was not sure. One block only.
+ *
+ * The two are different questions on purpose. {@code setbg} says what the background should BECOME;
+ * {@code bgpick} says what the background IS, which is the one fact the detector was missing. They
+ * live together because they take the same colour grammar, the same permission tier and the same
+ * undo shape.
  *
  * {@code <value>} is black, a 29-colour library name, or a free hex — one grammar, one stored
  * value, whichever route wrote it (GROUP_10 §B: "single, selected, all-block, Studio, and tool
@@ -17,7 +24,8 @@
  * BulkConfirm, the re-bake is BackgroundService, and the undo shape is a RETEXTURE op — the one
  * Kind that already restores BOTH the slot snapshot (which now carries background) and the pixels.
  *
- * Depends on: BackgroundValue, BackgroundService, BulkScope, BulkConfirm, SlotManager, TextureStore,
+ * Depends on: BackgroundValue, BackgroundService, BackgroundRemover, ImageProcessor, ColorLibrary,
+ *             BulkScope, BulkConfirm, SlotManager, TextureStore,
  *             UndoManager, LockManager, ResourcePackServer, HudSync, Chat.
  * Called by:  CommandRegistrar.
  */
@@ -28,6 +36,7 @@ import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BackgroundService;
 import com.customblocks.core.BackgroundValue;
+import com.customblocks.core.ColorLibrary;
 import com.customblocks.core.BulkScope;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
@@ -36,6 +45,8 @@ import com.customblocks.core.TextureStore;
 import com.customblocks.core.TrashManager;
 import com.customblocks.core.UndoManager;
 import com.customblocks.network.HudSync;
+import com.customblocks.image.BackgroundRemover;
+import com.customblocks.image.ImageProcessor;
 import com.customblocks.network.ResourcePackServer;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
@@ -58,6 +69,29 @@ public final class BackgroundCommands {
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
         root.then(command("setbg"));
         root.then(command("setbackground")); // alias — identical tree
+        root.then(bgpick());
+    }
+
+    /**
+     * {@code /cb bgpick <id> <colour>} — one block, never a scope. The whole point is that the player
+     * is supplying a fact about ONE picture, so there is nothing to broadcast across a selection.
+     */
+    private static LiteralArgumentBuilder<ServerCommandSource> bgpick() {
+        return CommandManager.literal("bgpick")
+                .executes(ctx -> bgpickUsage(ctx.getSource()))
+                .then(CommandManager.argument("target", StringArgumentType.word())
+                        .suggests(BlockSuggestions.IDS)
+                        .executes(ctx -> bgpickUsage(ctx.getSource()))
+                        .then(CommandManager.argument("colour", StringArgumentType.greedyString())
+                                // Same starter menu as setbg: the colour grammar is shared, so what a
+                                // player can type in one they can type in the other.
+                                .suggests((c, b) -> {
+                                    for (String x : new String[]{"white", "black", "red", "green", "blue", "yellow", "#1A9BFF"}) b.suggest(x);
+                                    return b.buildFuture();
+                                })
+                                .executes(ctx -> bgpick(ctx.getSource(),
+                                        StringArgumentType.getString(ctx, "target"),
+                                        StringArgumentType.getString(ctx, "colour").trim()))));
     }
 
     private static LiteralArgumentBuilder<ServerCommandSource> command(String name) {
@@ -151,6 +185,114 @@ public final class BackgroundCommands {
             if (target.equalsIgnoreCase(e.customId())) return e;
         }
         return null;
+    }
+
+    private static int bgpickUsage(ServerCommandSource src) {
+        Chat.info(src, "Tell the mod which colour is the background: " + CbFmt.BODY
+                + "/cb bgpick <id> <colour|#hex>" + CbFmt.DIM + ". Use it when a picture came out unchanged "
+                + "because the mod was not sure what to remove.");
+        return 1;
+    }
+
+    /**
+     * §H escape hatch: re-bake ONE block using a background colour the player named.
+     *
+     * <p>It re-bakes the block's STORED SOURCE, so it needs no download and costs one bake — and a
+     * block with no stored picture gets the same honest skip {@code /cb setbg} already gives rather
+     * than a guessed re-bake. The stored background choice is not touched: this changes which pixels
+     * were treated as background, not what colour they become.
+     */
+    private static int bgpick(ServerCommandSource src, String target, String rawColour) {
+        MinecraftServer server = src.getServer();
+        if (server == null) return 0;
+
+        String hex = ColorLibrary.resolve(rawColour);
+        if (hex == null) {
+            Chat.error(src, CbFmt.BODY + rawColour + CbFmt.BAD + " isn't a colour. Use a name like "
+                    + CbFmt.BODY + "white" + CbFmt.BAD + " or a hex like " + CbFmt.BODY + "#1A9BFF" + CbFmt.BAD + ".");
+            return 0;
+        }
+        final int keyRgb;
+        try {
+            keyRgb = Integer.parseInt(hex.replace("#", ""), 16) & 0xFFFFFF;
+        } catch (Exception e) {
+            Chat.error(src, "Couldn't read " + CbFmt.BODY + rawColour + CbFmt.BAD + " as a colour.");
+            return 0;
+        }
+
+        SlotData d = SlotManager.getById(target);
+        if (d == null) {
+            TrashManager.TrashEntry trashed = trashEntryFor(target);
+            if (trashed != null) {
+                Chat.error(src, CbFmt.BODY + target + CbFmt.BAD + " is in the trash (deleted "
+                        + trashed.deletedHuman() + "). Restore it with " + CbFmt.BODY + "/cb trash"
+                        + CbFmt.BAD + " first.");
+                return 0;
+            }
+            Chat.error(src, "There's no block called " + CbFmt.BODY + target + CbFmt.BAD + ".");
+            return 0;
+        }
+        if (LockManager.isLocked(target)) { Chat.error(src, CbFmt.BODY + target + CbFmt.BAD + " is locked."); return 0; }
+
+        final byte[] source = TextureStore.loadSource(d.index());
+        if (source == null || source.length == 0) {
+            Chat.error(src, CbFmt.BODY + target + CbFmt.BAD + " has no stored picture to re-bake — give it one with "
+                    + CbFmt.BODY + "/cb retexture " + target + " <url>" + CbFmt.BAD + " first.");
+            return 0;
+        }
+
+        final UUID who = BulkConfirm.actor(src);
+        final String id = target;
+        Chat.info(src, "Removing the " + CbFmt.VALUE + hex + CbFmt.DIM + " background from " + CbFmt.BODY + id + CbFmt.DIM + "…");
+
+        Thread worker = new Thread(() -> {
+            // The stored background decides what the removed area BECOMES; the named colour only says
+            // what to remove. A block set to a colour keeps baking onto that colour.
+            String stored = d.background();
+            Integer fill = (stored != null && BackgroundValue.renderable(stored) && !BackgroundValue.BLACK.equals(stored))
+                    ? BackgroundValue.rgb(stored) : null;
+            BackgroundRemover.Keyed r = BackgroundRemover.applyNamedKey(source, keyRgb, fill);
+            byte[] png = null;
+            if (r.ok()) {
+                try {
+                    png = ImageProcessor.toBlockPng(r.png(), CustomBlocksConfig.textureSize);
+                    png = fill != null
+                            ? BackgroundRemover.snapBackgroundColor(ImageProcessor.fillBackground(png, fill), BackgroundRemover.AUTO, fill)
+                            : BackgroundRemover.snapBackgroundBlack(png, BackgroundRemover.AUTO);
+                } catch (Exception e) {
+                    png = null; // reported below as a refusal rather than a silent no-op
+                }
+            }
+            final byte[] finalPng = png;
+            server.execute(() -> {
+                if (finalPng == null) {
+                    String why = r.refusal() != null ? r.refusal() : "that picture could not be re-baked";
+                    Chat.error(src, "Couldn't use " + CbFmt.BODY + hex + CbFmt.BAD + " as the background of "
+                            + CbFmt.BODY + id + CbFmt.BAD + " — " + why + ".");
+                    return;
+                }
+                SlotData before = SlotManager.getById(id);
+                if (before == null || LockManager.isLocked(id)) {
+                    Chat.error(src, CbFmt.BODY + id + CbFmt.BAD + " changed while that was baking — nothing applied.");
+                    return;
+                }
+                byte[] beforeTex = TextureStore.load(before.index());
+                TextureStore.save(before.index(), finalPng);
+                // RETEXTURE restores the pixels, which is all bgpick changed — the stored background
+                // choice is untouched, so one /cb undo puts the old picture back exactly.
+                UndoManager.recordTexture(who, before, beforeTex, finalPng, "bgpick " + hex);
+                ResourcePackServer.updatePack();
+                ResourcePackServer.syncToAll();
+                HudSync.broadcast(server);
+                MutableText msg = Text.literal(CbFmt.OK + "Removed the " + CbFmt.VALUE + hex + CbFmt.OK
+                                + " background from " + CbFmt.VALUE + id + CbFmt.OK + ".  ")
+                        .append(Chat.undoButton());
+                Chat.line(src, msg);
+            });
+        }, "CustomBlocks-BgPick");
+        worker.setDaemon(true);
+        worker.start();
+        return 1;
     }
 
     /** Re-bake off the server thread (image work), then commit every changed block in one go. */

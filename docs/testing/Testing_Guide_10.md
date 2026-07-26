@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Six sections are confirmed; the jar A colour engine is built and in the mods folder for testing, while the knob removal and auto detection wait as jar B. |
+| **Verdict** | Six sections are confirmed; the strength knob is gone and the automatic detector now does the removing, all awaiting in-game checking. |
 | **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% |
 | **Last tested** | 2026-07-26 |
 | **Jar** | `customblocks-1.0.0.jar` |
@@ -14,7 +14,7 @@
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
 | HA | Colour engine rebuild (§H jar A) | Built 🎯 | - |
-| HB | Knob removal + auto detection (§H jar B) | Designed ⏳ | - |
+| HB | Knob removal + auto detection (§H jar B) | Built 🎯 | - |
 | A | Resize, export PNG, gradient | Done ✅ | - |
 | B | No hairline at block edges | Done ✅ | - |
 | C | Change a block's background colour | Done ✅ | - |
@@ -31,9 +31,9 @@
 
 ## 💡 Setup
 
-- Runnable now: §HA — the jar A build is in the server's mods folder.
-- `/cb tolerance` still works in jar A **on purpose**; jar B deletes it (§HB rows).
-- §HB waits for jar B; §E is parked.
+- Both §HA and §HB are runnable once the jar B build is in the server's mods folder.
+- `/cb tolerance` is now gone; there is no strength setting anywhere.
+- §E is parked.
 
 **Test pictures** — referenced below as `<link 1>`, `<link 2>`, and so on.
 
@@ -70,14 +70,13 @@ All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehav
 - 💡 Faint dashed marks on the `<link 4>` bake come from that picture file itself — a clean PNG of the same logo bakes smooth. Confirmed 2026-07-26 by zoomed bake comparison (JPEG block-compression noise sits directly on the true edge pixels; no pixel-level fix exists without eating real edge detail). Jar B's cascade owns the real fix.
 - 💡 HA4's recoloured blue background is correct, not a bug — [G10 §H locked decision, 2026-07-25](../groups/GROUP_10_COLOR_IMAGE.md): recolour rails (variants, families, Arabic) always run Auto regardless of the global mode.
 
-## HB - Knob removal + auto detection (§H jar B) - Designed ⏳
+## HB - Knob removal + auto detection (§H jar B) - Built 🎯
 
 | | |
 | --- | --- |
 | **Check** | Backgrounds come off with no strength setting anywhere, and an unsure result says so instead of damaging the picture. |
 | **Pass rule** | Every row passes with no number typed anywhere. |
-| **Pass mark** | ⏳ knob is gone and the detector does the removing; `/cb bgpick` not built |
-| **Blocked** | HB22-HB25 need `/cb bgpick`, which is the next slice. |
+| **Pass mark** | 🎯 built `2026-07-26`, needs in-game run |
 
 **The knob is gone**
 
