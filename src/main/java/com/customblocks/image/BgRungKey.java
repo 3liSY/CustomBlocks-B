@@ -60,20 +60,7 @@ final class BgRungKey {
      * flat area of the subject that happens to touch one edge.
      */
     static Integer flatBorderTone(BufferedImage img, int w, int h) {
-        Map<Integer, Integer> tally = new HashMap<>();
-        for (int x = 0; x < w; x++) {
-            tally.merge(img.getRGB(x, 0) | 0xFF000000, 1, Integer::sum);
-            tally.merge(img.getRGB(x, h - 1) | 0xFF000000, 1, Integer::sum);
-        }
-        for (int y = 1; y < h - 1; y++) {
-            tally.merge(img.getRGB(0, y) | 0xFF000000, 1, Integer::sum);
-            tally.merge(img.getRGB(w - 1, y) | 0xFF000000, 1, Integer::sum);
-        }
-        Integer candidate = null;
-        int best = -1;
-        for (Map.Entry<Integer, Integer> e : tally.entrySet()) {
-            if (e.getValue() > best) { best = e.getValue(); candidate = e.getKey(); }
-        }
+        Integer candidate = borderTone(img, w, h);
         if (candidate == null) return null;
 
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(candidate));
@@ -89,6 +76,29 @@ final class BgRungKey {
         boolean allSides = topHits > w * SIDE_MAJORITY && bottomHits > w * SIDE_MAJORITY
                 && leftHits > h * SIDE_MAJORITY && rightHits > h * SIDE_MAJORITY;
         return allSides ? candidate : null;
+    }
+
+    /**
+     * The most common exact colour along the border, with no flatness claim attached. Rung 2 only
+     * accepts it once the four-side majority test above passes; rung 4, which is allowed to be less
+     * certain, uses it as the reference colour its histogram measures distance from.
+     */
+    static Integer borderTone(BufferedImage img, int w, int h) {
+        Map<Integer, Integer> tally = new HashMap<>();
+        for (int x = 0; x < w; x++) {
+            tally.merge(img.getRGB(x, 0) | 0xFF000000, 1, Integer::sum);
+            tally.merge(img.getRGB(x, h - 1) | 0xFF000000, 1, Integer::sum);
+        }
+        for (int y = 1; y < h - 1; y++) {
+            tally.merge(img.getRGB(0, y) | 0xFF000000, 1, Integer::sum);
+            tally.merge(img.getRGB(w - 1, y) | 0xFF000000, 1, Integer::sum);
+        }
+        Integer candidate = null;
+        int best = -1;
+        for (Map.Entry<Integer, Integer> e : tally.entrySet()) {
+            if (e.getValue() > best) { best = e.getValue(); candidate = e.getKey(); }
+        }
+        return candidate;
     }
 
     /**
@@ -113,24 +123,35 @@ final class BgRungKey {
      * enclosed pockets of the key colour that are thick enough to be real areas.
      */
     static boolean[][] mask(BufferedImage img, int w, int h, int key) {
+        return regionWalk(img, w, h, key, JND);
+    }
+
+    /**
+     * The shared region walk: flood inward from every border pixel within {@code tol} ΔE00 of
+     * {@code key}, then absorb enclosed pockets of the same colour that are thick enough to be real
+     * areas. Rung 2 calls it at the JND, because its colour is known; rung 4 calls it at the
+     * threshold its estimators derived. One walk serves both so the region-versus-pixel rule and the
+     * pocket thickness gate cannot drift apart between rungs.
+     */
+    static boolean[][] regionWalk(BufferedImage img, int w, int h, int key, double tol) {
         BgDist dist = new BgDist(BackgroundRemover.rgbToLab(key));
         boolean[][] isBg = new boolean[w][h];
         Queue<int[]> queue = new ArrayDeque<>();
 
         for (int x = 0; x < w; x++) {
-            seed(img, isBg, queue, x, 0, dist);
-            seed(img, isBg, queue, x, h - 1, dist);
+            seed(img, isBg, queue, x, 0, dist, tol);
+            seed(img, isBg, queue, x, h - 1, dist, tol);
         }
         for (int y = 1; y < h - 1; y++) {
-            seed(img, isBg, queue, 0, y, dist);
-            seed(img, isBg, queue, w - 1, y, dist);
+            seed(img, isBg, queue, 0, y, dist, tol);
+            seed(img, isBg, queue, w - 1, y, dist, tol);
         }
         while (!queue.isEmpty()) {
             int[] p = queue.poll();
             for (int[] d : DIRS) {
                 int nx = p[0] + d[0], ny = p[1] + d[1];
                 if (nx < 0 || ny < 0 || nx >= w || ny >= h || isBg[nx][ny]) continue;
-                if (dist.of(img.getRGB(nx, ny)) > JND) continue;
+                if (dist.of(img.getRGB(nx, ny)) > tol) continue;
                 isBg[nx][ny] = true;
                 queue.add(new int[]{nx, ny});
             }
@@ -139,15 +160,16 @@ final class BgRungKey {
         boolean[][] pocket = new boolean[w][h];
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (!isBg[x][y] && dist.of(img.getRGB(x, y)) <= JND) pocket[x][y] = true;
+                if (!isBg[x][y] && dist.of(img.getRGB(x, y)) <= tol) pocket[x][y] = true;
             }
         }
         BgMask.absorbEnclosedPockets(isBg, pocket, w, h);
         return isBg;
     }
 
-    private static void seed(BufferedImage img, boolean[][] isBg, Queue<int[]> q, int x, int y, BgDist dist) {
-        if (!isBg[x][y] && dist.of(img.getRGB(x, y)) <= JND) {
+    private static void seed(BufferedImage img, boolean[][] isBg, Queue<int[]> q,
+                             int x, int y, BgDist dist, double tol) {
+        if (!isBg[x][y] && dist.of(img.getRGB(x, y)) <= tol) {
             isBg[x][y] = true;
             q.add(new int[]{x, y});
         }

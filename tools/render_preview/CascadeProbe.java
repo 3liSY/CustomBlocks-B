@@ -76,8 +76,57 @@ public final class CascadeProbe {
                 System.out.println("  DECLINED - bakes unchanged, player told to use /cb bgpick");
                 for (String d : r.note().split("; ")) System.out.println("    - " + d);
             }
-            System.out.println("  " + ms + " ms\n");
+            System.out.println("  " + ms + " ms");
+
+            // Rung 4 standalone. The earlier, more certain rungs take almost every picture, so the
+            // ensemble's own answer would otherwise never be seen on real content — only on the
+            // synthetic histograms of BgThresholdsCheck. Diagnostic only; it is not what the mod bakes.
+            dumpEnsembleVotes(img, w, h);
+            boolean[][] r4 = BgRungEnsemble.mask(img, w, h);
+            if (r4 == null) {
+                System.out.println("  [rung 4 alone] no consensus");
+            } else {
+                String bad = BgQc.reject(r4, w, h);
+                System.out.printf("  [rung 4 alone] %.1f%% coverage, QC %s%n",
+                        coverage(r4, w, h), bad == null ? "pass" : "REJECT: " + bad);
+                if (maskDir != null) {
+                    ImageIO.write(overlay(img, r4, w, h), "PNG",
+                            new File(maskDir, strip(f.getName()) + "__rung4only.png"));
+                }
+            }
+            System.out.println();
         }
+    }
+
+    /**
+     * Prints rung 4's five votes and the population of the band they span, which is what its
+     * agreement test measures. Rebuilds the histogram the same way the rung does — a diagnostic copy,
+     * so if the rung's own binning ever changes this must be updated alongside it.
+     */
+    private static void dumpEnsembleVotes(BufferedImage img, int w, int h) {
+        Integer ref = BgRungKey.borderTone(img, w, h);
+        if (ref == null) { System.out.println("  [rung 4 votes] no border tone"); return; }
+        BgDist dist = new BgDist(BackgroundRemover.rgbToLab(ref));
+        final double floor = BgRungKey.JND;
+        long[] hist = new long[256];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                double d = dist.of(img.getRGB(x, y));
+                if (d <= floor) continue;
+                int b = (int) ((d - floor) / (100.0 - floor) * 256);
+                hist[Math.max(0, Math.min(255, b))]++;
+            }
+        }
+        int[] votes = {
+                BgThresholds.minError(hist), BgThresholds.triangle(hist), BgThresholds.rosin(hist),
+                BgThresholds.minCrossEntropy(hist), BgThresholds.weightedObjectVariance(hist),
+        };
+        int lo = Integer.MAX_VALUE, hi = -1;
+        for (int v : votes) if (v >= 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+        long between = 0;
+        if (hi >= 0) for (int i = lo; i <= hi; i++) between += hist[i];
+        System.out.printf("  [rung 4 votes] MET %d Tri %d Rosin %d Li %d WOV %d | band %d-%d holds %d px, floor %d%n",
+                votes[0], votes[1], votes[2], votes[3], votes[4], lo, hi, between, BgQc.areaFloor(w, h));
     }
 
     /** What the cascade decided, drawn so a human can check it: background tinted magenta, subject

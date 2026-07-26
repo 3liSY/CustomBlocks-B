@@ -105,9 +105,14 @@ final class BgCascade {
         }
 
         // ── Rung 4 — estimator ensemble ───────────────────────────────────────────────────────
-        // Built in the following slice; until then the cascade honestly reports that it ran out of
-        // rungs rather than falling back on a threshold, which is the behaviour being replaced.
-        declines.add("rung 4: not available yet");
+        boolean[][] voted = BgRungEnsemble.mask(img, w, h);
+        if (voted == null) {
+            declines.add("rung 4: the measurements of where the background ends did not agree");
+        } else {
+            String bad = BgQc.reject(voted, w, h);
+            if (bad == null) return new Result(voted, 4, "measured where the background ends", false);
+            declines.add("rung 4: the measured background " + bad);
+        }
 
         return new Result(null, 0, String.join("; ", declines), false);
     }
