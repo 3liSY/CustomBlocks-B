@@ -52,8 +52,9 @@ public final class BackgroundRemover {
      * meaning what it meant, and every other strength scales around it on the uniform metric.
      */
     private static final double MAX_DELTA_E = 14.2;
-    /** Alpha below this counts as transparent → background. */
-    private static final int OPAQUE_THRESHOLD = 128;
+    /** Alpha below this counts as transparent → background. Package-private: the cascade's rung 1
+     *  reads authored alpha against the same cutoff, so there is one definition of "transparent". */
+    static final int OPAQUE_THRESHOLD = 128;
     private static final int BLACK = 0xFF000000;
     /** After resize, pixels with every channel ≤ this snap to pure black (kills bicubic gray halos). */
     private static final int SNAP_MAX = 24;
