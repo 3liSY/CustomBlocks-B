@@ -96,16 +96,11 @@ public final class CustomBlocksConfig {
 
     /**
      * Background removal applied when a block is (re)textured: "none" (off, default),
-     * "edges" (remove the edge-connected background), or "closed" (also remove enclosed
-     * areas matching the background colour). Removed pixels become opaque black.
+     * "auto" (BgCascade works the background out from the picture itself). Removed pixels
+     * become opaque black. There is no strength setting (G10 §H).
      */
     public static volatile String backgroundMode = "none";
 
-    /**
-     * Background-removal strength, 0-100 (mapped internally to a CIE-LAB ΔE distance). 0 = off.
-     * Higher = more shades count as background. Set via /cb tolerance.
-     */
-    public static volatile int backgroundTolerance = 30;
 
     // ── Group 06 / M2+M3 — colour-variant hexes ────────────────────────────────
 

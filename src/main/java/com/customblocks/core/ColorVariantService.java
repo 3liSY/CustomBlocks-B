@@ -17,7 +17,7 @@
  *
  * Depends on: SlotManager, SlotData, TextureStore, UndoManager, IncidentRecorder,
  *             BackgroundRemover (recolorBackground), ImageProcessor, ResourcePackServer,
- *             CustomBlocksConfig (triangle*Hex, textureSize, backgroundTolerance), Chat
+ *             CustomBlocksConfig (triangle*Hex, textureSize), Chat
  * Called by:  item/ShapeToolItem (Triangle create, Square swap),
  *             gui/chest/RecolorConfirmMenu (Yes button).
  */
@@ -166,14 +166,11 @@ public final class ColorVariantService {
         final int index = copied.index();
         final int rgb = rgbForKey(key);
         final String hex = String.format(Locale.ROOT, "#%06X", rgb);
-        final String mode = CustomBlocksConfig.backgroundMode; // none → edges inside recolorBackground
-        final int tol = CustomBlocksConfig.backgroundTolerance > 0
-                ? CustomBlocksConfig.backgroundTolerance : 30;  // 0 would mean "no recolour at all"
         Chat.tool(player, "Creating " + vid + " with a " + hex + " background…");
 
         Thread worker = new Thread(() -> {
             try {
-                byte[] recoloured = BackgroundRemover.recolorBackground(input, mode, tol, rgb);
+                byte[] recoloured = BackgroundRemover.recolorBackground(input, rgb);
                 byte[] png = ImageProcessor.toBlockPng(recoloured, CustomBlocksConfig.textureSize);
                 // A non-square source leaves transparent padding above/below after toBlockPng squares it;
                 // that padding renders BLACK on the atlas's solid layer (black bands on a landscape logo
@@ -292,9 +289,6 @@ public final class ColorVariantService {
             Chat.tool(player, "No \"_" + key + "\" blocks exist — nothing to recolour.");
             return;
         }
-        final String mode = CustomBlocksConfig.backgroundMode; // none → edges inside recolorBackground
-        final int tol = CustomBlocksConfig.backgroundTolerance > 0
-                ? CustomBlocksConfig.backgroundTolerance : 30; // 0 would mean "no recolour at all"
         Chat.tool(player, "Recolouring " + variants.size() + " " + key + " variant(s) to "
                 + hexFor(key) + "…");
         com.customblocks.CustomBlocksMod.LOGGER.info("[CustomBlocks] G06-C recolorVariants START: key={} oldRgb=#{} newRgb=#{} variantsFound={}",
@@ -308,7 +302,7 @@ public final class ColorVariantService {
                         // Clean regenerate to the new hex — same recolour path createVariant used
                         // (byte-identical: recolorBackground → toBlockPng → fillBackground). This branch
                         // is correct by construction; the confirmed-good create path proves it.
-                        byte[] recoloured = BackgroundRemover.recolorBackground(source, mode, tol, newRgb);
+                        byte[] recoloured = BackgroundRemover.recolorBackground(source, newRgb);
                         byte[] png = ImageProcessor.toBlockPng(recoloured, CustomBlocksConfig.textureSize);
                         // Same non-square padding fix as createVariant: fill the transparent top/bottom
                         // padding with the variant colour so a landscape logo shows colour bands, not black.
@@ -326,7 +320,7 @@ public final class ColorVariantService {
                     // of silently corrupting it or silently doing nothing.
                     byte[] png = TextureStore.load(d.index());
                     if (png == null || png.length == 0) { skipped++; continue; }
-                    byte[] out = ColorReplacer.recolorFlatBg(png, newRgb, tol);
+                    byte[] out = ColorReplacer.recolorFlatBg(png, newRgb);
                     if (out == null) { unchanged++; continue; } // no flat bg / already that hex — leave it as-is
                     TextureStore.save(d.index(), out); // already block-sized — no re-resize
                     repainted++;

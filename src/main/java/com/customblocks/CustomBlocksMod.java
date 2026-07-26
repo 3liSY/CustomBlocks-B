@@ -129,6 +129,18 @@ public class CustomBlocksMod implements ModInitializer {
         // ("a4_hex_ff1493" -> "a4_magenta"). Idempotent; Arabic/non-colour names are left alone.
         com.customblocks.core.ColorVariantNameMigration.Result cv = com.customblocks.core.ColorVariantNameMigration.migrate();
         if (cv.any()) LOGGER.info("[CustomBlocks] G06-5: cleaned {} colour-variant name(s) + {} legacy hex id(s).", cv.names(), cv.ids());
+        // Group 10 §H: the per-block background-strength override is deleted along with /cb tolerance,
+        // so its file is removed rather than left orphaned in the config folder. The values are NOT
+        // translated — there is no number to translate them into, and keeping one would recreate the
+        // knob invisibly; blocks simply re-bake under Auto on their next bake. Idempotent.
+        try {
+            java.nio.file.Path retired = java.nio.file.Path.of("config/customblocks/block_tolerances.json");
+            if (java.nio.file.Files.deleteIfExists(retired)) {
+                LOGGER.info("[CustomBlocks] G10 §H: removed the retired block_tolerances.json (background strength is gone).");
+            }
+        } catch (Exception e) {
+            LOGGER.warn("[CustomBlocks] G10 §H: could not remove the retired block_tolerances.json: {}", e.getMessage());
+        }
         // Group 13 / G13-25 CP5: retire ALL old static Arabic art blocks (letters AND numbers —
         // the real Arabic slot blocks below are the only letter/number system now), reclaim their
         // slots, and air-clean any placed copies as chunks load. Idempotent -- a no-op once gone.

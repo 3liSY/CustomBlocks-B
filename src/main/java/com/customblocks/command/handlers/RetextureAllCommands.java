@@ -71,7 +71,6 @@ public final class RetextureAllCommands {
         java.util.List<Integer> indices = new java.util.ArrayList<>();
         for (SlotData d : SlotManager.assignedSlots()) indices.add(d.index());
         final String mode = CustomBlocksConfig.backgroundMode;
-        final int tol = CustomBlocksConfig.backgroundTolerance;
         // Flush slots now (server thread) so the pre-change backup copies a current slots.json, then
         // pick the backup's name. The heavy file copy itself runs off-thread, inside the worker below.
         SlotManager.saveAll();
@@ -115,9 +114,9 @@ public final class RetextureAllCommands {
                     }
                     byte[] raw = TextureStore.loadSource(index);
                     if (raw != null && raw.length > 0) {
-                        byte[] cleaned = BackgroundRemover.apply(raw, mode, tol);
+                        byte[] cleaned = BackgroundRemover.apply(raw, mode);
                         byte[] png = ImageProcessor.toBlockPng(cleaned, newSize);
-                        png = BackgroundRemover.snapBackgroundBlack(png, mode, tol);
+                        png = BackgroundRemover.snapBackgroundBlack(png, mode);
                         TextureStore.save(index, png);
                         rerendered++;
                     } else {

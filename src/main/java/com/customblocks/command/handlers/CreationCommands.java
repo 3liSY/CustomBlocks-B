@@ -183,12 +183,11 @@ public final class CreationCommands {
                 // Group 14 — if the download is an actually-animated GIF/WebP, build an animated block
                 // (vertical strip + .mcmeta) and stop here. Returns false → fall through to static.
                 if (AnimCommands.maybeCreateAnimated(src, id, name, raw, url, server, postApply)) { endOp.run(); return; }
-                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 // Studio "background" colour fills behind the image's transparent pixels (else snap-to-black).
                 png = bgArgb != null ? ImageProcessor.fillBackground(png, bgArgb)
-                        : BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode, CustomBlocksConfig.backgroundTolerance);
+                        : BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode);
                 final byte[] finalPng = png;
                 server.execute(() -> {
                     try {
@@ -350,12 +349,10 @@ public final class CreationCommands {
                 }
                 // Static source → bake a square block texture (M1: strip the background to opaque black
                 // first, BEFORE the resize/pad so corner sampling reads the real background).
-                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 // Restore a true black after the resize blends the edges (no-op when off).
-                png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode);
                 TextureStore.save(index, png);
                 // Keep the ORIGINAL image so the block can later be re-rendered at a different
                 // texture size from real pixels (see the retexture-all NOTE on retexture()).

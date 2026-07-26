@@ -5,8 +5,8 @@
  * drive, each following the project idiom (fast checks on the server thread, the pixel work on a
  * daemon worker, then back to the server thread for ONE pack rebuild + sync + undo record + chat):
  *
- *   applyBgRemoval — re-run background removal on an EXISTING block at a chosen mode/tolerance
- *                    (what /cb bgstudio + /cb tolerance commit). Re-renders from the saved source
+ *   applyBgRemoval — re-run background removal on an EXISTING block at a chosen mode
+ *                    (what /cb bgstudio commits). Re-renders from the saved source
  *                    when there is one, else operates on the baked PNG. Undoable (TEXTURE op).
  *   createVariant  — bake an HSL-shifted copy of a block into a NEW block (the Colour Variants
  *                    panel swatches). Copies the source's feel; one CREATE undo per click.
@@ -67,7 +67,7 @@ public final class ColorToolService {
         return null;
     }
 
-    // ── Background removal on an existing block (bgstudio / tolerance) ───────────────────────────
+    // ── Background removal on an existing block (bgstudio) ──────────────────────────────────────
 
     /**
      * Re-run background removal on {@code id} at {@code mode}/{@code tol} and commit it. Re-renders
@@ -75,7 +75,7 @@ public final class ColorToolService {
      * current resolution. {@code fillRgb} (0xRRGGBB) is the colour painted where the background was
      * removed (-1 = smart auto black/white). Undoable. All feedback goes to {@code player}.
      */
-    public static void applyBgRemoval(ServerPlayerEntity player, String id, String mode, int tol, int fillRgb) {
+    public static void applyBgRemoval(ServerPlayerEntity player, String id, String mode, int fillRgb) {
         MinecraftServer server = player.getServer();
         if (server == null) return;
         SlotData d = SlotManager.getById(id);
@@ -93,25 +93,24 @@ public final class ColorToolService {
         final SlotData slot = d;
         final UUID who = player.getUuid();
         final String m = BackgroundRemover.normalize(mode);
-        final int t = Math.max(0, Math.min(100, tol));
         final int fill = fillRgb;
-        Chat.tool(player, "Applying " + BackgroundRemover.displayName(m) + " (" + t + "%) to \"" + id + "\"…");
+        Chat.tool(player, "Applying " + BackgroundRemover.displayName(m) + " to \"" + id + "\"…");
         Thread worker = new Thread(() -> {
             try {
                 byte[] png;
                 if (source != null && source.length > 0) {
                     int size = before != null ? sizeOf(before, CustomBlocksConfig.textureSize) : CustomBlocksConfig.textureSize;
                     byte[] cleaned = fill >= 0
-                            ? BackgroundRemover.apply(source, m, t, fill)
-                            : BackgroundRemover.apply(source, m, t);
+                            ? BackgroundRemover.apply(source, m, fill)
+                            : BackgroundRemover.apply(source, m);
                     png = ImageProcessor.toBlockPng(cleaned, size);
                     png = fill >= 0
-                            ? BackgroundRemover.snapBackgroundColor(png, m, t, fill)
-                            : BackgroundRemover.snapBackgroundBlack(png, m, t);
+                            ? BackgroundRemover.snapBackgroundColor(png, m, fill)
+                            : BackgroundRemover.snapBackgroundBlack(png, m);
                 } else {
                     png = fill >= 0
-                            ? BackgroundRemover.apply(before, m, t, fill)
-                            : BackgroundRemover.apply(before, m, t);
+                            ? BackgroundRemover.apply(before, m, fill)
+                            : BackgroundRemover.apply(before, m);
                 }
                 final byte[] after = png;
                 server.execute(() -> {
@@ -123,7 +122,7 @@ public final class ColorToolService {
                             + "). /cb undo to revert.");
                 });
             } catch (Exception e) {
-                IncidentRecorder.record("bgstudio apply failed for \"" + id + "\" (" + m + " @ " + t + ")",
+                IncidentRecorder.record("bgstudio apply failed for \"" + id + "\" (" + m + ")",
                         id, player.getName().getString(), e);
                 server.execute(() -> Chat.toolError(player, "Couldn't update that background — texture left unchanged."));
             }
@@ -133,8 +132,8 @@ public final class ColorToolService {
     }
 
     /** Convenience: smart fill (auto black/white). */
-    public static void applyBgRemoval(ServerPlayerEntity player, String id, String mode, int tol) {
-        applyBgRemoval(player, id, mode, tol, -1);
+    public static void applyBgRemoval(ServerPlayerEntity player, String id, String mode) {
+        applyBgRemoval(player, id, mode, -1);
     }
 
     // ── Colour variant → a brand-new block (Colour Variants panel swatch click) ─────────────────

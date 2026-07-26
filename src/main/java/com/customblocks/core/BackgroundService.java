@@ -51,20 +51,19 @@ public final class BackgroundService {
         if (raw == null || raw.length == 0) return new Result(null, Skip.NO_SOURCE);
 
         String mode = CustomBlocksConfig.backgroundMode;
-        int tol = CustomBlocksConfig.backgroundTolerance;
         int size = CustomBlocksConfig.textureSize;
         try {
             if (BackgroundValue.BLACK.equals(background)) {
                 // The existing default rail, unchanged — black must not re-render differently.
-                byte[] cleaned = BackgroundRemover.apply(raw, mode, tol);
+                byte[] cleaned = BackgroundRemover.apply(raw, mode);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, size);
-                return new Result(BackgroundRemover.snapBackgroundBlack(png, mode, tol), Skip.NONE);
+                return new Result(BackgroundRemover.snapBackgroundBlack(png, mode), Skip.NONE);
             }
             int rgb = BackgroundValue.rgb(background);
-            byte[] cleaned = BackgroundRemover.apply(raw, mode, tol, rgb);
+            byte[] cleaned = BackgroundRemover.apply(raw, mode, rgb);
             byte[] png = ImageProcessor.toBlockPng(cleaned, size);
             png = ImageProcessor.fillBackground(png, rgb); // fills the padding a non-square source leaves
-            return new Result(BackgroundRemover.snapBackgroundColor(png, mode, tol, rgb), Skip.NONE);
+            return new Result(BackgroundRemover.snapBackgroundColor(png, mode, rgb), Skip.NONE);
         } catch (Exception e) {
             return new Result(null, Skip.FAILED);
         }

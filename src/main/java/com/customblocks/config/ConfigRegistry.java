@@ -114,15 +114,10 @@ public final class ConfigRegistry {
                 () -> CustomBlocksConfig.transparentBackground, v -> CustomBlocksConfig.transparentBackground = v,
                 false, false, false));
         f.add(ConfigField.enumField("background_removal", "Background removal",
-                "Strip a block image's background when it is applied: off, edges (outer background) or closed (also enclosed areas).",
+                "Strip a block image's background when it is applied. Auto works it out from the picture; there is nothing to tune.",
                 Cat.LOOK, 1,
                 () -> CustomBlocksConfig.backgroundMode, v -> CustomBlocksConfig.backgroundMode = v,
-                "none", new String[]{"none", "edges", "closed"}, false, false));
-        f.add(ConfigField.intField("background_strength", "Background strength",
-                "How aggressively background removal matches shades (0 = off, 100 = most). Only used when removal is on.",
-                Cat.LOOK, 1,
-                () -> CustomBlocksConfig.backgroundTolerance, v -> CustomBlocksConfig.backgroundTolerance = v,
-                30, 0, 100, 5, false, false));
+                "none", new String[]{"none", "auto"}, false, false));
         f.add(ConfigField.group("variant_colours", "Variant colours",
                 "The four triangle recolour swatches (red, yellow, green, black). Opens a colour chest.",
                 Cat.LOOK, 1));

@@ -79,16 +79,14 @@ public final class ColorFamilyOps {
 
         final UUID who = actor(src);
         final String baseMode = CustomBlocksConfig.backgroundMode;       // base = normal upload (snap-to-black)
-        final int baseTol = CustomBlocksConfig.backgroundTolerance;
-        final int colourTol = baseTol > 0 ? baseTol : 30;               // 0 tol → no recolour at all (createVariant rule)
         final int size = CustomBlocksConfig.textureSize;
         Chat.info(src, "Fetching the image for the \"" + id + "\" colour family before creating…");
 
         Thread worker = new Thread(() -> {
             try {
                 byte[] raw = ImageLimits.downloadColorFamilySource(link);
-                byte[] basePng = bakeBase(raw, baseMode, baseTol, size);
-                Map<String, byte[]> colourPngs = recolourSet(raw, baseMode, colourTol, size);
+                byte[] basePng = bakeBase(raw, baseMode, size);
+                Map<String, byte[]> colourPngs = recolourSet(raw, size);
                 server.execute(() -> commit(src, server, who, id, name, link, raw, basePng, colourPngs));
             } catch (Exception e) {
                 String code = IncidentRecorder.record("Colour-family create failed for \"" + id + "\" (url: " + link + ")",
@@ -185,8 +183,6 @@ public final class ColorFamilyOps {
         final int index = base.index();
         final String name = base.displayName();
         final String baseMode = CustomBlocksConfig.backgroundMode;
-        final int baseTol = CustomBlocksConfig.backgroundTolerance;
-        final int colourTol = baseTol > 0 ? baseTol : 30;   // 0 tol → no recolour (createVariant rule)
         final int size = CustomBlocksConfig.textureSize;
         final UUID who = actor(src);
 
@@ -210,7 +206,7 @@ public final class ColorFamilyOps {
                             + CbFmt.BAD + " with a smaller image first, then rebuild its colours. Nothing was changed."));
                     return;
                 }
-                Map<String, byte[]> colourPngs = recolourSet(raw, baseMode, colourTol, size);
+                Map<String, byte[]> colourPngs = recolourSet(raw, size);
                 server.execute(() -> commitRebuild(src, server, who, id, name, raw, colourPngs));
             } catch (Exception e) {
                 String code = IncidentRecorder.record("Colour-family rebuild failed for \"" + id + "\"", id, src.getName(), e);
@@ -295,16 +291,14 @@ public final class ColorFamilyOps {
         if (server == null) return;
         final UUID who = actor(src);
         final String baseMode = CustomBlocksConfig.backgroundMode;
-        final int baseTol = CustomBlocksConfig.backgroundTolerance;
-        final int colourTol = baseTol > 0 ? baseTol : 30;
         final int size = CustomBlocksConfig.textureSize;
         Chat.info(src, "Fetching the new image to overwrite the \"" + id + "\" colour family…");
 
         Thread worker = new Thread(() -> {
             try {
                 byte[] raw = ImageLimits.downloadColorFamilySource(link);
-                byte[] basePng = bakeBase(raw, baseMode, baseTol, size);
-                Map<String, byte[]> colourPngs = recolourSet(raw, baseMode, colourTol, size);
+                byte[] basePng = bakeBase(raw, baseMode, size);
+                Map<String, byte[]> colourPngs = recolourSet(raw, size);
                 server.execute(() -> commitOverwrite(src, server, who, id, name, link, raw, basePng, colourPngs));
             } catch (Exception e) {
                 String code = IncidentRecorder.record("Colour-family overwrite failed for \"" + id + "\" (url: " + link + ")",
@@ -392,18 +386,18 @@ public final class ColorFamilyOps {
     // ── shared image rails (one copy for create / rebuild / overwrite) ──
 
     /** Base / black = the normal upload: strip bg to opaque black, square it, re-snap black. */
-    private static byte[] bakeBase(byte[] raw, String baseMode, int baseTol, int size) throws Exception {
-        byte[] png = BackgroundRemover.apply(raw, baseMode, baseTol);
+    private static byte[] bakeBase(byte[] raw, String baseMode, int size) throws Exception {
+        byte[] png = BackgroundRemover.apply(raw, baseMode);
         png = ImageProcessor.toBlockPng(png, size);
-        return BackgroundRemover.snapBackgroundBlack(png, baseMode, baseTol);
+        return BackgroundRemover.snapBackgroundBlack(png, baseMode);
     }
 
     /** The 3 colours from the SAME source, recoloured to each configured hex (recolour → square → fill). */
-    private static Map<String, byte[]> recolourSet(byte[] raw, String baseMode, int colourTol, int size) throws Exception {
+    private static Map<String, byte[]> recolourSet(byte[] raw, int size) throws Exception {
         Map<String, byte[]> colourPngs = new LinkedHashMap<>();
         for (String key : DEFAULT_COLOURS) {
             int rgb = ColorVariantService.rgbFor(key);
-            byte[] recoloured = BackgroundRemover.recolorBackground(raw, baseMode, colourTol, rgb);
+            byte[] recoloured = BackgroundRemover.recolorBackground(raw, rgb);
             byte[] png = ImageProcessor.toBlockPng(recoloured, size);
             png = ImageProcessor.fillBackground(png, rgb);
             colourPngs.put(key, png);

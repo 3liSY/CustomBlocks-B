@@ -64,7 +64,6 @@ public final class CustomBlocksConfigStore {
             CustomBlocksConfig.cloudShareEnabled = getBool(root, "cloudShareEnabled", CustomBlocksConfig.cloudShareEnabled);
             CustomBlocksConfig.autoUpdateEnabled = getBool(root, "autoUpdateEnabled", CustomBlocksConfig.autoUpdateEnabled);
             CustomBlocksConfig.backgroundMode  = BackgroundRemover.normalize(getString(root, "backgroundMode", CustomBlocksConfig.backgroundMode));
-            CustomBlocksConfig.backgroundTolerance = clamp(getInt(root, "backgroundTolerance", CustomBlocksConfig.backgroundTolerance), 0, 100);
             CustomBlocksConfig.triangleRedHex    = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleRedHex",    CustomBlocksConfig.triangleRedHex),    CustomBlocksConfig.triangleRedHex);
             CustomBlocksConfig.triangleYellowHex = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleYellowHex", CustomBlocksConfig.triangleYellowHex), CustomBlocksConfig.triangleYellowHex);
             CustomBlocksConfig.triangleGreenHex  = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleGreenHex",  CustomBlocksConfig.triangleGreenHex),  CustomBlocksConfig.triangleGreenHex);
@@ -131,7 +130,6 @@ public final class CustomBlocksConfigStore {
             root.addProperty("cloudShareEnabled",  CustomBlocksConfig.cloudShareEnabled);
             root.addProperty("autoUpdateEnabled",  CustomBlocksConfig.autoUpdateEnabled);
             root.addProperty("backgroundMode",     CustomBlocksConfig.backgroundMode);
-            root.addProperty("backgroundTolerance", CustomBlocksConfig.backgroundTolerance);
             root.addProperty("triangleRedHex",     CustomBlocksConfig.triangleRedHex);
             root.addProperty("triangleYellowHex",  CustomBlocksConfig.triangleYellowHex);
             root.addProperty("triangleGreenHex",   CustomBlocksConfig.triangleGreenHex);

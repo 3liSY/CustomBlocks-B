@@ -5,18 +5,15 @@
  *                                  custom colour, variants, live recolour, eyedrop). /cb colors = alias.
  *   /cb bgstudio                 — pick a block, then open its Background Studio.
  *   /cb bgstudio <id>            — open the Background Studio for <id> directly.
- *   /cb tolerance <value>        — set the GLOBAL default background-removal strength (0-100).
- *   /cb tolerance <value> <id>   — set just <id>'s strength (persisted per-block; global untouched)
  *                                  and re-apply its current mode now.
  *   /cb recolor <id>             — open the live recolour slider (client screen) for <id>. (was livecolor, §G27.11)
  *   /cb eyedrop                  — open the screen eyedrop (client screen) to pick a colour.
  *
- * Per-block strengths live in BlockToleranceStore; the global default in CustomBlocksConfig. The two
  * client screens are reached by sending an OpenGuiPayload; everything else delegates to the tested
  * GUIs / ColorToolService. Separate handler from ColorImageCommands so each stays under the 400-line
  * gate (§9.3).
  *
- * Depends on: ColorToolService, BgStudioSession, BlockToleranceStore, CustomBlocksConfig, SlotManager,
+ * Depends on: ColorToolService, BgStudioSession, CustomBlocksConfig, SlotManager,
  *             SlotData, TextureStore, GuiRouter/Nav, GuiMode, OpenGuiPayload, ResourcePackServer,
  *             ServerPlayNetworking, Chat, BlockSuggestions.
  * Called by:  CommandRegistrar.
@@ -26,7 +23,6 @@ package com.customblocks.command.handlers;
 import com.customblocks.command.CbFmt;
 import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
-import com.customblocks.core.BlockToleranceStore;
 import com.customblocks.core.ColorToolService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -60,16 +56,6 @@ public final class ImageToolCommands {
                 .then(CommandManager.argument("id", StringArgumentType.word())
                         .suggests(BlockSuggestions.IDS)
                         .executes(ctx -> bgstudio(ctx, StringArgumentType.getString(ctx, "id")))));
-
-        // /cb tolerance <value> [id] — value first; with no id it sets the global default.
-        root.then(CommandManager.literal("tolerance")
-                .then(CommandManager.argument("value", IntegerArgumentType.integer(0, 100))
-                        .executes(ctx -> toleranceGlobal(ctx, IntegerArgumentType.getInteger(ctx, "value")))
-                        .then(CommandManager.argument("id", StringArgumentType.word())
-                                .suggests(BlockSuggestions.IDS)
-                                .executes(ctx -> tolerancePerBlock(ctx,
-                                        IntegerArgumentType.getInteger(ctx, "value"),
-                                        StringArgumentType.getString(ctx, "id"))))));
 
         // /cb coloring — the hub; /cb colors stays as a familiar alias.
         root.then(CommandManager.literal("coloring").executes(ImageToolCommands::colors));
@@ -106,35 +92,6 @@ public final class ImageToolCommands {
             return 0;
         }
         GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.BGSTUDIO, id));
-        return 1;
-    }
-
-    // ── /cb tolerance ──────────────────────────────────────────────────────────
-
-    /** No id: set the server-wide default strength used by future background removals. */
-    private static int toleranceGlobal(CommandContext<ServerCommandSource> ctx, int value) {
-        CustomBlocksConfig.backgroundTolerance = Math.max(0, Math.min(100, value));
-        CustomBlocksConfig.save();
-        Chat.success(ctx.getSource(), "Global background tolerance set to " + CbFmt.VALUE + CustomBlocksConfig.backgroundTolerance
-                + "%" + CbFmt.RESET + ". " + CbFmt.DIM + "Used by new removals and any block without its own setting.");
-        return 1;
-    }
-
-    /** With an id: store the override for that block only (global stays put) and re-apply it now. */
-    private static int tolerancePerBlock(CommandContext<ServerCommandSource> ctx, int value, String id) {
-        ServerPlayerEntity p = player(ctx);
-        if (p == null) { Chat.error(ctx.getSource(), "Only a player can set a block's tolerance."); return 0; }
-        if (SlotManager.getById(id) == null) {
-            Chat.error(ctx.getSource(), "There's no block called \"" + id + "\". Check /cb list for the right id.");
-            return 0;
-        }
-        int v = Math.max(0, Math.min(100, value));
-        BlockToleranceStore.set(id, v);
-        BgStudioSession.setTol(p.getUuid(), id, v);
-        BgStudioSession.State s = BgStudioSession.get(p.getUuid(), id);
-        Chat.success(ctx.getSource(), "Set \"" + id + "\" tolerance to " + CbFmt.VALUE + v + "%" + CbFmt.RESET + " " + CbFmt.DIM + "(global default stays "
-                + CustomBlocksConfig.backgroundTolerance + "%). Applying…");
-        ColorToolService.applyBgRemoval(p, id, s.mode, v);
         return 1;
     }
 

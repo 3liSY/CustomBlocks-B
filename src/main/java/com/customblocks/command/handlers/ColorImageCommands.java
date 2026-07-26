@@ -139,16 +139,15 @@ public final class ColorImageCommands {
         }
         final int index = d.index();
         final String mode = CustomBlocksConfig.backgroundMode;
-        final int tol = CustomBlocksConfig.backgroundTolerance;
         Chat.info(src, "Resizing \"" + id + "\" to " + CbFmt.VALUE + px + "×" + px + "px" + CbFmt.RESET + "…");
         Thread worker = new Thread(() -> {
             try {
                 byte[] source = TextureStore.loadSource(index);
                 byte[] png;
                 if (source != null && source.length > 0) {
-                    byte[] cleaned = BackgroundRemover.apply(source, mode, tol);
+                    byte[] cleaned = BackgroundRemover.apply(source, mode);
                     png = ImageProcessor.toBlockPng(cleaned, px);
-                    png = BackgroundRemover.snapBackgroundBlack(png, mode, tol);
+                    png = BackgroundRemover.snapBackgroundBlack(png, mode);
                 } else {
                     byte[] baked = TextureStore.load(index); // no source → resample the baked pixels
                     png = ImageProcessor.toBlockPng(baked, px);

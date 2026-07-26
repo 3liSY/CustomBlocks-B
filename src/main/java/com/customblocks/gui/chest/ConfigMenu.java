@@ -79,9 +79,9 @@ public final class ConfigMenu {
                         + BackgroundRemover.displayName(CustomBlocksConfig.backgroundMode),
                 "§7Strip an image's background to black",
                 "§7when a block is created or retextured.",
-                "§7Strength: §f" + CustomBlocksConfig.backgroundTolerance + "§7/100 §8(/cb tolerance)",
-                "§7Off §8· §7Removal Only §8· §7+ Closed Areas",
-                "§aClick §7→ cycle mode"),
+                "§8Works it out from the picture — nothing to tune.",
+                "§7Off §8· §7Auto",
+                "§aClick §7→ toggle"),
                 (p, b, a) -> GuiRouter.runAndReopen(p,
                         "config background " + BackgroundRemover.commandArg(
                                 BackgroundRemover.next(CustomBlocksConfig.backgroundMode)),

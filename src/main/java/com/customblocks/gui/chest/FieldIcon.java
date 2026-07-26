@@ -86,7 +86,7 @@ public final class FieldIcon {
             case "history_mode":         return "per_player".equals(v) ? "per-player" : "server-wide";
             case "auto_backup_interval": return "0".equals(v) ? "off" : "every " + v + " min";
             case "background_removal":
-                switch (v) { case "edges": return "removal only"; case "closed": return "+ enclosed areas"; default: return "off"; }
+                switch (v) { case "auto": return "automatic"; default: return "off"; }
             default: return v;
         }
     }

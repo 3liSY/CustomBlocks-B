@@ -92,7 +92,8 @@ public final class ColorReplacer {
      * the fill already equals {@code newRgb}, or no pixel matched. This replaces the fragile re-run of the
      * full BgRemove flood pipeline on an already-baked PNG.
      */
-    public static byte[] recolorFlatBg(byte[] png, int newRgb, int tol) throws Exception {
+    public static byte[] recolorFlatBg(byte[] png, int newRgb) throws Exception {
+        final int tol = FLAT_FILL_TOL;
         BufferedImage img = read(png);
         int w = img.getWidth(), h = img.getHeight();
         int[] corners = {img.getRGB(0, 0), img.getRGB(w - 1, 0), img.getRGB(0, h - 1), img.getRGB(w - 1, h - 1)};
@@ -118,6 +119,19 @@ public final class ColorReplacer {
         }
         return changed == 0 ? null : write(out);
     }
+
+    /**
+     * How far a pixel may sit from the corner colour, PER CHANNEL in 0-255 codes, and still count as
+     * part of the same flat fill.
+     *
+     * <p>This used to be handed the deleted 0-100 background strength, which was a units mismatch as
+     * well as a knob: a "strength" of 30 arrived here as a raw channel distance of 30. The value is kept
+     * at 30 deliberately, because that is what every server running the default was already getting, so
+     * this rail's behaviour does not change with the rip. A server that had TUNED the strength now gets
+     * the default instead — which is what §H's migration rule requires, since an existing value is
+     * discarded rather than translated.
+     */
+    private static final int FLAT_FILL_TOL = 30;
 
     private static final int OPAQUE_MIN = 200; // corner alpha floor: a flat fill is opaque
 

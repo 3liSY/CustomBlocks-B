@@ -74,12 +74,10 @@ public final class StudioReskin {
                     }
                 }
                 // Static source → bake a square block texture (with optional background fill).
-                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 png = bgArgb != null ? ImageProcessor.fillBackground(png, bgArgb)
-                        : BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode,
-                          CustomBlocksConfig.backgroundTolerance);
+                        : BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode);
                 final byte[] finalPng = png;
                 server.execute(() -> finishStatic(player, src, id, index, raw, finalPng, beforeSlot, beforeTex, url));
             } catch (Exception e) {

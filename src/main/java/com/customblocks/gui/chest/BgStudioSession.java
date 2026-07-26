@@ -2,19 +2,20 @@
  * BgStudioSession.java — Group 10 (Background Studio).
  *
  * Responsibility: per-player working selection for the Background Studio — which block is being
- * worked on, the chosen removal mode, the tolerance, and the fill colour (what the removed
- * background becomes — defaults to black for parity). The chest menu (BgStudioMenu) and the
- * /cb tolerance command both read/write this so they stay in lock-step: opening the GUI seeds it
- * from the server defaults; clicking a mode tile or running /cb tolerance updates it; Apply reads it.
+ * worked on, whether removal is on, and the fill colour (what the removed background becomes —
+ * defaults to black for parity). Opening the GUI seeds it from the server default; clicking a mode
+ * tile updates it; Apply reads it.
  *
- * Depends on: CustomBlocksConfig (default mode/tolerance), BackgroundRemover (mode normalisation),
+ * G10 §H: there is no strength here any more. The per-block tolerance override and the global default
+ * are both deleted, so a session carries only the mode and the fill.
+ *
+ * Depends on: CustomBlocksConfig (default mode), BackgroundRemover (mode normalisation),
  *             ColorLibrary (fill colour resolution).
- * Called by:  gui/chest/BgStudioMenu, command/handlers/ImageToolCommands.
+ * Called by:  gui/chest/BgStudioMenu.
  */
 package com.customblocks.gui.chest;
 
 import com.customblocks.CustomBlocksConfig;
-import com.customblocks.core.BlockToleranceStore;
 import com.customblocks.core.ColorLibrary;
 import com.customblocks.image.BackgroundRemover;
 
@@ -32,44 +33,26 @@ public final class BgStudioSession {
     public static final class State {
         public String id;
         public String mode;
-        public int tol;
         /** Hex colour the removed background is painted (default black). */
         public String fillColor;
-        State(String id, String mode, int tol, String fillColor) {
-            this.id = id; this.mode = mode; this.tol = tol; this.fillColor = fillColor;
+        State(String id, String mode, String fillColor) {
+            this.id = id; this.mode = mode; this.fillColor = fillColor;
         }
     }
 
     private static final Map<UUID, State> SESSIONS = new ConcurrentHashMap<>();
 
-    /**
-     * Get (creating from defaults if needed) the session for {@code player}, retargeted to {@code id}.
-     * On a fresh session or when retargeting to a different block, the tolerance is seeded from that
-     * block's saved per-block override if it has one, else the global default — so each block reopens
-     * at its own remembered strength.
-     */
+    /** Get (creating from the server default if needed) the session for {@code player}, retargeted to
+     *  {@code id}. Retargeting keeps the chosen mode and fill — there is no per-block state to reload. */
     public static State get(UUID player, String id) {
-        State s = SESSIONS.computeIfAbsent(player, k -> new State(id, defaultMode(), tolFor(id), DEFAULT_FILL));
-        if (id != null && !id.equals(s.id)) { s.id = id; s.tol = tolFor(id); } // retarget, keep mode/fill
+        State s = SESSIONS.computeIfAbsent(player, k -> new State(id, defaultMode(), DEFAULT_FILL));
+        if (id != null && !id.equals(s.id)) s.id = id;
         return s;
     }
-
-    /** A block's saved per-block tolerance override, or the global default if it has none. */
-    private static int tolFor(String id) {
-        return id == null ? defaultTol() : BlockToleranceStore.effective(id, defaultTol());
-    }
-
-    /** The session for {@code player} or null (no defaulting) — used by /cb tolerance before any GUI. */
-    public static State peek(UUID player) { return SESSIONS.get(player); }
 
     public static void setMode(UUID player, String id, String mode) {
         State s = get(player, id);
         s.mode = BackgroundRemover.normalize(mode);
-    }
-
-    public static void setTol(UUID player, String id, int tol) {
-        State s = get(player, id);
-        s.tol = Math.max(0, Math.min(100, tol));
     }
 
     /** Set the fill colour (hex string from ColorLibrary.resolve, or raw "#RRGGBB"). */
@@ -91,11 +74,6 @@ public final class BgStudioSession {
 
     private static String defaultMode() {
         String m = BackgroundRemover.normalize(CustomBlocksConfig.backgroundMode);
-        return BackgroundRemover.NONE.equals(m) ? BackgroundRemover.EDGES : m; // a studio default of "none" is pointless
-    }
-
-    private static int defaultTol() {
-        int t = CustomBlocksConfig.backgroundTolerance;
-        return t > 0 ? Math.min(100, t) : 30;
+        return BackgroundRemover.NONE.equals(m) ? BackgroundRemover.AUTO : m; // a studio default of "off" is pointless
     }
 }

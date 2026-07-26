@@ -112,7 +112,6 @@ public final class TempRetextureCommands {
         final String backupName = BackupManager.timestampName("pre-tempretexture");
         final int blockCount = SlotManager.assignedSlots().size();
         final String mode = CustomBlocksConfig.backgroundMode;
-        final int tol = CustomBlocksConfig.backgroundTolerance;
         final int size = CustomBlocksConfig.textureSize;
         final int fMissing = missing, fAnimated = animated;
         Chat.info(src, "Applying " + CbFmt.VALUE + jobs.size() + CbFmt.RESET + " sourced logo(s)…");
@@ -134,9 +133,9 @@ public final class TempRetextureCommands {
                     TempRetextureBackup.snapshot(j.index()); // capture the TRUE original BEFORE overwriting (first time only)
                     Thread.sleep(THROTTLE_MS); // Wikimedia throttles bursts (HTTP 429) — pace the downloads
                     byte[] raw = downloadWithRetry(j.url());
-                    byte[] cleaned = BackgroundRemover.apply(raw, mode, tol);
+                    byte[] cleaned = BackgroundRemover.apply(raw, mode);
                     byte[] png = ImageProcessor.toBlockPng(cleaned, size);
-                    png = BackgroundRemover.snapBackgroundBlack(png, mode, tol);
+                    png = BackgroundRemover.snapBackgroundBlack(png, mode);
                     TextureStore.save(j.index(), png);
                     TextureStore.saveSource(j.index(), raw); // keep the HD source so /cb retextureall can re-bake later
                     TextureStore.saveUrl(j.index(), j.url());

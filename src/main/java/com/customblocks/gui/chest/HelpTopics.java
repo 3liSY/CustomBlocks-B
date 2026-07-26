@@ -87,7 +87,6 @@ public final class HelpTopics {
                     new Topic("gradientpick", "/cb gradientpick", "Pick gradient endpoints in a GUI"),
                     new Topic("palette", "/cb palette", "Your working palette of saved colours"),
                     new Topic("eyedrop", "/cb eyedrop <id>", "Pull the colours out of a block's texture"),
-                    new Topic("tolerance", "/cb tolerance <value>", "How closely colours must match to be replaced"),
                     new Topic("bgstudio", "/cb bgstudio <id>", "Remove or replace a texture's background"),
                     new Topic("setbg", "/cb setbg <id> <black|colour>", "Set a block's background colour"),
                     new Topic("setbackground", "/cb setbackground <id> <black|colour>", "Alias of /cb setbg"),

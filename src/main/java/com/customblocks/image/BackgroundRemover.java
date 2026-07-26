@@ -7,10 +7,12 @@
  * subject reads on black as-is (no white flip, no keyline; the recolour path keeps its own fill).
  * Recoded clean from the old ImageProcessor.replaceBackground; CIE-LAB ΔE + flood-fill recycled.
  *
- * Three modes:
- *   none   — leave the image untouched.
- *   edges  — background only: flood-fill the edge-connected background from every border pixel.
- *   closed — background + enclosed areas: also remove interior pixels matching the bg colour.
+ * Two modes (G10 §H):
+ *   none — Off: leave the image untouched.
+ *   auto — decide the background from the picture itself (BgCascade) and paint it the fill.
+ *
+ * There is no strength number anywhere. The three old removal modes differed only in how hard one
+ * player-set threshold was applied, and that threshold is gone, so they collapse into Auto.
  *
  * Runs on the NATIVE-resolution image, BEFORE any resize/pad (so corner sampling reads the
  * real background, never the transparent padding ImageProcessor adds for non-square images).
@@ -36,68 +38,47 @@ public final class BackgroundRemover {
 
     private BackgroundRemover() {} // static-only
 
-    public static final String NONE   = "none";
-    public static final String EDGES  = "edges";   // background only — edge-connected
-    public static final String CLOSED = "closed";  // background + enclosed areas
-    public static final String SMART  = "smart";   // offline subject isolation (Group 10 — pure Java)
+    /** Off — the picture is left exactly as it arrived. */
+    public static final String NONE = "none";
+    /** Auto — the cascade decides the background. The only removal mode there is. */
+    public static final String AUTO = "auto";
 
-    /**
-     * Player-facing strength 0-100 maps linearly onto a CIEDE2000 ΔE [0, MAX_DELTA_E].
-     *
-     * <p>Derivation (G10 §H Jar A, 2026-07-25, tools/render_preview/DeltaESweep.java): the old scale
-     * capped CIE76 at 22, so the default strength 30 split background from subject at CIE76 ≤ 6.6.
-     * Sweeping the ΔE00 threshold over every opaque pixel of the seven baseline pictures against
-     * that split gives a stability plateau at ΔE00 4.10-4.40 (≤ 0.024% of 21.97M pixels disagreeing,
-     * cliff at 4.80); the plateau centre 4.25 ÷ 0.30 = 14.2. The default strength therefore keeps
-     * meaning what it meant, and every other strength scales around it on the uniform metric.
-     */
-    private static final double MAX_DELTA_E = 14.2;
     /** Alpha below this counts as transparent → background. Package-private: the cascade's rung 1
      *  reads authored alpha against the same cutoff, so there is one definition of "transparent". */
     static final int OPAQUE_THRESHOLD = 128;
     private static final int BLACK = 0xFF000000;
     /** After resize, pixels with every channel ≤ this snap to pure black (kills bicubic gray halos). */
     private static final int SNAP_MAX = 24;
-    /** Hysteresis ratio between the weak and strong background thresholds (weak = ratio × tol).
-     *  A weak pixel joins the background only by connecting to an already-accepted pixel, so an
-     *  edge survives its own momentary dips without the geometric close that ate thin features.
-     *  2:1 is Canny's recommended high:low threshold ratio (Canny 1986, §VI suggests 2:1-3:1);
-     *  the conservative end is taken because the flood expands regions, not thin edge chains. */
-    private static final double HYSTERESIS_RATIO = 2.0;
-    /** How many consecutive WEAK pixels the flood may cross before it must touch STRONG ground
-     *  again. The weak tier replaces the old radius-1 morphological close, whose whole job was
-     *  bridging 1-2 px hairline gaps — so 2 px is the bridging power it inherits, no more. Without
-     *  this cap the weak tier makes region-scale decisions: on a JPEG it tunnels through the noise
-     *  gaps of a blocky shadow and hollows it into stuttering dashes (owner report, 2026-07-25). */
-    private static final int WEAK_MAX_RUN = 2;
-    private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
 
     /**
      * Remove the background and return cleaned PNG bytes. On mode {@code none} (or any failure)
      * the original bytes are returned unchanged — background removal must never break a retexture.
      * Uses the smart black/white fill (auto-picks based on subject brightness).
      */
-    public static byte[] apply(byte[] input, String mode, int tolerance) {
-        return process(input, mode, tolerance, null); // null → smart black/white fill
+    public static byte[] apply(byte[] input, String mode) {
+        return process(input, mode, null); // null → plain black fill
     }
 
     /**
      * Remove the background and paint the removed area with {@code fillRgb} (0xRRGGBB).
      * Used by BgStudio when the player picks a custom fill colour.
      */
-    public static byte[] apply(byte[] input, String mode, int tolerance, int fillRgb) {
-        return process(input, mode, tolerance, 0xFF000000 | (fillRgb & 0xFFFFFF));
+    public static byte[] apply(byte[] input, String mode, int fillRgb) {
+        return process(input, mode, 0xFF000000 | (fillRgb & 0xFFFFFF));
     }
 
     /**
-     * M2 (colour variants): same background detection as {@link #apply}, but the background is
-     * painted {@code fillRgb} (0xRRGGBB) instead of the smart black/white fill. Mode {@code none}
-     * is treated as {@code edges} — a recolour without background detection would do nothing.
+     * The recolour rail (colour variants, colour families, the bundled Arabic sets): find the
+     * background and paint it {@code fillRgb} (0xRRGGBB).
+     *
+     * <p>It takes no mode, because it always runs Auto (G10 §H locked decision). Painting a background
+     * a new colour requires knowing where the background IS, so with removal genuinely off a variant
+     * would come out identical to its base. This replaces the old "mode {@code none} is treated as
+     * {@code edges}" coercion plus the six scattered {@code tol > 0 ? tol : 30} fallbacks that existed
+     * only because 0 meant both "strictest" and "off".
      */
-    public static byte[] recolorBackground(byte[] input, String mode, int tolerance, int fillRgb) {
-        String m = normalize(mode);
-        if (NONE.equals(m)) m = EDGES;
-        return process(input, m, tolerance, 0xFF000000 | (fillRgb & 0xFFFFFF));
+    public static byte[] recolorBackground(byte[] input, int fillRgb) {
+        return process(input, AUTO, 0xFF000000 | (fillRgb & 0xFFFFFF));
     }
 
     /**
@@ -107,14 +88,13 @@ public final class BackgroundRemover {
      * <p>G10 §H: the removal threshold is no longer supplied by the player. Everything the old
      * hysteresis flood did from a 0-100 strength — seeding from the border, growing by colour,
      * absorbing enclosed pockets, shaving the edge — now happens inside BgCascade, which derives what
-     * it needs from the picture and reports honestly when it cannot. The {@code tolerance} parameter is
-     * therefore ignored on this path and is removed from every signature in the following slice.
+     * it needs from the picture and reports honestly when it cannot.
      *
      * <p>When the cascade declines, the ORIGINAL bytes are returned. That is the designed outcome, not
      * a failure: a picture the cascade will not damage on a guess bakes unchanged, and the player is
      * pointed at {@code /cb bgpick} to supply the one fact that was missing.
      */
-    private static byte[] process(byte[] input, String mode, int tolerance, Integer forcedFill) {
+    private static byte[] process(byte[] input, String mode, Integer forcedFill) {
         input = CheckerboardDetector.flattenToBlack(input); // G10-6: flattened-preview checkerboard → black in EVERY mode (no-op otherwise)
         String m = normalize(mode);
         if (NONE.equals(m)) return input; // Off — honoured on a normal bake
@@ -152,24 +132,36 @@ public final class BackgroundRemover {
         }
     }
 
-    /** Canonicalize any stored/typed value to NONE / EDGES / CLOSED (unknown → NONE). */
+    /**
+     * Canonicalize any stored or typed value to NONE or AUTO.
+     *
+     * <p>Anything unrecognised becomes AUTO, never Off (G10 §H). The old behaviour answered Off for an
+     * unknown value, which after this rip would have turned a server whose config still said
+     * {@code smart} into one that quietly stopped removing backgrounds with nothing said in chat.
+     * Failing toward "still works" is the only safe direction.
+     */
     public static String normalize(String raw) {
         String m = fromArg(raw);
-        return m == null ? NONE : m;
+        return m == null ? AUTO : m;
     }
 
     /**
-     * Parse a value to its canonical mode, accepting both the internal ids (none/edges/closed)
-     * and the player-facing command arguments (NoBgRemove / BgRemove / BgRemove&More).
-     * Returns null for anything unrecognized (so the command can show a usage error).
+     * Parse a value to its canonical mode, accepting the internal ids, the player-facing command
+     * arguments, and every retired spelling. Returns null only for something genuinely unrecognised,
+     * so a command can show a usage error while {@link #normalize} still fails safe to Auto.
+     *
+     * <p>The retired names are kept as INPUT only: {@code BgRemove} and {@code BgRemove&More} both mean
+     * Auto now, so an existing {@code /cb config background BgRemove&More} line does not hard-error,
+     * and {@code BgSmart} resolves to Auto as well. None of them is offered by tab-complete or shown
+     * back to the player — {@code BgSmart} in particular was the same code path with the threshold
+     * hard-coded to 35, dressed up as intelligence it did not have.
      */
     public static String fromArg(String raw) {
         if (raw == null) return null;
         return switch (raw.trim().toLowerCase(Locale.ROOT)) {
-            case "none",   "nobgremove"           -> NONE;
-            case "edges",  "bgremove"             -> EDGES;
-            case "closed", "bgremove&more"        -> CLOSED;
-            case "smart",  "ai", "bgsmart"        -> SMART;
+            case "none", "nobgremove", "off"                          -> NONE;
+            case "auto", "edges", "closed", "smart",
+                 "bgremove", "bgremove&more", "bgsmart", "ai"          -> AUTO;
             default -> null;
         };
     }
@@ -177,31 +169,22 @@ public final class BackgroundRemover {
     /** Player-facing display name shown in the config menu and chat. */
     public static String displayName(String mode) {
         return switch (normalize(mode)) {
-            case EDGES  -> "Background Removal Only";
-            case CLOSED -> "Background + Closed Areas Removal";
-            case SMART  -> "Smart Removal (offline)";
-            default     -> "No Background Removal";
+            case AUTO -> "Automatic Background Removal";
+            default   -> "No Background Removal";
         };
     }
 
     /** Player-facing command argument for the given mode (for /cb config background). */
     public static String commandArg(String mode) {
         return switch (normalize(mode)) {
-            case EDGES  -> "BgRemove";
-            case CLOSED -> "BgRemove&More";
-            case SMART  -> "BgSmart";
-            default     -> "NoBgRemove";
+            case AUTO -> "Auto";
+            default   -> "NoBgRemove";
         };
     }
 
-    /** Next mode in the cycle none → edges → closed → smart → none (used by the config menu). */
+    /** Next mode in the cycle: there are only two, so this toggles Auto and Off. */
     public static String next(String mode) {
-        return switch (normalize(mode)) {
-            case NONE   -> EDGES;
-            case EDGES  -> CLOSED;
-            case CLOSED -> SMART;
-            default     -> NONE;
-        };
+        return NONE.equals(normalize(mode)) ? AUTO : NONE;
     }
 
     /**
@@ -210,8 +193,8 @@ public final class BackgroundRemover {
      * No-op when mode is none. When {@code fillRgb} is -1, defaults to smart detection (reads
      * the corners — if they aren't near-black, bails out so a dark subject isn't destroyed).
      */
-    public static byte[] snapBackgroundBlack(byte[] png, String mode, int tolerance) {
-        return snapBackgroundColor(png, mode, tolerance, -1);
+    public static byte[] snapBackgroundBlack(byte[] png, String mode) {
+        return snapBackgroundColor(png, mode, -1);
     }
 
     /**
@@ -226,14 +209,18 @@ public final class BackgroundRemover {
      * non-square picture) is therefore composited onto the fill here even when background removal is off,
      * which is the only path that could previously hand the atlas a texture with alpha.
      */
-    public static byte[] snapBackgroundColor(byte[] png, String mode, int tolerance, int fillRgb) {
+    public static byte[] snapBackgroundColor(byte[] png, String mode, int fillRgb) {
         try {
             BufferedImage read = ImageIO.read(new ByteArrayInputStream(png));
             if (read == null) return png;
             BufferedImage img = toArgb(read);
             int w = img.getWidth(), h = img.getHeight();
-            // Snapping needs an active mode + strength; flattening alpha to opaque always runs.
-            boolean snap = !NONE.equals(normalize(mode)) && tolerance > 0;
+            // Flattening alpha to opaque is UNCONDITIONAL (G10 §H): it is what guarantees a baked
+            // texture never hands the cutout layer a semi-transparent texel, and it was previously
+            // gated on `tolerance > 0`, so with a strength of 0 the always-opaque rule silently did not
+            // apply and the hairline came back. Snapping near-fill pixels to the exact fill is still
+            // Auto-only, because it cleans up removal artifacts and there are none when removal is off.
+            boolean snap = !NONE.equals(normalize(mode));
             int targetR, targetG, targetB;
             if (fillRgb >= 0) {
                 targetR = (fillRgb >> 16) & 0xFF;

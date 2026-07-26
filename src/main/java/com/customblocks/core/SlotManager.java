@@ -186,7 +186,6 @@ public final class SlotManager {
         LockManager.renameId(oldId, newId); FavoritesManager.renameId(oldId, newId);
         BlockNotesManager.renameId(oldId, newId);
         DraftManager.renameId(oldId, newId);
-        BlockToleranceStore.renameId(oldId, newId);
         GuessModeStore.renameId(oldId, newId); // Group 30 — keep a disguise reference valid across reid
         CategoryDisplayBlockManager.renameId(oldId, newId); // G07 dangling-ref audit — a category's display block must follow its id
         CategoryMembershipStore.renameBlockId(oldId, newId); // G11 — memberships are id-keyed, so they move too

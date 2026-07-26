@@ -111,11 +111,9 @@ public final class FaceCommands {
         Thread worker = new Thread(() -> {
             try {
                 byte[] raw = ImageDownloader.download(url);
-                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                byte[] cleaned = BackgroundRemover.apply(raw, CustomBlocksConfig.backgroundMode);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
-                png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode,
-                        CustomBlocksConfig.backgroundTolerance);
+                png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode);
                 TextureStore.saveFace(index, face, png);
                 server.execute(() -> {
                     ResourcePackServer.updatePack();

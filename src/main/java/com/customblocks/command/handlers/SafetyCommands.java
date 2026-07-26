@@ -117,13 +117,12 @@ public final class SafetyCommands {
         Chat.info(src, "Rebuilding texture for \"" + id + "\" from its saved image…");
         final int index = d.index();
         final String mode = CustomBlocksConfig.backgroundMode;
-        final int tol = CustomBlocksConfig.backgroundTolerance;
         final int size = CustomBlocksConfig.textureSize;
         Thread worker = new Thread(() -> {
             try {
-                byte[] cleaned = BackgroundRemover.apply(raw, mode, tol);
+                byte[] cleaned = BackgroundRemover.apply(raw, mode);
                 byte[] png = ImageProcessor.toBlockPng(cleaned, size);
-                png = BackgroundRemover.snapBackgroundBlack(png, mode, tol);
+                png = BackgroundRemover.snapBackgroundBlack(png, mode);
                 TextureStore.save(index, png);
                 server.execute(() -> {
                     ResourcePackServer.updatePack();
@@ -152,7 +151,6 @@ public final class SafetyCommands {
             if (d != null) indices.add(d.index());
         }
         final String mode = CustomBlocksConfig.backgroundMode;
-        final int tol = CustomBlocksConfig.backgroundTolerance;
         final int size = CustomBlocksConfig.textureSize;
         Chat.info(src, "Rebuilding up to " + indices.size() + " texture(s) from saved images…");
         Thread worker = new Thread(() -> {
@@ -161,9 +159,9 @@ public final class SafetyCommands {
                 try {
                     byte[] raw = TextureStore.loadSource(index);
                     if (raw == null || raw.length == 0) { skipped++; continue; }
-                    byte[] cleaned = BackgroundRemover.apply(raw, mode, tol);
+                    byte[] cleaned = BackgroundRemover.apply(raw, mode);
                     byte[] png = ImageProcessor.toBlockPng(cleaned, size);
-                    png = BackgroundRemover.snapBackgroundBlack(png, mode, tol);
+                    png = BackgroundRemover.snapBackgroundBlack(png, mode);
                     TextureStore.save(index, png);
                     fixed++;
                 } catch (Exception e) {

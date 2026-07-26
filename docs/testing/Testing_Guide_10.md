@@ -76,8 +76,8 @@ All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehav
 | --- | --- |
 | **Check** | Backgrounds come off with no strength setting anywhere, and an unsure result says so instead of damaging the picture. |
 | **Pass rule** | Every row passes with no number typed anywhere. |
-| **Pass mark** | ⏳ detector now does the removing; knob still present, `/cb bgpick` not built |
-| **Blocked** | The HB1-HB8 knob rows and HB22-HB25 `/cb bgpick` rows need the remaining slices. |
+| **Pass mark** | ⏳ knob is gone and the detector does the removing; `/cb bgpick` not built |
+| **Blocked** | HB22-HB25 need `/cb bgpick`, which is the next slice. |
 
 **The knob is gone**
 

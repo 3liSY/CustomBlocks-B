@@ -66,7 +66,6 @@ public final class BgGoldenPreview {
 
     /** The config defaults the real bake reads, pinned here so a golden is reproducible. */
     private static final int TEXTURE_SIZE = 512;   // CustomBlocksConfig.textureSize
-    private static final int DEFAULT_TOL = 30;     // CustomBlocksConfig.backgroundTolerance
     /** The colour-variant "red" fill, used for both the stored-background and variant bakes. */
     private static final int FILL_RGB = 0xEE3333;
 
@@ -79,31 +78,31 @@ public final class BgGoldenPreview {
 
     private static final List<Variant> VARIANTS = List.of(
             new Variant("off", "mode none",
-                    raw -> snap(page(BackgroundRemover.apply(raw, "none", DEFAULT_TOL)), "none", DEFAULT_TOL)),
-            new Variant("edges", "mode edges tol 30",
-                    raw -> snap(page(BackgroundRemover.apply(raw, "edges", DEFAULT_TOL)), "edges", DEFAULT_TOL)),
-            new Variant("closed", "mode closed tol 30",
-                    raw -> snap(page(BackgroundRemover.apply(raw, "closed", DEFAULT_TOL)), "closed", DEFAULT_TOL)),
-            new Variant("smart", "mode smart tol 0 (hidden 35)",
-                    raw -> snap(page(BackgroundRemover.apply(raw, "smart", 0)), "smart", 0)),
-            new Variant("edges_fill", "edges + stored bg fill",
-                    raw -> ImageProcessor.fillBackground(page(BackgroundRemover.apply(raw, "edges", DEFAULT_TOL)), FILL_RGB)),
+                    raw -> snap(page(BackgroundRemover.apply(raw, "none")), "none")),
+            new Variant("edges", "legacy BgRemove spelling -> auto",
+                    raw -> snap(page(BackgroundRemover.apply(raw, "edges")), "edges")),
+            new Variant("closed", "legacy BgRemove&More spelling -> auto",
+                    raw -> snap(page(BackgroundRemover.apply(raw, "closed")), "closed")),
+            new Variant("smart", "retired BgSmart spelling -> auto",
+                    raw -> snap(page(BackgroundRemover.apply(raw, "smart")), "smart")),
+            new Variant("edges_fill", "auto + stored bg fill",
+                    raw -> ImageProcessor.fillBackground(page(BackgroundRemover.apply(raw, "auto")), FILL_RGB)),
             new Variant("setbg", "/cb setbg colour rail",
                     raw -> BackgroundRemover.snapBackgroundColor(
                             ImageProcessor.fillBackground(
-                                    page(BackgroundRemover.apply(raw, "edges", DEFAULT_TOL, FILL_RGB)), FILL_RGB),
-                            "edges", DEFAULT_TOL, FILL_RGB)),
-            new Variant("variant", "recolour rail (none forced to edges)",
+                                    page(BackgroundRemover.apply(raw, "auto", FILL_RGB)), FILL_RGB),
+                            "auto", FILL_RGB)),
+            new Variant("variant", "recolour rail (always auto)",
                     raw -> ImageProcessor.fillBackground(
-                            page(BackgroundRemover.recolorBackground(raw, "none", DEFAULT_TOL, FILL_RGB)), FILL_RGB))
+                            page(BackgroundRemover.recolorBackground(raw, FILL_RGB)), FILL_RGB))
     );
 
     private static byte[] page(byte[] cleaned) throws Exception {
         return ImageProcessor.toBlockPng(cleaned, TEXTURE_SIZE);
     }
 
-    private static byte[] snap(byte[] png, String mode, int tol) {
-        return BackgroundRemover.snapBackgroundBlack(png, mode, tol);
+    private static byte[] snap(byte[] png, String mode) {
+        return BackgroundRemover.snapBackgroundBlack(png, mode);
     }
 
     public static void main(String[] args) throws Exception {
@@ -131,7 +130,6 @@ public final class BgGoldenPreview {
         StringBuilder manifest = new StringBuilder();
         manifest.append("# G10 §H golden baselines — background pipeline\n");
         manifest.append("# texture size ").append(TEXTURE_SIZE)
-                .append(", default tolerance ").append(DEFAULT_TOL)
                 .append(", fill #").append(String.format("%06X", FILL_RGB)).append('\n');
         manifest.append("# picture | variant | out bytes | ms | sha256").append(baseDir != null ? " | vs baseline" : "")
                 .append('\n');

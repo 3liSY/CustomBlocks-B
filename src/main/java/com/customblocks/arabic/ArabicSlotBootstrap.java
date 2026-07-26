@@ -219,10 +219,10 @@ public final class ArabicSlotBootstrap {
         if (black || art == null) return art;
         try {
             int rgb = ColorVariantService.rgbFor(colour);
-            String mode = CustomBlocksConfig.backgroundMode; // none → edges inside recolorBackground
-            int tol = CustomBlocksConfig.backgroundTolerance > 0
-                    ? CustomBlocksConfig.backgroundTolerance : 30;
-            byte[] recoloured = BackgroundRemover.recolorBackground(art, mode, tol, rgb);
+            // Always Auto, whatever the server's removal mode says (G10 §H): painting a background a
+            // new colour needs to know where the background is. This rail bakes the 224 bundled art
+            // blocks, so it is the widest-reaching of the recolour paths.
+            byte[] recoloured = BackgroundRemover.recolorBackground(art, rgb);
             byte[] png = ImageProcessor.toBlockPng(recoloured, CustomBlocksConfig.textureSize);
             return ImageProcessor.fillBackground(png, rgb);
         } catch (Exception e) {

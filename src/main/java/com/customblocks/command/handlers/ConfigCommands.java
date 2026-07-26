@@ -73,26 +73,19 @@ public final class ConfigCommands {
         // /cb config transparent [...] — off-atlas block background mode (Group 14 Phase 1c Step 2b).
         RenderConfigCommands.register(root);
 
-        // /cb config background [NoBgRemove|BgRemove|BgRemove&More] — strip image backgrounds to
-        // black on (re)texture (M1). A greedy arg is used so "BgRemove&More" (with the &) parses.
+        // /cb config background [NoBgRemove|Auto] — strip image backgrounds to black on (re)texture.
+        // A greedy arg is used so the retired "BgRemove&More" spelling (with the &) still parses; the
+        // retired names all mean Auto now (G10 §H) and are accepted but never suggested.
         root.then(CommandManager.literal("config")
                 .then(CommandManager.literal("background")
                         .executes(ConfigCommands::backgroundStatus)
                         .then(CommandManager.argument("mode", StringArgumentType.greedyString())
                                 .suggests((c, b) -> {
                                     b.suggest("NoBgRemove");
-                                    b.suggest("BgRemove");
-                                    b.suggest("BgRemove&More");
+                                    b.suggest("Auto");
                                     return b.buildFuture();
                                 })
                                 .executes(ctx -> setBackground(ctx, StringArgumentType.getString(ctx, "mode"))))));
-
-        // /cb tolerance <0-100> — background-removal strength (M1). 0 = off; >0 prompts the player
-        // (clickable) to choose Background only vs Background + enclosed areas.
-        root.then(CommandManager.literal("tolerance")
-                .executes(ConfigCommands::toleranceStatus)
-                .then(CommandManager.argument("value", IntegerArgumentType.integer(0, 100))
-                        .executes(ctx -> setTolerance(ctx, IntegerArgumentType.getInteger(ctx, "value")))));
 
         // /cb config texturesize [16-512] — block texture resolution (pixelation fix). Higher =
         // sharper but a larger resource pack. Applies to FUTURE (re)textures; existing blocks need
@@ -287,56 +280,23 @@ public final class ConfigCommands {
         String mode = CustomBlocksConfig.backgroundMode;
         Chat.info(ctx.getSource(), "Background removal: " + CbFmt.BODY + BackgroundRemover.displayName(mode)
                 + " " + CbFmt.FAINT + "(arg: " + BackgroundRemover.commandArg(mode)
-                + " · options: NoBgRemove · BgRemove · BgRemove&More)");
+                + " · options: NoBgRemove · Auto)");
         return 1;
     }
 
     private static int setBackground(CommandContext<ServerCommandSource> ctx, String raw) {
         String mode = BackgroundRemover.fromArg(raw);
         if (mode == null) {
-            Chat.error(ctx.getSource(), "Use: NoBgRemove, BgRemove, or BgRemove&More");
+            Chat.error(ctx.getSource(), "Use: NoBgRemove or Auto");
             return 0;
         }
         CustomBlocksConfig.backgroundMode = mode;
         CustomBlocksConfig.save();
         Chat.success(ctx.getSource(), "Background removal → " + CbFmt.BODY + BackgroundRemover.displayName(mode)
                 + CbFmt.OK + ". " + switch (mode) {
-                    case "edges"  -> "New textures get their edge background painted black.";
-                    case "closed" -> "Edge + enclosed background areas painted black.";
+                    case "auto" -> "New textures get their background worked out and painted black.";
                     default        -> "Textures are used exactly as downloaded.";
                 });
-        return 1;
-    }
-
-    private static int toleranceStatus(CommandContext<ServerCommandSource> ctx) {
-        int t = CustomBlocksConfig.backgroundTolerance;
-        String mode = CustomBlocksConfig.backgroundMode;
-        Chat.info(ctx.getSource(), "Background strength: " + CbFmt.BODY + t + CbFmt.DIM + "/100 " + CbFmt.FAINT + "("
-                + ("none".equals(mode) ? "off" : BackgroundRemover.displayName(mode))
-                + ") " + CbFmt.DIM + "— /cb tolerance <0-100>");
-        return 1;
-    }
-
-    private static int setTolerance(CommandContext<ServerCommandSource> ctx, int value) {
-        ServerCommandSource src = ctx.getSource();
-        if (value <= 0) {
-            CustomBlocksConfig.backgroundTolerance = 0;
-            CustomBlocksConfig.backgroundMode = "none";
-            CustomBlocksConfig.save();
-            Chat.success(src, "Background removal turned " + CbFmt.BAD + "off" + CbFmt.OK + " " + CbFmt.DIM + "(strength 0). Textures are used exactly as downloaded.");
-            return 1;
-        }
-        CustomBlocksConfig.backgroundTolerance = value;
-        CustomBlocksConfig.save();
-        // Ask (clickable) which reach to apply the new strength at.
-        MutableText msg = Text.literal(CbFmt.BODY + "Strip strength set to " + CbFmt.VALUE + value
-                        + CbFmt.DIM + "/100. Choose how far it reaches:  ")
-                .append(modeButton(CbFmt.OK + CbFmt.BOLD + "[ Background Only ]", "/cb config background BgRemove",
-                        "Remove only the outer background connected to the image edges"))
-                .append(Text.literal("  "))
-                .append(modeButton(CbFmt.VALUE + CbFmt.BOLD + "[ Background + Enclosed Areas ]", "/cb config background BgRemove&More",
-                        "Also remove enclosed background pockets trapped inside the image"));
-        Chat.line(src, msg);
         return 1;
     }
 
