@@ -5,9 +5,90 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 243 sessions · 2026-06-09 → 2026-07-26 · ✅ 44 confirmed · 🟡 154 built/pending · 📝 21 docs · ⛔ 7 reverted
+**At a glance:** 244 sessions · 2026-06-09 → 2026-07-26 · ✅ 44 confirmed · 🟡 155 built/pending · 📝 21 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
+
+---
+
+## G10 §H Jar B — `/cb tolerance` deleted, replaced by the five-rung automatic cascade; `/cb bgpick` added · 2026-07-26 (🟡 built, pending in-game)
+
+Built in eight slices, each golden-diffed and committed separately so any regression has one obvious
+suspect. Rungs 1-5 were written and proven BEFORE anything was wired, then Auto was switched over, and
+only then was the knob ripped — so there was never a state where removal was gone with nothing
+replacing it.
+
+**What shipped:**
+- **`image/BgQc.java`** — the shape gate every rung's mask must pass: not empty, not the whole frame, not
+  fragmented, and touching the frame border. No tunable constant in it: the size floor is geometric (one
+  pixel-wide strip across the shorter axis) and the fragmentation bar is a plain majority.
+- **Rung 1 `BgRungAlpha`** — the file's own alpha. Owns the `tRNS` trap: Java drops that chunk on
+  greyscale/truecolour PNGs, so the chunk list is walked directly and the declared transparent colour is
+  handed to rung 2 as a known key instead of being lost to a decode that discarded it.
+- **Rung 2 `BgRungKey`** — a known colour (`/cb bgpick`, a `tRNS` declaration, or a border tone that is a
+  majority of one flat colour on all four sides). Match bar is 2.3 ΔE00, the published average-observer
+  JND (Mahy/Van Eycken/Oosterlinck 1994) — rung 2's claim is that the colour is KNOWN, so its bar is
+  indistinguishability, not a tuned tolerance.
+- **Rung 3 `BgRungSaliency`** — boundary connectivity from Zhu/Liang/Wei/Sun (CVPR 2014),
+  `BndCon(R) = border pixels / sqrt(area)`. Both thresholds read off the measure geometrically: a square
+  flush against one edge scores 1, the same square in a corner scores 2, an enclosed region scores 0. So
+  background must reach 2, and a sizeable region in the 1-2 band is the spec's "no clear margin" hand-down.
+- **Rung 4 `BgRungEnsemble` + `BgThresholds`** — MET, Triangle, Rosin, Li and WOV vote; outliers dropped
+  by z-score, a majority must survive, and the cut is the centre of the widest stable run in the
+  agreement band anchored on a Borda count.
+- **Rung 5 `BgRungUnmix`** — solves `P = aF + (1-a)B` along the edge band in linear light and hands back
+  both the coverage AND the subject colour with the background mixed back out, so compositing replaces
+  the old background instead of layering over it.
+- **`/cb bgpick <id> <colour>`** in `BackgroundCommands` (same tier, colour grammar and undo shape as
+  `/cb setbg`), plus `applyReporting` so a decline actually tells the player and names the command.
+- **The rip**: 109 refs across 31 files. Both `/cb tolerance` registrations, `BlockToleranceStore` (+ its
+  file, deleted on next boot), `CustomBlocksConfig.backgroundTolerance` and its store/registry/menu
+  entries, the Studio strength buttons, the parameter off every signature, all **seven** hidden
+  `tol > 0 ? tol : 30` fallbacks (the spec's table listed six), the `tolerance > 0` snap gate, and the
+  SMART/EDGES/CLOSED constants. `BgFringe` deleted too — rung 5 supersedes it.
+
+**Bugs found by testing, not by reading:**
+- **WOV weighted the wrong side.** Weighting the far class by its own probability suppresses the term as
+  the cut rises, dragging the answer INTO the background mode (cut at bin 24 on a histogram whose
+  background mode was bin 20). The weight belongs on the near term; now cuts at 85, in the valley.
+- **Triangle and Rosin voted bin 1 on every real picture.** Distance-from-a-colour puts an impulse at
+  zero, and a geometric construction anchored on the histogram peak measures that impulse. The histogram
+  now starts past the JND, discarding no pixel whose classification was ever in doubt.
+- **Rung 4's agreement test made the rung dead code.** Comparing proposals as numbers required five
+  independent estimators to land within a JND — a handful of bins out of 256. Agreement is now judged by
+  consequence: the pixel count in the band they span, against the QC area floor.
+- **The cascade had no area opening**, which §H requires, so stray single pixels baked as coloured specks.
+- **Rung 3 could not reach an enclosed pocket** (boundary connectivity scores one 0 by construction), so
+  the hole inside a letter "O" kept its colour while everything round it was removed. Caught by dumping
+  the mask rather than trusting the coverage percentage.
+- **A named `/cb bgpick` key fell through to the guessing rungs** when it failed the gate, which both
+  ignored the player's asserted fact and produced an unreadable four-reason message.
+
+**Deliberately not shipped** (three reverts, kept out because unproven code does not ship): a
+region-level area opening, colour-matched neighbour absorption, and a noise-adaptive region-growing bar
+— the last changed no baseline result at all, because JPEG noise appears as block-level DC steps rather
+than adjacent-pixel differences.
+
+**Performance:** the cascade takes a flat `int[]` raster instead of `BufferedImage.getRGB` per pixel (19
+call sites) and composites back in one bulk write. Measured back-to-back against Jar A on the 6000×3300
+stress picture the cascade now runs at or below the old closed-mode path (5.9 s vs 12.4 s in one round,
+13.4 s vs 14.1 s in another). Run-to-run variance on this machine is itself ~30%, so the honest claim is
+"no regression", not a speedup.
+
+**Golden evidence:** `off` byte-identical on all seven pictures, Tux byte-identical on every rail (rung 1
+reproduces the old result exactly), `edges`/`closed` now identical to each other, the letter-O hole
+finally removed, and the striped artwork now DECLINES so its red stripes survive instead of being eaten.
+The rip itself changed only the `smart` rail, which is exactly the `tolerance > 0` snap gate going out.
+
+**Known limitation, traced:** a few pixels of background blue survive along the letter-O JPEG's glyph
+edge. They ARE flagged as background-coloured pockets but are rejected by the pocket THICKNESS gate — the
+2026-07-25 locked decision that protects thin subject shading. The specks are the cost of that locked
+trade-off, so changing it is an owner decision, not a patch.
+
+**New tooling:** `tools/render_preview/CascadeProbe.java` (which rung decides each picture, why the others
+declined, mask overlays, coverage maps), `BgThresholdsCheck.java` (the five estimators against histograms
+with known answers), and `make_rung4_fixture.py` (a seeded grainy picture that actually reaches rung 4,
+since the earlier rungs take every baseline).
 
 ---
 

@@ -306,7 +306,7 @@ Every legacy Arabic ID, reconciled into one `G13-n` sequence. Overlaps merged.
 | New | Title | was | Status | Note |
 |---|---|---|---|---|
 | G10-1 | Transparent mode + background as controllable attr | FX-05 · FX-08 | 💬 designed → GROUP_10 | MERGED — FX-05 + FX-08 were the same axis |
-| G10-2 | Color & image tools — `dress/gradient/colors/customcolor/palette/bgstudio/tolerance/exportpng/resize` | Group E | ❔ | |
+| G10-2 | Color & image tools — `dress/gradient/colors/customcolor/palette/bgstudio/exportpng/resize` (+ `bgpick`; `tolerance` removed 2026-07-26, G10 §H) | Group E | ❔ | |
 | G10-3 | Smart AI background removal | Q2 | ❔ | |
 | G10-4 | Live Recolor & Screen Eyedrop | Q3 | ❔ | |
 | G10-5 | Colour-variant service (shared recolour engine) | R5 (ColorVariantService) | ❔ | R5 splits — category services → G11 |

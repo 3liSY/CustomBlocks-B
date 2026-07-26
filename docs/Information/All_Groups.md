@@ -245,13 +245,14 @@ Commands: `deletedblocks`, `showbrokenblocks`, `recover`
 
 ### Group E — Color & Image Tools
 
-Commands: `dress`, `gradient`, `colors`, `customcolor`, `palette`, `bgstudio`, `tolerance`, `exportpng`, `resize`
+Commands: `dress`, `gradient`, `colors`, `customcolor`, `palette`, `bgstudio`, ~~`tolerance`~~ (removed 2026-07-26, G10 §H), `bgpick`, `exportpng`, `resize`
 
 - **dress:** apply a color overlay pattern on top of an existing texture.
 - **gradient:** generate a series of intermediate blocks between two colors.
 - **palette:** per-player color palette management.
 - **bgstudio:** background removal studio GUI.
-- **tolerance:** set background removal tolerance.
+- ~~**tolerance:** set background removal tolerance.~~ Removed 2026-07-26 (G10 §H): background removal derives its own threshold, so there is no strength to set.
+- **bgpick:** name a picture's background colour when automatic detection says it is not sure.
 - **exportpng:** export a block's texture as a PNG file.
 - **resize:** resize a block's texture resolution (e.g. 64→128px).
 
@@ -339,7 +340,7 @@ Commands: `edithud`, `listgui`, `help`, `welcome`, `menu`, `magicitems`, `editma
 
 ### Group M — Misc Commands
 
-Commands: `recent`, `find`, `settabicon`, `bgstudio`, `cache`, `audit`, `screenshot`, `achievements`, `script`/`scriptgui`, `market`, `tolerance`
+Commands: `recent`, `find`, `settabicon`, `bgstudio`, `cache`, `audit`, `screenshot`, `achievements`, `script`/`scriptgui`, `market`, ~~`tolerance`~~ (removed 2026-07-26, G10 §H)
 
 - **recent:** show recently used blocks.
 - **find:** find all placed copies of a block in the world.
