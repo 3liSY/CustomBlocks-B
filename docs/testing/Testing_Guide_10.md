@@ -4,16 +4,17 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Six sections are confirmed; §H's colour-math groundwork is built and awaits in-game checking, while the tolerance rip and the cascade are still to be built. |
-| **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 75% |
-| **Last tested** | 2026-07-25 |
+| **Verdict** | Six sections are confirmed; the jar A colour engine is built and in the mods folder for testing, while the knob removal and auto detection wait as jar B. |
+| **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% |
+| **Last tested** | 2026-07-26 |
 | **Jar** | `customblocks-1.0.0.jar` |
 
 ## Sections
 
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
-| H | Automatic background detection | Designed ⏳ | - |
+| HA | Colour engine rebuild (§H jar A) | Built 🎯 | - |
+| HB | Knob removal + auto detection (§H jar B) | Designed ⏳ | - |
 | A | Resize, export PNG, gradient | Done ✅ | - |
 | B | No hairline at block edges | Done ✅ | - |
 | C | Change a block's background colour | Done ✅ | - |
@@ -30,8 +31,9 @@
 
 ## 💡 Setup
 
-- Nothing runnable: §E is parked, §H is not built.
-- The picture table stays because §H reuses it as its baseline set.
+- Runnable now: §HA — the jar A build is in the server's mods folder.
+- `/cb tolerance` still works in jar A **on purpose**; jar B deletes it (§HB rows).
+- §HB waits for jar B; §E is parked.
 
 **Test pictures** — referenced below as `<link 1>`, `<link 2>`, and so on.
 
@@ -47,59 +49,79 @@
 
 All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehave.
 
-## H - Automatic background detection - Designed ⏳
+## HA - Colour engine rebuild (§H jar A) - Built 🎯
+
+| | |
+| --- | --- |
+| **Check** | Same commands as before, cleaner results: no dark rim, thin lines survive, real transparency untouched. |
+| **Pass rule** | Every row passes with default settings — no knob changes needed. |
+| **Pass mark** | 🎯 built `2026-07-26`, needs in-game run |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| HA1 | Create from `<link 2>` | Grid gone, shading kept, no dark rim | ⏳ | ⏳ |
+| HA2 | Create from `<link 3>` | Hair-thin outlines all present | ⏳ | ⏳ |
+| HA3 | Create from `<link 1>` | Untouched, file alpha used | ⏳ | ⏳ |
+| HA4 | Colour variant from `<link 7>` | Blue and the O's hole recoloured, no dark rim | ⏳ | ⏳ |
+| HA5 | Create from `<link 4>` | Grid gone, shading kept | ⏳ | ⏳ |
+| HA6 | `/cb setbg <id> red` on the HA2 block | Edges smooth, no bright rim | ⏳ | ⏳ |
+| HA7 | `/cb retextureall`, timed | No hang, not slower than before | ⏳ | ⏳ |
+
+- 💡 Faint dashed marks on the `<link 4>` bake come from that picture file itself — a clean PNG of the same logo bakes smooth. Jar B owns the real fix.
+
+## HB - Knob removal + auto detection (§H jar B) - Designed ⏳
 
 | | |
 | --- | --- |
 | **Check** | Backgrounds come off with no strength setting anywhere, and an unsure result says so instead of damaging the picture. |
 | **Pass rule** | Every row passes with no number typed anywhere. |
 | **Pass mark** | ⏳ not built |
-| **Blocked** | §H is unbuilt; golden baselines were captured 2026-07-25, so the rip may now proceed. |
+| **Blocked** | Jar B starts on the owner's go, after the §HA rows pass. |
 
 **The knob is gone**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| H1 | `/cb tolerance`, `/cb tolerance 30` | Unknown command, no tab-complete | ⏳ | ⏳ |
-| H2 | `/cb bgstudio` on any block | No strength button, no percentage | ⏳ | ⏳ |
-| H3 | Cycle `background` in `/cb config` | Auto and Off only | ⏳ | ⏳ |
-| H4 | `/cb config background BgRemove&More` | Accepted, resolves to Auto | ⏳ | ⏳ |
-| H5 | `/cb config background BgSmart` | Resolves to Auto, never suggested | ⏳ | ⏳ |
-| H6 | Junk mode value in config, restart | Comes up Auto, not Off | ⏳ | ⏳ |
-| H7 | Inspect `config/customblocks/` | `block_tolerances.json` gone | ⏳ | ⏳ |
-| H8 | Rename one block, then bulk-rename | Both succeed, no error | ⏳ | ⏳ |
+| HB1 | `/cb tolerance`, `/cb tolerance 30` | Unknown command, no tab-complete | ⏳ | ⏳ |
+| HB2 | `/cb bgstudio` on any block | No strength button, no percentage | ⏳ | ⏳ |
+| HB3 | Cycle `background` in `/cb config` | Auto and Off only | ⏳ | ⏳ |
+| HB4 | `/cb config background BgRemove&More` | Accepted, resolves to Auto | ⏳ | ⏳ |
+| HB5 | `/cb config background BgSmart` | Resolves to Auto, never suggested | ⏳ | ⏳ |
+| HB6 | Junk mode value in config, restart | Comes up Auto, not Off | ⏳ | ⏳ |
+| HB7 | Inspect `config/customblocks/` | `block_tolerances.json` gone | ⏳ | ⏳ |
+| HB8 | Rename one block, then bulk-rename | Both succeed, no error | ⏳ | ⏳ |
 
 **Auto gets the pictures right**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| H9 | Create from `<link 1>` | Untouched, file alpha used | ⏳ | ⏳ |
-| H10 | Create from `<link 2>` | Grid gone, shading kept, no dark rim | ⏳ | ⏳ |
-| H11 | Create from `<link 4>` | Same verdict as H10 | ⏳ | ⏳ |
-| H12 | Create from `<link 3>` | Thin outlines all present | ⏳ | ⏳ |
-| H13 | Colour variant from `<link 7>` | Blue and the O's hole both recoloured | ⏳ | ⏳ |
-| H14 | Create from `<link 6>` | Left alone | ⏳ | ⏳ |
-| H15 | Set Off, inspect edges close up | Still no hairline | ⏳ | ⏳ |
+| HB9 | Create from `<link 1>` | Untouched, file alpha used | ⏳ | ⏳ |
+| HB10 | Create from `<link 2>` | Grid gone, shading kept, no dark rim | ⏳ | ⏳ |
+| HB11 | Create from `<link 4>` | Same verdict as HB10 | ⏳ | ⏳ |
+| HB12 | Create from `<link 3>` | Thin outlines all present | ⏳ | ⏳ |
+| HB13 | Colour variant from `<link 7>` | Blue and the O's hole both recoloured | ⏳ | ⏳ |
+| HB14 | Create from `<link 6>` | Left alone | ⏳ | ⏳ |
+| HB15 | Set Off, inspect edges close up | Still no hairline | ⏳ | ⏳ |
 
 **Rails that must keep working**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| H16 | Off set, make a colour family | Variants recoloured, not clones | ⏳ | ⏳ |
-| H17 | Off set, create from a link | Background left alone | ⏳ | ⏳ |
-| H18 | Inspect bundled Arabic coloured sets | Recoloured right, no dark rim | ⏳ | ⏳ |
-| H19 | `/cb retextureall`, timed | No hang, not slower than baseline | ⏳ | ⏳ |
-| H20 | Off set, create from a flattened checkerboard | Still flattened to black | ⏳ | ⏳ |
-| H21 | `/cb bgstudio` on a pre-update per-block strength | Opens clean, no error | ⏳ | ⏳ |
+| HB16 | Off set, make a colour family | Variants recoloured, not clones | ⏳ | ⏳ |
+| HB17 | Off set, create from a link | Background left alone | ⏳ | ⏳ |
+| HB18 | Inspect bundled Arabic coloured sets | Recoloured right, no dark rim | ⏳ | ⏳ |
+| HB19 | `/cb retextureall`, timed | No hang, not slower than baseline | ⏳ | ⏳ |
+| HB20 | Off set, create from a flattened checkerboard | Still flattened to black | ⏳ | ⏳ |
+| HB21 | `/cb bgstudio` on a pre-update per-block strength | Opens clean, no error | ⏳ | ⏳ |
 
 **When Auto is unsure**
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| H22 | Create from a busy edge-to-edge picture | Refuses, bakes unchanged, names `/cb bgpick` | ⏳ | ⏳ |
-| H23 | `/cb bgpick <id> <bg colour>` on the H22 block | Removes correctly, `/cb undo` reverts | ⏳ | ⏳ |
-| H24 | `/cb bgpick <id> #FF00FF` on a magenta-free image | Says colour absent, no re-bake | ⏳ | ⏳ |
-| H25 | `/cb bgpick` on a block with no stored picture | Honest skip, no guessed re-bake | ⏳ | ⏳ |
+| HB22 | Create from a busy edge-to-edge picture | Refuses, bakes unchanged, names `/cb bgpick` | ⏳ | ⏳ |
+| HB23 | `/cb bgpick <id> <bg colour>` on the HB22 block | Removes correctly, `/cb undo` reverts | ⏳ | ⏳ |
+| HB24 | `/cb bgpick <id> #FF00FF` on a magenta-free image | Says colour absent, no re-bake | ⏳ | ⏳ |
+| HB25 | `/cb bgpick` on a block with no stored picture | Honest skip, no guessed re-bake | ⏳ | ⏳ |
 
 ---
 
@@ -135,7 +157,7 @@ All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehav
 
 <details><summary>💤 <b>Parked</b></summary>
 
-- §E3 and §E4 — 💤 `2026-07-25`: both rows set a tolerance number and `/cb tolerance` is being deleted; they return as §H13 and §H12.
+- §E3 and §E4 — 💤 `2026-07-25`: both rows set a tolerance number and `/cb tolerance` is being deleted; they return as §HB13 and §HB12.
 - §E3 case: the letter O — `<link 7>` — the hole inside the O must fill too.
 - §E4 case: Tux — `<link 3>` — hair-thin outlines must survive.
 

@@ -2,9 +2,9 @@
 
 ## Documentation Dashboard
 
-*Refreshed: 2026-07-25 22:25:59*
+*Refreshed: 2026-07-26 10:56:05*
 
-**22** Built 🎯 · **5** Designed ⏳ / Planned 📜 · **5** Done ✅ · **1** Scrapped 👎
+**23** Built 🎯 · **4** Designed ⏳ / Planned 📜 · **5** Done ✅ · **1** Scrapped 👎
 
 [Built](#built) · [Designed & Planned](#designed--planned) · [Done](#done) · [Scrapped](#scrapped)
 
@@ -16,11 +16,12 @@
 
 ## Built
 
-<details><summary>22 group(s)</summary>
+<details><summary>23 group(s)</summary>
 
 | Group | Progress | Last tested | Open |
 | --- | --- | --- | --- |
 | G05 - Silent Resource Pack Delivery | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-19 | [TG](Testing_Guide_05_Paused.md) · [Group](../groups/GROUP_05_RESOURCE_PACK.md) |
+| G10 - Color & Image Tools | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% | 2026-07-26 | [TG](Testing_Guide_10.md) · [Group](../groups/GROUP_10_COLOR_IMAGE.md) |
 | G11 - Category System | 🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥 50% | 2026-06-14 | [TG](Testing_Guide_11.md) · [Group](../groups/GROUP_11_CATEGORY.md) |
 | G12 - Export Dashboard & Marketplace | 🟩🟩🟥🟥🟥🟥🟥🟥🟥🟥 20% | 2026-06-21 | [TG](Testing_Guide_12.md) · [Group](../groups/GROUP_12_EXPORT_MARKETPLACE.md) |
 | G13 - Arabic Backend | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-04 | [TG](Testing_Guide_13.md) · [Group](../groups/GROUP_13_ARABIC.md) |
@@ -47,12 +48,11 @@
 
 ## Designed & Planned
 
-<details><summary>5 group(s)</summary>
+<details><summary>4 group(s)</summary>
 
 | Group | Progress | Last tested | Open |
 | --- | --- | --- | --- |
 | G06 - Tools, Colour Variants & Per-Face Paint | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟥 93% | 2026-07-25 | [TG](Testing_Guide_06.md) · [Group](../groups/GROUP_06_TOOLS.md) |
-| G10 - Color & Image Tools | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 75% | 2026-07-25 | [TG](Testing_Guide_10.md) · [Group](../groups/GROUP_10_COLOR_IMAGE.md) |
 | G19 - Showcase & Hologram Display Systems | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-07-10 | [TG](Testing_Guide_19.md) · [Group](../groups/GROUP_19_DISPLAY.md) |
 | G22 - Permissions System | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-06-22 | [TG](Testing_Guide_22.md) · [Group](../groups/GROUP_22_PERMISSIONS.md) |
 | G33 - CB Control Center | 🟥🟥🟥🟥🟥🟥🟥🟥🟥🟥 0% | 2026-07-18 | [TG](Testing_Guide_33.md) · [Group](../groups/GROUP_33_CB_CONTROL_CENTER.md) |
