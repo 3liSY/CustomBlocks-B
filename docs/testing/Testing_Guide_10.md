@@ -59,15 +59,16 @@ All seven downloaded fine on 2026-07-25. Report and screenshot any that misbehav
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| HA1 | Create from `<link 2>` | Grid gone, shading kept, no dark rim | ⏳ | ⏳ |
-| HA2 | Create from `<link 3>` | Hair-thin outlines all present | ⏳ | ⏳ |
-| HA3 | Create from `<link 1>` | Untouched, file alpha used | ⏳ | ⏳ |
-| HA4 | Colour variant from `<link 7>` | Blue and the O's hole recoloured, no dark rim | ⏳ | ⏳ |
-| HA5 | Create from `<link 4>` | Grid gone, shading kept | ⏳ | ⏳ |
-| HA6 | `/cb setbg <id> red` on the HA2 block | Edges smooth, no bright rim | ⏳ | ⏳ |
-| HA7 | `/cb retextureall`, timed | No hang, not slower than before | ⏳ | ⏳ |
+| HA1 | Create from `<link 2>` | Grid gone, shading kept, no dark rim | ✅ 2026-07-26 | ⏳ |
+| HA2 | Create from `<link 3>` | Hair-thin outlines all present | ✅ 2026-07-26 | ⏳ |
+| HA3 | Create from `<link 1>` | Untouched, file alpha used | ✅ 2026-07-26 | ⏳ |
+| HA4 | Colour variant from `<link 7>` | Blue and the O's hole recoloured, no dark rim | ✅ 2026-07-26 | ⏳ |
+| HA5 | Create from `<link 4>` | Grid gone, shading kept | 🎨 Polish | ⏳ |
+| HA6 | `/cb setbg <id> red` on the HA2 block | Edges smooth, no bright rim | ✅ 2026-07-26 | ⏳ |
+| HA7 | `/cb retextureall`, timed | No hang, not slower than before | ✅ 2026-07-26 | ⏳ |
 
-- 💡 Faint dashed marks on the `<link 4>` bake come from that picture file itself — a clean PNG of the same logo bakes smooth. Jar B owns the real fix.
+- 💡 Faint dashed marks on the `<link 4>` bake come from that picture file itself — a clean PNG of the same logo bakes smooth. Confirmed 2026-07-26 by zoomed bake comparison (JPEG block-compression noise sits directly on the true edge pixels; no pixel-level fix exists without eating real edge detail). Jar B's cascade owns the real fix.
+- 💡 HA4's recoloured blue background is correct, not a bug — [G10 §H locked decision, 2026-07-25](../groups/GROUP_10_COLOR_IMAGE.md): recolour rails (variants, families, Arabic) always run Auto regardless of the global mode.
 
 ## HB - Knob removal + auto detection (§H jar B) - Designed ⏳
 
