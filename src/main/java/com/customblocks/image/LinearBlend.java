@@ -28,6 +28,12 @@ public final class LinearBlend {
         }
     }
 
+    /** sRGB byte → linear light. Package-private for rung 5, which must solve the mixing equation
+     *  {@code P = aF + (1-a)B} in the space where that mixing physically happened. */
+    static double toLinear(int code) {
+        return TO_LINEAR[code & 0xFF];
+    }
+
     /**
      * Composite {@code srcArgb} over the opaque {@code fillRgb} (0xRRGGBB) and return the opaque
      * result. Fully transparent returns the fill; fully opaque returns the source unchanged —

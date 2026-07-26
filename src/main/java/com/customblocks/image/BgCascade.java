@@ -41,12 +41,16 @@ final class BgCascade {
      * What the cascade concluded.
      *
      * @param mask           the accepted background mask, or {@code null} when every rung declined
+     * @param alpha          per-pixel SUBJECT coverage 0-255 after rung 5 refined the edge band, or
+     *                       {@code null} alongside a null mask. This, not the mask, is what a caller
+     *                       should composite with: the mask says which side each pixel is on, the
+     *                       coverage says how much of it is really there
      * @param rung           which rung decided (1-4), or 0 when none did
      * @param note           player-facing summary: how it was decided, or why it was not
      * @param namedKeyAbsent the colour handed in by {@code /cb bgpick} is not in the picture — the one
      *                       decline the caller must refuse out loud rather than treat as "unsure"
      */
-    record Result(boolean[][] mask, int rung, String note, boolean namedKeyAbsent) {
+    record Result(boolean[][] mask, int[][] alpha, int rung, String note, boolean namedKeyAbsent) {
         boolean decided() { return mask != null; }
     }
 
@@ -60,12 +64,18 @@ final class BgCascade {
         List<String> declines = new ArrayList<>();
 
         // ── Rung 1 — authored alpha ────────────────────────────────────────────────────────────
-        boolean[][] alpha = BgRungAlpha.mask(img, w, h);
-        if (alpha == null) {
+        boolean[][] authored = BgRungAlpha.mask(img, w, h);
+        if (authored == null) {
             declines.add("rung 1: the file has no transparency of its own");
         } else {
-            String bad = BgQc.reject(alpha, w, h);
-            if (bad == null) return new Result(alpha, 1, "used the picture's own transparency", false);
+            String bad = BgQc.reject(authored, w, h);
+            if (bad == null) {
+                // No unmixing here. The file's alpha channel already states the coverage of every
+                // edge pixel exactly; estimating it from neighbouring colours could only be a worse
+                // answer to a question the author already answered.
+                return new Result(authored, authoredAlpha(img, w, h), 1,
+                        "used the picture's own transparency", false);
+            }
             declines.add("rung 1: its transparency " + bad);
         }
 
@@ -84,13 +94,13 @@ final class BgCascade {
             declines.add("rung 2: no single flat colour runs along all four edges");
         } else if (!BgRungKey.present(img, w, h, key)) {
             if (pickedKey != null) {
-                return new Result(null, 0, "that colour is not in this picture", true);
+                return new Result(null, null, 0, "that colour is not in this picture", true);
             }
             declines.add("rung 2: the keyed colour covers too little of the picture");
         } else {
             boolean[][] keyed = BgRungKey.mask(img, w, h, key);
             String bad = BgQc.reject(keyed, w, h);
-            if (bad == null) return new Result(keyed, 2, "matched " + keySource, false);
+            if (bad == null) return unmixed(img, keyed, w, h, 2, "matched " + keySource);
             declines.add("rung 2: keying " + keySource + " " + bad);
         }
 
@@ -100,7 +110,9 @@ final class BgCascade {
             declines.add("rung 3: no area sits against the picture edge clearly enough to be the background");
         } else {
             String bad = BgQc.reject(salient, w, h);
-            if (bad == null) return new Result(salient, 3, "found the area wrapping the picture edge", false);
+            if (bad == null) {
+                return unmixed(img, salient, w, h, 3, "found the area wrapping the picture edge");
+            }
             declines.add("rung 3: the wrapping area " + bad);
         }
 
@@ -110,10 +122,31 @@ final class BgCascade {
             declines.add("rung 4: the measurements of where the background ends did not agree");
         } else {
             String bad = BgQc.reject(voted, w, h);
-            if (bad == null) return new Result(voted, 4, "measured where the background ends", false);
+            if (bad == null) {
+                return unmixed(img, voted, w, h, 4, "measured where the background ends");
+            }
             declines.add("rung 4: the measured background " + bad);
         }
 
-        return new Result(null, 0, String.join("; ", declines), false);
+        return new Result(null, null, 0, String.join("; ", declines), false);
+    }
+
+    /**
+     * Rung 5 — run on every mask a colour-based rung produced (2, 3 and 4), which is why it is not a
+     * branch of its own: it does not compete with them, it finishes their work by turning the binary
+     * boundary into the fractional coverage the edge really has.
+     */
+    private static Result unmixed(BufferedImage img, boolean[][] mask, int w, int h,
+                                  int rung, String note) {
+        return new Result(mask, BgRungUnmix.refine(img, mask, w, h), rung, note, false);
+    }
+
+    /** The file's own alpha channel as coverage, for rung 1. */
+    private static int[][] authoredAlpha(BufferedImage img, int w, int h) {
+        int[][] alpha = new int[w][h];
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) alpha[x][y] = (img.getRGB(x, y) >>> 24) & 0xFF;
+        }
+        return alpha;
     }
 }

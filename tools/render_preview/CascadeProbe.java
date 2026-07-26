@@ -65,9 +65,24 @@ public final class CascadeProbe {
             if (r.decided()) {
                 System.out.printf("  DECIDED by rung %d - %s%n", r.rung(), r.note());
                 System.out.printf("  background covers %.1f%% of the picture%n", coverage(r.mask(), w, h));
+                // How much rung 5 actually changed. A coverage strictly between 0 and 255 is a pixel
+                // the binary mask would have had to round; the count is the proof the rung did work,
+                // and a count of zero on a picture with anti-aliased edges would mean it silently
+                // did nothing.
+                long soft = 0;
+                for (int x = 0; x < w; x++) {
+                    for (int y = 0; y < h; y++) {
+                        int a = r.alpha()[x][y];
+                        if (a > 0 && a < 255) soft++;
+                    }
+                }
+                System.out.printf("  rung 5 softened %d edge pixels (%.2f%% of the picture)%n",
+                        soft, 100.0 * soft / ((long) w * h));
                 if (maskDir != null) {
                     File png = new File(maskDir, strip(f.getName()) + "__rung" + r.rung() + ".png");
                     ImageIO.write(overlay(img, r.mask(), w, h), "PNG", png);
+                    ImageIO.write(greyscale(r.alpha(), w, h), "PNG",
+                            new File(maskDir, strip(f.getName()) + "__coverage.png"));
                     System.out.println("  mask -> " + png.getName());
                 }
             } else if (r.namedKeyAbsent()) {
@@ -137,6 +152,19 @@ public final class CascadeProbe {
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 out.setRGB(x, y, mask[x][y] ? 0xFF00FF : (img.getRGB(x, y) & 0xFFFFFF));
+            }
+        }
+        return out;
+    }
+
+    /** Rung 5's coverage as greyscale: white is fully subject, black fully background, and the grey
+     *  fringe between them is the fractional coverage a binary mask has to throw away. */
+    private static BufferedImage greyscale(int[][] alpha, int w, int h) {
+        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                int a = alpha[x][y];
+                out.setRGB(x, y, (a << 16) | (a << 8) | a);
             }
         }
         return out;
