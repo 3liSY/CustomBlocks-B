@@ -44,6 +44,7 @@ Build in slices: core persistence first, then Screen controls, multi-content, pr
 | 2026-06-21 | Hologram previews are temporary by default: ten seconds or five blocks of distance. | Preview cannot become an accidental permanent showcase. |
 | 2026-06-21 | Offhand hologram is the final slice. | It does not delay persistent showcase and preview behavior. |
 | 2026-07-10 | Showcase configuration is a Screen. | G19 does not create a chest configuration UI. |
+| 2026-07-30 | G19's command root is `/cb hologram`, not `/cb showcase`. | `showcase` is already taken by G30 as `/cb guess showcase` (the quiz display). G19 keeps the word "showcase" for its feature and data, but the command the owner types is `hologram`, so the two features can never shadow each other in the command tree or in tab-completion. G30's command is unchanged. |
 
 ## Feature Plan
 
@@ -55,10 +56,10 @@ An operator can place a persistent pedestal or floating showcase that spins smoo
 
 **Experience**
 
-- `/cb showcase <id>` places at the looked-at surface or the safe sky fallback.
+- `/cb hologram <id>` places at the looked-at surface or the safe sky fallback.
 - Scale ranges from compact display through large statue-like presentation.
 - Spin supports a true no-spin setting.
-- `/cb showcase remove` targets the looked-at showcase or explicit instance ID.
+- `/cb hologram remove` targets the looked-at showcase or explicit instance ID.
 - Restart and chunk load recreate the same saved display.
 
 **Requirements**
@@ -84,7 +85,7 @@ Operators can style a showcase, make it recognizable, and choose one or many dis
 - Motion offers static/spin and speed.
 - Display controls select a list or dynamic all-CustomBlocks gallery, with right-click/manual or automatic cycling.
 - A label uses block name by default and can become custom text.
-- `/cb showcase item` supplies a furniture-style placer in the Tools tab.
+- `/cb hologram item` supplies a furniture-style placer in the Tools tab.
 
 **Requirements**
 

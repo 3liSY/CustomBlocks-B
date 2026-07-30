@@ -40,20 +40,20 @@
 
 | | |
 | --- | --- |
-| **Check** | `/cb showcase <id>` creates a persistent real floating block display with safe placement and removal. |
+| **Check** | `/cb hologram <id>` creates a persistent real floating block display with safe placement and removal. |
 | **Pass rule** | Placement, sky fallback, static/spin, pedestal/floating, scale, persistence, respawn, remove, OP gate, and storage rows pass twice. |
 | **Pass mark** | ✅ `YYYY-MM-DD` |
 | **Blocked** | No showcase code exists yet. |
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| A1 | Run `/cb showcase g19a` while looking at a block surface. | A `BlockDisplay` showcase appears on that surface with an auto instance id. | ⏳ | ⏳ |
-| A2 | Look at open sky and run `/cb showcase g19a`. | Showcase spawns about two blocks in front of the player, never as an orphan or error. | ⏳ | ⏳ |
+| A1 | Run `/cb hologram g19a` while looking at a block surface. | A `BlockDisplay` showcase appears on that surface with an auto instance id. | ⏳ | ⏳ |
+| A2 | Look at open sky and run `/cb hologram g19a`. | Showcase spawns about two blocks in front of the player, never as an orphan or error. | ⏳ | ⏳ |
 | A3 | Switch between pedestal and floating types. | Pedestal shows a stand; floating has no base. | ⏳ | ⏳ |
 | A4 | Set rotation to smooth spin, then static. | Spin interpolates smoothly; static stops completely. | ⏳ | ⏳ |
 | A5 | Set scale from 0.5x to about 4x. | Showcase scales cleanly without broken hit/selection behavior. | ⏳ | ⏳ |
 | A6 | Restart server and revisit the chunk. | Showcase respawns from `display_blocks.json` with the same config. | ⏳ | ⏳ |
-| A7 | Run `/cb showcase remove` while looking at it. | The targeted showcase is removed from world and storage. | ⏳ | ⏳ |
+| A7 | Run `/cb hologram remove` while looking at it. | The targeted showcase is removed from world and storage. | ⏳ | ⏳ |
 | A8 | Try create/remove as a non-OP account. | Commands are denied cleanly and nothing changes. | ⏳ | ⏳ |
 
 ## B - Showcase config Screen - Designed ⏳
@@ -68,7 +68,7 @@
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
 | B1 | Shift-right-click a showcase. | Config Screen opens for the looked-at showcase. | ⏳ | ⏳ |
-| B2 | Run `/cb showcase config <id>`. | Same Screen opens by instance id. | ⏳ | ⏳ |
+| B2 | Run `/cb hologram config <id>`. | Same Screen opens by instance id. | ⏳ | ⏳ |
 | B3 | Use Appearance controls. | Glow outline, fullbright, hover bob, scale, and particle aura visibly apply. | ⏳ | ⏳ |
 | B4 | Use Motion controls. | Static/spin and speed slider update immediately and persist. | ⏳ | ⏳ |
 | B5 | Use Display controls. | Label can auto-use block name or custom text and can show through walls if enabled. | ⏳ | ⏳ |
@@ -92,7 +92,7 @@
 | C4 | Create a showcase for a vanilla block. | It uses `BlockDisplay` and looks like the real blockstate. | ⏳ | ⏳ |
 | C5 | Create a showcase for `diamond_sword`. | It uses `ItemDisplay` and does not pretend to be a block. | ⏳ | ⏳ |
 | C6 | Add an animated custom block. | It displays through the item-render path so animation can work. | ⏳ | ⏳ |
-| C7 | Run `/cb showcase item` or grab the placer from Tools tab. | Placer item creates a showcase like furniture placement. | ⏳ | ⏳ |
+| C7 | Run `/cb hologram item` or grab the placer from Tools tab. | Placer item creates a showcase like furniture placement. | ⏳ | ⏳ |
 
 ## D - Presets and performance cap - Designed ⏳
 
@@ -122,7 +122,7 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| E1 | Run `/cb showcase list`. | List shows instance ids and clickable teleport entries. | ⏳ | ⏳ |
+| E1 | Run `/cb hologram list`. | List shows instance ids and clickable teleport entries. | ⏳ | ⏳ |
 | E2 | Use locate nearby. | Nearby showcases glow-highlight without changing config. | ⏳ | ⏳ |
 | E3 | Edit nearest. | The closest showcase opens for editing without needing an id. | ⏳ | ⏳ |
 | E4 | Rename and clone one showcase. | Clone copies config while getting a new instance id. | ⏳ | ⏳ |
