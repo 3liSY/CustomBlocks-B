@@ -94,8 +94,8 @@
 
 <details><summary>💔 <b>Regression</b></summary>
 
-- §D D1, D3, D13 — 💔 `2026-07-18`: crater restore, wall drip, and ground sauce failed owner retest.
-- §E E6, E8 — 💔 `2026-07-18`: shield protection and screen sauce failed owner retest.
+- §D D1, D3, D13 — 💔 `2026-07-18`: crater restore, wall drip, and ground sauce failed owner retest. Every tomato/sauce source file was rewritten `2026-07-23`, after that retest; awaiting a fresh D1/D3/D13 run.
+- §E E6, E8 — 💔 `2026-07-18`: shield protection and screen sauce failed owner retest. Same `2026-07-23` rewrite covers the shield-blocker exemption; awaiting a fresh E6/E8 run.
 
 </details>
 

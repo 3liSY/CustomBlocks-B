@@ -5,11 +5,62 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 252 sessions · 2026-06-09 → 2026-07-30 · ✅ 44 confirmed · 🟡 162 built/pending · 📝 22 docs · ⛔ 7 reverted
+**At a glance:** 253 sessions · 2026-06-09 → 2026-07-30 · ✅ 44 confirmed · 🟡 163 built/pending · 📝 22 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
 
 ---
+
+## 2026-07-30 — Regression sweep: all 14 flagged sections triaged, G13 §C root-caused and fixed
+
+🟡 One real live defect out of fourteen flagged sections. The rest were already fixed, blocked on an owner
+decision, not a regression at all, or need preview images rather than code reading.
+
+**G13 §C — the actual bug, and why it could never have worked.** Reported 2026-07-04 as "reflow works but
+feels server-paced after break", with no cause ever written down. `ArabicSlotJoinFlow` is a dual-side flow:
+CP3b added client prediction so a placed or broken letter re-shapes its neighbours at click speed, and its
+two entry points are `SlotBlock.onPlaced` and `SlotBlock.onStateReplaced`. Placement predicted correctly.
+Breaking never did — and not because of any gate in this project. Vanilla `WorldChunk.setBlockState` calls
+`onStateReplaced` **only** when `!world.isClient`; on the client it takes the other branch and merely drops
+the block entity. Verified in the mapped 1.21.1 jar rather than assumed: the `isClient` test at offset 313
+jumps past the `onStateReplaced` invoke at 328. So the break hook was server-only by construction, the
+prediction was dead code on that path, and the owner was seeing the correct result exactly one round-trip
+late.
+
+Fix: new `client/ArabicBreakPredictor` registers Fabric's `ClientPlayerBlockBreakEvents.AFTER` — the
+client-side counterpart vanilla withholds — and calls the same `ArabicSlotJoinFlow.onBreak`. AFTER fires
+once the client has removed the block, which matches the server's ordering (it also re-flows post-removal),
+so both sides walk an identical world and reach an identical answer; the authoritative packets reconcile
+with no visible change. Data-gated exactly like the server hook (a number carries no letter meta and must
+not start a word walk), and the flow's own `IN_FLOW` / remote-session guards are untouched. Deliberately
+narrow: only the local player's break predicts — a letter removed by another player, the Deleter sweep or an
+explosion still arrives as a server update, because the client has nothing to predict from until it hears.
+Its own file beside `ClientSwapPredictor`, registered next to it, per the ADR-009 pattern.
+
+**The other thirteen, triaged.**
+* G05 §D — already root-caused and fixed 2026-07-19 (serialized write→reload); the guide already says so.
+  Retest only.
+* G06 §D2 — no live defect. The undo half (`healSourceFromTrash`) landed 2026-07-25, the same day as the
+  report, and the trash Restore button has written `source` + `url` back since 2026-06-14. Recorded in the
+  guide; all four rows need a fresh run.
+* G32 §D/§E — every tomato and sauce source file was rewritten 2026-07-23, five days AFTER the 2026-07-18
+  failed retest, and that rewrite includes the shield-blocker exemption (the `blocked` flag on
+  `AFTER_DAMAGE`) and the persisted per-tick crater restore. The guide recorded the failure but never that
+  the code had moved past it. Fixed the record, not the code.
+* G31 §C/§D/§E/§F — fixes already applied with retest notes on the flags. Untouched.
+* G10 §HA/§HC/§HD — image-quality items (specks, pale rims, same-colour artwork). These are decided on
+  rendered pixels with owner approval per the standing preview rule, not by reading code. Left for a
+  preview pass.
+* G20 §L — cannot be fixed: it needs an owner decision (keep / owner-only / replace with a Vault URL) plus a
+  reachable port and address this host does not provide. Correctly carries Blocked.
+* G28 §A — **not a regression.** Its 💔 rows deliberately record the current undo GUI's known-bad behaviour
+  as the baseline for the rework, which is the opposite of the glossary's meaning ("previously worked, now
+  broken"). Flagged for the owner rather than silently re-marked.
+
+**Audit-method correction.** The section parser used for the earlier sweep only accepted the five real
+statuses in a heading, so TG06's `## D2 - … - Regressed 💔` heading — a flag used as a status — was invisible
+to it. The earlier "237 sections" count is therefore a floor, not a total, and that heading is itself a
+glossary violation worth a later pass.
 
 ## 2026-07-30 — Docs-vs-code audit across all 33 guides, and the first fully green health pass
 

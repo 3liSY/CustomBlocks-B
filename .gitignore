@@ -35,3 +35,6 @@ tools/render_preview/green/
 tools/render_preview/masks/
 tools/render_preview/masks_gold/
 tools/render_preview/share_new/
+
+# --- Built dashboard app (rebuild from dashboard_gui.py + .spec; a 19 MB opaque blob per rebuild) ---
+docs/testing/tools/dashboard_gui.exe

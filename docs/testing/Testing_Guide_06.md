@@ -48,6 +48,8 @@
 
 Owner report `2026-07-25`: the restored block still looks right, so its texture survived — but anything that needs the original picture refuses it. Restore is the trash screen's button; there is no `/cb trash restore` command.
 
+Checked against the code `2026-07-30`: the undo path (D2d) was healed the same day as that report, and the trash Restore button has written the source and the link back since June. No live defect was found, so all four rows need a fresh run on the current jar.
+
 *All other sections confirmed in-game — folded history below.*
 
 ---

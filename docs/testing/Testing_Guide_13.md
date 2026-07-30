@@ -81,6 +81,8 @@
 | **Pass rule** | Place, break, reflow, back mirror, and mixed-color rows pass twice in MP with no visible wait. |
 | **Pass mark** | ✅ `YYYY-MM-DD` |
 
+**💡 Tests:** the break half of the instant re-flow was missing and is now in — C2 is the row that proves it.
+
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
 | C1 | Build a 5-letter Arabic row quickly. | Forms join instantly while placing. | 🎯 | 🎯 |
@@ -152,7 +154,7 @@
 
 <details><summary>💔 <b>Regression</b></summary>
 
-- §C Join/reflow instantness after break — 💔 `2026-07-04`: Reflow works but feels server-paced after break.
+- §C Join/reflow instantness after break — 💔 `2026-07-04`: Reflow works but feels server-paced after break. Root-caused and fixed in code `2026-07-30` (client break hook was never called); awaiting C1–C4 retest. Cause: `PROGRESS_LOG.md`.
 
 </details>
 

@@ -32,9 +32,12 @@ public final class ArabicClientView implements ArabicSlotJoinFlow.ClientView {
 
     private ArabicClientView() {} // install() only
 
-    /** Install the seam (client entrypoint, once). */
+    /** Install the seam (client entrypoint, once), plus the CP3b break-side prediction hook that
+     *  needs it: both are Arabic client-side join-flow wiring, and CustomBlocksClient is at its
+     *  500-line gate, so this one call site owns the pair. See {@link ArabicBreakPredictor}. */
     public static void install() {
         ArabicSlotJoinFlow.CLIENT_VIEW = new ArabicClientView();
+        ArabicBreakPredictor.register();
     }
 
     @Override
