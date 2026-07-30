@@ -151,7 +151,7 @@ public final class ImportChat {
      * skipped and why, and what is still waiting. Blocks arrive uncategorised — said out loud so nobody
      * hunts for a category that was never set (rule 9).
      */
-    public static void result(ServerCommandSource src, ImportReport report) {
+    public static void result(ServerCommandSource src, ImportReport report, boolean saved) {
         int made = report.made().size();
         if (made == 0) {
             Chat.error(src, "Nothing was imported");
@@ -161,9 +161,59 @@ public final class ImportChat {
         rows(src, report, false);
         if (made > 0) {
             Chat.raw(src, Text.literal(CbFmt.DIM + "They arrived with no category, like /cb create leaves a block. ")
-                    .append(Chat.undoButton()));
+                    .append(Chat.undoButton())
+                    .append(Text.literal("  "))
+                    .append(Chat.runButton(CbFmt.CLICK + "[⊙ This report]", "/cb importfolder last",
+                            "Show this report again after chat scrolls away")));
             Chat.raw(src, Text.literal(CbFmt.FAINT + "Originals moved to " + FOLDER_LABEL + "done/ — nothing was deleted."));
         }
+        // §C is explicit that a report which will not survive must SAY so, never be quietly forgotten.
+        if (!saved && made > 0) {
+            Chat.raw(src, Text.literal(CbFmt.WARN + "This report could not be written to disk, so it will "
+                    + "be gone if the server restarts."));
+        }
+    }
+
+    /**
+     * The recalled twin of {@link #result} (§C) — the SAME report object, stated as history.
+     *
+     * It never claims a block still exists: liveness is read at this moment from {@link ImportReport},
+     * so an undone run says it was undone (C5) and a partly-cleaned one says how much is left. The
+     * per-block delete buttons stay live for whatever is still there (C3).
+     */
+    public static void recall(ServerCommandSource src, ImportReport report) {
+        int made = report.made().size();
+        int live = report.stillLive().size();
+        String when = ago(report.whenMs());
+        if (report.fullyReversed()) {
+            Chat.info(src, "The last import " + when + " made " + made + (made == 1 ? " block" : " blocks")
+                    + ", and none of them are here any more — that run has been undone.");
+        } else if (live == made) {
+            Chat.info(src, "The last import " + when + " made " + made + (made == 1 ? " block" : " blocks") + ":");
+        } else {
+            Chat.info(src, "The last import " + when + " made " + made + (made == 1 ? " block" : " blocks")
+                    + ", " + live + " still here:");
+        }
+        rows(src, report, true);
+    }
+
+    /** Told plainly when the mod has no report to show at all — never a blank answer (C4). */
+    public static void noRun(ServerCommandSource src) {
+        Chat.info(src, "No folder import has been run yet, so there is no report to show.");
+        Chat.raw(src, Text.literal(CbFmt.DIM + "Drop pictures into " + CbFmt.BODY + FOLDER_LABEL
+                + CbFmt.DIM + " and run " + CbFmt.BODY + "/cb importfolder" + CbFmt.DIM + "."));
+    }
+
+    /** A rough "how long ago", so a recalled report is obviously history and not a fresh result. */
+    private static String ago(long whenMs) {
+        if (whenMs <= 0) return "(time unknown)";
+        long mins = Math.max(0, (System.currentTimeMillis() - whenMs) / 60_000L);
+        if (mins < 1)   return "just now";
+        if (mins < 60)  return mins + (mins == 1 ? " minute ago" : " minutes ago");
+        long hours = mins / 60;
+        if (hours < 24) return hours + (hours == 1 ? " hour ago" : " hours ago");
+        long days = hours / 24;
+        return days + (days == 1 ? " day ago" : " days ago");
     }
 
     /** The body of a result — created rows, then skipped, then leftover. */

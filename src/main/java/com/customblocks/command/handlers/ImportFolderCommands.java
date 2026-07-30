@@ -89,6 +89,7 @@ public final class ImportFolderCommands {
                 .executes(ImportFolderCommands::preview)
                 .then(CommandManager.literal("confirm").executes(ImportFolderCommands::confirm))
                 .then(CommandManager.literal("cancel").executes(ImportFolderCommands::cancel))
+                .then(CommandManager.literal("last").executes(ImportFolderCommands::last))
                 .then(CommandManager.literal("fix")
                         .then(CommandManager.literal("rename")
                                 .then(CommandManager.argument("file", StringArgumentType.greedyString())
@@ -249,8 +250,8 @@ public final class ImportFolderCommands {
                 left.addAll(outcome.leftover());
                 ImportReport report = new ImportReport(System.currentTimeMillis(), src.getName(),
                         outcome.made(), outcome.missed(), left);
-                report.keep();                // kept + written to disk, so §C can bring it back later
-                ImportChat.result(src, report);
+                boolean saved = report.keep(); // kept + written to disk, so §C can bring it back later
+                ImportChat.result(src, report, saved);
             });
         });
         return 1;
@@ -350,5 +351,23 @@ public final class ImportFolderCommands {
             Chat.info(src, "\"" + fileName + "\" is not one of the files needing a decision any more. "
                     + "Run /cb importfolder to see the current list.");
         });
+    }
+
+    // ── §C — bring the last run's report back ────────────────────────────────
+
+    /**
+     * /cb importfolder last — show the last run's report again after chat has scrolled away (§C).
+     *
+     * It is the SAME {@link ImportReport} the run produced, not a second reporting system, and it is read
+     * from disk when the mod has restarted since. Its per-block delete buttons stay live for whatever is
+     * still there (C3), and it never claims a block exists that does not — a run that was undone reports
+     * itself undone because the blocks are genuinely gone (C5).
+     */
+    private static int last(CommandContext<ServerCommandSource> ctx) {
+        ServerCommandSource src = ctx.getSource();
+        ImportReport report = ImportReport.last();
+        if (report == null) { ImportChat.noRun(src); return 0; } // C4: said plainly, no error, no blank
+        ImportChat.recall(src, report);
+        return 1;
     }
 }

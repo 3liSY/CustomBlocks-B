@@ -85,11 +85,15 @@ public final class ImportReport {
 
     // ── the one kept report ──────────────────────────────────────────────────
 
-    /** Record this run as the last one and write it to disk. */
-    public void keep() {
+    /**
+     * Record this run as the last one and write it to disk. Returns false when the write failed, so the
+     * caller can SAY the report will not survive a restart instead of letting a later recall answer "no
+     * import has ever been run" — §C's rule is that a missing report is stated, never papered over.
+     */
+    public boolean keep() {
         last = this;
         loaded = true;
-        save();
+        return save();
     }
 
     /** The last run, or null when none has happened since the mod was installed (TG12 C4). */
@@ -106,7 +110,7 @@ public final class ImportReport {
         return CbPaths.DATA.resolve(FILE_NAME);
     }
 
-    private void save() {
+    private boolean save() {
         try {
             JsonObject root = new JsonObject();
             root.addProperty("whenMs", whenMs);
@@ -137,9 +141,11 @@ public final class ImportReport {
             Path tmp = target.resolveSibling(FILE_NAME + ".tmp"); // atomic temp-rename (NFR-13)
             Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);
             Files.move(tmp, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            return true;
         } catch (Exception e) {
             // A report is a convenience, never the blocks themselves — a failed write must not fail a run.
             IncidentRecorder.record("Could not save the last import report", e);
+            return false;
         }
     }
 
