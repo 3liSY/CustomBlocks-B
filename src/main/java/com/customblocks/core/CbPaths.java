@@ -81,4 +81,16 @@ public final class CbPaths {
     public static boolean isExcludedFromBackup(String name) {
         return name == null || name.endsWith(".tmp") || backupExcludes().contains(name);
     }
+
+    /**
+     * One of these paths written the way it is SHOWN to the owner: forward slashes and a trailing one,
+     * e.g. {@code config/customblocks/cloud_exports/}.
+     *
+     * Derived rather than typed, so a chat line naming a folder cannot drift away from the folder the code
+     * actually writes to — which is exactly how {@code /cb export <id> config} came to advertise an
+     * "exports/" folder it had never written to.
+     */
+    public static String label(Path path) {
+        return path.toString().replace('\\', '/') + "/";
+    }
 }

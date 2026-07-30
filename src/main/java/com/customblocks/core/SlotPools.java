@@ -57,4 +57,24 @@ public final class SlotPools {
         if (retiredFallback >= 0) { RetiredSlots.remove(retiredFallback); return retiredFallback; }
         return -1;
     }
+
+    /**
+     * How many indices {@link #nextFreeNormalIndex} could still hand out — pristine ones plus the
+     * retired last-resort fallbacks, minus every permanently-retired DELETED index.
+     *
+     * Lives here, beside the allocation policy it mirrors, so the two can never drift: a caller that
+     * needed "slots left" would otherwise have to re-implement the DeletedSlots/RetiredSlots rules and
+     * quietly disagree with the allocator. Read-only — claims nothing and un-retires nothing.
+     *
+     * Called by: Group 12 folder import (it must state slots-used and slots-left BEFORE it commits).
+     */
+    public static int freeCount(int maxSlots, IntPredicate assigned) {
+        int free = 0;
+        for (int i = 0; i < maxSlots; i++) {
+            if (assigned.test(i)) continue;
+            if (DeletedSlots.contains(i)) continue; // never reusable
+            free++;                                 // pristine, or a retired fallback
+        }
+        return free;
+    }
 }

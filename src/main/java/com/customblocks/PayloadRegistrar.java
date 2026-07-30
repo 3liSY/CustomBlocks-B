@@ -45,6 +45,9 @@ final class PayloadRegistrar {
                 com.customblocks.network.payloads.ColorHexSyncPayload.ID,
                 com.customblocks.network.payloads.ColorHexSyncPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(RegenPackPayload.ID,  RegenPackPayload.CODEC);    // Group 05 — modded local regen (integrated host)
+        PayloadTypeRegistry.playS2C().register(                                                  // Group 12 §B — folder-import progress
+                com.customblocks.network.payloads.ImportProgressPayload.ID,
+                com.customblocks.network.payloads.ImportProgressPayload.CODEC);
         PayloadTypeRegistry.playS2C().register(                                                  // Group 20 §K — auto-update handshake
                 com.customblocks.network.payloads.VersionHandshakePayload.ID,
                 com.customblocks.network.payloads.VersionHandshakePayload.CODEC);

@@ -12,7 +12,8 @@
   "environment": "*",
   "entrypoints": {
     "main":     [ "com.customblocks.CustomBlocksMod" ],
-    "client":   [ "com.customblocks.client.CustomBlocksClient" ],
+    "client":   [ "com.customblocks.client.CustomBlocksClient",
+                  "com.customblocks.client.ImportProgressClient" ],
     "modmenu":  [ "com.customblocks.modmenu.ModMenuApiImpl" ]
   },
   "mixins": [ "customblocks.mixins.json" ],

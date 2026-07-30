@@ -33,7 +33,13 @@ public final class SyncProgressOverlay {
 
     private SyncProgressOverlay() {}
 
-    private enum Phase { IDLE, SYNCING, APPLYING, DONE, ERROR }
+    /**
+     * IMPORTING is Group 12's addition (§B rule 18): the owner chose to REUSE this panel for a folder-import
+     * run rather than grow a second progress look. It is a sibling phase, not a change to the pack-sync
+     * ones — it counts FILES instead of bytes, so it fills the bar from {@link #importDone}/{@link #importTotal}
+     * and writes its own stats line, and it never touches the transport counters above it.
+     */
+    private enum Phase { IDLE, SYNCING, APPLYING, DONE, ERROR, IMPORTING }
 
     private static final int PANEL_W = 224;
     private static final int PANEL_H = 42;
@@ -52,6 +58,8 @@ public final class SyncProgressOverlay {
     private static long lastSampleBytes;
     private static long lingerUntilMs;   // wall-clock at which a DONE/ERROR panel hides
     private static String message = "";  // terminal reason line (DONE/ERROR)
+    private static int importDone;        // G12: files finished this import run
+    private static int importTotal;       // G12: files this import run will handle
 
     // ── state pushed in by ClientPackReceiver (client main thread) ─────────────────
 
@@ -113,6 +121,32 @@ public final class SyncProgressOverlay {
         phase = Phase.IDLE;
     }
 
+    // ── state pushed in by a Group 12 folder-import run (client main thread) ───────
+
+    /**
+     * A folder import is reporting itself (G12 §B rule 18). {@code total <= 0} means the run is over →
+     * a short closing panel, then it hides.
+     *
+     * Deliberately yields to a live pack sync: textures streaming in is the one thing the player cannot
+     * do without, so an import never steals the panel from it.
+     */
+    public static void importProgress(int done, int total, String label) {
+        if (phase == Phase.SYNCING || phase == Phase.APPLYING) return; // a real transfer owns the panel
+        if (total <= 0) {
+            if (phase == Phase.IMPORTING) phase = Phase.IDLE;
+            return;
+        }
+        importTotal = total;
+        importDone = Math.max(0, Math.min(done, total));
+        message = label == null ? "" : label;
+        if (importDone >= importTotal) {           // finished — linger briefly like a completed sync
+            phase = Phase.DONE;
+            lingerUntilMs = Util.getMeasuringTimeMs() + DONE_LINGER_MS;
+        } else {
+            phase = Phase.IMPORTING;
+        }
+    }
+
     // ── render (HUD main thread) ───────────────────────────────────────────────────
 
     public static void render(DrawContext ctx) {
@@ -144,6 +178,7 @@ public final class SyncProgressOverlay {
         int barX = x + 7, barY = y + 18, barW = PANEL_W - 14, barH = 5;
         ctx.fill(barX, barY, barX + barW, barY + barH, CbTheme.CARD);
         float frac = phase == Phase.DONE ? 1f
+                : phase == Phase.IMPORTING ? (importTotal > 0 ? importDone / (float) importTotal : 0f)
                 : totalBytes > 0 ? Math.min(1f, receivedBytes / (float) totalBytes)
                 : phase == Phase.APPLYING ? 1f : 0f;
         int fillW = (int) (barW * frac);
@@ -158,12 +193,18 @@ public final class SyncProgressOverlay {
             case APPLYING -> "· applying";
             case DONE -> "· done";
             case ERROR -> "· problem";
+            case IMPORTING -> "· importing";
             default -> "· syncing textures";
         };
     }
 
     private static String statsLine() {
         if (phase == Phase.DONE || phase == Phase.ERROR) return message;
+        if (phase == Phase.IMPORTING) {
+            int pct = importTotal > 0 ? (100 * importDone / importTotal) : 0;
+            return importDone + " / " + importTotal + "  " + pct + "%"
+                    + (message.isEmpty() ? "" : "  " + message);
+        }
         if (phase == Phase.APPLYING) return "Applying textures — one moment…";
         int pct = totalBytes > 0 ? (int) (100 * Math.min(1f, receivedBytes / (float) totalBytes)) : 0;
         StringBuilder sb = new StringBuilder();

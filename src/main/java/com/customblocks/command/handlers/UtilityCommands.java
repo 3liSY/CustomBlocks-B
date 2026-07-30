@@ -16,7 +16,6 @@ import com.customblocks.command.CbFmt;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
 import com.customblocks.core.DraftManager;
-import com.customblocks.core.IncidentRecorder;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -87,10 +86,9 @@ public final class UtilityCommands {
                         .then(CommandManager.literal("download")
                                 .executes(ctx -> exportOneDownload(ctx, StringArgumentType.getString(ctx, "id"))))));
 
-        root.then(CommandManager.literal("importfolder")
-                .executes(ctx -> importFolderCmd(ctx, null))
-                .then(CommandManager.argument("path", StringArgumentType.greedyString())
-                        .executes(ctx -> importFolderCmd(ctx, StringArgumentType.getString(ctx, "path")))));
+        // /cb importfolder lives in ImportFolderCommands (G12 §B): the image-import flow — preview,
+        // inline fixes, progress, batch undo — is far past what fits under this file's 400-line gate (§9.3).
+        ImportFolderCommands.register(root);
     }
 
     /**
@@ -328,32 +326,6 @@ public final class UtilityCommands {
                 .append(openUrlButton("[open link]", url, url));
         Chat.line(src, msg);
         return 1;
-    }
-
-    private static int importFolderCmd(CommandContext<ServerCommandSource> ctx, String pathStr) {
-        ServerCommandSource src = ctx.getSource();
-        Path folder = pathStr == null
-                ? Path.of("config/customblocks/exports")
-                : Path.of(pathStr);
-        BlockExporter.ImportResult result = BlockExporter.importFolder(folder);
-        int c = result.created().size(), s = result.skipped().size(), f = result.failed().size();
-        if (c == 0 && s == 0 && f == 0) {
-            Chat.info(src, "No importable block JSONs found in: " + folder);
-            return 1;
-        }
-        if (c > 0) {
-            ResourcePackServer.updatePack();
-            Chat.success(src, "Imported " + c + " block(s): " + String.join(", ", result.created()) + ".");
-        }
-        if (s > 0) Chat.info(src, "Skipped " + s + " that already exist: " + String.join(", ", result.skipped()));
-        if (f > 0) {
-            // Major-error routing (Group 04): import failures also land in the incidents log.
-            IncidentRecorder.record("Import failed for " + f + " file(s) in " + folder + ": "
-                    + String.join(", ", result.failed()), null, src.getName(), null);
-            Chat.error(src, f + " file(s) couldn't be imported: " + String.join(", ", result.failed())
-                    + ". Check they are valid CustomBlocks export JSONs.");
-        }
-        return c > 0 ? 1 : 0;
     }
 
     // ── Clickable chat helpers ───────────────────────────────────────────────

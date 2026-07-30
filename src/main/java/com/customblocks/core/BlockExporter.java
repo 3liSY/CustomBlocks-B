@@ -54,8 +54,9 @@ public final class BlockExporter {
     private static final Path DIR = CbPaths.CLOUD_EXPORTS;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-    /** The relative folder path a result message shows the owner, so they can find it in a file panel. */
-    public static final String FOLDER_LABEL = "config/customblocks/cloud_exports/";
+    /** The relative folder path a result message shows the owner, so they can find it in a file panel.
+     *  Derived from the real path, so the message can never name a folder we do not write to. */
+    public static final String FOLDER_LABEL = CbPaths.label(CbPaths.CLOUD_EXPORTS);
     /** Schema version stamped into a per-block payload. v2 = full {@code categories} set, no legacy word. */
     private static final int SCHEMA = 2;
 
@@ -101,12 +102,12 @@ public final class BlockExporter {
         String ext;
         String content;
         switch (format.toLowerCase(Locale.ROOT)) {
-            case "json"           -> { ext = "json"; content = toBulkJson(blocks); }
-            case "txt"            -> { ext = "txt";  content = toTxt(blocks); }
-            case "csv"            -> { ext = "csv";  content = toCsv(blocks); }
-            case "md", "markdown" -> { ext = "md";   content = toMarkdown(blocks); }
-            case "html"           -> { ext = "html"; content = toHtml(blocks); }
-            case "yaml", "yml"    -> { ext = "yml";  content = toYaml(blocks); }
+            case "json"           -> { ext = "json"; content = BlockExportFormats.bulkJson(GSON, blocks); }
+            case "txt"            -> { ext = "txt";  content = BlockExportFormats.txt(blocks); }
+            case "csv"            -> { ext = "csv";  content = BlockExportFormats.csv(blocks); }
+            case "md", "markdown" -> { ext = "md";   content = BlockExportFormats.markdown(blocks); }
+            case "html"           -> { ext = "html"; content = BlockExportFormats.html(blocks); }
+            case "yaml", "yml"    -> { ext = "yml";  content = BlockExportFormats.yaml(blocks); }
             default               -> { return null; }
         }
         try {
@@ -194,6 +195,27 @@ public final class BlockExporter {
     /** Public access to one block's schema-v2 JSON (used by the Blueprint item). */
     public static String toJson(SlotData d) {
         return toBlockJson(d);
+    }
+
+    /**
+     * Apply a block file's metadata onto a block that ALREADY exists — the folder-import path (TG12 B17:
+     * a data file next to a same-name picture contributes the attributes while the picture becomes the
+     * texture). Reuses the one {@link #applyFields} reader, so a metadata field can never mean one thing
+     * to a ZIP import and another to a folder import. Silently does nothing for an unreadable payload:
+     * the block and its texture are already good, and the run must not abort over one bad sidecar (rule 12).
+     *
+     * Returns true when something was actually applied, so a caller can say so honestly.
+     */
+    public static boolean applyMetadata(SlotData d, String json) {
+        if (d == null || json == null || json.isBlank()) return false;
+        try {
+            JsonObject o = GSON.fromJson(json, JsonObject.class);
+            if (o == null) return false;
+            applyFields(d, o);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /**
@@ -391,165 +413,13 @@ public final class BlockExporter {
     }
 
     // ── Serialisation ────────────────────────────────────────────────────────
-
-    /**
-     * Every category key a block belongs to, sorted so two exports of the same block match byte for
-     * byte. Reads {@link CategoryMembershipStore} — the real G11 set — NOT the legacy one-word
-     * {@link SlotData#category()} shadow, which only ever held the alphabetically-first membership and
-     * so quietly dropped the rest out of every export.
-     */
-    private static List<String> categoryKeys(SlotData d) {
-        return new ArrayList<>(new TreeSet<>(CategoryMembershipStore.of(d.customId())));
-    }
-
-    /** The same memberships written the way a person reads them ("Walls, Arabic Letters"), for the list formats. */
-    private static String categoryNames(SlotData d) {
-        List<String> shown = new ArrayList<>();
-        for (String k : categoryKeys(d)) shown.add(CategoryMetadataStore.getDisplayName(k));
-        return String.join(", ", shown);
-    }
+    //
+    // HOW a block reads in each format lives in BlockExportFormats — split out when the schema-v2
+    // rework pushed this file past the §9.3 500-line cap. This file owns the ARTIFACT (where it goes,
+    // what it is called, whether it landed); that one owns the text inside it.
 
     private static String toBlockJson(SlotData d) {
-        JsonObject o = new JsonObject();
-        o.addProperty("schema", SCHEMA);
-        o.addProperty("id", d.customId());
-        o.addProperty("displayName", d.displayName());
-        o.addProperty("glow", d.glow());
-        o.addProperty("hardness", d.hardness());
-        o.addProperty("soundType", d.soundType());
-        if (d.noCollision()) o.addProperty("noCollision", true);
-        JsonArray cats = new JsonArray();
-        for (String k : categoryKeys(d)) cats.add(k);
-        o.add("categories", cats); // ALWAYS present — every block holds at least "uncategorized" (G11)
-        return GSON.toJson(o);
-    }
-
-    private static String toBulkJson(Collection<SlotData> blocks) {
-        JsonObject root = new JsonObject();
-        root.addProperty("exported_at", LocalDateTime.now().toString());
-        root.addProperty("count", blocks.size());
-        JsonArray arr = new JsonArray();
-        for (SlotData d : blocks) {
-            JsonObject o = new JsonObject();
-            o.addProperty("index", d.index());
-            o.addProperty("customId", d.customId());
-            o.addProperty("displayName", d.displayName());
-            JsonArray cats = new JsonArray();
-            for (String k : categoryKeys(d)) cats.add(k);
-            o.add("categories", cats); // G12: a list export records every membership too, not none
-            arr.add(o);
-        }
-        root.add("blocks", arr);
-        return GSON.toJson(root);
-    }
-
-    private static String toTxt(Collection<SlotData> blocks) {
-        String nl = System.lineSeparator();
-        StringBuilder sb = new StringBuilder();
-        sb.append("CustomBlocks export — ").append(LocalDateTime.now()).append(nl);
-        sb.append(blocks.size()).append(" block(s)").append(nl);
-        sb.append("------------------------------------------------").append(nl);
-        for (SlotData d : blocks) {
-            sb.append(d.customId())
-              .append("  (slot ").append(d.index()).append(")  \"")
-              .append(d.displayName()).append("\"  [").append(categoryNames(d)).append(']').append(nl);
-        }
-        return sb.toString();
-    }
-
-    private static String toCsv(Collection<SlotData> blocks) {
-        String nl = System.lineSeparator();
-        StringBuilder sb = new StringBuilder("id,name,slot,glow,hardness,sound,collision,categories").append(nl);
-        for (SlotData d : blocks)
-            sb.append(csv(d.customId())).append(',')
-              .append(csv(d.displayName())).append(',')
-              .append(d.index()).append(',')
-              .append(d.glow()).append(',')
-              .append(d.hardness()).append(',')
-              .append(csv(d.soundType())).append(',')
-              .append(!d.noCollision()).append(',')
-              .append(csv(categoryNames(d))).append(nl);
-        return sb.toString();
-    }
-
-    private static String toMarkdown(Collection<SlotData> blocks) {
-        String nl = System.lineSeparator();
-        StringBuilder sb = new StringBuilder();
-        sb.append("# CustomBlocks — ").append(blocks.size()).append(" block(s)").append(nl).append(nl);
-        sb.append("| ID | Name | Slot | Glow | Hardness | Sound | Collision | Categories |").append(nl);
-        sb.append("|----|------|------|------|----------|-------|-----------|------------|").append(nl);
-        for (SlotData d : blocks)
-            sb.append("| `").append(md(d.customId())).append("` | ")
-              .append(md(d.displayName())).append(" | ")
-              .append(d.index()).append(" | ")
-              .append(d.glow()).append(" | ")
-              .append(d.hardness()).append(" | ")
-              .append(md(d.soundType())).append(" | ")
-              .append(d.noCollision() ? "no" : "yes").append(" | ")
-              .append(md(categoryNames(d))).append(" |").append(nl);
-        return sb.toString();
-    }
-
-    private static String toHtml(Collection<SlotData> blocks) {
-        String nl = System.lineSeparator();
-        StringBuilder sb = new StringBuilder();
-        sb.append("<!DOCTYPE html>").append(nl).append("<html lang=\"en\"><head><meta charset=\"UTF-8\">").append(nl)
-          .append("<title>CustomBlocks — Block List</title>").append(nl)
-          .append("<style>body{font-family:system-ui,Arial,sans-serif;margin:2rem;background:#1b1b1f;color:#e8e8ea}")
-          .append("h1{font-weight:500}table{border-collapse:collapse;width:100%}")
-          .append("th,td{border:1px solid #3a3a40;padding:6px 10px;text-align:left}")
-          .append("th{background:#26262b}tr:nth-child(even){background:#222227}code{color:#7fd1ff}</style>").append(nl)
-          .append("</head><body>").append(nl)
-          .append("<h1>CustomBlocks — ").append(blocks.size()).append(" block(s)</h1>").append(nl)
-          .append("<table><thead><tr><th>ID</th><th>Name</th><th>Slot</th><th>Glow</th><th>Hardness</th>")
-          .append("<th>Sound</th><th>Collision</th><th>Categories</th></tr></thead><tbody>").append(nl);
-        for (SlotData d : blocks)
-            sb.append("<tr><td><code>").append(html(d.customId())).append("</code></td><td>")
-              .append(html(d.displayName())).append("</td><td>").append(d.index()).append("</td><td>")
-              .append(d.glow()).append("</td><td>").append(d.hardness()).append("</td><td>")
-              .append(html(d.soundType())).append("</td><td>").append(d.noCollision() ? "no" : "yes")
-              .append("</td><td>").append(html(categoryNames(d)))
-              .append("</td></tr>").append(nl);
-        sb.append("</tbody></table></body></html>").append(nl);
-        return sb.toString();
-    }
-
-    private static String toYaml(Collection<SlotData> blocks) {
-        String nl = System.lineSeparator();
-        StringBuilder sb = new StringBuilder("blocks:").append(nl);
-        for (SlotData d : blocks)
-            sb.append("  - id: ").append(yaml(d.customId())).append(nl)
-              .append("    name: ").append(yaml(d.displayName())).append(nl)
-              .append("    slot: ").append(d.index()).append(nl)
-              .append("    glow: ").append(d.glow()).append(nl)
-              .append("    hardness: ").append(d.hardness()).append(nl)
-              .append("    sound: ").append(yaml(d.soundType())).append(nl)
-              .append("    collision: ").append(!d.noCollision()).append(nl)
-              .append("    categories: ").append(yaml(categoryNames(d))).append(nl);
-        return sb.toString();
-    }
-
-    private static String csv(String s) {
-        if (s == null) return "";
-        return (s.contains(",") || s.contains("\"") || s.contains("\n"))
-                ? "\"" + s.replace("\"", "\"\"") + "\"" : s;
-    }
-
-    private static String md(String s) {
-        if (s == null) return "";
-        return s.replace("|", "\\|").replace("\n", " ").replace("\r", " ");
-    }
-
-    private static String html(String s) {
-        if (s == null) return "";
-        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                .replace("\"", "&quot;").replace("'", "&#39;");
-    }
-
-    private static String yaml(String s) {
-        if (s == null) return "\"\"";
-        return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", " ").replace("\r", " ") + "\"";
+        return BlockExportFormats.blockJson(GSON, SCHEMA, d);
     }
 
     private static void atomicWrite(Path file, String content) throws IOException {
