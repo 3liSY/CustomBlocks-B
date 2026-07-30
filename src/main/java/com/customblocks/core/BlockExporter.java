@@ -1,22 +1,33 @@
 /**
  * BlockExporter.java
  *
- * Responsibility: Write/read block definitions for the Phase 9 import/export system.
+ * Responsibility: Write/read block definitions for the Group 12 import/export system.
  *   - exportAll  — timestamped bulk list for readability/backup (not round-trip importable),
  *                  in json/txt/csv/md/html/yaml
- *   - exportOne  — per-block schema-v1 JSON in exports/<id>.json (importable by importFolder)
+ *   - exportOne  — per-block schema-v2 JSON in cloud_exports/<id>.json (importable by importFolder)
  *   - exportPng / exportAllPng — write the baked block texture(s) as usable .png image files
  *   - importFolder — scan a directory for per-block JSONs and create any missing blocks
  * All writes use atomic temp-rename (NFR-13).
  *
- * Depends on: SlotData, SlotManager, TextureStore
- * Called by:  UtilityCommands, BulkExportCommands
+ * G12 rework (2026-07-30 Locked Decisions):
+ *   • EVERY artifact lands in ONE place, {@link CbPaths#CLOUD_EXPORTS} — the bulk list files used to
+ *     drop into exports/ instead, so a result message could not name a single honest folder.
+ *   • Every file is named from the block ID, never the display name (safe on any filesystem), and every
+ *     ZIP name carries the date + time so a new bundle can never silently replace an older one.
+ *   • Schema v2 records the FULL category membership set ({@link CategoryMembershipStore#of}) as
+ *     {@code categories}, replacing the single legacy {@code category} word. There is exactly ONE
+ *     layout: no parallel legacy shape is written, and nothing here reads the old single-category one.
+ *   • Nothing reports success unseen — {@link #wrote} re-reads the artifact off disk first.
+ *
+ * Depends on: SlotData, SlotManager, TextureStore, CbPaths, CategoryMembershipStore, CategoryMetadataStore
+ * Called by:  UtilityCommands, CategoryCommands, BulkExportCommands, CategoryVaultCommands
  */
 package com.customblocks.core;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import java.io.ByteArrayInputStream;
@@ -32,19 +43,45 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.TreeSet;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
 
 public final class BlockExporter {
 
-    private static final String DIR = "config/customblocks/exports";
-    private static final String CLOUD_DIR = "config/customblocks/cloud_exports";
+    /** The ONE artifact folder (G12) — resolved from CbPaths, never a hardcoded literal. */
+    private static final Path DIR = CbPaths.CLOUD_EXPORTS;
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
     private static final DateTimeFormatter STAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
-    private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("yyyyMMdd");
+    /** The relative folder path a result message shows the owner, so they can find it in a file panel. */
+    public static final String FOLDER_LABEL = "config/customblocks/cloud_exports/";
+    /** Schema version stamped into a per-block payload. v2 = full {@code categories} set, no legacy word. */
+    private static final int SCHEMA = 2;
 
     private BlockExporter() {}
+
+    /**
+     * Validate a just-written artifact and return it, or null if it is missing / empty — so no caller
+     * can report a success it did not actually put on disk (G12 §A: "contents are validated before
+     * success is reported"). Every export method funnels its return through this.
+     */
+    private static Path wrote(Path file) {
+        try {
+            return (Files.isRegularFile(file) && Files.size(file) > 0) ? file : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** Byte size of an artifact, or 0 when it can't be read — for the "(3.4 MB)" part of a result line. */
+    public static long sizeOf(Path file) {
+        try {
+            return file == null ? 0L : Files.size(file);
+        } catch (Exception e) {
+            return 0L;
+        }
+    }
 
     /** Returns true if {@code format} is a supported TEXT bulk export format (png is separate — see exportPng). */
     public static boolean isSupported(String format) {
@@ -73,37 +110,54 @@ public final class BlockExporter {
             default               -> { return null; }
         }
         try {
-            Path dir = Path.of(DIR);
-            Files.createDirectories(dir);
-            Path file = dir.resolve("blocks-" + LocalDateTime.now().format(STAMP) + "." + ext);
+            Files.createDirectories(DIR);
+            Path file = DIR.resolve("blocks-" + LocalDateTime.now().format(STAMP) + "." + ext);
             atomicWrite(file, content);
-            return file;
+            return wrote(file);
         } catch (Exception e) {
             return null;
         }
     }
 
-    /** Export one block's baked texture PNG to cloud_exports/&lt;id&gt;.png. Null if it has no texture or the write fails. */
+    /**
+     * Export one block's baked texture PNG to cloud_exports/&lt;id&gt;.png — named from the block ID, so a
+     * display name with spaces or capitals can never produce an awkward or unsafe file name (TG12 A3).
+     * Null if it has no texture or the write fails.
+     */
     public static Path exportPng(SlotData d) {
         byte[] png = TextureStore.load(d.index());
         if (png == null || png.length == 0) return null;
         try {
-            Path dir = Path.of(CLOUD_DIR);
-            Files.createDirectories(dir);
-            Path file = dir.resolve(d.customId() + ".png");
+            Files.createDirectories(DIR);
+            Path file = DIR.resolve(fileStem(d) + ".png");
             atomicWriteBytes(file, png);
-            return file;
+            return wrote(file);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * The file-name stem for one block: its custom ID, lower-cased with every character that is not
+     * {@code a-z 0-9 _ -} folded to an underscore.
+     *
+     * The ID is already the safe handle — this is the belt-and-braces guarantee behind TG12 A3 that NO
+     * export file name can ever be derived from {@link SlotData#displayName()}, whatever a future id rule
+     * allows through. Everything that names a file (PNG, per-block JSON, ZIP entries) goes through here,
+     * so the JSON, the PNG and the ZIP entry for one block always agree.
+     */
+    private static String fileStem(SlotData d) {
+        String id = d.customId() == null ? "" : d.customId().trim().toLowerCase(Locale.ROOT);
+        String safe = id.replaceAll("[^a-z0-9_-]", "_");
+        return safe.isEmpty() ? "block-" + d.index() : safe;
     }
 
     /** Outcome of a bulk PNG export: where it went, how many wrote, how many had no texture. */
     public record PngBatch(Path dir, int written, int skipped) {}
 
-    /** Export every given block's baked texture PNG into exports/textures-&lt;stamp&gt;/. Null only on directory failure. */
+    /** Export every given block's baked texture PNG into cloud_exports/textures-&lt;stamp&gt;/. Null only on directory failure. */
     public static PngBatch exportAllPng(Collection<SlotData> blocks) {
-        Path dir = Path.of(DIR, "textures-" + LocalDateTime.now().format(STAMP));
+        Path dir = DIR.resolve("textures-" + LocalDateTime.now().format(STAMP));
         int written = 0, skipped = 0;
         try {
             Files.createDirectories(dir);
@@ -113,30 +167,31 @@ public final class BlockExporter {
         for (SlotData d : blocks) {
             byte[] png = TextureStore.load(d.index());
             if (png == null || png.length == 0) { skipped++; continue; }
-            try { atomicWriteBytes(dir.resolve(d.customId() + ".png"), png); written++; }
-            catch (Exception e) { skipped++; }
+            try {
+                atomicWriteBytes(dir.resolve(fileStem(d) + ".png"), png);
+                written++;
+            } catch (Exception e) { skipped++; }
         }
         return new PngBatch(dir, written, skipped);
     }
 
     /**
-     * Export one block to cloud_exports/<id>.json (schema v1 — importable by importFolder/importJson).
+     * Export one block to cloud_exports/&lt;id&gt;.json (schema v2 — importable by importFolder/importJson).
      * Lands in cloud_exports/ so the HTTP server can serve it as a [download] link.
      * Returns the written path, or null on failure.
      */
     public static Path exportOne(SlotData d) {
         try {
-            Path dir = Path.of(CLOUD_DIR);
-            Files.createDirectories(dir);
-            Path file = dir.resolve(d.customId() + ".json");
+            Files.createDirectories(DIR);
+            Path file = DIR.resolve(fileStem(d) + ".json");
             atomicWrite(file, toBlockJson(d));
-            return file;
+            return wrote(file);
         } catch (Exception e) {
             return null;
         }
     }
 
-    /** Public access to one block's schema-v1 JSON (used by the Blueprint item). */
+    /** Public access to one block's schema-v2 JSON (used by the Blueprint item). */
     public static String toJson(SlotData d) {
         return toBlockJson(d);
     }
@@ -148,30 +203,7 @@ public final class BlockExporter {
      */
     public static Path exportAllZip(Collection<SlotData> blocks) {
         if (blocks == null || blocks.isEmpty()) return null;
-        try {
-            Path dir = Path.of(CLOUD_DIR);
-            Files.createDirectories(dir);
-            Path file = dir.resolve("all-" + LocalDateTime.now().format(STAMP) + ".zip");
-            Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-            try (OutputStream os = Files.newOutputStream(tmp);
-                 ZipOutputStream zip = new ZipOutputStream(os)) {
-                for (SlotData d : blocks) {
-                    zip.putNextEntry(new ZipEntry(d.customId() + ".json"));
-                    zip.write(toBlockJson(d).getBytes(StandardCharsets.UTF_8));
-                    zip.closeEntry();
-                    byte[] png = TextureStore.load(d.index());
-                    if (png != null && png.length > 0) {
-                        zip.putNextEntry(new ZipEntry(d.customId() + ".png"));
-                        zip.write(png);
-                        zip.closeEntry();
-                    }
-                }
-            }
-            Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            return file;
-        } catch (Exception e) {
-            return null;
-        }
+        return writeZip("all-" + LocalDateTime.now().format(STAMP) + ".zip", blocks);
     }
 
     /**
@@ -201,35 +233,48 @@ public final class BlockExporter {
     }
 
     /**
-     * Bundle every block in a category into one ZIP at cloud_exports/&lt;category&gt;-YYYYMMDD.zip.
-     * Each block contributes &lt;id&gt;.json (schema v1, importable) and, when present, &lt;id&gt;.png
+     * Bundle every block in a category into one ZIP at cloud_exports/&lt;category&gt;-YYYYMMDD-HHMMSS.zip.
+     * Each block contributes &lt;id&gt;.json (schema v2, importable) and, when present, &lt;id&gt;.png
      * (the baked texture). Returns the written path, or null on failure. Atomic temp-rename.
+     *
+     * The name carries the TIME as well as the day (G12, 2026-07-30) — it used to stamp the day only,
+     * so exporting the same category twice in one day quietly replaced the earlier bundle. A backup that
+     * can overwrite yesterday's is not a backup; this matches exportAllZip exactly.
      */
     public static Path exportCategoryZip(String category, Collection<SlotData> blocks) {
         if (blocks == null || blocks.isEmpty()) return null;
         String safe = (category == null || category.isBlank()) ? "uncategorized"
                 : category.trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "_");
+        return writeZip(safe + "-" + LocalDateTime.now().format(STAMP) + ".zip", blocks);
+    }
+
+    /**
+     * The one ZIP writer behind exportAllZip and exportCategoryZip: each block contributes
+     * &lt;id&gt;.json plus, when it has one, &lt;id&gt;.png. Built in a .tmp sibling and atomically
+     * renamed, then validated, so a half-written bundle is never reported as a success.
+     */
+    private static Path writeZip(String fileName, Collection<SlotData> blocks) {
         try {
-            Path dir = Path.of(CLOUD_DIR);
-            Files.createDirectories(dir);
-            Path file = dir.resolve(safe + "-" + LocalDateTime.now().format(DAY) + ".zip");
+            Files.createDirectories(DIR);
+            Path file = DIR.resolve(fileName);
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             try (OutputStream os = Files.newOutputStream(tmp);
                  ZipOutputStream zip = new ZipOutputStream(os)) {
                 for (SlotData d : blocks) {
-                    zip.putNextEntry(new ZipEntry(d.customId() + ".json"));
+                    String stem = fileStem(d);
+                    zip.putNextEntry(new ZipEntry(stem + ".json"));
                     zip.write(toBlockJson(d).getBytes(StandardCharsets.UTF_8));
                     zip.closeEntry();
                     byte[] png = TextureStore.load(d.index());
                     if (png != null && png.length > 0) {
-                        zip.putNextEntry(new ZipEntry(d.customId() + ".png"));
+                        zip.putNextEntry(new ZipEntry(stem + ".png"));
                         zip.write(png);
                         zip.closeEntry();
                     }
                 }
             }
             Files.move(tmp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
-            return file;
+            return wrote(file);
         } catch (Exception e) {
             return null;
         }
@@ -314,28 +359,68 @@ public final class BlockExporter {
         }
     }
 
-    /** Apply optional attribute fields from a per-block JSON onto an already-created slot. */
+    /**
+     * Apply optional attribute fields from a per-block JSON onto an already-created slot.
+     *
+     * Categories arrive as the schema-v2 {@code categories} ARRAY and are added one membership at a
+     * time through {@link CategoryMembershipStore#add} — the real G11 model — so a block that was
+     * exported from three categories comes back in all three. The old single {@code category} word is
+     * not read: G12 keeps exactly one layout, and a reader for the retired one would be the "dupe" the
+     * owner ruled out.
+     *
+     * Called after {@link SlotManager#create} has already returned, so this thread holds NEITHER
+     * monitor — which is what keeps it clear of the documented SlotManager↔CategoryMembershipStore
+     * lock-order hazard (see the LOCK ORDER banner in CategoryMembershipStore).
+     */
     private static void applyFields(SlotData d, JsonObject o) {
         String id = d.customId();
         if (o.has("glow"))        SlotManager.setGlow(id, o.get("glow").getAsInt());
         if (o.has("hardness"))    SlotManager.setHardness(id, o.get("hardness").getAsFloat());
         if (o.has("soundType"))   SlotManager.setSoundType(id, o.get("soundType").getAsString());
         if (o.has("noCollision")) SlotManager.setNoCollision(id, o.get("noCollision").getAsBoolean());
-        if (o.has("category"))    SlotManager.setCategory(id, o.get("category").getAsString());
+        if (o.has("categories") && o.get("categories").isJsonArray()) {
+            for (JsonElement el : o.getAsJsonArray("categories")) {
+                try {
+                    String key = el.getAsString();
+                    if (key != null && !CategoryMembershipStore.isUncategorized(key)) {
+                        CategoryMembershipStore.add(id, key);
+                    }
+                } catch (Exception ignored) {} // one unreadable entry must not lose the rest
+            }
+        }
     }
 
     // ── Serialisation ────────────────────────────────────────────────────────
 
+    /**
+     * Every category key a block belongs to, sorted so two exports of the same block match byte for
+     * byte. Reads {@link CategoryMembershipStore} — the real G11 set — NOT the legacy one-word
+     * {@link SlotData#category()} shadow, which only ever held the alphabetically-first membership and
+     * so quietly dropped the rest out of every export.
+     */
+    private static List<String> categoryKeys(SlotData d) {
+        return new ArrayList<>(new TreeSet<>(CategoryMembershipStore.of(d.customId())));
+    }
+
+    /** The same memberships written the way a person reads them ("Walls, Arabic Letters"), for the list formats. */
+    private static String categoryNames(SlotData d) {
+        List<String> shown = new ArrayList<>();
+        for (String k : categoryKeys(d)) shown.add(CategoryMetadataStore.getDisplayName(k));
+        return String.join(", ", shown);
+    }
+
     private static String toBlockJson(SlotData d) {
         JsonObject o = new JsonObject();
-        o.addProperty("schema", 1);
+        o.addProperty("schema", SCHEMA);
         o.addProperty("id", d.customId());
         o.addProperty("displayName", d.displayName());
         o.addProperty("glow", d.glow());
         o.addProperty("hardness", d.hardness());
         o.addProperty("soundType", d.soundType());
         if (d.noCollision()) o.addProperty("noCollision", true);
-        if (!d.category().isEmpty()) o.addProperty("category", d.category());
+        JsonArray cats = new JsonArray();
+        for (String k : categoryKeys(d)) cats.add(k);
+        o.add("categories", cats); // ALWAYS present — every block holds at least "uncategorized" (G11)
         return GSON.toJson(o);
     }
 
@@ -349,6 +434,9 @@ public final class BlockExporter {
             o.addProperty("index", d.index());
             o.addProperty("customId", d.customId());
             o.addProperty("displayName", d.displayName());
+            JsonArray cats = new JsonArray();
+            for (String k : categoryKeys(d)) cats.add(k);
+            o.add("categories", cats); // G12: a list export records every membership too, not none
             arr.add(o);
         }
         root.add("blocks", arr);
@@ -364,14 +452,14 @@ public final class BlockExporter {
         for (SlotData d : blocks) {
             sb.append(d.customId())
               .append("  (slot ").append(d.index()).append(")  \"")
-              .append(d.displayName()).append("\"").append(nl);
+              .append(d.displayName()).append("\"  [").append(categoryNames(d)).append(']').append(nl);
         }
         return sb.toString();
     }
 
     private static String toCsv(Collection<SlotData> blocks) {
         String nl = System.lineSeparator();
-        StringBuilder sb = new StringBuilder("id,name,slot,glow,hardness,sound,collision,category").append(nl);
+        StringBuilder sb = new StringBuilder("id,name,slot,glow,hardness,sound,collision,categories").append(nl);
         for (SlotData d : blocks)
             sb.append(csv(d.customId())).append(',')
               .append(csv(d.displayName())).append(',')
@@ -380,7 +468,7 @@ public final class BlockExporter {
               .append(d.hardness()).append(',')
               .append(csv(d.soundType())).append(',')
               .append(!d.noCollision()).append(',')
-              .append(csv(d.category())).append(nl);
+              .append(csv(categoryNames(d))).append(nl);
         return sb.toString();
     }
 
@@ -388,8 +476,8 @@ public final class BlockExporter {
         String nl = System.lineSeparator();
         StringBuilder sb = new StringBuilder();
         sb.append("# CustomBlocks — ").append(blocks.size()).append(" block(s)").append(nl).append(nl);
-        sb.append("| ID | Name | Slot | Glow | Hardness | Sound | Collision | Category |").append(nl);
-        sb.append("|----|------|------|------|----------|-------|-----------|----------|").append(nl);
+        sb.append("| ID | Name | Slot | Glow | Hardness | Sound | Collision | Categories |").append(nl);
+        sb.append("|----|------|------|------|----------|-------|-----------|------------|").append(nl);
         for (SlotData d : blocks)
             sb.append("| `").append(md(d.customId())).append("` | ")
               .append(md(d.displayName())).append(" | ")
@@ -398,7 +486,7 @@ public final class BlockExporter {
               .append(d.hardness()).append(" | ")
               .append(md(d.soundType())).append(" | ")
               .append(d.noCollision() ? "no" : "yes").append(" | ")
-              .append(md(d.category().isEmpty() ? "—" : d.category())).append(" |").append(nl);
+              .append(md(categoryNames(d))).append(" |").append(nl);
         return sb.toString();
     }
 
@@ -414,13 +502,13 @@ public final class BlockExporter {
           .append("</head><body>").append(nl)
           .append("<h1>CustomBlocks — ").append(blocks.size()).append(" block(s)</h1>").append(nl)
           .append("<table><thead><tr><th>ID</th><th>Name</th><th>Slot</th><th>Glow</th><th>Hardness</th>")
-          .append("<th>Sound</th><th>Collision</th><th>Category</th></tr></thead><tbody>").append(nl);
+          .append("<th>Sound</th><th>Collision</th><th>Categories</th></tr></thead><tbody>").append(nl);
         for (SlotData d : blocks)
             sb.append("<tr><td><code>").append(html(d.customId())).append("</code></td><td>")
               .append(html(d.displayName())).append("</td><td>").append(d.index()).append("</td><td>")
               .append(d.glow()).append("</td><td>").append(d.hardness()).append("</td><td>")
               .append(html(d.soundType())).append("</td><td>").append(d.noCollision() ? "no" : "yes")
-              .append("</td><td>").append(html(d.category().isEmpty() ? "—" : d.category()))
+              .append("</td><td>").append(html(categoryNames(d)))
               .append("</td></tr>").append(nl);
         sb.append("</tbody></table></body></html>").append(nl);
         return sb.toString();
@@ -437,7 +525,7 @@ public final class BlockExporter {
               .append("    hardness: ").append(d.hardness()).append(nl)
               .append("    sound: ").append(yaml(d.soundType())).append(nl)
               .append("    collision: ").append(!d.noCollision()).append(nl)
-              .append("    category: ").append(yaml(d.category())).append(nl);
+              .append("    categories: ").append(yaml(categoryNames(d))).append(nl);
         return sb.toString();
     }
 

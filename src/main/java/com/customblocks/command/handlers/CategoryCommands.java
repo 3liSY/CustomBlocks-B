@@ -5,29 +5,36 @@
  * categorydesc, givecategory, exportcategory, sharecategory, importcategory are GONE — folded
  * in here):
  *
- *   list (opens the Category Hub) · edit · info · rename · merge · delete · color · desc · icon ·
- *   sort · lock|unlock · give · export · share · import  (one arg each, see the builder below).
+ *   list (opens the Category Hub) · edit · rename · combine · open · color · icon ·
+ *   sort · lock|unlock · give · export.
  *
- * Sync logic lives in core/CategoryService (shared with CategoryEditMenu). Player/threaded
- * ops (give, export, share, import) stay here. Under the 400-line handler gate.
+ * Category descriptions are GONE (G11 2026-07-28) — the `desc` verb, the stored field and every
+ * surface that printed it were removed rather than reworded.
+ *
+ * The membership verbs (create / set / remove / delete / filter / info) are in
+ * CategoryMemberCommands and the network pair (share / import) in CategoryVaultCommands; all three
+ * files hang their verbs onto the SAME `category` node, so /cb category stays one tree while each
+ * file stays under the 400-line handler gate (§9.3).
+ *
+ * Sync logic lives in core/CategoryService (shared with CategoryEditMenu).
+ *
+ * Every category-name argument is a GREEDY string in last position and is never quoted
+ * (G11 2026-07-26) — see {@link #catArg} and {@link CategorySuggest}.
  *
  * Depends on: CategoryService, SlotManager, SlotBlock, BlockExporter, ResourcePackServer,
- *             Chat, CloudVaultClient, GuiRouter, Nav
+ *             Chat, GuiRouter, Nav
  * Called by:  CommandRegistrar
  */
 package com.customblocks.command.handlers;
 
-import com.customblocks.core.IncidentRecorder;
-
 import com.customblocks.command.CbFmt;
-import com.customblocks.CustomBlocksConfig;
 import com.customblocks.block.SlotBlock;
-import com.customblocks.cloud.CloudVaultClient;
-import com.customblocks.cloud.VaultHistory;
 import com.customblocks.command.Chat;
 import com.customblocks.core.BlockExporter;
+import com.customblocks.core.CategoryFilters;
 import com.customblocks.core.CategoryMembershipStore;
 import com.customblocks.core.CategoryMetadataStore;
+import com.customblocks.core.CategoryReport;
 import com.customblocks.core.CategoryService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -41,7 +48,6 @@ import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import net.minecraft.item.ItemStack;
-import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.command.CommandManager;
 import net.minecraft.server.command.ServerCommandSource;
 import net.minecraft.server.network.ServerPlayerEntity;
@@ -74,57 +80,54 @@ public final class CategoryCommands {
                 .then(CommandManager.literal("list")
                         .executes(ctx -> openList(ctx.getSource()))
                         .then(CommandManager.argument("mode", StringArgumentType.word())
-                                .suggests((c, b) -> {
-                                    for (String m : CategoryService.categoryModes()) b.suggest(m);
-                                    return b.buildFuture();
-                                })
+                                .suggests((c, b) -> CategorySuggest.words(b, CategoryService.categoryModes()))
                                 .executes(ctx -> listFiltered(ctx.getSource(), str(ctx, "mode")))))
 
                 .then(CommandManager.literal("edit")
                         .then(catArg("cat").executes(ctx -> openEdit(ctx.getSource(), str(ctx, "cat")))))
 
+                // `rename <old> into <new>` — same connector grammar as `combine` (G11 2026-07-28).
+                // Two word-arguments could never take a multi-word name: only ONE argument may be
+                // greedy, so "Arabic Numbers" was untypeable on either side. One greedy spec split
+                // on the required `into` lets both names be multi-word and unquoted.
                 .then(CommandManager.literal("rename")
-                        .then(CommandManager.argument("old", StringArgumentType.word())
-                                .suggests(CategoryCommands::suggestCategories)
-                                .then(CommandManager.argument("new", StringArgumentType.word())
-                                        .executes(ctx -> report(ctx.getSource(),
-                                                CategoryService.rename(str(ctx, "old"), str(ctx, "new")))))))
+                        .then(CommandManager.argument("spec", StringArgumentType.greedyString())
+                                .suggests(CategorySuggest::rename)
+                                .executes(ctx -> rename(ctx.getSource(), str(ctx, "spec")))))
 
-                .then(CommandManager.literal("merge")
-                        .then(CommandManager.argument("source", StringArgumentType.word())
-                                .suggests(CategoryCommands::suggestCategories)
-                                .then(CommandManager.argument("target", StringArgumentType.word())
-                                        .suggests(CategoryCommands::suggestCategories)
-                                        .executes(ctx -> report(ctx.getSource(),
-                                                CategoryService.merge(str(ctx, "source"), str(ctx, "target")))))))
+                // `combine <a> into <b>` — the only fold-one-category-into-another verb (G11
+                // 2026-07-26). `merge` is retired: `merge a b` never said which one survived. Both
+                // names are greedy and unquoted, so the whole thing is ONE argument split on the
+                // required `into` connector.
+                .then(CommandManager.literal("combine")
+                        .then(CommandManager.argument("spec", StringArgumentType.greedyString())
+                                .suggests(CategorySuggest::combine)
+                                .executes(ctx -> combine(ctx.getSource(), str(ctx, "spec")))))
 
+                // The click target behind every category name printed in chat (G11 C12).
+                .then(CommandManager.literal("open")
+                        .then(catArg("cat").executes(ctx -> openHub(ctx.getSource(), str(ctx, "cat")))))
+
+                // Value first, name last (G11 2026-07-26): the name is the greedy argument on every
+                // verb, so "Arabic Numbers" can be typed bare instead of quoted.
                 .then(CommandManager.literal("color")
-                        .then(CommandManager.argument("cat", StringArgumentType.word())
-                                .suggests(CategoryCommands::suggestCategories)
-                                .then(CommandManager.argument("color", StringArgumentType.word())
-                                        .suggests(CategoryCommands::suggestColors)
+                        .then(CommandManager.argument("color", StringArgumentType.word())
+                                .suggests(CategorySuggest::colors)
+                                .then(catArg("cat")
                                         .executes(ctx -> report(ctx.getSource(),
                                                 CategoryService.setColor(str(ctx, "cat"), str(ctx, "color")))))))
 
-                .then(CommandManager.literal("desc")
-                        .then(CommandManager.argument("cat", StringArgumentType.word())
-                                .suggests(CategoryCommands::suggestCategories)
-                                .then(CommandManager.argument("text", StringArgumentType.greedyString())
-                                        .executes(ctx -> report(ctx.getSource(),
-                                                CategoryService.setDescription(str(ctx, "cat"), str(ctx, "text")))))))
-
                 .then(CommandManager.literal("icon")
-                        .then(CommandManager.argument("cat", StringArgumentType.word())
-                                .suggests(CategoryCommands::suggestCategories)
-                                .then(CommandManager.argument("block", StringArgumentType.word())
+                        .then(CommandManager.argument("block", StringArgumentType.word())
+                                .suggests(BlockSuggestions.IDS)
+                                .then(catArg("cat")
                                         .executes(ctx -> report(ctx.getSource(),
                                                 CategoryService.setIcon(str(ctx, "cat"), str(ctx, "block")))))))
 
                 .then(CommandManager.literal("sort")
-                        .then(CommandManager.argument("cat", StringArgumentType.word())
-                                .suggests(CategoryCommands::suggestCategories)
-                                .then(CommandManager.argument("mode", StringArgumentType.word())
-                                        .suggests((c, b) -> { b.suggest("alpha"); b.suggest("custom"); return b.buildFuture(); })
+                        .then(CommandManager.argument("mode", StringArgumentType.word())
+                                .suggests((c, b) -> CategorySuggest.words(b, List.of(CategoryFilters.ALPHA, "custom")))
+                                .then(catArg("cat")
                                         .executes(ctx -> report(ctx.getSource(),
                                                 CategoryService.setSort(str(ctx, "cat"), str(ctx, "mode")))))))
 
@@ -140,31 +143,70 @@ public final class CategoryCommands {
                         .then(catArg("cat").executes(ctx -> giveCategory(ctx, str(ctx, "cat")))))
 
                 .then(CommandManager.literal("export")
-                        .then(catArg("cat").executes(ctx -> exportCategory(ctx, str(ctx, "cat")))))
+                        .then(catArg("cat").executes(ctx -> exportCategory(ctx, str(ctx, "cat")))));
 
-                .then(CommandManager.literal("share")
-                        .then(catArg("cat").executes(ctx -> shareCategory(ctx, str(ctx, "cat")))))
-
-                .then(CommandManager.literal("import")
-                        .then(CommandManager.argument("code", StringArgumentType.word())
-                                .executes(ctx -> importCategory(ctx, str(ctx, "code")))));
-
-        // create / set / remove / delete-modes / filter / info live next door (§9.3 line gate),
-        // hung onto this same node so it stays ONE /cb category tree.
+        // create / set / remove / delete / filter / info and the vault pair live next door
+        // (§9.3 line gate), hung onto this same node so it stays ONE /cb category tree.
         CategoryMemberCommands.register(cat);
+        CategoryVaultCommands.register(cat);
         root.then(cat);
     }
 
     /** A single greedy category-name argument with category suggestions. */
     private static com.mojang.brigadier.builder.RequiredArgumentBuilder<ServerCommandSource, String> catArg(String name) {
         return CommandManager.argument(name, StringArgumentType.greedyString())
-                .suggests(CategoryCommands::suggestCategories);
+                .suggests(CategorySuggest::categories);
     }
 
-    /** Turn a CategoryService.Outcome into chat feedback + a Brigadier result code. */
+    /** How a category is written in chat: its name AS TYPED, never quoted (G11 2026-07-26). */
+    static String shown(String category) {
+        return CategoryMetadataStore.getDisplayName(category);
+    }
+
+    /**
+     * Turn a CategoryService.Outcome into chat feedback + a Brigadier result code.
+     *
+     * Every category line goes through {@link CategoryChat}, which tints the category name with its
+     * own colour tag, makes it click/hoverable, and hangs the outcome's follow-up chip off the tail
+     * (G11 C11-C13).
+     */
     static int report(ServerCommandSource src, CategoryService.Outcome o) {
-        if (o.ok()) Chat.success(src, o.msg()); else Chat.error(src, o.msg());
-        return o.ok() ? 1 : 0;
+        return CategoryChat.report(src, o);
+    }
+
+    /** `/cb category rename <old> into <new>` — split the one greedy argument on its connector. */
+    private static int rename(ServerCommandSource src, String spec) {
+        int at = CategorySuggest.connectorAt(spec);
+        if (at < 0) {
+            Chat.error(src, "Say what it becomes: /cb category rename <category> into <new name>.");
+            return 0;
+        }
+        String from = spec.substring(0, at).trim();
+        String to = spec.substring(at + CategorySuggest.CONNECTOR.length()).trim();
+        return report(src, CategoryService.rename(from, to));
+    }
+
+    /** `/cb category combine <a> into <b>` — split the one greedy argument on its connector. */
+    private static int combine(ServerCommandSource src, String spec) {
+        int at = CategorySuggest.connectorAt(spec);
+        if (at < 0) {
+            Chat.error(src, "Say which way round: /cb category combine <category> into <category>.");
+            return 0;
+        }
+        String from = spec.substring(0, at).trim();
+        String to = spec.substring(at + CategorySuggest.CONNECTOR.length()).trim();
+        return report(src, CategoryService.combine(BulkConfirm.actor(src), from, to));
+    }
+
+    /** `/cb category open <cat>` — the Hub, focused on one category (the chat click target). */
+    private static int openHub(ServerCommandSource src, String category) {
+        String cat = CategoryMembershipStore.key(category);
+        if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
+            Chat.error(src, "The Category Hub is in-game only. Try /cb category info " + shown(cat) + ".");
+            return 0;
+        }
+        ServerPlayNetworking.send(p, new OpenGuiPayload(GuiMode.CATEGORY_HUB.id, cat));
+        return 1;
     }
 
     // ── list / edit / info ──────────────────────────────────────────────────────
@@ -180,22 +222,23 @@ public final class CategoryCommands {
 
     /** The category listing in a named order (G11 filter — the category half of the mode set). */
     private static int listFiltered(ServerCommandSource src, String mode) {
-        List<String> lines = CategoryService.filterCategories(mode);
+        List<String> lines = CategoryReport.filterCategories(mode);
         if (lines == null) {
             Chat.error(src, "Unknown order \"" + mode + "\". Categories can be listed by: "
                     + String.join(", ", CategoryService.categoryModes()) + ".");
             return 0;
         }
-        for (String line : lines) Chat.raw(src, Text.literal(line));
+        for (String line : lines) Chat.raw(src, CategoryChat.decorate(line));
         return 1;
     }
 
     private static int openEdit(ServerCommandSource src, String category) {
+        String cat = CategoryMembershipStore.key(category);
         if (!(src.getEntity() instanceof ServerPlayerEntity p)) {
-            Chat.error(src, "The category editor is in-game only. Try /cb category info " + category + ".");
+            Chat.error(src, "The category editor is in-game only. Try /cb category info " + shown(cat) + ".");
             return 0;
         }
-        GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CATEGORY_EDIT, category.trim().toLowerCase(Locale.ROOT)));
+        GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.CATEGORY_EDIT, cat));
         return 1;
     }
 
@@ -207,10 +250,10 @@ public final class CategoryCommands {
             Chat.error(src, "Only a player can receive items.");
             return 0;
         }
-        String cat = category.trim().toLowerCase(Locale.ROOT);
+        String cat = CategoryMembershipStore.key(category);
         List<SlotData> blocks = sortedByIndex(CategoryMembershipStore.blocksIn(cat));
         if (blocks.isEmpty()) {
-            Chat.error(src, "No blocks in category \"" + cat + "\". See /cb categories.");
+            Chat.error(src, "No blocks in category " + shown(cat) + ". See /cb categories.");
             return 0;
         }
         List<String> gave = new ArrayList<>();
@@ -238,102 +281,22 @@ public final class CategoryCommands {
 
     private static int exportCategory(CommandContext<ServerCommandSource> ctx, String category) {
         ServerCommandSource src = ctx.getSource();
-        String cat = category.trim().toLowerCase(Locale.ROOT);
+        String cat = CategoryMembershipStore.key(category);
         List<SlotData> blocks = sortedByIndex(CategoryMembershipStore.blocksIn(cat));
         if (blocks.isEmpty()) {
-            Chat.error(src, "No blocks in category \"" + cat + "\". See /cb categories.");
+            Chat.error(src, "No blocks in category " + shown(cat) + ". See /cb categories.");
             return 0;
         }
         Path zip = BlockExporter.exportCategoryZip(cat, blocks);
-        if (zip == null) {
-            Chat.error(src, "Export failed — couldn't write the ZIP.");
-            return 0;
-        }
-        MutableText msg = Text.literal(CbFmt.BODY + "Exported " + CbFmt.VALUE + blocks.size()
-                        + CbFmt.BODY + " block(s) of " + CbFmt.VALUE + cat + CbFmt.BODY + " → " + CbFmt.DIM + zip.getFileName() + "  ")
-                .append(Text.literal(CbFmt.VALUE + "[download]").styled(s -> s.withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, ResourcePackServer.getZipUrl(zip.getFileName().toString()))).withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(CbFmt.DIM + "Open in browser to download")))));
-        Chat.line(src, msg);
-        return 1;
-    }
-
-    // ── /cb category share <cat>  (vault upload — off-thread) ────────────────────
-
-    private static int shareCategory(CommandContext<ServerCommandSource> ctx, String category) {
-        ServerCommandSource src = ctx.getSource();
-        String cat = category.trim().toLowerCase(Locale.ROOT);
-        if (!CustomBlocksConfig.cloudShareEnabled) { Chat.error(src, "Cloud sharing is disabled. Enable it in /cb config (cloudShareEnabled)."); return 0; }
-        if (!CloudVaultClient.isConfigured()) {
-            Chat.error(src, "The cloud vault isn't set up yet. Put your worker URL in config.json as "
-                    + "\"vaultEndpoint\", then /cb reload.");
-            return 0;
-        }
-        List<SlotData> blocks = sortedByIndex(CategoryMembershipStore.blocksIn(cat));
-        if (blocks.isEmpty()) {
-            Chat.error(src, "No blocks in category \"" + cat + "\". See /cb categories.");
-            return 0;
-        }
-        MinecraftServer server = src.getServer();
-        if (server == null) return 0;
-        Chat.info(src, "Uploading category \"" + cat + "\" to the vault…");
-        new Thread(() -> {
-            try {
-                Path zip = BlockExporter.exportCategoryZip(cat, blocks);
-                if (zip == null) { server.execute(() -> Chat.error(src, "Couldn't build the category ZIP.")); return; }
-                byte[] data = java.nio.file.Files.readAllBytes(zip);
-                String code = CloudVaultClient.uploadCategory(cat, data);
-                server.execute(() -> {
-                    if (code == null) {
-                        Chat.error(src, "Upload failed — check vaultEndpoint and that the worker is reachable.");
-                    } else {
-                        VaultHistory.record("category", code, cat, src);
-                        MutableText msg = Text.literal(CbFmt.OK + "Shared " + CbFmt.VALUE + cat + CbFmt.OK + " — code: " + CbFmt.VALUE + code + "  ")
-                                .append(Chat.shareButton(code))
-                                .append(Text.literal("  " + CbFmt.DIM + "Import with " + CbFmt.BODY + "/cb category import " + code));
-                        Chat.line(src, msg);
-                    }
-                });
-            } catch (Exception ex) {
-                String code = IncidentRecorder.record("Category vault share failed for \"" + cat + "\"", null, src.getName(), ex);
-                server.execute(() -> Chat.incidentError(src, "Couldn't share that category — the vault didn't answer. Check your connection and try again.", code));
-            }
-        }, "cb-vault-share").start();
-        return 1;
-    }
-
-    // ── /cb category import <code>  (vault download — off-thread) ────────────────
-
-    private static int importCategory(CommandContext<ServerCommandSource> ctx, String code) {
-        ServerCommandSource src = ctx.getSource();
-        if (!CustomBlocksConfig.cloudShareEnabled) { Chat.error(src, "Cloud sharing is disabled. Enable it in /cb config (cloudShareEnabled)."); return 0; }
-        if (!CloudVaultClient.isConfigured()) {
-            Chat.error(src, "The cloud vault isn't set up yet. Put your worker URL in config.json as "
-                    + "\"vaultEndpoint\", then /cb reload.");
-            return 0;
-        }
-        MinecraftServer server = src.getServer();
-        if (server == null) return 0;
-        Chat.info(src, "Downloading category code \"" + code + "\"…");
-        new Thread(() -> {
-            try {
-                byte[] zip = CloudVaultClient.downloadCategory(code);
-                if (zip == null) { server.execute(() -> Chat.error(src, "Download failed — bad code, or the vault is unreachable.")); return; }
-                BlockExporter.ImportResult r = BlockExporter.importCategoryZip(zip);
-                server.execute(() -> {
-                    int c = r.created().size(), s = r.skipped().size(), f = r.failed().size();
-                    if (c > 0) {
-                        ResourcePackServer.updatePack();
-                        Chat.success(src, "Imported " + c + " block(s): " + String.join(", ", r.created()) + ".");
-                    }
-                    if (s > 0) Chat.info(src, "Skipped " + s + " already-present: " + String.join(", ", r.skipped()));
-                    if (f > 0) Chat.error(src, f + " couldn't import: " + String.join(", ", r.failed()));
-                    if (c == 0 && s == 0 && f == 0) Chat.info(src, "Nothing to import from that code.");
-                });
-            } catch (Exception ex) {
-                String incidentCode = IncidentRecorder.record("Category vault import failed (code: " + code + ")", null, src.getName(), ex);
-                server.execute(() -> Chat.incidentError(src, "Couldn't import that code — it may be wrong, expired, or the vault is unreachable.", incidentCode));
-            }
-        }, "cb-vault-import").start();
-        return 1;
+        if (zip == null) return ExportReport.failed(src, "ZIP");
+        // The [download] chip is G20 §L's route — carried over exactly as it was, wording included.
+        MutableText download = Text.literal(CbFmt.VALUE + "[download]").styled(s -> s
+                .withClickEvent(new ClickEvent(ClickEvent.Action.OPEN_URL, ResourcePackServer.getZipUrl(zip.getFileName().toString())))
+                .withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.literal(CbFmt.DIM + "Open in browser to download"))));
+        // Every block in the ZIP records ALL its categories, not just this one (schema v2) — the payload
+        // is honest about where else they live, even though the selection is this one category.
+        return ExportReport.headline(src, "Exported " + blocks.size() + " block"
+                + (blocks.size() == 1 ? "" : "s") + " of " + shown(cat), zip, download);
     }
 
     /**
@@ -365,35 +328,4 @@ public final class CategoryCommands {
 
 
 
-    /**
-     * Suggest EXISTING category names (TG11 A9), by their typed display name.
-     *
-     * Reads the metadata records plus the keys actually in use, not SlotManager's block scan: a
-     * category with 0 blocks is still real (G11) and has to tab-complete, or an empty category
-     * would be untypeable the moment its last block left. A name containing a space is offered
-     * pre-quoted, since the arguments that are followed by a mode word take a quotable string.
-     */
-    static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
-    suggestCategories(CommandContext<ServerCommandSource> ctx,
-                      com.mojang.brigadier.suggestion.SuggestionsBuilder b) {
-        String typed = b.getRemaining().toLowerCase(Locale.ROOT).replace("\"", "");
-        java.util.Set<String> keys = new java.util.TreeSet<>(CategoryMetadataStore.knownCategories());
-        keys.addAll(CategoryMembershipStore.keysInUse());
-        for (String k : keys) {
-            String name = CategoryMetadataStore.getDisplayName(k);
-            if (!name.toLowerCase(Locale.ROOT).startsWith(typed) && !k.startsWith(typed)) continue;
-            b.suggest(name.contains(" ") ? "\"" + name + "\"" : name);
-        }
-        return b.buildFuture();
-    }
-
-    private static java.util.concurrent.CompletableFuture<com.mojang.brigadier.suggestion.Suggestions>
-    suggestColors(CommandContext<ServerCommandSource> ctx,
-                  com.mojang.brigadier.suggestion.SuggestionsBuilder b) {
-        String typed = b.getRemaining().toLowerCase(Locale.ROOT);
-        for (String c : CategoryService.colorWords()) {
-            if (c.startsWith(typed)) b.suggest(c);
-        }
-        return b.buildFuture();
-    }
 }

@@ -4,8 +4,11 @@
  * Responsibility: Non-mutating / utility subcommands — list, give, reload, export.
  * Registered into the /cb tree by CommandRegistrar. Stays under 400 lines (§9.3).
  *
- * `list` ends with clickable [.json] / [.txt] buttons that run `/cb export`, which
- * writes the block list to config/customblocks/exports/ and offers a copy-path button.
+ * `list` ends with clickable [.json] / [.txt] buttons that run `/cb export`, which writes the block
+ * list into config/customblocks/cloud_exports/ — the one artifact folder (G12, 2026-07-30).
+ *
+ * Export is admin-only and every route answers through {@link ExportReport}, so all of them state the
+ * same four facts: count, file name, size, folder. Console gets that identical plain text (TG12 A8).
  */
 package com.customblocks.command.handlers;
 
@@ -57,7 +60,11 @@ public final class UtilityCommands {
         root.then(CommandManager.literal("categories")
                 .executes(UtilityCommands::categories));
 
+        // Export is ADMIN-ONLY (G12, 2026-07-30): it writes server files in bulk. This node carried NO
+        // .requires at all, so any player could dump every block definition to disk. Gating the parent
+        // literal covers every child route (json/txt/…/zip/vault/<id>/…) in one place.
         root.then(CommandManager.literal("export")
+                .requires(s -> s.hasPermissionLevel(2))
                 .executes(UtilityCommands::exportMenu)
                 .then(CommandManager.literal("json").executes(ctx -> export(ctx, "json")))
                 .then(CommandManager.literal("txt").executes(ctx -> export(ctx, "txt")))
@@ -195,10 +202,7 @@ public final class UtilityCommands {
     private static int exportMenu(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
-        if (all.isEmpty()) {
-            Chat.info(src, "Nothing to export yet — make a block with /cb create <id>");
-            return 1;
-        }
+        if (all.isEmpty()) return ExportReport.nothingToExport(src);
         // Players get the chest GUI dashboard
         if (src.getEntity() instanceof ServerPlayerEntity p) {
             GuiRouter.openFresh(p, Nav.MenuKey.of(Nav.Dest.EXPORT_DASHBOARD));
@@ -224,35 +228,28 @@ public final class UtilityCommands {
         return 1;
     }
 
-    /** /cb export json|txt */
+    /** /cb export json|txt|csv|md|html|yaml — the bulk block-list file. */
     private static int export(CommandContext<ServerCommandSource> ctx, String format) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
-        if (all.isEmpty()) {
-            Chat.info(src, "Nothing to export yet — make a block with /cb create <id>");
-            return 1;
-        }
+        if (all.isEmpty()) return ExportReport.nothingToExport(src);
         Path file = BlockExporter.exportAll(format, all);
-        if (file == null) {
-            Chat.error(src, "Export failed — write error");
-            return 0;
-        }
-        String name = file.getFileName().toString();
-        MutableText msg = Text.literal(CbFmt.BODY + "Exported " + CbFmt.VALUE + all.size() + CbFmt.BODY + " block(s) → " + CbFmt.DIM + name + " ")
-                .append(Chat.runButton("[Vault share]", "/cb export vault", "Share one block with /cb export <id> vault"));
-        Chat.line(src, msg);
-        return 1;
+        if (file == null) return ExportReport.failed(src, format + " file");
+        return ExportReport.wrote(src, all.size(), "block", file);
     }
 
-    /** /cb export png — write every block's baked texture PNG into exports/textures-&lt;stamp&gt;/ */
+    /** /cb export png — write every block's baked texture PNG into cloud_exports/textures-&lt;stamp&gt;/ */
     private static int exportPngAll(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
-        if (all.isEmpty()) { Chat.info(src, "Nothing to export yet — make a block with /cb create <id>"); return 1; }
+        if (all.isEmpty()) return ExportReport.nothingToExport(src);
         BlockExporter.PngBatch r = BlockExporter.exportAllPng(all);
-        if (r == null) { Chat.error(src, "Export failed — write error"); return 0; }
-        Chat.success(src, "Exported " + CbFmt.VALUE + r.written() + CbFmt.RESET + " texture PNG(s) → " + CbFmt.DIM + "exports/" + r.dir().getFileName()
-                + (r.skipped() > 0 ? " " + CbFmt.FAINT + "(" + r.skipped() + " had no texture)" : ""));
+        if (r == null) return ExportReport.failed(src, "texture folder");
+        // A folder, not a single file, so it reports the folder + how many landed rather than a size.
+        Chat.success(src, "Exported " + r.written() + " texture PNG" + (r.written() == 1 ? "" : "s")
+                + (r.skipped() > 0 ? " (" + r.skipped() + " had no texture)" : ""));
+        Chat.raw(src, Text.literal(CbFmt.DIM + "Folder: " + CbFmt.BODY + BlockExporter.FOLDER_LABEL
+                + r.dir().getFileName() + "/"));
         return 1;
     }
 
@@ -264,25 +261,20 @@ public final class UtilityCommands {
         Path file = BlockExporter.exportPng(d);
         if (file == null) { Chat.error(src, "No texture to export for \"" + id + "\"."); return 0; }
         String url = ResourcePackServer.getPngUrl(id);
-        MutableText msg = Text.literal(CbFmt.BODY + "Saved " + CbFmt.VALUE + id + CbFmt.BODY + " texture → " + CbFmt.DIM + "cloud_exports/" + id + ".png  ")
-                .append(openUrlButton("[download]", url, url));
-        Chat.line(src, msg);
-        return 1;
+        // The [download] link is G20 §L's route, awaiting its own owner decision — chip, wording and
+        // behaviour are carried over untouched; only the report around it is G12's.
+        return ExportReport.wroteOne(src, d.customId(), file, openUrlButton("[download]", url, url));
     }
 
     /** /cb export zip — bundle every block (json + png) into one cloud_exports/all-&lt;stamp&gt;.zip + a download link */
     private static int exportAllZip(CommandContext<ServerCommandSource> ctx) {
         ServerCommandSource src = ctx.getSource();
         Collection<SlotData> all = SlotManager.assignedSlots();
-        if (all.isEmpty()) { Chat.info(src, "Nothing to export yet — make a block with /cb create <id>"); return 1; }
+        if (all.isEmpty()) return ExportReport.nothingToExport(src);
         Path zip = BlockExporter.exportAllZip(all);
-        if (zip == null) { Chat.error(src, "Export failed — couldn't write the ZIP."); return 0; }
-        String name = zip.getFileName().toString();
-        String url = ResourcePackServer.getZipUrl(name);
-        MutableText msg = Text.literal(CbFmt.BODY + "Exported " + CbFmt.VALUE + all.size() + CbFmt.BODY + " block(s) → " + CbFmt.DIM + "cloud_exports/" + name + "  ")
-                .append(openUrlButton("[download]", url, url));
-        Chat.line(src, msg);
-        return 1;
+        if (zip == null) return ExportReport.failed(src, "ZIP");
+        String url = ResourcePackServer.getZipUrl(zip.getFileName().toString());
+        return ExportReport.wrote(src, all.size(), "block", zip, openUrlButton("[download]", url, url));
     }
 
     /** /cb export vault — bulk vault upload is not built; point players to the one-block share path. */
@@ -308,15 +300,15 @@ public final class UtilityCommands {
         return 1;
     }
 
-    /** /cb export <id> config — saves to exports/<id>.json */
+    /** /cb export &lt;id&gt; config — saves the block's definition to cloud_exports/&lt;id&gt;.json */
     private static int exportOneConfig(CommandContext<ServerCommandSource> ctx, String id) {
         ServerCommandSource src = ctx.getSource();
         SlotData d = SlotManager.getById(id);
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Path file = BlockExporter.exportOne(d);
-        if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
-        Chat.success(src, "Saved " + CbFmt.VALUE + id + CbFmt.RESET + " → " + CbFmt.DIM + "exports/" + id + ".json");
-        return 1;
+        if (file == null) return ExportReport.failed(src, "block file");
+        // Said "exports/<id>.json" before — a folder it never wrote to. It has always been cloud_exports/.
+        return ExportReport.wroteOne(src, d.customId(), file);
     }
 
     /** /cb export <id> vault — upload one block to the cloud vault. */
@@ -330,7 +322,7 @@ public final class UtilityCommands {
         SlotData d = SlotManager.getById(id);
         if (d == null) { Chat.error(src, "There's no block called \"" + id + "\". Check /cb list for the right id."); return 0; }
         Path file = BlockExporter.exportOne(d);
-        if (file == null) { Chat.error(src, "Export failed — write error"); return 0; }
+        if (file == null) return ExportReport.failed(src, "block file");
         String url = ResourcePackServer.getExportUrl(id);
         MutableText msg = Text.literal(CbFmt.BODY + "Download " + CbFmt.VALUE + id + CbFmt.BODY + ": ")
                 .append(openUrlButton("[open link]", url, url));

@@ -38,6 +38,25 @@ public final class CbPaths {
     public static final Path SOURCES  = ROOT.resolve("sources");
     /** Downloaded mod-update jars (JarUpdater) — EXCLUDED from snapshots. */
     public static final Path UPDATES  = ROOT.resolve("updates");
+    /**
+     * The ONE folder every Group 12 export artifact lands in — per-block JSON/PNG, the all-blocks ZIP,
+     * a category ZIP and the bulk block-list files. G12 (2026-07-30 Locked Decisions) settled on a
+     * single location so a result message can always name the same folder, and so files going OUT are
+     * never mixed with the files {@link #IMPORT} takes in.
+     */
+    public static final Path CLOUD_EXPORTS = ROOT.resolve("cloud_exports");
+    /**
+     * The dedicated drop folder {@code /cb importfolder} reads (G12 §B) — deliberately NOT
+     * {@link #CLOUD_EXPORTS}, so files waiting to come in never mix with files that went out.
+     * Created on first run.
+     */
+    public static final Path IMPORT      = ROOT.resolve("import");
+    /**
+     * Where an imported source file is MOVED after its block is created — inside {@link #IMPORT}, never
+     * deleted. This move is also the resume mechanism: an interrupted run leaves everything it finished
+     * in here, so the next run simply sees less work left (G12 §B, no separate resume state).
+     */
+    public static final Path IMPORT_DONE = IMPORT.resolve("done");
 
     /** The generated resource-pack zip filename (served by ResourcePackServer) — EXCLUDED from snapshots. */
     public static final String PACK_ZIP        = "customblocks_pack.zip";
