@@ -21,7 +21,6 @@ import com.customblocks.command.handlers.ArabicCommands;
 import com.customblocks.command.handlers.ArabicFormCommands;
 import com.customblocks.command.handlers.AttributeCommands;
 import com.customblocks.command.handlers.BackupCommands;
-import com.customblocks.command.handlers.BlueprintCommands;
 import com.customblocks.command.handlers.BulkCategoryCommands;
 import com.customblocks.command.handlers.BulkCommands;
 import com.customblocks.command.handlers.BulkDuplicateCommands;
@@ -126,7 +125,9 @@ public final class CommandRegistrar {
             TemplateCommands.register(root);
             UtilityCommands.register(root);
             GiveCommands.register(root); // Group 17 slice 2 — /cb give <id> [amount] [player]
-            BlueprintCommands.register(root);
+            // BlueprintCommands is GONE (G12, 2026-07-30): /cb exportblock + /cb importblock and the
+            // Blueprint item were removed, not maintained. G20 §A Vault share codes already move a block
+            // between people and are confirmed working, so a same-server-only paper item added nothing.
             MacroCommands.register(root);
             ArabicCommands.register(root);
             DiagnosticsCommands.register(root);

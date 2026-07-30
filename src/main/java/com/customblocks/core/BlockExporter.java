@@ -192,10 +192,8 @@ public final class BlockExporter {
         }
     }
 
-    /** Public access to one block's schema-v2 JSON (used by the Blueprint item). */
-    public static String toJson(SlotData d) {
-        return toBlockJson(d);
-    }
+    // toJson(SlotData) is GONE with the Blueprint item (G12, 2026-07-30): it existed only to stuff a
+    // block's recipe into that paper item's NBT, and nothing else ever called it.
 
     /**
      * Apply a block file's metadata onto a block that ALREADY exists — the folder-import path (TG12 B17:
@@ -228,31 +226,9 @@ public final class BlockExporter {
         return writeZip("all-" + LocalDateTime.now().format(STAMP) + ".zip", blocks);
     }
 
-    /**
-     * Recreate one block from a schema-v1 JSON string (as carried by a Blueprint item or a
-     * single &lt;id&gt;.json). Creates the block if its id is free; reports it skipped if the id
-     * already exists; reports failed on a malformed payload or no free slot. Never throws.
-     */
-    public static ImportResult importJson(String json) {
-        List<String> created = new ArrayList<>();
-        List<String> skipped = new ArrayList<>();
-        List<String> failed  = new ArrayList<>();
-        try {
-            JsonObject o = GSON.fromJson(json, JsonObject.class);
-            if (o == null || !o.has("id")) { failed.add("not a block blueprint"); return new ImportResult(created, skipped, failed); }
-            String id = o.get("id").getAsString();
-            if (id.isBlank()) { failed.add("blank id"); return new ImportResult(created, skipped, failed); }
-            if (SlotManager.hasId(id)) { skipped.add(id); return new ImportResult(created, skipped, failed); }
-            String name = o.has("displayName") ? o.get("displayName").getAsString() : id;
-            SlotData d = SlotManager.create(id, name);
-            if (d == null) { failed.add(id + " (no free slot)"); return new ImportResult(created, skipped, failed); }
-            applyFields(d, o);
-            created.add(id);
-        } catch (Exception e) {
-            failed.add("bad blueprint (" + e.getMessage() + ")");
-        }
-        return new ImportResult(created, skipped, failed);
-    }
+    // importJson(String) is GONE with the Blueprint item (G12, 2026-07-30): its only caller was
+    // /cb importblock reading a held Blueprint's NBT. Single-block import still has two real paths —
+    // importFolder (a file on disk) and the G20 vault download — so this was a third, now unreachable one.
 
     /**
      * Bundle every block in a category into one ZIP at cloud_exports/&lt;category&gt;-YYYYMMDD-HHMMSS.zip.

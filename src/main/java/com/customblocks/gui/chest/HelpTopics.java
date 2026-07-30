@@ -156,8 +156,8 @@ public final class HelpTopics {
 
             new Category("Sharing", Items.ENDER_CHEST, "Export, import and integrations", List.of(
                     new Topic("export", "/cb export", "Export dashboard (opens chest GUI)"),
-                    new Topic("exportblock", "/cb exportblock <id>", "Make a tradeable Blueprint item"),
-                    new Topic("importblock", "/cb importblock <code>", "Import a block from a Vault share code"),
+                    // Blueprints deleted 2026-07-30 (G12) — Vault share codes do the job. /cb vault
+                    // download below is the surviving way to import a block someone shared with you.
                     new Topic("category export", "/cb category export <category>", "ZIP a whole category (textures + JSON)"),
                     new Topic("category share", "/cb category share <category>", "Upload a category, get a share code"),
                     new Topic("category import", "/cb category import <code>", "Import a shared category by code"),

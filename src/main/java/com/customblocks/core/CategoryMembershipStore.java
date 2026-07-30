@@ -13,7 +13,7 @@
  *     leaving it with nothing, and the key itself can never be deleted.
  *
  * The legacy shadow (owner decision, 2026-07-25): every surface that has NOT been reworked yet
- * (the HUD, the Arabic chest menus, exports, blueprint lore, the Bulk Workbench, the G27
+ * (the HUD, the Arabic chest menus, the Bulk Workbench, the G27
  * Category Hub) still reads the one-word {@link SlotData#category()}. So each mutation here
  * writes a DERIVED value back onto the block: the alphabetically-first real membership, by its
  * typed display name, or "" when the block sits in {@code Uncategorized} alone. It is a display
@@ -65,8 +65,58 @@ public final class CategoryMembershipStore {
     private CategoryMembershipStore() {} // static-only
 
     /**
-     * Normalize a typed category name to its matching key: lower-case, trimmed, and every run of
-     * spaces / hyphens / underscores folded to one space.
+     * Strip quoting from a typed category name (G11 Locked Decisions, 2026-07-26: names are never
+     * quoted). A quote character can never be part of a category name, so every one of them goes,
+     * balanced or not.
+     *
+     * This is the fix for the root bug behind TG11 A2/A10: a name argument is a Brigadier GREEDY
+     * string, which hands over the rest of the line RAW — unlike {@code StringArgumentType.string()}
+     * it does no quote parsing. So a player (or an old pre-quoted suggestion) typing
+     * {@code "Arabic Numbers"} produced the key {@code "arabic numbers"} with the quote characters
+     * still in it, matching nothing. Stripping here covers every caller of {@link #key} at once.
+     */
+    public static String unquote(String raw) {
+        if (raw == null) return "";
+        return stripCodes(raw.replace("\"", "")).trim();
+    }
+
+    /**
+     * Drop legacy formatting codes from a typed name — both {@code §a} and the {@code &a} spelling
+     * players reach for out of plugin habit (TG11 C10).
+     *
+     * A category's colour is a RECORD field set by {@code /cb category color}, never characters
+     * inside its name. Left in, a `&`-code is dead text that prints raw ({@code Created empty
+     * category &1a.}) and a `§`-code is worse: it would repaint the rest of the chat line from
+     * inside a name. Only a code letter counts, so {@code Rock & Roll} keeps its ampersand.
+     */
+    public static String stripCodes(String raw) {
+        if (raw == null || raw.isEmpty()) return "";
+        StringBuilder out = new StringBuilder(raw.length());
+        for (int i = 0; i < raw.length(); i++) {
+            char c = raw.charAt(i);
+            if ((c == '§' || c == '&') && i + 1 < raw.length() && isCodeChar(raw.charAt(i + 1))) {
+                i++; // skip the code letter too
+                continue;
+            }
+            out.append(c);
+        }
+        return out.toString();
+    }
+
+    /** True for a character that completes a legacy colour/format code (0-9, a-f, k-o, r). */
+    private static boolean isCodeChar(char c) {
+        char l = Character.toLowerCase(c);
+        return (l >= '0' && l <= '9') || (l >= 'a' && l <= 'f') || (l >= 'k' && l <= 'o') || l == 'r';
+    }
+
+    /** True when {@code raw} carried a formatting code that {@link #unquote} had to drop. */
+    public static boolean hasCodes(String raw) {
+        return raw != null && !stripCodes(raw).equals(raw);
+    }
+
+    /**
+     * Normalize a typed category name to its matching key: unquoted, lower-case, trimmed, and every
+     * run of spaces / hyphens / underscores folded to one space.
      *
      * The fold is what makes "arabic letters" resolve "Arabic Letters" (G11 Locked Decisions) AND
      * what makes "arabic-letters" a key COLLISION with it rather than a silent second category
@@ -75,7 +125,7 @@ public final class CategoryMembershipStore {
      */
     public static String key(String category) {
         if (category == null) return "";
-        return category.trim().toLowerCase(Locale.ROOT).replaceAll("[\\s_-]+", " ").trim();
+        return unquote(category).toLowerCase(Locale.ROOT).replaceAll("[\\s_-]+", " ").trim();
     }
 
     /** True for the built-in floor key. */

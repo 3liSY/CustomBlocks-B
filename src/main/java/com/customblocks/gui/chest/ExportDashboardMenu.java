@@ -219,12 +219,8 @@ public final class ExportDashboardMenu {
                         "§7Save this block's texture as a .png",
                         "§7and get a [download] link in chat."),
                 (p, b, a) -> { GuiFx.apply(p); GuiRouter.runCommand(p, "export " + id + " png"); });
-        // Generate a tradeable Blueprint item carrying this block's recipe.
-        m.set(16, Icons.of(Items.PAPER, "§b§lGenerate Blueprint",
-                        "§7Get a Blueprint item of this block.",
-                        "§7Hand it to a friend; they run",
-                        "§7/cb importblock while holding it."),
-                (p, b, a) -> { GuiFx.apply(p); GuiRouter.runCommand(p, "exportblock " + id); });
+        // Slot 16 was "Generate Blueprint" — removed with the Blueprint item (G12, 2026-07-30). Vault
+        // share codes (slot 17) already hand a block to another person, and they work off-server too.
         m.set(17, Icons.of(Items.ENDER_PEARL, "\u00a7b\u00a7lUpload to Vault",
                         "\u00a77Share this block through the cloud",
                         "\u00a77and get a copyable code in chat."),
