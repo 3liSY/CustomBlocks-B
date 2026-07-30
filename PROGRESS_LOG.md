@@ -5,9 +5,916 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 244 sessions · 2026-06-09 → 2026-07-26 · ✅ 44 confirmed · 🟡 155 built/pending · 📝 21 docs · ⛔ 7 reverted
+**At a glance:** 251 sessions · 2026-06-09 → 2026-07-30 · ✅ 44 confirmed · 🟡 162 built/pending · 📝 21 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
+
+---
+
+## 2026-07-30 — G12 built: export rework, folder import, run recall, Blueprints deleted
+
+🟡 Four checkpoints, one jar, from `HANDOFF_G12_BUILD.md`. Every decision was owner-locked in the
+same-day design session, so this was a build pass, not a design one.
+
+**Job 1 — export rework (§A).** Artifacts were split across two folders: per-block JSON/PNG and the
+zips went to `cloud_exports/`, but the six bulk list formats and the texture-PNG batch went to
+`exports/`, and `/cb export <id> config` reported `exports/<id>.json` — a folder it had never written
+to. All of it now resolves from a new `CbPaths.CLOUD_EXPORTS`, and `CbPaths.label(Path)` derives the
+folder string a message prints so the two cannot drift again.
+
+`exportCategoryZip` stamped the DAY only (`walls-20260730.zip`), so exporting the same category twice
+in one day silently replaced the first bundle — it now matches `exportAllZip`'s date+time. Every file
+name goes through one `fileStem(SlotData)` that lower-cases the id and folds anything outside
+`a-z0-9_-`, so the JSON, the PNG and the ZIP entry for a block always agree and no name can be derived
+from a display name.
+
+The payload is schema **v2**: `categories` as an array read from `CategoryMembershipStore.of`, replacing
+the single `category` word, which was the legacy display shadow and only ever held the
+alphabetically-first membership — a block in three categories exported as if it were in one, and the
+bulk JSON recorded no category at all. One layout: nothing writes the retired shape and nothing reads
+it. `applyFields` restores memberships through `CategoryMembershipStore.add`, called after
+`SlotManager.create` has returned so the thread holds neither monitor and the documented lock-order
+hazard is untouched.
+
+New `ExportReport` gives every route the same four facts (count, file, size, folder), and every write
+funnels through `BlockExporter.wrote` — exists and non-zero — so no route reports a success it did not
+put on disk. `/cb export` had **no** `.requires` at all; it is now permission level 2. The `[download]`
+chips, their wording and their behaviour were carried over byte-for-byte: that route is G20 §L's and is
+awaiting its own owner decision.
+
+**Job 2 — folder import (§B), the 22 rules.** The command read `*.json` only, from the *exports*
+folder, and `applyFields` never called `TextureStore.save`, so a matching `.png` beside a definition was
+ignored. Rebuilt in the old mod's proven shape — background decode, server-thread mutation — on this
+project's rails: `ImportScan` (walk, unzip in place, pair a picture with a same-name `.json`, derive
+id + display name by the `/cb create` rules, mark problems per file), `ImportEntry`, `ImportChat`
+(preview + the three inline fixes + the report), `ImportService` (the commit).
+
+Worth naming:
+* the preview scan reads every file's bytes to tell a picture from junk, so it runs on a worker and hops
+  back — `withScan`. Doing it inline would hitch the tick on exactly the big folders the feature is for.
+* `SlotPools.freeCount` was added next to `nextFreeNormalIndex` rather than in the caller, so
+  "slots left" cannot disagree with the allocator about `DeletedSlots`/`RetiredSlots`.
+* the commit decodes in chunks of 8 with a latch, so at most eight baked textures are in memory however
+  large the run — the old mod prepared the whole batch at once.
+* rule 8's move-to-`done/` happens per block, immediately after that block exists. That ordering IS
+  rule 19: an interrupted run leaves exactly the unfinished files behind, so no resume state is stored.
+* slot exhaustion claims the slot before writing any pixels, so it cannot half-create.
+* rule 9 vs B17: a picture-only import sets no category; a data file that NAMES categories restores
+  them. `BlockExporter.applyMetadata` was added so both import paths share the one reader.
+* a `.gif` that actually moves is a named problem, not an import — animated folder import is parked.
+* zip handling caps entries, per-file bytes and total expansion, and reduces every entry to its file
+  name (zip-slip). The free-form path argument was **removed**: §B settled on one dedicated folder, and
+  naming any host directory was a traversal surface with nothing to gain.
+
+Progress (rules 11/18) reuses G05's top-center panel over a new `ImportProgressPayload`. Additive: a
+sibling `IMPORTING` phase that counts files, yields to a live pack sync, and leaves the transport
+counters alone. It reports files *finished*, so the bar never reads 100% while blocks are still being
+made.
+
+**Job 3 — run recall (§C).** `/cb importfolder last` re-renders the same `ImportReport`, persisted to
+`data/last_import.json`. It stores **no** "undone" flag: liveness is read from `SlotManager` at recall
+time, so a run reversed by `/cb undo` reports itself undone because the blocks are genuinely gone. A
+flag would have gone stale the moment anyone undid or deleted without this class watching, and it keeps
+G12 out of the undo engine. A report that fails to save says so on the spot, so a later recall cannot
+misreport it as "never run".
+
+**Job 4 — Blueprints deleted.** `item/Blueprint.java`, `BlueprintCommands`, `/cb exportblock`,
+`/cb importblock`, the dashboard tile and both help entries. `BlockExporter.toJson` and `importJson`
+went with them — no callers left, and `importJson` was a third single-block create path beside
+`importFolder` and the vault download. `ExportDashboardMenu` itself stays; the export screen is G27 §T.
+Tab-complete: 125 documented commands → 123.
+
+**Two structural knock-ons.** `BlockExporter` crossed the §9.3 500-line cap, so the six list formats
+moved into `BlockExportFormats` (this file owns the artifact; that one owns the text inside it). And
+`CustomBlocksClient` sits *exactly* on 500 lines, so G12's one client receiver is registered from its
+own `ImportProgressClient` entrypoint — listed second under `client` in `fabric.mod.json`. That was the
+choice that moved no existing code: the alternative was shuffling the pack-sync client path, which the
+handoff rules out.
+
+**Boundaries held.** No screen, no dashboard, no `[download]`/Vault/Marketplace change, no backup code
+of G12's own (rule 20 calls `BackupManager.save` with `Kind.SAFETY` and aborts the run untouched if it
+fails), no restore path, no category-schema change, no pack-delivery change, no image-algorithm change.
+
+**Repo-hygiene note.** The working tree already held ~346 uncommitted files from earlier sessions. The
+job-1 commit staged `CategoryCommands.java` and job 2 staged `HelpTopics.java`, both of which carried
+prior uncommitted G11 edits, so those rode along; the companion new files (`CategoryChat`,
+`CategoryVaultCommands`, …) are still untracked. Nothing was lost and the working tree is exactly what
+the jar is built from, but commit `fbfccf2` is not self-contained on its own.
+
+**Not confirmed.** Every §A/§B/§C row is 🎯. TG12 rows flipped ⏳ → 🎯, its `Moved out` fold was dropped
+to satisfy the glossary's five-fold rule (all six items are recorded in the group document), and the
+Verdict was shortened — TG12 now passes `testing_tools.py health` clean.
+
+---
+
+## 2026-07-30 — G13 §H / G13-26: coloured numbers were being guessed, not repainted
+
+🟡 Owner report: "§H entirely is bad, the arabic numbers that are left are the broken ones." The
+cleanup was not the fault; the art the cleanup left behind was.
+
+**Cause.** `ArabicSlotBootstrap.bake` only ever read the BLACK bundled art. Every coloured number was
+then produced by `BackgroundRemover.recolorBackground` + `fillBackground` — a background *detection*.
+That art is a white core with a `#000000` stroke on a `#0A0A0A` fill, so the thing being detected is a
+near-neighbour of the glyph's own outline: the detection eats into the stroke and leaves a rim. The
+bundled red/green/yellow art sat in the jar completely unread — the only `ArabicArt.resource` call in
+the whole source tree asked for `"black"`.
+
+**Second, independent fault.** The bundled coloured art predates the owner's current Square hexes. It
+was drawn on `#1E8C1E` green and `#F0C814` yellow; the live server config says `#10FF00` and `#EAFF00`.
+Red and black already agreed (the repo's own `config.json` says `#EE3333` for red, but that is the dev
+copy — the live server says `#FF0000`, which is what the art was drawn on).
+
+**Fix, two parts.**
+
+*Art.* All 224 bundled PNGs regenerated on the live hexes. Two exact routes, chosen per glyph. The ten
+Eastern digits are re-rendered from `arabtype.ttf` through the original generator recipe
+(`CustomBlocks_Assets/arabic_numbers/scripts/generate_arabic_numbers.py`: black stroke 18, white core
+7, target height 180, zero 200) — verified to reproduce the bundled black art with **zero** channel
+difference on all ten. Everything else is solved: each glyph ships on four flat backgrounds, so
+`p = a*bg + ink` has two knowns and `a` (background coverage) falls out exactly, ink with it. Also
+verified: recomposing onto a set's ORIGINAL hex reproduces that set's file to within rounding.
+
+*Code.* New `arabic/ArabicNumberArt.repaint(blackPng, redPng, rgb)` does that same solve at bake time,
+reading both source backgrounds from the art's own corner pixel so regenerating the art never desyncs
+a constant. `bake` now calls it instead of BackgroundRemover, and black numbers now go through
+`toBlockPng` too — they were previously the only Arabic texture left at the raw 256 while every other
+one was baked at `textureSize`. `BAKE_VERSION` 2 → 3 so existing installs re-bake once.
+
+Cross-checked the compiled class against the approved reference set: 60 number files, worst channel
+difference 1/255, every corner the exact requested hex.
+
+**Docs.** TG13 §H rescoped to "Duplicate cleanup and correct number art" (H6–H10 added for the art;
+H1–H5 cleanup rows unchanged). §B's `Blocked` row cleared — the group-doc status conflict it named no
+longer exists in the migrated group document, and the matching Cleanup box is ticked. Progress 35% →
+20%, since §H's outcome turned out bad rather than merely untested. New canonical id **G13-26**; the
+`Id_Map.md` G13 crosswalk was stale (mapped sections A–M against a guide that now has A–H, with §H
+pointing at the unrelated placement-lag issue G13-11) and is rewritten to match.
+
+**Not done, deliberately.** The 168 bundled coloured letter PNGs are dead weight — letters are
+font-drawn and `bake` never reads their art — and the black+red number pair is all the repaint needs.
+Deleting them is a separate call, not one to make inside a fix.
+
+Build green. `testing_tools.py health` clean for TG13; one pre-existing unrelated warning remains in
+`Testing_Guide_11_Done.md` (an extra "🚚 Moved out" archive fold).
+
+---
+
+## 2026-07-29 — G10 §H: two "white outline" faults, one in the grid repair and one in the edge solve
+
+🟡 Owner failed HC1 and HC2 on jar E, both as "a white outline outside the artwork". They are two
+different faults that look identical in game, and both are fixed here.
+
+**HC1, the football — fixed.** The mask was rendered through the real classes and the ring was
+visible immediately: the colour stage's kill is already a clean silhouette, and `CheckerSilhouette`
+then hands 9450 px of it back, one cell wide all the way round the ball. Attributing those pixels to
+a stage put 10013 of them on the chamfer fill, and asking what the seeding loop had actually SEEN at
+each one gave the answer outright — 6738 read one axis keeping the checkerboard's beat and the other
+answering 0, "the neighbours had nothing solid to say". That is precisely what a real grid cell beside
+the ball hears on the side facing the ball, and the `xv > 0 && yv > 0` rule was reading the silence as
+a refusal, dropping the cell to undecided so the fill could give it to the nearest subject evidence.
+The class's own docstring already said silence should count for nothing either way; the code voted
+with it. The rule is now "one axis beats, no axis contradicts": a tone that REPEATS a cell away still
+answers -1 and still refuses, so artwork that alternates in one direction only — the ball's own
+lit/shaded boundary — is untouched. Spare falls 9450 → 2572 and the bites and pinpricks the repair
+exists for are still spared. Diffed over all twelve baselines: the eight non-checkerboards are
+byte-identical, the share button loses 120 px of kept backdrop and the chrome logo 17 with nothing
+eaten, and the subscribe banner keeps 16 more white detail pixels.
+
+**An earlier guess, recorded because it was wrong.** The first hypothesis was that `opposite <= same`
+was counting the ball's white as counter-evidence. Measured, it moved the spare 9450 → 9251 — about
+two percent — so it was not the fault and was not shipped. The stage split and the vote histogram are
+what found the real one.
+
+**HC2, HC3, HC4, HD2 — one fault, also fixed.** The penguin is not a checkerboard, so the fix above
+could not reach it. Probing the bake against the source at row y=450 across the foot's edge: x=37 is
+pure white backdrop and is removed, x=38 is `FFFBE3` (roughly nine parts backdrop to one part yellow)
+and x=39 is `DEBE81` (roughly half), and both came out byte-identical to the source. Identical bytes
+prove no coverage was applied at all, so rung 5 DECLINED for them; the rail is healthy, `process`
+composites `decision.unmixed()` as designed. The decline was `EdgeMix.explains`, and its fault was the
+UNIT again, not the bar: it compared the rebuild residual against an absolute 4.6 ΔE00. Those two
+pixels miss by 8.1 and 5.5 against endpoints more than 60 apart — ratios of 0.13 and 0.08, which is an
+excellent fit. An absolute bar is therefore tightest exactly where an anti-aliased edge lives, between
+the most separated pair of colours in the picture, and a JPEG guarantees the miss: chroma is carried at
+half resolution, so it bleeds across a sharp edge and the transition sits off the straight line while
+still being plainly a mixture. The residual is now also allowed as a SHARE of the endpoints' own
+separation. Robust matting judges a sample pair by the same ratio for the same reason (Wang and Cohen,
+2007).
+
+The value was read off the data, not chosen. Every refused band pixel in the twelve baselines was
+measured as residual-over-separation, and they are two populations, not one spread: genuine edges are
+done by about 0.35 (penguin 1458 of 1565 under 0.35, letter O 4552 of 4561 under 0.30) while the
+pixels the guard exists to refuse mass past 0.50 (transparent PNG 3143 of 5436, chrome logo 2550 of
+3690). The bar sits in the empty middle at 0.40. Swept 0.10 through 0.60 with a rim measure and an
+over-erasure measure on every baseline: the transparent PNG, Tux and the football never move a pixel,
+the chrome logo moves 76 with no visible change, and the over-erasure count is FLAT across the whole
+sweep — the protection against erasing a dark keyline is `separated` plus the coverage clamp, which
+this does not touch. Rim pixels fall penguin 475 → 9, Jupiter 213 → 160, subscribe 475 → 115, chrome
+JPEG 139 → 44, letter O 1239 → 26. The letter O is the HA4 picture, so its known blue fringe visibly
+improves as a side effect.
+
+**Two more faults, found because the first fix was overstated.** The owner rejected the preview sheet:
+Jupiter, the share button and the subscribe banner still carried an outline, and the sheet had been
+judged at thumbnail scale where the share button's 483 pale pixels do not show. Scoring every leftover
+pixel by REASON rather than counting them split the remainder into three unrelated causes, only one of
+which the ratio change above had addressed.
+
+**The white sentinel.** The grid feather carried the nearest grid tone and the nearest artwork colour
+in two int arrays that used `-1` for "nothing carried here". A packed opaque WHITE pixel is
+`0xFFFFFFFF`, which as a signed int IS `-1` — and pure white is the commonest transparency-grid tone
+there is. Measured: 63180 of the share button's 143912 grid pixels and 44080 of the subscribe banner's
+95060 are exactly that value. Every boundary pixel whose nearest grid square was pure white therefore
+reported "no grid tone", the feather skipped it, and the pale mixture baked solid. Fixed with parallel
+presence flags. Pale pixels in the bake: share 618 → 11, subscribe 179 → 111.
+
+**No background left to sample.** Jupiter's planet runs off the top of the frame, so along that stretch
+the only background-side colour present is the anti-aliased ramp itself and the edge solve's local
+window found no confirmed background at all — 106 of its 160 leftovers. It now falls back to `BgPlate`,
+the backdrop estimate the pipeline already builds by push-pull, which has a colour everywhere. Jupiter
+214 → 95.
+
+Diffed over the baselines against the jar E state: Tux, the transparent PNG and the stripes are
+byte-identical, the chrome logo moves 100 px of 640000, and the pictures that were wrong all move.
+Whole project compiles green on JDK 21. No jar built — previews first.
+
+**The owner said the old mode-plus-tolerance system did this better, so it was rebuilt and measured.**
+`89e4f62`'s image package was checked out, compiled and run over the owner's five pictures at
+`edges`/30. The owner is right about the edge: on the penguin's foot the old system gives a hard, clean
+boundary with no fringe at all. It is also catastrophic on the rest — it keeps 70 % of the football and
+90 % of the share button, deleting the ball's white panels and the arrow's white face outright, because
+it compared every pixel in the picture against a background colour and white artwork on a white grid
+matches. That is the trade §H exists to break, and the comparison sheet is what settled it.
+
+**The fringe, closed.** A solved boundary pixel measured as more backdrop than subject is now called
+backdrop instead of kept at partial strength, in both the edge solve and the grid feather. It is a
+majority statement, not a tolerance, and it can only reach pixels already on the mask boundary, already
+explained by both endpoints, and already measured as under half covered — so it cannot do what the old
+knob did. Leftover backdrop, jar E → now: share 618 → 0, penguin 475 → 9, Jupiter 160 → 54, chrome logo
+169 → 14, football 318 → 194 of which 168 are white-ball-on-white-grid with nothing to separate.
+Subscribe is the weak one at 131. Tux, the transparent PNG and the stripes never move a pixel.
+
+**Note for next time:** judge a bake at full resolution, and never score an edge change with a metric
+that counts "pale pixel next to black" — removing more background creates more of those, so it reads as
+a regression when the picture got better. A downscaled sheet hid a real outline and a "fixed" claim went
+out that the owner had to correct.
+
+**Jar F built on the owner's call**, after they said they no longer trust an offline claim and want to
+judge the blocks in game themselves. `./gradlew build` green on JDK 21. Two things were stated plainly
+to them rather than left in a number: the football's 168 white-on-white leftovers are a ceiling no
+colour method can pass, and subscribe's 131 is a real unexplained bug, not a limit. Open when the
+retest comes back: subscribe first, then Jupiter's 54.
+
+---
+
+## 2026-07-28 — G10 §H jar E: the edge band stops being a fixed width, and the grid stops guessing at white
+
+Owner failed eight rows on jar D. Read together they were three faults, not eight, and every one of
+them was the same shape: a place where the pipeline answered a question it could not actually see.
+
+**1. The mixed band was two pixels wide by decree.** Rung 5 solves `P = aF + (1-a)B` inside a band of
+`BAND_RADIUS = 2` either side of the mask boundary, on the grounds that one anti-aliased edge is one
+pixel and compression smears it across two. Real sources are wider than that. Jupiter's limb
+(`<link 11>`) is a sharpening overshoot ring baked into the JPEG — measured across the limb at
+(105..108, y): `E0E1E3`, `C4C8CB`, `F3F8FC`, `F9FFFF`, i.e. an undershoot hairline and then two pixels
+that are white to within 3 ΔE00 of the backdrop. The fixed radius reached the first two and left the
+other two opaque, which is exactly the white outline the owner reported. Rung 5 now GROWS the band
+outward one ring at a time while the pixels there are still mostly backdrop, capped at
+`min(w,h)/150` (4 px on Jupiter, 8 anywhere). Three conditions gate each ring and none is a tolerance:
+the pixel must be under half covered (a majority, not a bar), both endpoints must be more than a JND
+apart, and the mixture must REBUILD the pixel to within 2×JND — the new `EdgeMix.explains`. That last
+one is what makes the growth safe: a dark keyline between a dark backdrop and a bright subject projects
+to "all backdrop" and would be erased without it, which is precisely the chrome logo's own outline.
+Growth is by adjacency, so it cannot jump an outline into a background-coloured area behind it — the
+penguin's white belly sits behind a black outline whose pixels are not mixtures, and the ring stops.
+
+**2. The checkerboard's feather estimated coverage from a colour DISTANCE.** `CheckerboardDetector`
+turned "how far is this pixel from the grid's tone" into "how much subject is in it" through a
+`RAMP_LO`/`RAMP_HI` ramp. Those are different questions. A red button half covered by a white grid sits
+a long way from white, so the ramp called it fully covered, left it opaque, and divided the grid colour
+back out of it — which lightens it. Measured on the share button, boundary pixels baked as `EEDDDD` and
+`E4A1A1` against a `DB1313` button: the pale outline of HC4/HD2. It now runs the same matting solve as
+rung 5, against the nearest grid tone on one side and the nearest ARTWORK colour on the other,
+propagated by its own BFS rather than averaged over a window (an average across the arrow's white face
+and its red outline invents a pink that is in neither, and the solve then declines). The brightness
+GUARD (`max > 235 && chroma < 12`) is gone: white artwork on a white grid tone is now handled by the
+endpoints being less than a JND apart, so the solve declines for a measured reason instead of a
+constant. `EdgeMix` is the shared solve — one implementation, two callers.
+
+**3. Where the artwork IS one of the grid's tones, nothing was looking at periodicity.** The football
+is pure white on a white-and-grey grid; the light cells and the ball are both `255,255,255`, so along
+the limb there is nothing to measure pixel by pixel and the colour pass took whichever cells looked
+like grid. That is the scalloped bite, one per cell, plus pinpricks inside the panels. New
+`CheckerSilhouette`: a grid pixel shows the OTHER tone one cell away and its own tone two cells away,
+and a white panel is still white a cell away in every direction. Asked LOCALLY, because this preview is
+scaled — its cell boundaries are at x=22 and again at x=699, a period of 19.9, so no whole-picture
+phase describes it, and a phase fitted from the border came out 3 px off and left slivers of every cell
+spared. Undecided pixels take the nearest decided verdict (5-7-11 chamfer, not a 4-connected flood,
+which measures city blocks and draws staircases), and the boundary is then straightened by a majority
+vote over a disk of half a cell — mean curvature flow, so a step half a cell deep is voted away and the
+arc it sits on is not. Only pixels the picture did not positively answer may move; measured grid never
+does. `coversBorder` is asked BEFORE the repair on purpose: it answers "was the grid found at all", and
+the repair spares grid near a subject touching the frame, which would otherwise un-declare a grid that
+was found perfectly well.
+
+**Measured after.** Football: whole ball, smooth limb, no interior dots. Jupiter: white outline gone.
+Share and subscribe: pale outline gone, the ش dots still there. Chrome JPEG: dark rim gone, a few
+compression specks left in the backdrop (present in jar D too, not a new fault). Penguin, Tux, the
+transparent PNG, the chrome PNG, the stripes and the periodic table all bake as before. Letter O
+unchanged, still parked. `CheckerLattice` hit the 500-line gate, so the silhouette work lives in
+`CheckerSilhouette`.
+
+Files: `image/EdgeMix.java` (new), `image/CheckerSilhouette.java` (new), `image/BgRungUnmix.java`,
+`image/CheckerboardDetector.java`, `image/CheckerLattice.java`. Bench: `tools/render_preview/BgLab.java`,
+`EdgeProfile.java`, `FlatDump.java`, `PixLine.java`, `BakeLine.java`, `RawLine.java`, `Zoom.java`.
+
+---
+
+## 2026-07-28 — G11: descriptions deleted, rename gets the `into` grammar, TG11 rescoped to chat-only
+
+Owner's goal was to close TG11, which had stalled at 48 % across two builds. The blocker was not the
+code — C1-C9 and D1-D2 were already ✅ on MP — it was that the guide mixed chat behaviour with screen
+behaviour, so a Hub rough edge read as a G11 failure. Three decisions, then one build.
+
+**1. Descriptions removed root-and-branch, not reworded.** Owner's call after being shown the six
+surfaces that carried the field. Deleted: `CategoryService.setDescription`, the `desc` command node,
+`CategoryMetadataStore.Meta.description` with its getter/setter and both JSON halves, the `_desc`
+HudSync key, `ClientSlotCache.CAT_DESC` and `description()`, the chat hover-card line
+(`CategoryChat.hoverCard`), the `Description:` line in `CategoryReport`, the `CategoryEditMenu` slot-21
+tile and its anvil prompt, the `CategoryListMenu` lore line, the `CategoryAdminBridge` `desc` case, the
+`HelpTopics` entry, and the Hub's `descField` + Save button + read-back. `Y_BLK` moved 204 → 164 so
+BLOCKS takes the freed 40 px instead of leaving a hole. The save-skip predicate dropped its
+`description.isEmpty()` term — left in, a record whose only content was a description would have kept
+persisting as an empty entry. An old `category_meta.json` keeping a `description` key is read past and
+rewritten without it; that data loss is accepted and stated in the spec.
+
+**2. `rename` could never take a multi-word name.** It used two `word()` arguments, and Brigadier
+allows only one greedy argument per branch, so `Arabic Numbers` was untypeable on either side — the
+open cleanup item that had been sitting in TG11 unresolved. Rewritten as one greedy `spec` split on
+the existing ` into ` connector, reusing `CategorySuggest.connectorAt` and `CONNECTOR` rather than
+introducing a second connector word. New `CategorySuggest.rename` suggester: real names before the
+connector, `<name> into` once one is typed, and **nothing** past it — the new name does not exist yet,
+so offering existing categories there would only invite the collision error. `CategoryEditMenu`'s
+Rename tile now emits the `into` form; the collision message stopped pointing at the retired `merge`
+and points at `combine`.
+
+**3. TG11 is chat-and-typing only.** Owner's rule: "all stuff that needs screen or anything" moves to
+G27. The mixed rows were split rather than moved whole, so TG11 keeps tab-complete, listings, the
+colour rule and the `Uncategorized` floor — none of which are Hub features. Former D3/D8/D9 screen
+halves became TG27 §U9-§U11, marked built (not designed) so they test in the same round. New TG27 §U12
+checks the Hub detail pane has no description remnants. Colour rule tightened at the same time: a
+category name wears its colour **everywhere** it appears, not only as the line's subject.
+
+**4. The guide itself was the other half of the stall.** Owner's words: the rows "feel like an
+eternity". 27 rows over three sections became **14** over two — §D folded into §C, and rows that poked
+the same command four ways became one row with four bullets in its expected result. Nothing was
+dropped and no pass mark was lost: the merged rows all carried the same MP ✅ `2026-07-27`, so the
+merge is honest. Setup now states the exact fixture once and the rows run top-to-bottom off it instead
+of each re-describing what it needs.
+
+**5. Full sweep of TG11 afterwards, on the owner's instruction.** Every row rewritten in plain words —
+"greedy argument", "mode word", "membership", "chip", "single-use token", "system floor" and "value
+colour" are all gone from the player-facing text. The build narrative went with them; cause-and-fix
+belongs in this log, not the guide. Two corrections of substance: the **Regression 💔 flag came off
+§C** — every 💔 item is fixed and rebuilt, two are re-confirmed, and none of them ever broke *after*
+being confirmed, so a live regression flag was simply wrong; and the archive's regression entries now
+say so plainly. The extra "Moved to Group 27" archive fold was removed (the template allows exactly
+five) and its content moved up to the scope note where a reader actually looks. Stale cross-references
+chased down: TG27 §U2/§U3 pointed at TG11 row numbers that no longer exist, and the G11 spec still
+named §D3/§D8/§D9. `health_check()` passes clean across all 34 guides; Dashboard and the web data
+regenerated (the stats file still carried a 2026-06-14 verdict).
+
+Two stale javadoc lines in `CategoryChat` still promised a description in the hover card — fixed, jar
+rebuilt. `customblocks-1.0.0.jar`. Guide is 50 % and closes in one sitting. 🟡 built, pending in-game.
+
+---
+
+## 2026-07-28 — G10 §H jar D: specks in artwork, and the dark rim
+
+Owner reported three faults on the jar-C blocks: green dots inside the football's white panels, the
+three dots of ش black on the subscribe banner, black dots inside the share arrow. All three were
+reproduced offline first with a new black-box probe (`tools/render_preview/Diag.java`) that names two
+failure shapes without instrumenting the pipeline — a removed component that never reaches the image
+border (a hole punched in artwork) and a light source pixel that comes back opaque black (artwork one
+of the cleanup passes scrubbed). Baseline: football 1260 px of holes and 1696 px scrubbed, subscribe
+630 px scrubbed, share 160 px scrubbed. Five faults found, four fixed.
+
+**1. The two cleanup passes judged residue by colour and size alone.** `edgeGrainCleanup` blackened
+any light-neutral blob under 200 px that touched a non-ink pixel; every diamond dot of ش is a ~100 px
+white blob against the letters' near-black drop shadow, so artwork-touching-artwork read as
+residue-touching-background. Both passes moved to `CheckerScrub` and gained the test that decides
+them: the detector already knows where the grid is, so a candidate is residue only if it LIES in the
+grid. What is scrubbed is now also added to `kill`, so it is blackened and declared transparent
+together — before, a scrubbed speck stayed opaque inside ground that step 8 makes transparent, i.e. a
+black dot hanging in mid-air. Subscribe 630 → 0, share 160 → 0.
+
+**2. The feather wrote premultiplied colour at full opacity.** It subtracted the grid's colour from
+each boundary pixel and left alpha at 255, which composites as a dark rim on every soft edge — the
+ring round the football, the speckles along the share arrow's outline. It now divides the coverage
+back out and records it in the alpha channel (the matting equation), and rung 1 carries the raster
+through untouched, so the edge lands in the bake as the fraction it really is. Pixels under 6 %
+coverage join the grid instead.
+
+**3. That hand-off needed a gate.** Writing coverage made the alpha channel vary on sources whose grid
+is too smeared to identify, and rung 1 believes alpha as fact: the chrome JPEG came back with 1.6 %
+removed instead of 81 %. `coversBorder` now requires the kill to account for ≥85 % of the border ring
+— the same share `detect()` fired on — before anything is declared. Where it does not, the pass blacks
+the grid out as it always did and the colour rungs decide. Chrome JPEG restored to rung 3 / 81.0 %.
+
+**4. Enclosed kill pieces went unchecked.** `CheckerLattice.strandEnclosed` gives every killed piece
+the artwork encloses a second look: real grid showing through a gap agrees with the fitted lattice end
+to end, over an area at least one full PERIOD (two cells) wide in both directions, with both parities
+present. The football's specular streak — 25×36 against a 20 px cell — passed the old per-pixel window
+by borrowing grid context from next door. Runs only on the declared path, because on a smeared source
+sparing pieces changed which rung won (chrome JPEG 81 % → 28 % when it ran everywhere).
+
+**5. The kill used the mask's tolerance as a verdict.** `MASK_TOL_DE` is 14 ΔE because it has to hold
+a lossy grid together as a CANDIDATE set; the ball's white limb reads 200–217 against tones of 235 and
+255, which is 12 ΔE — inside the candidate bar, plainly not the backdrop. A killed pixel must now be
+within 6 ΔE of a tone. Football holes 106 → 18, share 25 → 0.
+
+Also added `BgMask.fillPinholes`, the missing half of the area opening: a background island stranded
+deep inside the subject is a pixel that matched the colour, not background. Guarded by the same wall
+measurement the pinched-pocket rule uses, from the opposite side, so the two cannot claim the same
+pixel. Runs only where the mop-up runs — never on rung 1, where the alpha is the author's statement.
+
+Verified across all twelve pictures: every rung and removal percentage identical to the jar-C
+baseline (jupiter 20.0 %, share 53.3 %, subscribe 73.4 %, football 24.7 %, penguin 52.9 %, transparent
+67.3 %, chrome logo 81.4 %, tux 48.3 %, chrome JPEG 81.0 %, periodic table 42.3 %, stripes declined,
+letter O 86.3 %). Probe totals across the five owner pictures: scrubbed artwork 2486 px → 0, holes
+1298 px → 18.
+
+⛔ Reverted on measurement: dropping the edge-grain rule on the smeared path (chrome JPEG), and running
+the enclosed-piece rule everywhere (same).
+
+📜 Left open: the football's left limb fades to `255,255,255`, exactly the grid's light tone, so the
+silhouette there steps in and out cell by cell. Present in the jar-C baseline and unchanged. Needs a
+smoothing prior over the ambiguous cells — own session.
+
+🟡 Built, pending in-game — TG10 §HD.
+
+---
+
+## 2026-07-28 — G10 §H jar C: same-colour artwork, and the refusal removed
+
+Owner screenshot of five broken blocks (football, penguin, Jupiter, share button, subscribe banner)
+turned out to be three separate faults, all reproduced offline against the real sources before any
+code moved.
+
+**1. Checker previews handed the removal a guess it did not need.** Stock sites ship a *preview* with
+the transparency checkerboard baked into the pixels. `CheckerboardDetector` cleans that grid to solid
+black — correct picture, but it then discarded the one thing it knew: WHICH pixels were grid. The
+cascade had to rediscover that from colour, keyed on black, and flooded straight into any black
+artwork touching it. The football lost whole panels. Fix: the cleaned grid is now written with alpha 0
+as well as black, so rung 1 decides on authored transparency. RGB is unchanged, so §D and the opaque
+snap are untouched. Football coverage 58.0% → 41.6% (ball is 58% of the frame). Chrome logo and chrome
+JPEG now route rung 2 → rung 1; 7323 and 5388 px move, all inside the artwork, a hairline along its
+own edges, no rim.
+
+**2. `BgQc` demanded the background be ONE piece.** A cropped subject — Jupiter running off two edges
+— cuts the backdrop into corners, no piece holds a majority, and the whole removal declined on a
+picture nothing was wrong with. Replaced with the same majority test over the border-REACHING mass,
+which still rejects interior noise. That alone let a key take every other stripe of `<link 6>`, which
+must be left alone, so a second half was added: the SUBJECT's largest piece must be a majority of the
+subject. Striped artwork has no main piece; a picture with a subject in it does. Both halves needed,
+neither implies the other.
+
+**3. Enclosed-pocket absorption could not tell a hole from artwork.** The rule that clears a letter
+O's counter also cleared the penguin's white belly, because both are enclosed areas the colour of the
+background. Added a geometric guard: absorb only if it does not SHATTER the subject — piece count
+before against after, ignoring anything under `BgQc.areaFloor` (dust; counting watermark stipple as
+"pieces" initially blocked the letter O's own counter). No setting, no per-picture option.
+
+**Clean plate (`BgPlate`).** Push-pull pyramid estimate of the backdrop behind the subject, in linear
+light. Mop-up unit 4 keys residue against the estimate AT ITS OWN COORDINATE instead of one key, which
+is what a fading backdrop needs — letter-O residue measures 4.8-6.3 ΔE00 from the key (outside the
+bar) and 3.2-3.9 from the plate (inside it). Baked strong-blue 30 → 13, iterating up to 4 peels.
+
+**Not fixed, and why.** The remaining 13 specks are NOT residue: they measure 5.0-37.8 ΔE00 from the
+local backdrop — half-backdrop edge pixels of a deliberately blurred glyph, reachable only by
+unmixing. Two attempts (a plate-keyed spill pass past the band; a ramp-followed band extension) each
+regressed the chrome goldens AND raised the blue count. Both reverted. HA4 stays open with the
+gradient class.
+
+**`/cb bgpick` and the unsure-refusal line removed** (owner call). Detection is meant to be automatic;
+a command whose only job is to apologise for detection failing is a setting in disguise. An
+undecidable picture bakes unchanged and says nothing.
+
+Goldens: transparent, Tux, stripes byte-identical; periodic table 4 px, max 1.
+
+## G11 Pass 3: a colour code stops living in a category NAME · 2026-07-27 (🟡 built, pending in-game)
+
+**The C10 report was not "colours don't render" — it was a name eating a colour code.** The line read
+`Created empty category &1a.` because nothing stripped formatting codes from a typed name: the `&`
+spelling is dead text Minecraft never renders, and the `§` spelling would have been worse, repainting
+the rest of the sentence from inside a name. `CategoryMembershipStore.unquote` now drops both (only
+when a real code letter follows, so `Rock & Roll` keeps its ampersand), which covers every caller of
+`key()`/`typed()` at once — create, rename, assignment, bulk. Create and rename say what happened and
+point at `/cb category color`, instead of silently swallowing half of what was typed.
+
+**The second half was real.** A category name in chat was coloured by prefixing its §-tag to the chip
+text, so a category tinted with the Hub's custom `#RRGGBB` picker had no code to be written as and
+came out default-coloured in chat while the Hub showed it correctly. The chip now carries a real
+`TextColor` on its style: hex first, then the §-tag, then the standard value colour.
+
+Three surfaces joined the same rails: `info` / `filter` / `list` output (names were dead text in a
+listing), the Category Hub bridge (a Hub action printed an unstyled line with no follow-up chip), and
+the Hub's floor row, which only appeared once something was uncategorized and read `(uncategorized)`
+— it is the floor a block lands on by itself, so it is listed at 0 blocks and named `Uncategorized`.
+
+TG11 tracks these as §D (clickable chat actions and tab-complete) plus C10-C11.
+
+---
+
+## G10 §HA4: the blue blobs were slivers of the letter, not stray dots · 2026-07-27 (🟡 built, pending in-game)
+
+**The owner's screenshot was read wrong twice before it was read right.** First guess was the mop-up's
+colour bar, second was a chroma-subsampling fringe. Both were wrong, and the picture said so once it was
+measured instead of theorised about: 85.02 % of `bg_in/7_letter_o.jpg` is background colour, the edge
+flood reaches 74.84 %, and 10.18 % is walled off from the frame into 310 pockets. The counter of the O
+(63,735 px) absorbs correctly. The two blobs the owner could actually see are 57 px and 43 px slivers of
+that same counter, parted from it by a 2-3 px seam. Judged on their own each is too thin to be a region,
+so the thickness gate did exactly what it was written to do and kept them as subject.
+
+So pockets are now GROUPED before they are judged: components are taken on the pocket set widened by a
+hairline, and a piece parted from a real area by less than that is part of it again. Only true pocket
+pixels are ever absorbed or measured, so the widening cannot leak into the subject. A second, much
+narrower door was added alongside it for the compression crumbs — 41 pockets of 6 px or less behind a
+2 px wall — which despeckle structurally cannot see, because each crumb is fenced in by the outline it
+was pinched from and so belongs to the whole glyph's component.
+
+**The rest of the blue is a watermark, and it has an exact signature.** The remaining pixels sit at
+ΔL +3.7, ΔC -5.8, Δhue -6.4° from the key — 6.3 ΔE00 away, hopelessly outside any honest JND, and
+precisely what white composited over a colour looks like. `BgVeil` tests for that: project the pixel onto
+the key→white line in linear light and judge it at the SAME ΔE bar. Not a looser tolerance — a different
+thing to be close to. Two guards keep it honest: the mix may not exceed 0.35, because pure white is on
+that line and the white O would otherwise qualify, and a near-neutral key disables it outright, because
+every grey lies on the black→white line and that is the chrome logo's whole silver bevel.
+
+**Wiring it into rung 2's region walk was built, measured and reverted the same day.** It changed the
+letter O by zero bytes — that picture is not decided by rung 2 — and took the periodic table from 4.9 s
+to 22 s. It belongs in the mop-up's fused-residue candidate set, which is where leftovers are judged and
+where the size floor already bounds the cost.
+
+**Golden-diffed across all seven baselines.** Tux, the chrome logo, the transparent PNG, the periodic
+table and the stripes are byte-identical. The blurry chrome JPEG moves 616 px of 199,809 with no visible
+difference side by side. Strong blue on the letter O falls 296 px → 176 px; the faint watermark tracing
+that remains is the out-of-scope item from 2026-07-26 and is unchanged in kind.
+
+**A third mop-up unit, because the last of the blue was not background at all.** With the blobs gone,
+the marks still showing measured 81 % of the way to white and 40.5 ΔE00 from the key — the watermark's own
+ink, pigment laid OVER the background rather than background showing through, which is why widening either
+existing unit could never have reached it (7 % of it fell within the veil line's bar). `absorbStamped` takes
+an island only when all four hold: every neighbour it has is background, it is under the area floor, its mean
+is lighter and less saturated than the key, and the key is a colour. ISOLATED rather than TOUCHING is the
+guard that puts the subject out of reach by construction — and it is right on the merits too, since a stamp
+printed across artwork is welded to it and erasing it would leave a hole. Strong blue 296 px → 44 px, all six
+other baselines byte-identical.
+
+**Logged, not fixed: gradient backgrounds never reach rung 2.** This picture fades 6.5 ΔE corner to
+corner, so `flatBorderTone`'s four-side test scores top 99.9 %, left 99.9 %, bottom 0.0 %, right 0.0 % and
+declines — which is why the whole class of ordinary stock art is decided by the measuring rungs rather
+than by a fact. Three replacements were measured and rejected: a bilinear surface fitted from the border
+(34.8 % coverage vs 85.0 %), a neighbour-relative flood (75.0 %), and a running local colour (74.9 %).
+Deferred to its own session by owner call.
+
+---
+
+## G11 Pass 2: delete asks once, and tab-complete stops mixing orders with names · 2026-07-27 (🟡 built, pending in-game)
+
+**A6 was not a filtering bug.** The suggester already prefix-filtered everything it offered; the
+screenshot still showed `alphabetically, Arabic Numbers, arabic_letters, english_numbers, food,
+newest, none, oldest, Uncategorized` in one alphabetical column. The cause was the *shape* Pass 1
+chose: `modeFirst()` registered each mode as a real Brigadier literal sitting beside the greedy name
+argument, and Brigadier collects suggestions from **every** branch reachable at a position, then sorts
+the union. Two correct suggesters at the same position still read as one soup, because nothing in a
+suggestion list says which branch it came from. Literals also cannot be told to stay quiet.
+
+So the mode word is no longer a literal. `filter` and `info` take ONE greedy argument and
+`leadingMode()` splits the mode off the front, which puts the whole position under a single suggester:
+`CategorySuggest.modeOrCategory` offers modes while what is typed can still become one, and category
+names the moment it cannot. An empty box gets the short mode list — which is also what teaches the
+shape. Both spellings still run, `filter newest Arabic Numbers` and the bare `filter Arabic Numbers`.
+Trade accepted: a category literally named `newest` is read as an order after `filter`.
+
+**Delete asks once, and the click is the confirmation.** `/cb category delete <name>` posts one `[CB]`
+line naming both counts — blocks inside, blocks that live nowhere else — then `[✔ Keep Blocks]` and a
+danger button whose hover lists every id that would die. With nothing exclusive there is nothing to
+ask, so it deletes immediately and says the blocks were kept (that path was already live and is what
+the owner confirmed as C4). Both buttons run a **token**, not the category name: single-use, expiring
+after two minutes, so a chat line scrolled back to later cannot fire a delete against a category that
+changed underneath it, and no typeable "destroy this category" verb sits next to `delete`.
+
+The destructive path records **two** undo entries where it used to record one — the category (record +
+every membership, including those of the blocks about to die) pushed first, the blocks pushed last, so
+the first `/cb undo` takes back the blocks without also taking back the category. `HistoryDescribe`
+learned one rule to print them: a batch label that already ends in `)` is printed as written, because
+`Deleted 4 blocks (Arabic Numbers)` carries a category in its parenthesis, not a count, and the generic
+` (N blocks)` suffix would have doubled it.
+
+**`merge` is gone.** `combine <a> into <b>` replaces it, with the connector required — `merge a b`
+never said which category survived. Both names are greedy and unquoted, so the command takes one
+argument and splits it on ` into `; the suggester completes the source, then offers the connector, then
+completes the target, one kind at a time. `CategoryService.merge` stays as the engine the Category Hub
+bridge calls. The dead `deleteMoveFirst` mode went with it.
+
+**Chat learned to name a category properly.** Rather than rewrite every message into components,
+`CategoryChat.decorate` scans a finished sentence for real category display names on word boundaries
+(so `food` never lights up inside `food_block`) and swaps each run for a chip: tinted with the
+category's own colour tag, click-opens the Hub focused on it via the new `/cb category open`, and hovers
+a card with count, icon, colour and description. One choke point — `CategoryCommands.report` — so a
+message written next month is styled without anyone remembering to. `CategoryService.Outcome` gained a
+`chip` field naming the follow-up button the line should carry: `[↩ Undo]` after a delete or combine,
+`[⊞ View Category]` after an assignment. `Uncategorized` is deliberately not clickable and renders dim
++ italic in listings, in `info`, and as a tagged tooltip in tab-complete; `getDisplayName` now returns
+`Uncategorized` for the floor instead of the bare lower-case key.
+
+Two files were split to stay under the gates the build enforces: suggesters moved to
+`CategorySuggest` (the handler hit 423 of 400), and the read-only listings plus `info` moved to
+`CategoryReport` (`CategoryService` hit 536 of 500).
+
+**Not built:** Hub-side parity for any of this — the focused-open hook is the one client change, and
+the rest of the Category Hub screen is G27 §U.
+
+## G11 Pass 1: the quote that ate every multi-word category · 2026-07-27 (🟡 built, pending in-game)
+
+**One character broke six test rows.** Every category-name argument is a Brigadier
+`greedyString()`, and a greedy string hands over the rest of the line *raw* — unlike
+`StringArgumentType.string()` it does no quote parsing at all. So `/cb category give "Arabic Numbers"`
+arrived as the literal seven-plus-two characters `"Arabic Numbers"`, quotes included.
+`CategoryMembershipStore.key()` lowercased it and folded its separators but had no notion of a quote,
+so the lookup key was `"arabic numbers"` **with the quote characters in it**, and matched nothing. The
+doubled quotes in the owner's screenshot (`No blocks in category ""arabic numbers""`) were the tell:
+the message added its own delimiters around a value that already had some. Every multi-word category
+was unreachable from every verb that took a greedy name — `give`, `export`, `share`, `edit`, `lock`,
+`unlock`, `set`, `remove`. `/cb setcategory` was the one that worked, because `splitCategories()` runs
+a real quote-aware regex before the value ever reaches the store.
+
+The fix is one method, not eight call sites: `CategoryMembershipStore.unquote()` strips every `"`, and
+`key()` runs it first — so every caller of the shared normalizer is covered at once. Display names get
+the same treatment where they are *stored* (`getOrCreate`, `renameCategory`, `collisionFor`,
+`createChecked`), because a quote baked into a stored name would be printed back forever after.
+
+**Then the reason quoting existed had to go too.** Names were quoted because a mode word followed
+them — `info "Arabic Letters" list` — and a greedy name would otherwise swallow the mode. Reversing the
+order removes the ambiguity instead of papering over it: the mode word now leads and the name is the
+last greedy argument. `filter` and `info` are built by one `modeFirst()` helper that registers each
+mode as a real Brigadier **literal**, which is what makes the bare form still work — Brigadier matches
+literals before arguments, so `filter newest Arabic Numbers` takes the `newest` branch while
+`filter Arabic Numbers` falls through to the plain-name branch and gets the default order. `sort`,
+`color` and `icon` got the same value-first flip. `rename` and `desc` did **not**: they take two pieces
+of free text rather than a mode word, so their order is a real design question and is parked as a
+cleanup item rather than invented here.
+
+**The delete that recorded nothing.** `deleteCategoryOnly` behaved correctly and pushed no undo op at
+all, so `/cb undo` skipped straight past it to an older, unrelated edit. Restoring it needs more than
+memberships — a delete also drops the record's colour, icon, description and sort order — so
+`UndoManager` gained a `CATEGORY_RECORD` kind carrying a serialized `CategoryMetadataStore` snapshot on
+each side, the twin of the existing `Membership` payload. The store's JSON read/write moved into one
+`toJson`/`fromJson` pair so the file, the snapshot and the restore can never drift apart. The delete now
+pushes one batch: the record op first (so an undo re-creates the category *before* any membership
+restore re-stamps the legacy display shadow from its name), then one membership op per affected block.
+
+`alpha` became `alphabetically` everywhere a player can see it, with `alpha` kept as a silent alias —
+necessary, because the *stored* per-category sort value is still the string `"alpha"` that the Category
+Hub, the chest edit menu and `HudSync` all read and write. `CategoryFilters.sortWord()` is the one place
+those two vocabularies meet.
+
+Tab-complete stopped offering pre-quoted names — accepting one used to type the exact broken argument
+A2 and A10 failed on — and the block count moved into the suggestion's **tooltip**, so an empty category
+is still spottable without a character of the count landing in the command line. `none` in the
+`/cb setcategory` suggester is prefix-filtered like every other suggestion around it; `b.suggest()` adds
+unconditionally, which is why it kept offering itself after unrelated text.
+
+The retired trailing delete modes (`category` / `exclusive` / `move <target>`) are gone with their
+handler, since a trailing word is exactly what a bare greedy name cannot survive. Pass 2 writes the
+two-button prompt that replaces them. Splitting the vault pair (`share`, `import`) into
+`CategoryVaultCommands` kept `CategoryCommands` under the 400-line handler gate, which the build caught
+at 418.
+
+**Not built, by scope:** the delete prompt, `combine <a> into <b>`, and the whole chat UI (colour tags,
+click-to-Hub, hover cards, follow-up buttons) — that is Pass 2. `/cb setcategory` still uses quotes to
+separate several names in one line, which is inherent to a multi-value argument and is unchanged.
+
+## G10 §HA4 fixed by measurement, §HB15 turns out not to be a bug; G07 re-id leaves chat · 2026-07-27 (🟡 built, pending in-game)
+
+**The speckles were never a tolerance problem.** Nobody had measured the surviving fragments, so this
+session measured them instead of guessing. The whole `image` package is pure JDK, and the real source
+(`tools/render_preview/bg_in/7_letter_o.jpg`) plus the whole golden set were already sitting in the repo
+— so the real cascade classes ran offline against the real picture, no round-trip needed.
+
+The answer was blunt. The old mop-up spared **zero** fragments on colour, while 857 px of background
+colour survived the bake — every one of them inside a **single 89,335 px component**, 111× the 800 px
+floor. The ringing sits directly against the glyph, so subject and residue are one component; the
+oversize skip threw it away without colour-judging a pixel of it. `BgQc.areaFloor` and `2 × JND` were
+never the fault, and widening either would have been the wrong fix pointed at the wrong thing. The
+**unit** was wrong.
+
+So the pass now has two units over the same two numbers. `absorbDetached` is the original, unchanged: a
+whole island judged on its mean Lab, which is what catches residue no per-pixel rule would. `absorbFused`
+selects the near-key foreground pixels FIRST and takes connected pieces of *those* — the subject's body
+is nowhere near the key, so it cannot swallow the residue welded to its edge. A fused piece goes only if
+it also touches the mask, which is a fact rather than a threshold: welded to the boundary is where the
+strict flood stopped; floating inside the subject is the subject's own shading, the same call
+`absorbEnclosedPockets` already makes.
+
+Keeping both units mattered. The fused pass alone cleared the ring but stopped absorbing the picture's
+watermark, which the old mean test had been catching incidentally — the watermark would have come back
+*more* visible than before, on a row the owner had already ruled out of scope. Running both gives the
+union.
+
+**Golden-diffed across all seven baselines**, which is the check §H exists to force: Tux (hair-thin
+outlines), the transparent PNG, the chrome JPEG and the stripes changed by **0 px**; the chrome logo by
+6-16; the periodic table by 120 of 19.8 M. Only the letter O moved. Its ring residue fell **235 px → 57**
+and the watermark band did not get worse (612 → 542), so nothing was traded for it. Cost is ~5 % on the
+bake.
+
+**§HB15: the cascade is right and the row is wrong.** Every rung was probed against the real periodic
+table — which is 6000×3300 (19.8 M px), not the 3000×1500 the row records. Rung 1 declines, then rung 2
+finds a genuinely flat `#FFFFFF` border on all four sides, keys it, and produces a 42.32 % mask that is
+one connected region reaching the frame. It passes QC **on the merits**, and the bake proves it: every
+element box, its text and its fill survive; only the white between them is replaced. The decline path
+itself is healthy — a random-noise source still returns rung 0 with all four reasons printed. There is no
+wrong gate to fix, and forcing a decline here would break the premise that rung 2 is a fact.
+
+What the row actually caught is a **size** concern wearing a background-confidence costume. 19.8 M px
+reaches the cascade at all because `ImageLimits` guards only the colour-family rail, not plain
+`/cb create`. Extending that gate is an owner decision — it would start refusing large sources that work
+today — and it runs into the G05 §G allocation question, so it was deliberately not built. Left as the
+one open question from this session.
+
+**G07: `/cb bulkreid` loses its chat arguments.** The prefix/suffix/replace branches are gone; bare
+`/cb bulkreid` still opens the Workbench on Re-ID, and the transform itself is untouched because the
+Screen calls it. Typing the old form gets told where it went rather than a raw Brigadier syntax error.
+`/cb rename` was left completely alone — it has no single-block Screen yet, and stripping it now would
+delete the only way to rename a block. TG07 came back off `_Done` for the new §D rows; TG10 HB8 was not
+touched, since it was correct when it was run.
+
+## G13 — the 82 invisible Arabic orphans get retired, behind a safety backup · 2026-07-27 (🟡 built, pending in-game)
+
+The retirement sweep has been reporting success every boot while leaving 82 blocks in place. Cause is one
+line: `ArabicLetterRetirement.retireStaticArt` built its hit-list from `ArabicArt.blockId`, which always
+writes the `arabic_` prefix, so the pre-prefix ids never matched. The 144 letters retired fine because
+their old ids did carry the prefix; the numbers predate it. What survived is 40 Eastern (`a0_black` …
+`a9_yellow`), 40 Western (`num_0_black` … `num_9_yellow`), and two letter strays (`ha_red`, `sad`). That is
+the doubled-set the owner saw — orphan `a0_black` and real `arabic_a0_iso` both display "A0 Black".
+
+Fix widens the hit-list rather than adding a second system: `collectStaticArtIds()` now checks three id
+shapes per glyph+colour — the prefixed one, `<idBase>_<colour>`, and `<fileBase>_<colour>` — plus a named
+`LEGACY_STRAY_IDS` list. Existing `RetiredSlots` reservation and the existing chunk-load air-swap do the
+rest, unchanged. The colourless stray `sad` is listed by name on purpose: a bare glyph name is an ordinary
+word, and matching it as a shape would also delete a player-made block that happened to share it. Every
+candidate is still existence-checked before deletion, and the real Arabic slots can't be hit — their form
+token is always iso/ini/mid/fin, never a colour.
+
+Because this permanently deletes blocks, `snapshotBeforeRetire` takes a full G09 SAFETY backup
+(`pre-arabic-retire_…`) immediately before the batch and **aborts, changing nothing**, if that snapshot
+fails — the same rule `RetextureAllCommands` and `SetAllCommands` already follow. It runs on the mod-init
+thread, before the server starts, so the heavy pooled copy cannot hitch a tick, and it only fires on the
+one boot that actually has something to retire.
+
+Not touched, by owner call: the three hand-made duplicates in the same slots.json sweep
+(`pryaminx`/`pryaminx`, `SFA1_red`/`sfa_red`, `mirror_cube_yellow`/`mirror_yellow`). The owner cleans those
+themselves. TG10 HB12 stays flagged `Discussion ✏️` — it needs its own bake-quality retest once the orphans
+are gone, and that is the owner's call, not a status flip from here.
+
+New TG13 §H covers it: log line order, the doubled-name check, the backup showing up in `/cb backup list`,
+a non-Arabic-blocks-untouched check, and a second restart proving the migration is a no-op afterwards.
+
+## G10 §H Jar C test pass — mode gate confirmed, speckles still there, oversized source crashed the server · 2026-07-26 (📝 docs / plan only)
+
+Owner ran the MP pass on Jar C. Results marked in [Testing_Guide_10.md](docs/testing/Testing_Guide_10.md).
+
+**Confirmed MP:** HA8, HB3, HB4, HB5, HB6, HB8, HB10, HB11, HB14. The whole hard-reject mode gate — typed
+value, config-file value, and the `none` → `nobackground` rename on startup — behaves as built, and the Off
+rails (colour family, plain create, checkerboard flattening) all hold with removal switched off.
+
+**HA4 still fails.** The mop-up thinned the blue dots but did not clear them: the owner's screenshot shows
+speckles still tracing both the outer and inner edge of the O, plus two denser clusters at mid-left and
+mid-right that are the source's own watermark. The watermark is out of scope by the 2026-07-26 decision and
+is not what fails the row; the edge speckles are. `BgMopUp`'s two derived numbers — `BgQc.areaFloor` as the
+size ceiling and `2 × BgRungKey.JND` as the colour bar — are evidently not wide enough for the fragments
+this source produces, and widening either one by hand is the tolerance knob returning under a new name.
+Next attempt needs a measurement of the surviving fragments' actual size and mean ΔE00 against the key
+before anything is changed, not another guessed constant.
+
+**HB15 failed on behaviour.** Creating from the 3000×1500 periodic table never refused and never named
+`/cb bgpick`. The picture §H was designed to hand down on instead ran the full cascade to completion, in
+roughly 20 seconds. That figure matters on its own: the cascade's cost is supposed to be budgeted per bake
+with `/cb retextureall`'s loops in mind, and one bake at 20 seconds means the bulk rails are far worse than
+the work they replaced.
+
+**The "crash" was not a crash, and mostly is not ours.** Corrected by the owner: they were disconnected for
+timeout and the server stayed up. Their client logs turned out to hold five months of history, so the
+question was measured instead of argued. Across July: 21 `Timed out` and 10 `Connection reset`, and **14 of
+the 21 timeouts had no CustomBlocks image, pack, or bulk activity within the preceding two minutes** — one
+landed mid-chat with the mod idle. The baseline is the host or the link. Recorded in G05 §G so no future
+session re-attributes it to whatever feature happened to be running.
+
+The correlated minority still needs an answer, because the obvious one is wrong.
+`CreationCommands.createWithTexture` already runs the download, the cascade, and `ImageProcessor` on a
+`new Thread`, touching the server thread only inside `server.execute` — so a slow bake cannot stall the main
+thread. But `Timed out` is only written after 30 seconds of server silence, and the HB15 trace shows exactly
+that: `Fetching the image` 22:00:08, disconnect 22:00:46, then the same create succeeding in 11 seconds
+after reconnect. The one mechanism that crosses the thread boundary is allocation — ~18 MB per full-frame
+copy of a 3000×1500 source, several held at once, on a free-tier host. That is stop-the-world GC, which
+stops the server thread too. Off-thread protects against slow, not against allocating too much. Peak heap
+per bake is the measurement to take.
+
+Also cleared while in there: the `Packet too large` kicks on `customblocks:slot_update` and
+`customblocks:hud_sync` run 2026-03-27 to 2026-05-12 and stop. Already fixed; not reopened.
+
+**Then the owner supplied the fact that reorganised all of it.** The disconnects come in three patterns:
+the owner alone, another player alone, or *everyone simultaneously — and the simultaneous ones happen while
+a block is being created*. Separate connections do not fail in unison, so a simultaneous drop is not
+network at any layer; it is the server going silent to every player at the same instant. That is the same
+stop-the-world signature the HB15 timestamps implied, now corroborated independently, and it turns the
+allocation theory from a hypothesis into an ownable defect.
+
+It also explains why the statistics read as innocent. The single-player drops are real background link
+noise and they were burying the one class that is ours. Counting disconnects without first sorting them by
+how many players went down together produces exactly the wrong conclusion — which is what my first pass
+did, and what the G05 note now forbids.
+
+Two further measurements taken while the logs were open. Of 86 `Timed out` disconnects across April-July,
+only **4 fell within 30 seconds of a join or pack sync** and 47 landed 10+ minutes into a settled session,
+which clears the §E transport design as the cause. And the monthly baseline (Feb→Jul) is `Timed out`
+0/1/31/24/10/21 with `Connection reset` 0/3/17/48/9/10 — April and May are the outliers, today is neither a
+regression nor a fix.
+
+Owner reopened G05 to own connection stability whole rather than splitting the non-pack timeouts into a new
+group, on the grounds that the evidence separating the classes spans all of them.
+
+**HB12 is now ✏️.** The owner objects to the bundled Arabic coloured sets themselves — too many, too
+spammy — not merely to how they bake. The row cannot pass or fail until the set list is settled with G13.
+
+**HB9 clarified, not run.** Its action was one vague clause; rewritten to name Tux as the target and to say
+the artifact is a mip-level effect that shows at distance.
+
+---
+
+## G10 §H Jar C — the letter-O blue speckles mopped up by colour, and the mode value made a hard gate · 2026-07-26 (🟡 built, pending in-game)
+
+Two owner-decided items from the HA/HB test pass, built together.
+
+**1. The HA4 blue speckles — `image/BgMopUp.java` (new), called from `BgCascade.clean`.**
+
+Root cause, traced through the source rather than guessed: rung 2 keys the background at the JND (2.3
+ΔE00), and JPEG ringing knocks whole blocks of the letter-O's blue background just outside that bar. Those
+pixels survive the flood as foreground, and `BgMask.despeckle` cannot take them because it is
+**deliberately colour-blind** — it is an area opening, which is exactly what lets it drop a speck while
+keeping Tux's hair-thin outlines. The fragments sit above its ~13px floor, so they bake as scattered blue
+dots around the glyph.
+
+The obvious fix — widen rung 2's match — is the one §H exists to refuse: it would take real subject detail
+everywhere else along with them. So the strict match stays on the mask, and a second pass applies a looser
+bar **only inside the band that is already too small to be a region**:
+
+- **Size ceiling** is `BgQc.areaFloor` — `min(w, h)`, the cascade's own existing definition of "too small
+  to be an area". Reused, not restated, so the two cannot drift apart. On a 512² picture the mop-up band
+  is 14-512 px, i.e. above despeckle's floor and below one pixel-wide strip across the picture.
+- **Colour bar** is twice `BgRungKey.JND`. One JND is where two colours first separate *when compared side
+  by side*; a leftover fragment sits surrounded by the very colour it came from and is never seen that
+  way, so the next honest step out is 2×. Nothing above the size band is ever judged by it.
+- **Judged on the fragment's MEAN Lab**, not per pixel — for the same reason despeckle judges by area
+  rather than width. Averaging is precisely what cancels the compression noise that created the fragment,
+  while a real detail keeps its own colour under the average.
+- **Rung 1 is excluded.** Authored alpha is the author's own statement of what is background; re-judging it
+  by colour would replace a fact with a measurement. Rungs 3 and 4 measure against the border tone rung 4
+  already builds its histogram from, so "is this the background colour" uses the colour the rung called
+  background.
+
+Watermark/logo text is **not** in this fix and is not a cascade bug — owner call, backed by research:
+same-colour text removal is detection + inpainting, a different problem. Logged as deferred scope.
+
+**2. Background mode is now a hard gate — `auto` or `nobackground`, nothing else.**
+
+Supersedes the 2026-07-25 "unrecognised resolves to Auto" fail-safe by owner call. That rule was meant to
+stop an old config silently losing background removal; the owner's position is that a value which is not
+one of the two live ones must be **visible and fixed**, never translated behind their back.
+
+- `BackgroundRemover.NONE` is now the string `nobackground` (was `none`); player-facing arg is
+  `NoBackground` (was `NoBgRemove`).
+- `fromArg` accepts those two strings and **nothing** else. `BgRemove`, `BgRemove&More`, `BgSmart`,
+  `edges`, `closed`, `smart`, `ai`, `off` all reject exactly like a typo.
+- `normalize` (which absorbed bad values) is **deleted**, replaced by `requireMode`, which throws. Every
+  rail reaches it with the validated global value, so a throw there means validation was bypassed.
+- The typed command rejects in chat naming the offending value, and writes nothing.
+- Config load throws **outside** its own catch-all. That catch falls back to defaults, which for this field
+  is the exact silent workaround being banned. `/cb config background` keeps a greedy argument so
+  `BgRemove&More` reaches our rejection message instead of dying as a brigadier parse error.
+- `snapBackgroundColor` validates before its try/catch, for the same reason.
+
+**The one value renamed rather than rejected** is the pre-today internal id `none`, which every earlier jar
+wrote for Off. It is migrated in place on load, logged as a warning, and rewritten as `nobackground` on the
+next save. That is not the banned fallback — the ban is on working around a value the mod never meant, and
+rejecting its own current id would have bricked startup on the config the shipping jar itself produced. A
+player who *types* `none` still gets the hard error.
+
+Also removed: the dead `background_strength` entry still listed in the Settings book's Appearance tab — it
+came out with `/cb tolerance` and the field no longer exists.
+
+**Docs:** TG10's picture-accuracy rows merged into §HA (HB8 → HA8) since they were the same cascade on the
+same pictures; §HB renumbered with a new HB6 covering the `none` → `nobackground` migration. HA4 keeps
+`Regression 💔` until the retest clears it, per the glossary.
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## Documentation Dashboard
 
-*Refreshed: 2026-07-26 14:15:06*
+*Refreshed: 2026-07-30 13:28:39*
 
 **23** Built 🎯 · **4** Designed ⏳ / Planned 📜 · **5** Done ✅ · **1** Scrapped 👎
 
@@ -21,10 +21,10 @@
 | Group | Progress | Last tested | Open |
 | --- | --- | --- | --- |
 | G05 - Silent Resource Pack Delivery | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-19 | [TG](Testing_Guide_05_Paused.md) · [Group](../groups/GROUP_05_RESOURCE_PACK.md) |
-| G10 - Color & Image Tools | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% | 2026-07-26 | [TG](Testing_Guide_10.md) · [Group](../groups/GROUP_10_COLOR_IMAGE.md) |
-| G11 - Category System | 🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥 50% | 2026-06-14 | [TG](Testing_Guide_11.md) · [Group](../groups/GROUP_11_CATEGORY.md) |
-| G12 - Export Dashboard & Marketplace | 🟩🟩🟥🟥🟥🟥🟥🟥🟥🟥 20% | 2026-06-21 | [TG](Testing_Guide_12.md) · [Group](../groups/GROUP_12_EXPORT_MARKETPLACE.md) |
-| G13 - Arabic Backend | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-04 | [TG](Testing_Guide_13.md) · [Group](../groups/GROUP_13_ARABIC.md) |
+| G07 - Bulk Operations | 🟩🟩🟩🟩🟩🟩🟥🟥🟥🟥 66% | 2026-07-20 | [TG](Testing_Guide_07.md) · [Group](../groups/GROUP_07_BULK_OPERATIONS.md) |
+| G10 - Color & Image Tools | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% | 2026-07-29 | [TG](Testing_Guide_10.md) · [Group](../groups/GROUP_10_COLOR_IMAGE.md) |
+| G12 - Export & Import | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-06-21 | [TG](Testing_Guide_12.md) · [Group](../groups/GROUP_12_EXPORT_MARKETPLACE.md) |
+| G13 - Arabic Backend | 🟩🟩🟥🟥🟥🟥🟥🟥🟥🟥 20% | 2026-07-04 | [TG](Testing_Guide_13.md) · [Group](../groups/GROUP_13_ARABIC.md) |
 | G14 - Animation, Video & Display Blocks | 🟩🟩🟥🟥🟥🟥🟥🟥🟥🟥 20% | 2026-06-21 | [TG](Testing_Guide_14.md) · [Group](../groups/GROUP_14_ANIMATION_VIDEO.md) |
 | G15 - AI Texture Generation | 🟩🟥🟥🟥🟥🟥🟥🟥🟥🟥 10% | 2026-06-20 | [TG](Testing_Guide_15.md) · [Group](../groups/GROUP_15_AI_TEXTURES.md) |
 | G16 - Diagnostics, IT Screen & Private Testing Center | 🟩🟩🟩🟩🟩🟥🟥🟥🟥🟥 50% | 2026-06-21 | [TG](Testing_Guide_16.md) · [Group](../groups/GROUP_16_DIAGNOSTICS.md) |
@@ -67,9 +67,9 @@
 | --- | --- | --- | --- |
 | G03 - HUD System & ESC Integration | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% | 2026-07-18 | [TG](Testing_Guide_03_Done.md) · [Group](../groups/GROUP_03_HUD_ESC.md) |
 | G04 - Messages & Command Communication | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% | 2026-07-19 | [TG](Testing_Guide_04_Done.md) · [Group](../groups/GROUP_04_Communication.md) |
-| G07 - Bulk Operations | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% | 2026-07-20 | [TG](Testing_Guide_07_Done.md) · [Group](../groups/GROUP_07_BULK_OPERATIONS.md) |
 | G08 - Shape System & Per-Face Textures | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% | 2026-07-22 | [TG](Testing_Guide_08_Done.md) · [Group](../groups/GROUP_08_SHAPES.md) |
 | G09 - Backup, Data Safety & Trash | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% | 2026-07-23 | [TG](Testing_Guide_09_Done.md) · [Group](../groups/GROUP_09_BACKUP_SAFETY.md) |
+| G11 - Category System | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% | 2026-07-30 | [TG](Testing_Guide_11_Done.md) · [Group](../groups/GROUP_11_CATEGORY.md) |
 
 </details>
 
