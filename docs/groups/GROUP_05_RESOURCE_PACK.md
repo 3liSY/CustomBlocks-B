@@ -2,7 +2,7 @@
 
 > Group 05 makes custom-block textures reach every player through the correct delivery path, including a server-forced 128 px path that lets the production modpack join with a 2 GB client heap.
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05_Paused.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -361,7 +361,7 @@ This section records the current-code facts the replacement must deliberately re
 
 ## References
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05_Paused.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05.md) · [All Groups](README.md)
 
 - [G06 Tools](GROUP_06_TOOLS.md)
 - [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)

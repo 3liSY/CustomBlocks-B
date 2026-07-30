@@ -5,11 +5,59 @@
 
 **Status key:** ✅ confirmed in-game · 🟡 built, pending in-game (🎯/🟢) · 📝 docs / plan only · ⛔ reverted (⏪)
 
-**At a glance:** 251 sessions · 2026-06-09 → 2026-07-30 · ✅ 44 confirmed · 🟡 162 built/pending · 📝 21 docs · ⛔ 7 reverted
+**At a glance:** 252 sessions · 2026-06-09 → 2026-07-30 · ✅ 44 confirmed · 🟡 162 built/pending · 📝 22 docs · ⛔ 7 reverted
 
 > 📦 Older **Phase 0–16** history (the clean-room rebuild, 2026-06-03 → 06-07) lives in [PROGRESS_LOG_ARCHIVE.md](PROGRESS_LOG_ARCHIVE.md).
 
 ---
+
+## 2026-07-30 — Docs-vs-code audit across all 33 guides, and the first fully green health pass
+
+📝 A read-only audit first, then only the repairs the audit could prove. A safety checkpoint commit was
+pushed before anything was touched, because the working tree held ~290 uncommitted files including every
+bundled Arabic art PNG and about 35 never-committed sources.
+
+**What was checked.** Every `/cb` command cited in all 33 canonical guides against every literal actually
+registered in the command tree (helper-wrapped registrations included, after the first pass produced false
+positives on `setbg`/`colorvariants`); every backticked type name in the guides and Group documents against
+the source tree; row markers against their own section status; filename lifecycle against the glossary; and
+both project checkers.
+
+**Passed with no action.** No live test row anywhere instructs the owner to run a command that does not
+exist — 0 of 237 sections. Every mention of a removed command carries 👎, a strike-through or "do not run",
+so removals are recorded honestly. Of 24 documented type names absent from source, all 24 are legitimate:
+vanilla display types, hex literals, or named future classes inside sections that are correctly not built.
+`docs/Information/` and `docs/archive/` are correctly scoped; the apparent duplicate PROGRESS_LOG and ID_MAP
+are the labelled legacy phase reference, not duplicates, and were left alone.
+
+**Fixed — eight sections were advertising unbuilt work as testable.** TG13 §D/§E/§F, TG14 §C/§D/§F/§G and
+TG27 §R each carried 🎯 rows under a `Designed ⏳`/`Planned 📜` status, while their own Blocked notes said the
+rows only become runnable once missing work lands. 65 row cells corrected to ⏳/📜; no status changed.
+Verified in code rather than assumed: `/cb categories` still routes to `Nav.Dest.CATEGORY_LIST`, the old
+chest browser, so TG27 §R's Designed status is right and its 🎯 rows were the error. TG13 §E is corroborated
+by `TextData` existing nowhere, TG14 §G by `ShowcaseData`.
+
+**Fixed — structure.** `GROUP_04_Communication.md` linked `../testing/TESTING_GUIDE_04.md` in its header and
+footer, a file that does not exist; it was the single group-check failure. `Testing_Guide_05_Paused.md`
+renamed to `Testing_Guide_05.md` — `_Paused` is not a suffix the glossary defines, and that guide is
+simultaneously the dashboard's active Continue row at 40%; renamed with `git mv` and all five references
+repaired, then both dashboard generators re-run so `Dashboard_Stats.json` and `data.js` stopped naming the
+old file. TG11's non-standard `🚚 Moved out` fold became plain text above the `---` terminator, keeping both
+of its entries; the five archive folds are now exactly as specified. G34's invented flag words (`tweak`,
+`rebuild`, `new`) cleared to `-`; that information already lives in the Verdict and here.
+
+**Reverted mid-pass.** TG02's §A/§B were briefly rewritten to `Scrapped 👎` as a status. `testing_tools.py`
+rejected it: `Scrapped 👎` is a flag and the status column takes only Planned/Designed/Built/Done, so the
+original `Built 🎯` + `Scrapped 👎` flag was already correct. Restored untouched.
+
+**Result.** `testing_tools.py health` — "All guides look pristine" (was 1 warning). `group_tools.py health` —
+33/33 pass (was 1 failure). No broken internal doc links outside the two intentional template placeholders.
+
+**Left for an owner decision, not silently fixed.** TG19's hologram showcase wants `/cb showcase`, a literal
+Guess Mode already owns as `/cb guess showcase` — needs settling before G19 is built. And
+`docs/testing/tools/` is 19 MB of the doc tree, nearly all of it a committed `dashboard_gui.exe`. Separately,
+107 MB of generated bake output under `tools/out/` and the render-preview scratch folders is now gitignored
+and stays on disk.
 
 ## 2026-07-30 — G12 built: export rework, folder import, run recall, Blueprints deleted
 

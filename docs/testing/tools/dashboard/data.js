@@ -1,5 +1,5 @@
 const dashboardData = {
-  "lastUpdated": "2026-07-28 23:04:25",
+  "lastUpdated": "2026-07-30 15:24:26",
   "groups": [
     {
       "id": "GROUP_02",
@@ -34,7 +34,7 @@ const dashboardData = {
     {
       "id": "GROUP_05",
       "title": "Silent Resource Pack Delivery",
-      "filename": "Testing_Guide_05_Paused.md",
+      "filename": "Testing_Guide_05.md",
       "verdict": "Slow-internet joins, weak-PC textures, safe delivery, 2 GB stability, and old-version warnings are all built and awaiting play-testing (\u00a7D fix awaiting retest).",
       "percent": 40,
       "passed": 4,
@@ -85,29 +85,29 @@ const dashboardData = {
       "id": "GROUP_10",
       "title": "Color & Image Tools",
       "filename": "Testing_Guide_10.md",
-      "verdict": "Owner test 2026-07-28: penguin, stripes, subscribe and the golden pair pass; a pale outline survives on cut-out art and the football regressed.",
-      "percent": 60,
-      "passed": 6,
+      "verdict": "The colour engine and the busy-source row are confirmed; the pale outline round the artwork is root-caused to four faults, all rebuilt in jar F and waiting on an in-game retest.",
+      "percent": 70,
+      "passed": 7,
       "total": 10,
-      "lastTested": "2026-07-28"
+      "lastTested": "2026-07-29"
     },
     {
       "id": "GROUP_11",
       "title": "Category System",
-      "filename": "Testing_Guide_11.md",
-      "verdict": "Sections A and B are confirmed; C and E are built and waiting on one in-game round of 14 rows.",
-      "percent": 50,
-      "passed": 5,
+      "filename": "Testing_Guide_11_Done.md",
+      "verdict": "All sections (A, B, C, D) confirmed in-game. Hub-side category work lives in TG27 \u00a7U.",
+      "percent": 100,
+      "passed": 10,
       "total": 10,
-      "lastTested": "2026-07-27"
+      "lastTested": "2026-07-30"
     },
     {
       "id": "GROUP_12",
-      "title": "Export Dashboard & Marketplace",
+      "title": "Export & Import",
       "filename": "Testing_Guide_12.md",
-      "verdict": "Offline export and Blueprint logic exist; remote download links, Vault sharing, Marketplace, importfolder, and advanced formats still need work.",
-      "percent": 20,
-      "passed": 2,
+      "verdict": "All three sections are built and waiting on in-game testing; Blueprints are deleted.",
+      "percent": 40,
+      "passed": 4,
       "total": 10,
       "lastTested": "2026-06-21"
     },
@@ -115,9 +115,9 @@ const dashboardData = {
       "id": "GROUP_13",
       "title": "Arabic Backend",
       "filename": "Testing_Guide_13.md",
-      "verdict": "Legacy Arabic behavior was confirmed; the real-SlotBlock rebuild retest and the new duplicate-number cleanup both still need an in-game check.",
-      "percent": 35,
-      "passed": 3,
+      "verdict": "Number art was rebuilt on the live colour hexes; it, the rearchitecture retest, and the break-reflow regression all still need an in-game check.",
+      "percent": 20,
+      "passed": 2,
       "total": 10,
       "lastTested": "2026-07-04"
     },
@@ -185,7 +185,7 @@ const dashboardData = {
       "id": "GROUP_20",
       "title": "Cloud Vault, Discord & External Integrations",
       "filename": "Testing_Guide_20.md",
-      "verdict": "Block vault sharing is confirmed; backup R2 setup, conflict screen, Discord, Vault Hub, and signing remain open.",
+      "verdict": "Block vault sharing is confirmed; backup R2 setup, export download delivery (\u00a7L, moved from G12), conflict screen, Discord, Vault Hub, and signing remain open.",
       "percent": 30,
       "passed": 3,
       "total": 10,
@@ -335,7 +335,7 @@ const dashboardData = {
   "bugs": [],
   "nextTask": {
     "group": "Silent Resource Pack Delivery",
-    "filename": "Testing_Guide_05_Paused.md",
+    "filename": "Testing_Guide_05.md",
     "id": "D1",
     "action": "In singleplayer, quickly create and re-texture two blocks using image links.",
     "expect": "All textures show up, nothing looks broken, and you don't need to rejoin."

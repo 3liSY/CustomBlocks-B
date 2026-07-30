@@ -2,7 +2,7 @@
 
 ## Documentation Dashboard
 
-*Refreshed: 2026-07-30 13:28:39*
+*Refreshed: 2026-07-30 15:24:13*
 
 **23** Built 🎯 · **4** Designed ⏳ / Planned 📜 · **5** Done ✅ · **1** Scrapped 👎
 
@@ -12,7 +12,7 @@
 
 | Group | Verdict | Progress | Last tested | Open |
 | --- | --- | --- | --- | --- |
-| G05 - Silent Resource Pack Delivery | Slow-internet joins, weak-PC textures, safe delivery, 2 GB stability, and old-version warnings are all built and awaiting play-testing (§D fix awaiting retest). | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-19 | [TG](Testing_Guide_05_Paused.md) · [Group](../groups/GROUP_05_RESOURCE_PACK.md) |
+| G05 - Silent Resource Pack Delivery | Slow-internet joins, weak-PC textures, safe delivery, 2 GB stability, and old-version warnings are all built and awaiting play-testing (§D fix awaiting retest). | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-19 | [TG](Testing_Guide_05.md) · [Group](../groups/GROUP_05_RESOURCE_PACK.md) |
 
 ## Built
 
@@ -20,7 +20,7 @@
 
 | Group | Progress | Last tested | Open |
 | --- | --- | --- | --- |
-| G05 - Silent Resource Pack Delivery | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-19 | [TG](Testing_Guide_05_Paused.md) · [Group](../groups/GROUP_05_RESOURCE_PACK.md) |
+| G05 - Silent Resource Pack Delivery | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-07-19 | [TG](Testing_Guide_05.md) · [Group](../groups/GROUP_05_RESOURCE_PACK.md) |
 | G07 - Bulk Operations | 🟩🟩🟩🟩🟩🟩🟥🟥🟥🟥 66% | 2026-07-20 | [TG](Testing_Guide_07.md) · [Group](../groups/GROUP_07_BULK_OPERATIONS.md) |
 | G10 - Color & Image Tools | 🟩🟩🟩🟩🟩🟩🟩🟥🟥🟥 70% | 2026-07-29 | [TG](Testing_Guide_10.md) · [Group](../groups/GROUP_10_COLOR_IMAGE.md) |
 | G12 - Export & Import | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% | 2026-06-21 | [TG](Testing_Guide_12.md) · [Group](../groups/GROUP_12_EXPORT_MARKETPLACE.md) |

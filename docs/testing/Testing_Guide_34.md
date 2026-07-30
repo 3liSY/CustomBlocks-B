@@ -13,13 +13,13 @@
 
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
-| A | Vertical wheel structure (place / face / remove); baked 50-wedge face, front and mirrored back | Built 🎯 | tweak |
-| B | Spin: right-click, 50-icon reroll, 8s deceleration | Built 🎯 | rebuild |
-| C | Honest landing (arrow points at winner) | Built 🎯 | rebuild |
-| D | Prize popup (giant icon + banner + fireworks), floats above the rim | Built 🎯 | tweak |
-| E | Sound (whir + clacks; win ding+fanfare+firework+levelup) | Built 🎯 | rebuild |
-| F | Pool + `/cb wheel` item give | Built 🎯 | rebuild |
-| G | Claim prize: right-click floating prize (spinner, 1 item, once) | Built 🎯 | new |
+| A | Vertical wheel structure (place / face / remove); baked 50-wedge face, front and mirrored back | Built 🎯 | - |
+| B | Spin: right-click, 50-icon reroll, 8s deceleration | Built 🎯 | - |
+| C | Honest landing (arrow points at winner) | Built 🎯 | - |
+| D | Prize popup (giant icon + banner + fireworks), floats above the rim | Built 🎯 | - |
+| E | Sound (whir + clacks; win ding+fanfare+firework+levelup) | Built 🎯 | - |
+| F | Pool + `/cb wheel` item give | Built 🎯 | - |
+| G | Claim prize: right-click floating prize (spinner, 1 item, once) | Built 🎯 | - |
 
 **Original Group:** [GROUP_34_WHEEL_OF_FORTUNE.md](../groups/GROUP_34_WHEEL_OF_FORTUNE.md)
 

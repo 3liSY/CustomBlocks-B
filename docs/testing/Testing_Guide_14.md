@@ -45,11 +45,11 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| C1 | Retexture a static block with a GIF URL. | Block becomes animated with correct frames, speed, and no scrambled grid. | 🎯 | 🎯 |
-| C2 | Retexture an animated block with a static PNG/JPG. | Animation data clears and block becomes a normal static texture. | 🎯 | 🎯 |
-| C3 | Retexture an animated block with a different GIF/WebP. | Texture grid, frame count, timing, and playback data all match the new source. | 🎯 | 🎯 |
-| C4 | Retexture with a bad or unsupported source. | Old texture/animation remains intact and the error is human-readable. | 🎯 | 🎯 |
-| C5 | Restart after each conversion. | Saved texture and animation state reload correctly. | 🎯 | 🎯 |
+| C1 | Retexture a static block with a GIF URL. | Block becomes animated with correct frames, speed, and no scrambled grid. | ⏳ | ⏳ |
+| C2 | Retexture an animated block with a static PNG/JPG. | Animation data clears and block becomes a normal static texture. | ⏳ | ⏳ |
+| C3 | Retexture an animated block with a different GIF/WebP. | Texture grid, frame count, timing, and playback data all match the new source. | ⏳ | ⏳ |
+| C4 | Retexture with a bad or unsupported source. | Old texture/animation remains intact and the error is human-readable. | ⏳ | ⏳ |
+| C5 | Restart after each conversion. | Saved texture and animation state reload correctly. | ⏳ | ⏳ |
 
 ## D - Off-atlas quality and speed renderer rewrite - Designed ⏳
 
@@ -62,11 +62,11 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| D1 | Place a high-quality GIF block close to the camera. | Text/details are crisp and no atlas muffle/speckle is visible. | 🎯 | 🎯 |
-| D2 | Use a fast GIF source. | Playback timing matches source more closely than 20 TPS frame stepping. | 🎯 | 🎯 |
-| D3 | Test loop, bounce, and reverse. | Playback modes render correctly in world. | 🎯 | 🎯 |
-| D4 | Place many copies of the same animated id. | Copies share the same decoded/render resource and stay performant. | 🎯 | 🎯 |
-| D5 | Restart and revisit the blocks. | Animated blocks remain visible, textured, and correctly timed. | 🎯 | 🎯 |
+| D1 | Place a high-quality GIF block close to the camera. | Text/details are crisp and no atlas muffle/speckle is visible. | ⏳ | ⏳ |
+| D2 | Use a fast GIF source. | Playback timing matches source more closely than 20 TPS frame stepping. | ⏳ | ⏳ |
+| D3 | Test loop, bounce, and reverse. | Playback modes render correctly in world. | ⏳ | ⏳ |
+| D4 | Place many copies of the same animated id. | Copies share the same decoded/render resource and stay performant. | ⏳ | ⏳ |
+| D5 | Restart and revisit the blocks. | Animated blocks remain visible, textured, and correctly timed. | ⏳ | ⏳ |
 
 ## E - Source Wall review workflow - Built 🎯
 
@@ -99,7 +99,7 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| F0 | Before this is built: type `/cb setbg g10a transparent`. | It says no — use black or a colour. Block unchanged. (Moved from G10's background tests on 2026-07-25 — the refusal exists because of this section.) | 🎯 | 🎯 |
+| F0 | Before this is built: type `/cb setbg g10a transparent`. | It says no — use black or a colour. Block unchanged. (Moved from G10's background tests on 2026-07-25 — the refusal exists because of this section.) | ⏳ | ⏳ |
 | F1 | Set a block background to transparent once this is built. | Transparent pixels show through correctly. | ⏳ | ⏳ |
 | F2 | Inspect a normal black-background block. | Existing solid blocks still look black, not unexpectedly see-through. | ⏳ | ⏳ |
 | F3 | Test a shaped transparent block. | Cutout layer does not create broken interior artifacts. | ⏳ | ⏳ |
@@ -116,10 +116,10 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| G1 | Create or toggle a showcase block. | Placed block cycles through the chosen filtered pool. | 🎯 | 🎯 |
-| G2 | Set random mode. | Random sequence behaves as designed without desyncing between clients when sync-all is selected. | 🎯 | 🎯 |
-| G3 | Include an animated member in the pool. | Animated member plays while it is the active showcase entry. | 🎯 | 🎯 |
-| G4 | Inspect the item in inventory/hotbar. | Inventory icon cycles too if item-render hook is built. | 🎯 | 🎯 |
+| G1 | Create or toggle a showcase block. | Placed block cycles through the chosen filtered pool. | ⏳ | ⏳ |
+| G2 | Set random mode. | Random sequence behaves as designed without desyncing between clients when sync-all is selected. | ⏳ | ⏳ |
+| G3 | Include an animated member in the pool. | Animated member plays while it is the active showcase entry. | ⏳ | ⏳ |
+| G4 | Inspect the item in inventory/hotbar. | Inventory icon cycles too if item-render hook is built. | ⏳ | ⏳ |
 
 ---
 

@@ -68,14 +68,12 @@
 
 </details>
 
----
-
-<details><summary>🚚 <b>Moved out</b></summary>
+**🚚 Moved out**
 
 - §D4 rename from the chest category editor → [TG27 §U13](Testing_Guide_27.md) on `2026-07-30`.
 - Clickable-chat rows that need the Hub open → [TG27 §U9-§U11](Testing_Guide_27.md) on `2026-07-28`; their colour, hover and Tab halves became §C8 and §C9.
 
-</details>
+---
 
 <details><summary>🧨 <b>Cleanup</b></summary>
 

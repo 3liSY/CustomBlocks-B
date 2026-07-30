@@ -353,10 +353,10 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| R1 | Run `/cb categories` as a player. | CategoryHubScreen opens with all categories, counts, icons, and browse/edit affordances. | 🎯 | 🎯 |
-| R2 | Open `testcat`. | The screen shows `g11a`, `g11b`, and `g11c`, with category controls available. | 🎯 | 🎯 |
-| R3 | Click a block row. | Give, edit, and remove-from-category actions are available in-screen. | 🎯 | 🎯 |
-| R4 | Run the same command from console. | Console receives a text list instead of a screen open attempt. | ➖ | 🎯 |
+| R1 | Run `/cb categories` as a player. | CategoryHubScreen opens with all categories, counts, icons, and browse/edit affordances. | ⏳ | ⏳ |
+| R2 | Open `testcat`. | The screen shows `g11a`, `g11b`, and `g11c`, with category controls available. | ⏳ | ⏳ |
+| R3 | Click a block row. | Give, edit, and remove-from-category actions are available in-screen. | ⏳ | ⏳ |
+| R4 | Run the same command from console. | Console receives a text list instead of a screen open attempt. | ➖ | ⏳ |
 
 ## S - `/cb create` Category workspace (from G11) - Built 🎯
 

@@ -99,11 +99,11 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| D1 | Use the Deleter on an Arabic letter slot. | It uses the same delete/recycle behavior as normal blocks and is undoable. | 🎯 | 🎯 |
-| D2 | Use a Square on an Arabic letter slot. | It swaps to the matching color while preserving facing, joins, and back partner. | 🎯 | 🎯 |
-| D3 | Use a Triangle/custom color path on a letter. | If supported, it creates a joining sibling variant; if not supported yet, it answers honestly. | 🎯 | 🎯 |
-| D4 | Run `/cb setglow <arabicId> 12`. | Letter lights like a normal block and the value survives restart. | 🎯 | 🎯 |
-| D5 | Test hardness, sound, and collision attributes. | Arabic slot honors the same attribute values as normal SlotBlocks. | 🎯 | 🎯 |
+| D1 | Use the Deleter on an Arabic letter slot. | It uses the same delete/recycle behavior as normal blocks and is undoable. | ⏳ | ⏳ |
+| D2 | Use a Square on an Arabic letter slot. | It swaps to the matching color while preserving facing, joins, and back partner. | ⏳ | ⏳ |
+| D3 | Use a Triangle/custom color path on a letter. | If supported, it creates a joining sibling variant; if not supported yet, it answers honestly. | ⏳ | ⏳ |
+| D4 | Run `/cb setglow <arabicId> 12`. | Letter lights like a normal block and the value survives restart. | ⏳ | ⏳ |
+| D5 | Test hardness, sound, and collision attributes. | Arabic slot honors the same attribute values as normal SlotBlocks. | ⏳ | ⏳ |
 
 ## E - Text Blocks backend - Designed ⏳
 
@@ -116,10 +116,10 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| E1 | Create a text block through the G27 text screen. | G13 backend creates the block with stored `TextData`. | 🎯 | 🎯 |
-| E2 | Reopen and edit that text block. | Existing text/style data loads and saves without creating a duplicate system. | 🎯 | 🎯 |
-| E3 | Use Arabic and Latin text. | Arabic uses `arabtype.ttf`; Latin uses the chosen non-Arabic font path. | 🎯 | 🎯 |
-| E4 | Restart and inspect the block. | Text data persists and renders identically. | 🎯 | 🎯 |
+| E1 | Create a text block through the G27 text screen. | G13 backend creates the block with stored `TextData`. | ⏳ | ⏳ |
+| E2 | Reopen and edit that text block. | Existing text/style data loads and saves without creating a duplicate system. | ⏳ | ⏳ |
+| E3 | Use Arabic and Latin text. | Arabic uses `arabtype.ttf`; Latin uses the chosen non-Arabic font path. | ⏳ | ⏳ |
+| E4 | Restart and inspect the block. | Text data persists and renders identically. | ⏳ | ⏳ |
 
 ## F - Type-a-word auto-build backend - Planned 📜
 
@@ -132,11 +132,11 @@
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
-| F1 | Run `/cb arabic build <word>`. | Connected RTL row appears in front of the player using real Arabic slots. | 🎯 | 🎯 |
-| F2 | Build a word with a space. | Space becomes a gap and the next word starts fresh. | 🎯 | 🎯 |
-| F3 | Build a word with digits. | Player chooses Eastern or Western digits; digits sit inline and do not join. | 🎯 | 🎯 |
-| F4 | Aim into an occupied area. | Build stops before collision and reports how many blocks were placed. | 🎯 | 🎯 |
-| F5 | Undo the word build. | Last built word is removed as one saved undo step. | 🎯 | 🎯 |
+| F1 | Run `/cb arabic build <word>`. | Connected RTL row appears in front of the player using real Arabic slots. | 📜 | 📜 |
+| F2 | Build a word with a space. | Space becomes a gap and the next word starts fresh. | 📜 | 📜 |
+| F3 | Build a word with digits. | Player chooses Eastern or Western digits; digits sit inline and do not join. | 📜 | 📜 |
+| F4 | Aim into an occupied area. | Build stops before collision and reports how many blocks were placed. | 📜 | 📜 |
+| F5 | Undo the word build. | Last built word is removed as one saved undo step. | 📜 | 📜 |
 
 ---
 
