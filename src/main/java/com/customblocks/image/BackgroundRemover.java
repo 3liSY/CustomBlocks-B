@@ -7,9 +7,9 @@
  * subject reads on black as-is (no white flip, no keyline; the recolour path keeps its own fill).
  * Recoded clean from the old ImageProcessor.replaceBackground; CIE-LAB ΔE + flood-fill recycled.
  *
- * Two modes (G10 §H):
- *   none — Off: leave the image untouched.
- *   auto — decide the background from the picture itself (BgCascade) and paint it the fill.
+ * Two modes (G10 §H), and no others — anything else hard rejects at the entry point that received it:
+ *   nobackground — Off: leave the image untouched.
+ *   auto         — decide the background from the picture itself (BgCascade) and paint it the fill.
  *
  * There is no strength number anywhere. The three old removal modes differed only in how hard one
  * player-set threshold was applied, and that threshold is gone, so they collapse into Auto.
@@ -39,9 +39,17 @@ public final class BackgroundRemover {
     private BackgroundRemover() {} // static-only
 
     /** Off — the picture is left exactly as it arrived. */
-    public static final String NONE = "none";
+    public static final String NONE = "nobackground";
     /** Auto — the cascade decides the background. The only removal mode there is. */
     public static final String AUTO = "auto";
+
+    /**
+     * The id {@link #NONE} carried before 2026-07-26. It is NOT a spelling {@link #fromArg} accepts —
+     * a player typing it gets the same hard error as any other unrecognised value. It exists solely so
+     * config load can rename the mod's own previous id in place, out loud, exactly once; see
+     * {@code CustomBlocksConfigStore.load}.
+     */
+    public static final String LEGACY_NONE = "none";
 
     /** Alpha below this counts as transparent → background. Package-private: the cascade's rung 1
      *  reads authored alpha against the same cutoff, so there is one definition of "transparent". */
@@ -85,7 +93,7 @@ public final class BackgroundRemover {
      */
     public static Applied applyReporting(byte[] input, String mode) {
         byte[] flat = CheckerboardDetector.flattenToBlack(input);
-        if (NONE.equals(normalize(mode))) return new Applied(input, null); // Off: not a decline
+        if (NONE.equals(requireMode(mode))) return new Applied(input, null); // Off: not a decline
         try {
             BufferedImage src = ImageIO.read(new ByteArrayInputStream(flat));
             if (src == null) return new Applied(input, null); // toBlockPng surfaces the real error
@@ -175,7 +183,7 @@ public final class BackgroundRemover {
      */
     private static byte[] process(byte[] input, String mode, Integer forcedFill) {
         input = CheckerboardDetector.flattenToBlack(input); // G10-6: flattened-preview checkerboard → black in EVERY mode (no-op otherwise)
-        String m = normalize(mode);
+        String m = requireMode(mode);
         if (NONE.equals(m)) return input; // Off — honoured on a normal bake
         try {
             BufferedImage src = ImageIO.read(new ByteArrayInputStream(input));
@@ -211,43 +219,51 @@ public final class BackgroundRemover {
         }
     }
 
+    /** The two legal values, for every message that has to list them. */
+    public static final String LEGAL_VALUES = "Auto or NoBackground";
+
     /**
-     * Canonicalize any stored or typed value to NONE or AUTO.
+     * Canonicalize a value that has already been validated — anything else is a bug, and is thrown
+     * rather than absorbed (G10 §H locked decision 2026-07-26).
      *
-     * <p>Anything unrecognised becomes AUTO, never Off (G10 §H). The old behaviour answered Off for an
-     * unknown value, which after this rip would have turned a server whose config still said
-     * {@code smart} into one that quietly stopped removing backgrounds with nothing said in chat.
-     * Failing toward "still works" is the only safe direction.
+     * <p>This method used to answer AUTO for an unrecognised value. That fail-safe is gone by owner
+     * call: a stale or junk mode must fail loudly at the entry point that accepted it (a typed command,
+     * or config load), never be quietly worked around further down. Every rail reaches here with the
+     * validated {@code CustomBlocksConfig.backgroundMode}, so a throw here means validation was
+     * bypassed, not that a player typed something wrong.
      */
-    public static String normalize(String raw) {
+    public static String requireMode(String raw) {
         String m = fromArg(raw);
-        return m == null ? AUTO : m;
+        if (m == null) {
+            throw new IllegalArgumentException(
+                    "\"" + raw + "\" is not a background mode — use " + LEGAL_VALUES);
+        }
+        return m;
     }
 
     /**
-     * Parse a value to its canonical mode, accepting the internal ids, the player-facing command
-     * arguments, and every retired spelling. Returns null only for something genuinely unrecognised,
-     * so a command can show a usage error while {@link #normalize} still fails safe to Auto.
+     * Parse a value to its canonical mode. Returns null for anything that is not one of the two live
+     * values, so the caller can hard-reject it with its own message.
      *
-     * <p>The retired names are kept as INPUT only: {@code BgRemove} and {@code BgRemove&More} both mean
-     * Auto now, so an existing {@code /cb config background BgRemove&More} line does not hard-error,
-     * and {@code BgSmart} resolves to Auto as well. None of them is offered by tab-complete or shown
-     * back to the player — {@code BgSmart} in particular was the same code path with the threshold
-     * hard-coded to 35, dressed up as intelligence it did not have.
+     * <p>There are no retired spellings and no aliases (G10 §H, 2026-07-26). {@code BgRemove},
+     * {@code BgRemove&More}, {@code BgSmart}, {@code edges}, {@code closed}, {@code smart},
+     * {@code ai}, {@code off} and the pre-2026-07-26 id {@code none} all reject exactly like a typo
+     * does. Accepting them was a fail-safe meant to stop an old config silently losing background
+     * removal; the owner's call is that a value which is not one of the two live ones must be visible
+     * and fixed, not translated behind the player's back.
      */
     public static String fromArg(String raw) {
         if (raw == null) return null;
         return switch (raw.trim().toLowerCase(Locale.ROOT)) {
-            case "none", "nobgremove", "off"                          -> NONE;
-            case "auto", "edges", "closed", "smart",
-                 "bgremove", "bgremove&more", "bgsmart", "ai"          -> AUTO;
-            default -> null;
+            case NONE -> NONE;
+            case AUTO -> AUTO;
+            default   -> null;
         };
     }
 
     /** Player-facing display name shown in the config menu and chat. */
     public static String displayName(String mode) {
-        return switch (normalize(mode)) {
+        return switch (requireMode(mode)) {
             case AUTO -> "Automatic Background Removal";
             default   -> "No Background Removal";
         };
@@ -255,15 +271,15 @@ public final class BackgroundRemover {
 
     /** Player-facing command argument for the given mode (for /cb config background). */
     public static String commandArg(String mode) {
-        return switch (normalize(mode)) {
+        return switch (requireMode(mode)) {
             case AUTO -> "Auto";
-            default   -> "NoBgRemove";
+            default   -> "NoBackground";
         };
     }
 
     /** Next mode in the cycle: there are only two, so this toggles Auto and Off. */
     public static String next(String mode) {
-        return NONE.equals(normalize(mode)) ? AUTO : NONE;
+        return NONE.equals(requireMode(mode)) ? AUTO : NONE;
     }
 
     /**
@@ -289,6 +305,9 @@ public final class BackgroundRemover {
      * which is the only path that could previously hand the atlas a texture with alpha.
      */
     public static byte[] snapBackgroundColor(byte[] png, String mode, int fillRgb) {
+        // Validated OUTSIDE the catch-all below: that catch exists so a bad picture never breaks a
+        // retexture, and letting it also swallow a bad mode would be the silent fallback §H forbids.
+        boolean snapMode = !NONE.equals(requireMode(mode));
         try {
             BufferedImage read = ImageIO.read(new ByteArrayInputStream(png));
             if (read == null) return png;
@@ -299,7 +318,7 @@ public final class BackgroundRemover {
             // gated on `tolerance > 0`, so with a strength of 0 the always-opaque rule silently did not
             // apply and the hairline came back. Snapping near-fill pixels to the exact fill is still
             // Auto-only, because it cleans up removal artifacts and there are none when removal is off.
-            boolean snap = !NONE.equals(normalize(mode));
+            boolean snap = snapMode;
             int targetR, targetG, targetB;
             if (fillRgb >= 0) {
                 targetR = (fillRgb >> 16) & 0xFF;

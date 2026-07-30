@@ -185,12 +185,9 @@ public final class CreationCommands {
                 if (AnimCommands.maybeCreateAnimated(src, id, name, raw, url, server, postApply)) { endOp.run(); return; }
                 BackgroundRemover.Applied bg = BackgroundRemover.applyReporting(raw, CustomBlocksConfig.backgroundMode);
                 byte[] cleaned = bg.png();
-                if (bg.declined()) {
-                    // §H: an honest refusal must SAY so, or an unchanged bake reads as a bug.
-                    final String why = bg.declineNote();
-                    server.execute(() -> Chat.info(src, "Left \"" + id + "\" as it is — not sure what the background was ("
-                            + why + "). Tell it with /cb bgpick " + id + " <colour>."));
-                }
+                // §H (owner, 2026-07-28): a decline bakes the picture unchanged and says nothing. The
+                // refusal existed to hand the player /cb bgpick; with that command gone there is no
+                // action to offer, and a message that only names a limitation is noise.
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 // Studio "background" colour fills behind the image's transparent pixels (else snap-to-black).
                 png = bgArgb != null ? ImageProcessor.fillBackground(png, bgArgb)
@@ -358,12 +355,9 @@ public final class CreationCommands {
                 // first, BEFORE the resize/pad so corner sampling reads the real background).
                 BackgroundRemover.Applied bg = BackgroundRemover.applyReporting(raw, CustomBlocksConfig.backgroundMode);
                 byte[] cleaned = bg.png();
-                if (bg.declined()) {
-                    // §H: an honest refusal must SAY so, or an unchanged bake reads as a bug.
-                    final String why = bg.declineNote();
-                    server.execute(() -> Chat.info(src, "Left \"" + id + "\" as it is — not sure what the background was ("
-                            + why + "). Tell it with /cb bgpick " + id + " <colour>."));
-                }
+                // §H (owner, 2026-07-28): a decline bakes the picture unchanged and says nothing. The
+                // refusal existed to hand the player /cb bgpick; with that command gone there is no
+                // action to offer, and a message that only names a limitation is noise.
                 byte[] png = ImageProcessor.toBlockPng(cleaned, CustomBlocksConfig.textureSize);
                 // Restore a true black after the resize blends the edges (no-op when off).
                 png = BackgroundRemover.snapBackgroundBlack(png, CustomBlocksConfig.backgroundMode);

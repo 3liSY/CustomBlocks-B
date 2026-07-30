@@ -66,6 +66,28 @@ public final class Chat {
         if (src.getEntity() instanceof ServerPlayerEntity p) { ParticleFx.play(p, "success"); SoundFx.play(p, "success"); }
     }
 
+    /**
+     * A success line whose BODY is a pre-built component — the same brand, glyph and FX as
+     * {@link #success}, for a sentence that carries styling of its own (G11: a category name
+     * rendered in that category's colour tag, clickable and hoverable). Chips ride the tail exactly
+     * as in {@link #successWith}; null chips are skipped.
+     */
+    public static void successRich(ServerCommandSource src, MutableText body, MutableText... chips) {
+        MutableText line = Text.literal(PREFIX).append(body).append(Text.literal(" " + CbFmt.OK + "✔"));
+        for (MutableText chip : chips) {
+            if (chip != null) line.append(Text.literal("  ")).append(chip);
+        }
+        final MutableText out = line;
+        src.sendFeedback(() -> out, false);
+        if (src.getEntity() instanceof ServerPlayerEntity p) { ParticleFx.play(p, "success"); SoundFx.play(p, "success"); }
+    }
+
+    /** The {@link #error} twin for a pre-built component body — [CB] <body> ✖. */
+    public static void errorRich(ServerCommandSource src, MutableText body) {
+        src.sendError(Text.literal(PREFIX).append(body).append(Text.literal(" " + CbFmt.BAD + "✖")));
+        if (src.getEntity() instanceof ServerPlayerEntity p) { ParticleFx.play(p, "error"); SoundFx.play(p, "error"); }
+    }
+
     /** Red-crossed error line: [CB] <body> ✖ */
     public static void error(ServerCommandSource src, String body) {
         src.sendError(Text.literal(PREFIX + CbFmt.BAD + body + " " + CbFmt.BAD + "✖"));

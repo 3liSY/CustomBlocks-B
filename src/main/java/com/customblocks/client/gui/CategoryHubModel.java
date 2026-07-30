@@ -82,10 +82,11 @@ public final class CategoryHubModel {
             out.add(new Row(cat, name, nameArgb(tag, hex), tag, hex, ClientSlotCache.countInCategory(cat),
                     cat.equalsIgnoreCase(def)));
         }
-        // Uncategorized bucket last, only when it has blocks and matches the search.
-        int un = uncategorizedCount();
-        if (un > 0 && (q.isEmpty() || "uncategorized".contains(q)))
-            out.add(new Row(UNCATEGORIZED, "(uncategorized)", 0xFF777777, "", "", un, false));
+        // The system floor, always last and always present — a block lands there on its own, so it is
+        // real even at 0 blocks (G11 D8). Named and greyed like every other surface writes it, never
+        // as a lower-case bucket label.
+        if (q.isEmpty() || "uncategorized".contains(q))
+            out.add(new Row(UNCATEGORIZED, "Uncategorized", 0xFF777777, "", "", uncategorizedCount(), false));
         return out;
     }
 

@@ -95,11 +95,12 @@ public final class CustomBlocksConfig {
     // ── Group 06 / M1 — background remover ────────────────────────────────────
 
     /**
-     * Background removal applied when a block is (re)textured: "none" (off, default),
+     * Background removal applied when a block is (re)textured: "nobackground" (off, default),
      * "auto" (BgCascade works the background out from the picture itself). Removed pixels
-     * become opaque black. There is no strength setting (G10 §H).
+     * become opaque black. There is no strength setting, and no third value: anything else hard
+     * rejects wherever it arrives (G10 §H, 2026-07-26).
      */
-    public static volatile String backgroundMode = "none";
+    public static volatile String backgroundMode = "nobackground";
 
 
     // ── Group 06 / M2+M3 — colour-variant hexes ────────────────────────────────

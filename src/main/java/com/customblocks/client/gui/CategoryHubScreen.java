@@ -9,7 +9,6 @@
  *   ORGANISE— Merge / Move open a {@link CbPopupPicker} of existing categories, no blind typing (L6/L10).
  *   COLOUR  — 16 §-swatches + a custom "#RRGGBB" hex field (L4); one tint wins (server clears the other).
  *   OPTIONS — ★ Default is a toggle (click again to clear, L8) · Sort · Lock all · Unlock all.
- *   DESC    — a description field + Save, with a "saved: …" read-back so you can see it stuck (L9).
  *   BLOCKS  — searchable; drag a row onto a left-list category to move it (or pick it then Move it, L10).
  * Every mutation is a {@link CategoryAdminPayload} to the authoritative server; the server broadcasts a
  * fresh HudSync so the hub refreshes live (NO-REJOIN).
@@ -43,7 +42,6 @@ import static com.customblocks.client.gui.CategoryHubView.LX;
 import static com.customblocks.client.gui.CategoryHubView.NEW_BTN_W;
 import static com.customblocks.client.gui.CategoryHubView.NEW_Y_OFF;
 import static com.customblocks.client.gui.CategoryHubView.Y_BLK;
-import static com.customblocks.client.gui.CategoryHubView.Y_DESC;
 import static com.customblocks.client.gui.CategoryHubView.Y_HEX;
 import static com.customblocks.client.gui.CategoryHubView.Y_RENAME;
 
@@ -58,7 +56,7 @@ public class CategoryHubScreen extends Screen {
     private final CategoryHubDragDrop drag = new CategoryHubDragDrop(); // L10: drag a block onto a category row
     private final CategoryHubView view = new CategoryHubView();         // all drawing + hit-rect geometry
 
-    private CbTextField searchField, nameField, hexField, descField, blockSearchField, newField;
+    private CbTextField searchField, nameField, hexField, blockSearchField, newField;
 
     private final CbHelpOverlay help = new CbHelpOverlay("Category Hub", List.of(
             new CbHelpOverlay.Group("BROWSE", List.of(
@@ -75,6 +73,16 @@ public class CategoryHubScreen extends Screen {
 
     public CategoryHubScreen() { this(null); }
     public CategoryHubScreen(Screen parent) { super(Text.literal("Category Hub")); this.parent = parent; }
+
+    /**
+     * Open focused on one category (G11 C12): a category name clicked in chat lands here with its
+     * key already selected, so the detail pane is showing the thing that was clicked. A blank or
+     * unknown key just opens the hub with nothing selected.
+     */
+    public CategoryHubScreen(Screen parent, String focusKey) {
+        this(parent);
+        if (focusKey != null && !focusKey.isBlank()) this.sel = focusKey;
+    }
 
     @Override
     protected void init() {
@@ -93,11 +101,6 @@ public class CategoryHubScreen extends Screen {
         hexField.setPlaceholder(Text.literal("§8#RRGGBB"));
         hexField.setMaxLength(7);
         addDrawableChild(hexField);
-
-        descField = new CbTextField(textRenderer, rx, BAR_H + Y_DESC, rw - 62, 16, Text.literal("description"));
-        descField.setPlaceholder(Text.literal("§8description shown in the browser"));
-        descField.setMaxLength(120);
-        addDrawableChild(descField);
 
         blockSearchField = new CbTextField(textRenderer, rx + rw - 120, BAR_H + Y_BLK - 3, 120, 14, Text.literal("block search"));
         blockSearchField.setPlaceholder(Text.literal("§8search blocks…"));
@@ -121,7 +124,6 @@ public class CategoryHubScreen extends Screen {
         boolean detail = sel != null;
         if (nameField != null) nameField.visible = detail;
         if (hexField != null) hexField.visible = detail;
-        if (descField != null) descField.visible = detail;
         if (blockSearchField != null) blockSearchField.visible = detail;
     }
 
@@ -177,7 +179,6 @@ public class CategoryHubScreen extends Screen {
             if (real && in(mx, my, view.rUnlock)) { send("unlock", key, ""); return true; }
             if (real && in(mx, my, view.rClear))  { send("color", key, ""); return true; }
             if (real && in(mx, my, view.rSetHex)) { doSetHex(key); return true; }
-            if (real && in(mx, my, view.rSaveDesc)) { send("desc", key, fieldText(descField)); return true; }
             if (real) for (int i = 0; i < view.swatchRects.length; i++)
                 if (in(mx, my, view.swatchRects[i])) { send("color", key, CategoryHubModel.TAGS[i]); return true; }
             for (int i = 0; i < view.blockRects.size(); i++)
@@ -239,12 +240,11 @@ public class CategoryHubScreen extends Screen {
         updateFieldVisibility();
     }
 
-    /** Pre-fill the name box with the current name (L5 inline rename) and the desc box with the saved text. */
+    /** Pre-fill the name box with the current name (L5 inline rename) and the hex box with the saved tint. */
     private void syncFieldsToSelection() {
         if (sel == null) return;
         boolean real = !CategoryHubModel.UNCATEGORIZED.equals(sel);
         if (nameField != null) nameField.setText(real ? CategoryHubModel.titleCase(sel) : "");
-        if (descField != null) descField.setText(ClientSlotCache.description(realKey(sel)));
         if (hexField != null) hexField.setText(ClientSlotCache.colorHex(realKey(sel)));
     }
 

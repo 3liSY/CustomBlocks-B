@@ -50,7 +50,6 @@ public final class ClientSlotCache {
     private static volatile Map<Integer, Entry> INDEX = Collections.emptyMap();
     private static volatile Map<String, String> CAT_COLORS = Collections.emptyMap(); // category → §-colour tag
     private static volatile Map<String, String> CAT_HEX = Collections.emptyMap();     // category → custom "#RRGGBB" tint
-    private static volatile Map<String, String> CAT_DESC = Collections.emptyMap();    // category → description
     private static volatile Map<String, String> CAT_SORT = Collections.emptyMap();    // category → sort mode (non-alpha)
     private static volatile Set<String> ALL_CATS = Collections.emptySet(); // every known category, incl. 0-block ones (§G27 L11)
     private static volatile String DEFAULT_CAT = ""; // studio's default category, "" = none
@@ -64,7 +63,6 @@ public final class ClientSlotCache {
             Map<Integer, Entry> map = new HashMap<>();
             Map<String, String> colors = new HashMap<>();
             Map<String, String> hexes = new HashMap<>();
-            Map<String, String> descs = new HashMap<>();
             Map<String, String> sorts = new HashMap<>();
             Set<String> allCats = new TreeSet<>();
             String defCat = "";
@@ -77,8 +75,6 @@ public final class ClientSlotCache {
                         for (var m : e.getValue().getAsJsonObject().entrySet()) colors.put(m.getKey(), m.getValue().getAsString());
                     else if (key.equals("_hex") && e.getValue().isJsonObject())
                         for (var m : e.getValue().getAsJsonObject().entrySet()) hexes.put(m.getKey(), m.getValue().getAsString());
-                    else if (key.equals("_desc") && e.getValue().isJsonObject())
-                        for (var m : e.getValue().getAsJsonObject().entrySet()) descs.put(m.getKey(), m.getValue().getAsString());
                     else if (key.equals("_sort") && e.getValue().isJsonObject())
                         for (var m : e.getValue().getAsJsonObject().entrySet()) sorts.put(m.getKey(), m.getValue().getAsString());
                     else if (key.equals("_categories") && e.getValue().isJsonArray())
@@ -113,7 +109,6 @@ public final class ClientSlotCache {
             if (geometryChanged) requestWorldRemesh();
             CAT_COLORS = Collections.unmodifiableMap(colors);
             CAT_HEX = Collections.unmodifiableMap(hexes);
-            CAT_DESC = Collections.unmodifiableMap(descs);
             CAT_SORT = Collections.unmodifiableMap(sorts);
             ALL_CATS = Collections.unmodifiableSet(allCats);
             DEFAULT_CAT = defCat;
@@ -169,12 +164,6 @@ public final class ClientSlotCache {
         return h == null ? "" : h;
     }
 
-    /** The description for a category, or "" if none set (Group 27 Category Hub). */
-    public static String description(String category) {
-        String d = CAT_DESC.get(category);
-        return d == null ? "" : d;
-    }
-
     /** The sort mode for a category ("alpha" default, or "custom"), Group 27 Category Hub. */
     public static String sortOrder(String category) {
         String s = CAT_SORT.get(category);
@@ -224,7 +213,7 @@ public final class ClientSlotCache {
 
     public static void clear() {
         INDEX = Collections.emptyMap(); CAT_COLORS = Collections.emptyMap();
-        CAT_DESC = Collections.emptyMap(); CAT_SORT = Collections.emptyMap();
+        CAT_SORT = Collections.emptyMap();
         ALL_CATS = Collections.emptySet(); DEFAULT_CAT = "";
     }
 

@@ -64,7 +64,6 @@ public final class CategoryAdminBridge {
                                         : "\"" + c + "\" is now the default category for new blocks.");
                                 HudSync.broadcast(player.getServer()); } // NO-REJOIN: all players
             // §G27 Category Hub ops — reuse the shared CategoryService engine (same as /cb category …).
-            case "desc"   -> report(src, player, CategoryService.setDescription(c, arg));
             case "sort"   -> report(src, player, CategoryService.setSort(c, arg));
             case "merge"  -> report(src, player, CategoryService.merge(c, arg)); // c = source, arg = target
             case "lock"   -> report(src, player, CategoryService.lockAll(c, true));
@@ -73,9 +72,14 @@ public final class CategoryAdminBridge {
         }
     }
 
-    /** Report a CategoryService.Outcome to chat, then live-push the change to every client (NO-REJOIN). */
+    /**
+     * Report a CategoryService.Outcome to chat, then live-push the change to every client (NO-REJOIN).
+     *
+     * Same rails as a typed command: CategoryChat colours the category name, makes it clickable, and
+     * hangs the outcome's follow-up chip off the line, so a Hub action and a typed one read alike.
+     */
     private static void report(ServerCommandSource src, ServerPlayerEntity player, CategoryService.Outcome o) {
-        if (o.ok()) Chat.success(src, o.msg()); else Chat.error(src, o.msg());
+        CategoryChat.report(src, o);
         if (o.ok()) HudSync.broadcast(player.getServer());
     }
 

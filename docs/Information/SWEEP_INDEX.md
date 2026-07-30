@@ -59,7 +59,7 @@ These override the original audit. Any group doc still assuming the old state is
 | G09 | Backup/Safety | `backup`, `restore`, `safety`, `panic`, `expiry`, `deletedblocks`, `recover`. ~~showbrokenblocks~~→G16 |
 | G10 | Color/Image | `colors`, `customcolor`, `gradient`, `palette`, `bgstudio`, bg-removal config (`dress` DROPPED) |
 | G11 | Category | `blockscat`, `givecategory`, `importcategory`, `sharecategory`, category GUIs |
-| G12 | Export/Marketplace | export rework, `import`, `market`, `marketplace`, templates |
+| G12 | Export & Import | export rework, `importfolder`, import run recall (`market`/`marketplace` → G20, restore → G09, since 2026-07-30) |
 | G13 | Arabic | `arabic` word/letters/auto-join/font |
 | G14 | Animation | GIF/animation, `pause`/`resume` of animation; **`video`/`extract` REMOVED** |
 | G15 | AI Textures | `ai` command + AI config |

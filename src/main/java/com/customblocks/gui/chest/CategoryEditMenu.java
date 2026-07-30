@@ -69,7 +69,6 @@ public final class CategoryEditMenu {
         blocks.sort(Comparator.comparing(d -> d.displayName().toLowerCase()));
 
         String colorTag = CategoryMetadataStore.getColorTag(cat);
-        String desc = CategoryMetadataStore.getDescription(cat);
         String sortOrder = CategoryMetadataStore.getSortOrder(cat);
         String displayBlock = CategoryMetadataStore.getDisplayBlock(cat);
 
@@ -92,8 +91,7 @@ public final class CategoryEditMenu {
         // ── Row 0: Header ────────────────────────────────────────────────────
         m.set(4, Icons.glint(CategoryListMenu.iconFor(cat),
                 titleColor + cat,
-                "§7" + total + " block" + (total == 1 ? "" : "s"),
-                desc.isEmpty() ? "§8No description set" : "§7" + desc));
+                "§7" + total + " block" + (total == 1 ? "" : "s")));
 
         // ── Row 1: Main actions ──────────────────────────────────────────────
 
@@ -127,7 +125,7 @@ public final class CategoryEditMenu {
                                     GuiRouter.render(p, MenuKey.of(Dest.CATEGORY_EDIT, cat));
                                     return;
                                 }
-                                GuiRouter.runAndReopen(p, "category rename " + cat + " " + nn,
+                                GuiRouter.runAndReopen(p, "category rename " + cat + " into " + nn,
                                         MenuKey.of(Dest.CATEGORY_EDIT, nn));
                             },
                             () -> GuiRouter.render(p, MenuKey.of(Dest.CATEGORY_EDIT, cat)));
@@ -215,18 +213,6 @@ public final class CategoryEditMenu {
                     CategoryMetadataStore.setColorTag(cat, next);
                     GuiFx.click(p);
                     GuiRouter.render(p, MenuKey.of(Dest.CATEGORY_EDIT, cat));
-                });
-
-        // Description (slot 21) — anvil text input
-        m.set(21, Icons.of(Items.PAPER, "§e§lDescription",
-                        desc.isEmpty() ? "§7No description set" : "§7\"" + desc + "\"",
-                        "§8Opens an anvil to type one"),
-                (p, b, a) -> {
-                    GuiFx.click(p);
-                    AnvilPrompt.open(p, "Category description", new ItemStack(Items.PAPER), desc,
-                            text -> GuiRouter.runAndReopen(p, "category desc " + cat + " " + text,
-                                    MenuKey.of(Dest.CATEGORY_EDIT, cat)),
-                            () -> GuiRouter.render(p, MenuKey.of(Dest.CATEGORY_EDIT, cat)));
                 });
 
         // Sort Order (slot 23)

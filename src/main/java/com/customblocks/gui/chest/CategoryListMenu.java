@@ -54,12 +54,10 @@ public final class CategoryListMenu {
             // Colour tag tints the category name
             String colorTag = CategoryMetadataStore.getColorTag(cat);
             String nameColor = colorTag.isEmpty() ? "§e" : colorTag;
-            String desc = CategoryMetadataStore.getDescription(cat);
 
             // Build lore lines
             List<String> lore = new ArrayList<>();
             lore.add("§7" + count + " block" + (count == 1 ? "" : "s"));
-            if (!desc.isEmpty()) lore.add("§7" + desc);
             lore.add("§a▸ Left-click to browse");
             lore.add("§e▸ Right-click to edit");
 

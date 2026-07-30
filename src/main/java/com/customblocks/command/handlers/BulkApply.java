@@ -80,7 +80,7 @@ public final class BulkApply {
     /** Re-id blocks by prefix / suffix / find-and-replace (slots and textures are untouched). */
     public static void reid(ServerCommandSource src, String filter, String mode, String a, String b) {
         String m = mode == null ? "" : mode.toLowerCase(Locale.ROOT);
-        if (!isTextMode(m)) { BulkReidCommands.usage(src); return; }
+        if (!isTextMode(m)) { BulkReidCommands.badMode(src); return; }
         if (!hasText(src, m, a)) return;
         List<SlotData> blocks = resolve(src, filter);
         if (blocks == null) return;

@@ -31,6 +31,7 @@
 | P | Color-family builder Screen (from G10) | Planned 📜 | Discussion ✏️ |
 | R | CategoryHubScreen routing for category browser (from G11) | Designed ⏳ | - |
 | T | Export Dashboard Screen replacement (from G11) | Designed ⏳ | - |
+| U | CategoryHubScreen full-parity manager (from G11) | Designed ⏳ | U9-U13 built 🎯 |
 | A | Block Creation Studio baseline | Done ✅ | - |
 | K | Premium future screen ideas | Planned 📜 | Parked 💤 |
 
@@ -372,13 +373,41 @@
 | S1 | Open `/cb create` and switch to the Category workspace. | Wide workspace appears instead of the rejected cramped panel. | 🎯 | 🎯 |
 | S2 | Assign a new block to an existing category from the workspace. | Block saves with the selected main category and appears in category browsing. | 🎯 | 🎯 |
 | S3 | Create a new category from the workspace. | Category record is created without deleting or hiding existing categories. | 🎯 | 🎯 |
-| S4 | Edit icon/color/description-style fields if present. | Category customization persists and exports as category metadata. | 🎯 | 🎯 |
+| S4 | Edit icon/colour/style fields if present. | Category customization persists and exports as category metadata. There is no description field — descriptions were removed `2026-07-28` (TG11 §D). | 🎯 | 🎯 |
 
 ## T - Export Dashboard Screen replacement (from G11) - Designed ⏳
 
-> Moved from G11 (2026-07-25): G11 keeps the export ZIP contents and schema, G12 owns the ZIP artifact and download link (TG12 §A); this Screen only needs to reach the same export result through a GUI entry point.
+> Moved from G11 (2026-07-25): G11 keeps the export ZIP contents and schema, G12 owns the ZIP artifact (TG12 §A) and G20 owns the download link (TG20 §L); this Screen only needs to reach the same export result through a GUI entry point.
+>
+> **Scope handover (`2026-07-30`):** TG12 is now command-routes-only. Every export surface that opens a screen lives here, including the `/cb export` dashboard entry point and the whole Export Dashboard conversion that TG12 used to carry. A **folder-import preview Screen** also belongs here if it is ever wanted — G12 ships the command with a clickable chat preview and an anvil rename box first, and a screen version is a later G27 upgrade, not a G12 target.
 
 *(No test rows yet — design discussion pending.)*
+
+## U - CategoryHubScreen full-parity manager (from G11) - Designed ⏳
+
+> **Scope handover (`2026-07-28`):** TG11 is now chat-and-typing only. Every category check that needs a screen open lands here — U9-U12 arrived from TG11's clickable-chat rows, and U9-U11 are already **built**, not merely designed, so they can be tested in the same round as TG11 §C and §D.
+
+| | |
+| --- | --- |
+| **Check** | The Category Hub can do everything the category commands can, without dropping back to chat. |
+| **Pass rule** | Every row passes twice (singleplayer and server). |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| U1 | Create, rename, colour, and set an icon on a category from the Hub. | All four land without touching chat. (Describe was dropped — descriptions no longer exist, TG11 §D.) | ⏳ | ⏳ |
+| U2 | Delete a category from the Hub that has blocks living nowhere else. | The same two-choice prompt as TG11 §C4/§C5, as a dialog rather than chat buttons. | ⏳ | ⏳ |
+| U3 | Combine two categories from the Hub. | Blocks end up in the target and the source category is deleted — same result as TG11 §C7. | ⏳ | ⏳ |
+| U4 | Drag blocks between categories. | Memberships update; nothing is silently removed from anywhere else. | ⏳ | ⏳ |
+| U5 | Multi-select several blocks, then move / remove / give them. | The action applies to the whole selection in one go. | ⏳ | ⏳ |
+| U6 | Type in the search box. | The block grid filters as you type, independently of the sort mode. | ⏳ | ⏳ |
+| U7 | Give, export, and share a category from the Hub. | Same results as the command paths. | ⏳ | ⏳ |
+| U8 | Look for `Uncategorized` in the Hub. | Present, styled dim/italic as a system floor rather than an owner-made category. | ⏳ | ⏳ |
+| U9 | Click a category name in a `[CB]` chat line. | The Hub opens focused on that category. *(Moved from TG11 on `2026-07-28` — TG11 checks the chip fires; whether the Hub itself is right is judged here.)* | 🎯 | 🎯 |
+| U10 | Click a category name inside `/cb category info` or `/cb category list` output. | Same jump as U9 from a listing line. *(Moved from TG11 on `2026-07-28`; the colour/hover halves stayed in TG11 §C8.)* | 🎯 | 🎯 |
+| U11 | Open the Hub with `Uncategorized` holding 0 blocks. | It is still listed, greyed as the system floor. *(Moved from TG11 on `2026-07-28`; the listing/tab-complete halves stayed in TG11 §C9.)* | 🎯 | 🎯 |
+| U12 | Look at the detail pane of a selected category. | No Description label, text box, Save button or "saved: …" read-back — descriptions were removed root-and-branch (TG11 §D). BLOCKS moves up into the freed space with no gap left behind. | 🎯 | 🎯 |
+| U13 | Rename a category with the Rename button in the chest category editor. | Works, including names with a space. *(Moved from TG11 §D4 on `2026-07-30` — the command-side rename stayed in TG11.)* | 🎯 | 🎯 |
 
 ---
 

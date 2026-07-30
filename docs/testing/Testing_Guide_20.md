@@ -4,7 +4,7 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Block vault sharing is confirmed; backup R2 setup, conflict screen, Discord, Vault Hub, and signing remain open. |
+| **Verdict** | Block vault sharing is confirmed; backup R2 setup, export download delivery (§L, moved from G12), conflict screen, Discord, Vault Hub, and signing remain open. |
 | **Progress** | 🟩🟩🟩🟥🟥🟥🟥🟥🟥🟥 30% |
 | **Last tested** | 2026-06-28 |
 | **Jar** | `customblocks-1.0.0.jar` |
@@ -14,6 +14,7 @@
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
 | C | Backup cloud sync to R2 | Built 🎯 | Blocked ‼️ |
+| L | Export download delivery (from G12) | Built 🎯 | Regression 💔, Discussion ✏️ |
 | K | Category vault share/import (from G11) | Planned 📜 | Blocked ‼️, Discussion ✏️ |
 | D | Vault conflict import screen handoff | Designed ⏳ | Discussion ✏️ |
 | E | Discord event embeds | Designed ⏳ | Discussion ✏️ |
@@ -39,7 +40,9 @@
 - Keep one static block and one animated block available.
 - Worker-side changes require owner Cloudflare/R2 deploy evidence; a mod jar alone cannot confirm them.
 - §K needs a category (`testcat`) with assigned blocks; G11 owns the category schema, G20 owns transport.
-- §K carries `Discussion ✏️` (2026-07-25): whether a shared category carries G11's multi-membership data is undecided and must be settled with G11 and G12 before the payload is designed. G11's membership model is built as of 2026-07-25 and a shared category still carries one category per block.
+- §L moved here from TG12 (2026-07-30): handing an export file to someone off the server machine is internet transport, so G20 owns it. G12 keeps writing the file and naming it in chat. This server's host blocks ports 8080-8081 and public-address detection fails, which is why the current link is unreachable.
+- §L carries `Discussion ✏️` (2026-07-30): the owner has not decided whether the download route should exist at all, be owner-only, or be replaced by a Vault URL. Until then behaviour stays exactly as-is — do not "fix" the wording on a guess.
+- §K carries `Discussion ✏️` (2026-07-25): the Vault payload for a shared category is still undesigned. The **local** export side was settled on 2026-07-30 — every membership travels, one format only (G12 §A) — so §K should follow that rule unless there is a transport reason not to. A shared category currently carries one category per block.
 
 ## A - Block vault share and master gate - Done ✅
 
@@ -94,6 +97,25 @@
 | C4 | Break worker/R2 intentionally and save backup. | Local save still succeeds; warning names the cloud failure cause. | 🎯 | 🎯 |
 | C5 | Run `/cb vault codes`. | Backup sync logs a code/history entry with kind and label. | 🎯 | 🎯 |
 | C6 | Trigger auto-backup or safety backup. | It does not sync unless the manual backup path is used. | 🎯 | 🎯 |
+
+## L - Export download delivery (from G12) - Built 🎯
+
+> Moved from G12 (2026-07-30) with its regression. G12 writes the export file and reports it honestly; getting that file onto someone else's computer is transport, which is this Group's job.
+
+| | |
+| --- | --- |
+| **Check** | A `[download]` offer either reaches the person who clicked it or never claims it can. |
+| **Pass rule** | Host click, remote click, host/IP leak, console route, and category-export route rows pass twice. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+| **Blocked** | Needs an owner decision (keep / owner-only / replace with Vault URL) plus a reachable port and address, neither of which this host currently provides. |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| L1 | Click `[download]` from the host machine. | Local download works when `httpHost` is local. | 🎯 | ➖ |
+| L2 | Click `[download]` from a remote client. | Either the file actually downloads, or the message plainly says it is server-side only. No dead link. | ➖ | 💔 |
+| L3 | Inspect every download message. | No raw server host or IP is ever shown to a player. | 🎯 | 🎯 |
+| L4 | Run `/cb category export exporttest` and use its link. | Same link behaviour as the single-block route — one rule, not two. | 🎯 | 🎯 |
+| L5 | Run an export from console. | Plain text result, no link machinery, no error. | 🎯 | ➖ |
 
 ## K - Category vault share/import (from G11) - Planned 📜
 
@@ -197,7 +219,7 @@
 
 <details><summary>💔 <b>Regression</b></summary>
 
-*(none)*
+- §L Export download delivery — 💔 `2026-06-21` (moved here from G12 `2026-07-30`): Remote download links can be unreachable or host-leaky.
 
 </details>
 
@@ -211,7 +233,7 @@
 
 - §G Vault Hub Screen — 💤 `2026-06-27`: Chat commands remain usable until QoL screen work resumes.
 - §H Request signing, identity, and owner control plane — 💤 `2026-06-27`: Future owner web dashboard/control plane track.
-- §I Wave-3 Block Network extras — 💤 `2026-06-21`: Marketplace, cross-server library, community, external creation, and web extras are later phases.
+- §I Wave-3 Block Network extras — 💤 `2026-06-21`: Marketplace, cross-server library, community, external creation, and web extras are later phases. G12's duplicate Marketplace section was deleted on `2026-07-30`; §I is the only home for it.
 - §J Auto-update handoff to G32 — 💤 `2026-07-11`: Server-source jar update flow belongs to G32.
 - Dedicated `/block` worker route — 💤 `2026-06-21`: Reuse category zip unless it proves limiting.
 - In-game Discord GUI editor — 💤 `2026-06-21`: G21 owns it.
@@ -236,5 +258,6 @@
 - [ ] Keep conflict Screen findings in G27.
 - [ ] Keep Discord GUI editor findings in G21.
 - [ ] Keep category schema/merge findings linked to G11; G20 only owns §K transport.
+- [ ] Keep export file contents and folder-import findings in G12; G20 only owns §L delivery.
 
 </details>

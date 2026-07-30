@@ -2,7 +2,7 @@
 
 > Group 05 makes custom-block textures reach every player through the correct delivery path, including a server-forced 128 px path that lets the production modpack join with a 2 GB client heap.
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05_Paused.md) · [All Groups](README.md)
 
 [Direction](#direction) · [Decisions](#locked-decisions) · [Plan](#feature-plan) · [Connections](#cross-group-contracts) · [History](#superseded-decisions)
 
@@ -24,6 +24,7 @@ The weak-client release target is concrete: a client running the real production
 | Dedicated-server manifest, changed-file transport, resume, integrity, and application acknowledgement | Tool mutation behavior: G06 |
 | Client pack resync and CustomBlocks texture-cache cleanup after a mutation or resolution change | Resource-pack settings screens: G27 |
 | Pack protocol compatibility gate and delivery diagnostics | General mod-version policy and release naming: G20 |
+| Disconnect classification and the connection-stability baseline across every cause | Host capacity and individual players' own network links |
 
 ## Direction
 
@@ -50,6 +51,7 @@ The current client-only low-resolution implementation is migration input, not th
 | 2026-07-18 | Variant publication is transactional and fail-safe. | An invalid new texture uses the last-known-good transformed file or, if none exists, a target-sized missing-texture placeholder; it never falls back to a full-size file for a forced-low-res player. |
 | 2026-07-18 | Dedicated transfer is receiver-controlled, bounded, resumable, and verified through application. | The server cannot report completion merely because packets were queued; the client acknowledges write, hash verification, and successful application. |
 | 2026-07-18 | The server has a public port reachable from outside the LAN; the hybrid HTTP(S)-first plus in-band-fallback transport is locked as the target §E design. | §E moves from "pending owner lock" to a buildable, locked design. |
+| 2026-07-26 | G05 owns connection stability as a whole, not pack delivery alone: every disconnect class — timeout, connection reset, oversized packet, and restart — is diagnosed here. Owner call on reopening the question. | Reversing the narrower reading that would have handed the non-pack timeouts to a new group. Kept together because the classes are only separable with evidence that spans all of them: the measurement that cleared pack transport (4 of 86 timeouts near a sync) is the same measurement that isolated the simultaneous-drop class as a real defect. Splitting them would have split that evidence. G05 does not thereby own host quality or the players' own links; it owns naming which class a disconnect belongs to, and fixing the ones that are the mod's. |
 
 ## Feature Plan
 
@@ -254,6 +256,12 @@ An incompatible jar is rejected with a useful message before a large transfer, a
 - Capture Java Flight Recorder allocation/heap evidence, JVM/native summaries, actual atlas dimensions, and the OpenGL maximum texture size during the production 2 GB acceptance run.
 - Obtain the latest failing client's crash report and matching `latest.log`; historical atlas overflow establishes a risk, but does not prove the current failure has the same cause.
 - Fix stalls, backpressure, and memory peaks before considering any timeout change. A narrowly active pack-sync grace may be tested under controlled latency/loss; a global timeout increase is not the primary fix.
+- Classify a disconnect by **how many players it took down at once** before assigning a cause. Owner observation 2026-07-26, three distinct patterns: the owner alone, another player alone, or everyone simultaneously — and the simultaneous case happens while a block is being created. One player dropping is a link failing; separate connections do not fail in unison, so a simultaneous drop is the server going silent to all of them at the same instant. Only the simultaneous class is this project's defect. Sorting by this first is what stops the single-player noise from burying it.
+- The simultaneous class is a server-thread freeze during image creation, and the obvious explanation is wrong. `CreationCommands.createWithTexture` runs the download and all image work on its own thread, touching the server thread only inside `server.execute`, so a slow bake cannot stall the main thread. Yet `Client disconnected with reason: Timed out` is only written after 30 seconds of server silence, and the G10 §HB15 trace shows exactly that: `Fetching the image` at 22:00:08, disconnect at 22:00:46, the identical create then succeeding in 11 seconds after reconnect. The one mechanism that crosses the thread boundary is allocation — a 3000×1500 source is ~18 MB per full-frame copy and the cascade holds several at once, which on the owner's free-tier host is enough stop-the-world GC to silence the server thread. Off-thread protects against slow work, not against allocating too much. **Peak heap per bake is the measurement to take, not thread placement**, and a bounded working set is the fix rather than a timeout change.
+- Single-player disconnects are the background rate and are not this Group's to fix. Measured 2026-07-26 from the owner's client logs (`%APPDATA%/.minecraft/logs`, five months retained): July shows 21 `Timed out` and 10 `Connection reset`, and 14 of the 21 timeouts had no CustomBlocks image, pack, or bulk activity within the preceding two minutes — one landed mid-chat with the mod idle. Record the rate so a future change can be judged against it; do not chase it.
+- Resource-pack transport is cleared as the timeout cause and must not be re-blamed without new evidence. Across April-July, of 86 `Timed out` disconnects only **4 fell within 30 seconds of a join or pack sync**, while 47 landed 10+ minutes into a settled session. The §E transport design is not what is dropping these players.
+- Monthly disconnect counts are recorded as the stability baseline (2026-02 → 2026-07 client logs): `Timed out` 0/1/31/24/10/21, `Connection reset` 0/3/17/48/9/10, server restarts 1/6/11/36/6/11. April and May are the outlier months; the current rate is neither a regression nor resolved.
+- Oversized `custom_payload` kicks (`Packet too large`, including `customblocks:slot_update` and `customblocks:hud_sync`) run 2026-03-27 through 2026-05-12 and stop. Treat as already fixed; do not reopen without a dated recurrence.
 
 ## Current Implementation Baseline and Migration Risks
 
@@ -353,7 +361,7 @@ This section records the current-code facts the replacement must deliberately re
 
 ## References
 
-[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05.md) · [All Groups](README.md)
+[Dashboard](../testing/Dashboard.md) · [Testing Guide](../testing/Testing_Guide_05_Paused.md) · [All Groups](README.md)
 
 - [G06 Tools](GROUP_06_TOOLS.md)
 - [G10 Color and Image Tools](GROUP_10_COLOR_IMAGE.md)

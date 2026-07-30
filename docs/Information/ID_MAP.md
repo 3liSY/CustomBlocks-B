@@ -53,7 +53,7 @@ Rules:
 
 ```
 G01 Legacy Audit        G11 Category            G21 Config GUI
-G02 Chest GUI           G12 Export/Marketplace  G22 Permissions
+G02 Chest GUI           G12 Export & Import     G22 Permissions
 G03 HUD / ESC           G13 Arabic              G23 Player Experience
 G04 Chat                G14 Animation/Video     G24 Macros
 G05 Resource Pack       G15 AI Textures         G25 Block Mgmt Extras
@@ -144,7 +144,7 @@ GROUP MAPS below — **all 30 groups are mapped.** These rows are **drafted only
 | G09 Backup / Safety | ✅ | ⏳ | ⏳ |
 | G10 Color/Image (+legacy) | ✅ | ⏳ | ⏳ |
 | G11 Category | ✅ | ⏳ | ⏳ |
-| G12 Export / Marketplace | ✅ | ⏳ | ⏳ |
+| G12 Export & Import | ✅ | ⏳ | ⏳ |
 | G14 Animation/Video (+legacy) | ✅ | ⏳ | ⏳ |
 | G15 AI Textures | ✅ | ⏳ | ⏳ |
 | G16 Diagnostics | ✅ | ⏳ | ⏳ |
@@ -244,6 +244,7 @@ Every legacy Arabic ID, reconciled into one `G13-n` sequence. Overlaps merged.
 | G13-23 | Auto-join flicker / transparent-flash on placement + recolour | — (new 06-27) | 🔴 locked fix, not built | tail of G13-12 Cause 2; render-thread only |
 | G13-24 | Migrate `setglow` onto the `CbBlock` contract (Arabic letters) | — (was tagged G13-23) | 🔍 designed | renumbered to free G13-23 for the flicker |
 | G13-25 | Full settings-sheet parity for letters (glow/hardness/sound/collision/bg, one sheet per letter+colour) | — (new 07-02) | 📝 designed, not built | absorbs G13-24; supersedes G13-23's fix direction; Deleter (G13-19) re-fixed as part of it |
+| G13-26 | Number art rebuilt on the live Square hexes + exact background repaint (retires the BackgroundRemover guess) | — (new 07-30) | 🛠️ built, untested | TG13 §H; owner report "the numbers left are the broken ones"; art regenerated for all 4 colours, `ArabicNumberArt` solves coverage from the bundled black+red pair |
 
 ---
 
@@ -442,13 +443,18 @@ Every legacy Arabic ID, reconciled into one `G13-n` sequence. Overlaps merged.
 | G11-2 | Auto-categorize + category display-block services (`AutoCategorizeManager`, `CategoryDisplayBlockManager`) | R5 (category part) | ❔ — R5 colour service → G10-5 |
 | G11-3 | Category Forge replacement — real category records, multi-category assignment, one main badge, unlimited tree/subcategories, `/cb create` Category tab, full in-game customization, delete modes, migration | 2026-06-30 owner design lock + old CustomBlocks inspiration | 🟡 cramped first `/cb create` sample rejected; wide workspace sample built in `StudioCategoryWorkspacePanel`; `/cb category` + `/cb categories` still old and must be rebuilt next |
 
-## G12 — Export / Marketplace
+## G12 — Export & Import
+
+> Renamed and rescoped 2026-07-30. G12 is command routes only: write export files, read them back, `importfolder`. Screens → G27, internet delivery → G20.
 
 | New | Title | was | Status |
 |---|---|---|---|
-| G12-1 | Universal Export Dashboard — export system rework | 17.15 · Dec §11 | ❔ |
-| G12-2 | Marketplace + share/import — `sharecategory/importcategory/exportblock/importblock/market` | Group H | ❔ — cloud transport → G20 |
-| G12-3 | Export formats — litematic + schem + standalone vanilla resource pack | Dec §H | ❔ |
+| G12-1 | Export command routes + honest result messages (count · file · size · folder); one export layout carrying full category membership | 17.15 · Dec §11 | 🎯 built, needs retest — Screen half moved to G27 §T |
+| G12-2 | ~~Marketplace + share/import~~ | Group H | ➡️ G20 — Vault share (G20 §A) already built and confirmed; Marketplace parked at G20 §I. `exportblock`/`importblock` Blueprints scrapped 2026-07-30 |
+| G12-3 | ~~Export formats — litematic + schem + standalone vanilla resource pack~~ | Dec §H | 👎 scrapped 2026-07-30 — G05 owns resource packs; litematic/schem save builds, not blocks |
+| G12-4 | `importfolder` image overhaul — dedicated import folder, zip-drop unpack, preview before commit, clickable problem fixes + anvil rename, `/cb create` naming, `done/` move + resume, shared progress panel, G09 pre-run backup, one batch undo | IMAGE_INPUT_OVERHAUL | ⏳ designed, JSON-only version exists |
+| G12-5 | Import run recall — bring back the last run's report after chat scrolls | 2026-07-30 owner decision | ⏳ designed |
+| — | ~~Restore blocks from an export zip~~ | 2026-07-30 | 👎 scrapped same day — G09 backup/restore already does it |
 
 ## G15 — AI Textures
 

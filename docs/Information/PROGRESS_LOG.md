@@ -86,7 +86,9 @@ Jar builds green (JDK 21), every gate passing. TG11 §A → `Built 🎯`, all A1
 NOT confirmed in-game.
 
 ### Still open
-- Export/import still carries one category per block — parked `Discussion ✏️` in TG12 §A / TG20 §K.
+- Export/import still carries one category per block in code. The **decision** was settled 2026-07-30
+  (local export carries every membership, one format only — TG12 §A9); the build has not happened.
+  Remote share payloads stay `Discussion ✏️` in TG20 §K.
 - Chest category menus untouched; the display shadow is what keeps them readable until G27.
 
 ---

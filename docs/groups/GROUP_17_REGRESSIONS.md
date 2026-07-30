@@ -178,7 +178,7 @@ The Group guards command capability; it does not own visual Search UI design.
 
 - [G06 Tools and Block Interaction](GROUP_06_TOOLS.md)
 - [G09 Backup, Data Safety, and Trash](GROUP_09_BACKUP_SAFETY.md)
-- [G12 Export and Marketplace](GROUP_12_EXPORT_MARKETPLACE.md)
+- [G12 Export & Import](GROUP_12_EXPORT_MARKETPLACE.md)
 - [G25 Block Management Extras](GROUP_25_BLOCK_MANAGEMENT_EXTRAS.md)
 - [G27 Screens](GROUP_27_SCREENS.md)
 - [G28 Create Studio](GROUP_28_CREATE_STUDIO.md)

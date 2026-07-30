@@ -108,8 +108,11 @@ public final class AttributeCommands {
                                 // /cb category), so an empty category still completes and a typo can't
                                 // quietly invent one.
                                 .suggests((c, b) -> {
-                                    b.suggest("none");
-                                    return CategoryCommands.suggestCategories(c, b);
+                                    // Prefix-filter "none" like every other suggestion here (TG11 A1):
+                                    // b.suggest() adds unconditionally, so it used to keep offering
+                                    // itself after unrelated text was already typed.
+                                    if ("none".startsWith(b.getRemaining().toLowerCase(Locale.ROOT))) b.suggest("none");
+                                    return CategorySuggest.categories(c, b);
                                 })
                                 .executes(ctx -> setCategory(ctx,
                                         StringArgumentType.getString(ctx, "id"),
@@ -288,8 +291,10 @@ public final class AttributeCommands {
         UndoManager.recordMembership(actor(src), before.customId(), was,
                 CategoryMembershipStore.of(before.customId()), "category");
         HudSync.broadcast(src.getServer()); // NO-REJOIN: HUD category updates live for all players
-        Chat.success(src, "\"" + id + "\" is now in " + String.join(", ", added)
-                + " (" + CategoryMembershipStore.of(before.customId()).size() + " total).");
+        // G11 C13: the success line carries the obvious next step — open the category it landed in.
+        Chat.successRich(src, CategoryChat.decorate("\"" + id + "\" is now in " + String.join(", ", added)
+                        + " (" + CategoryMembershipStore.of(before.customId()).size() + " total)."),
+                CategoryChat.viewButton(added.get(0)));
         return 1;
     }
 

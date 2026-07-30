@@ -4,31 +4,27 @@
  * Bulk re-id (Group 07 §D): change the custom id of many blocks at once by a pattern transform —
  * the id-counterpart of /cb bulkrename (which transforms the display name). Each matched block keeps
  * its slot index (so textures + placed blocks are untouched, no pack rebuild), exactly like the
- * single /cb reid. Modes mirror bulkrename:
+ * single /cb reid. Modes are prefix, suffix, and replace.
  *
- *   /cb bulkreid <filter> prefix <text>          newId = text + oldId
- *   /cb bulkreid <filter> suffix <text>          newId = oldId + text
- *   /cb bulkreid <filter> replace <old> <new>    newId = oldId.replace(old, new)
+ * SCREEN-ONLY SINCE 2026-07-26 (G07 locked decision). The chat argument forms
+ * (/cb bulkreid <filter> prefix|suffix|replace …) are gone: renaming from chat is the wrong surface
+ * for an operation that needs to show what it is about to touch. /cb bulkreid takes no arguments and
+ * opens the Bulk Workbench on its Re-ID op, whose preview reproduces the skip rules before Apply.
+ * Typing the old form is answered with where it went, not with a Brigadier syntax error.
  *
- * Per block we SKIP (and report): locked blocks, no-op transforms (newId == oldId), invalid ids
- * (must be the same charset as /cb create), and collisions — a newId already taken by a block, or
- * already claimed by an earlier block in this same batch (this also rules out unsafe id swaps).
- * The whole batch records ONE undo entry (REID children), so a single /cb undo re-ids them all back.
- * Big/"all" batches are held for /cb confirm, like the other bulk ops.
+ * The transform itself is unchanged and still lives here — the Screen calls it. Per block we SKIP (and
+ * report): locked blocks, no-op transforms (newId == oldId), invalid ids (must be the same charset as
+ * /cb create), and collisions — a newId already taken by a block, or already claimed by an earlier
+ * block in this same batch (this also rules out unsafe id swaps). The whole batch records ONE undo
+ * entry (REID children), so a single /cb undo re-ids them all back.
  *
- * No-arg /cb bulkreid opens the Bulk Workbench on its Re-ID op (§G07-3) — the first GUI front-end this
- * handler has ever had. The Screen's preview reproduces the skip rules above before Apply.
- *
- * Depends on: BulkScope, SlotManager (reId/hasId), LockManager, UndoManager, BulkConfirm, BulkChat,
- *             HudSync, Chat
+ * Depends on: SlotManager (reId/hasId), LockManager, UndoManager, BulkConfirm, BulkChat, HudSync, Chat
  * Called by:  CommandRegistrar, BulkApply (the Screen calls applyReid directly)
  */
 package com.customblocks.command.handlers;
 
 import com.customblocks.command.CbFmt;
-import com.customblocks.CustomBlocksConfig;
 import com.customblocks.command.Chat;
-import com.customblocks.core.BulkScope;
 import com.customblocks.core.LockManager;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
@@ -42,10 +38,8 @@ import net.minecraft.text.MutableText;
 import net.minecraft.text.Text;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -59,47 +53,18 @@ public final class BulkReidCommands {
     public static void register(LiteralArgumentBuilder<ServerCommandSource> root) {
         root.then(CommandManager.literal("bulkreid")
                 .executes(ctx -> BulkCommands.openOp(ctx.getSource(), "reid"))
+                // The argument forms are retired, but the grammar still ACCEPTS anything so an old habit
+                // gets told where the operation went instead of a bare "Incorrect argument for command".
                 .then(CommandManager.argument("args", StringArgumentType.greedyString())
-                        .suggests(BulkSuggestions.RENAME_ARGS)
-                        .executes(ctx -> bulkReid(ctx.getSource(), StringArgumentType.getString(ctx, "args")))));
+                        .executes(ctx -> retired(ctx.getSource()))));
     }
 
-    private static int bulkReid(ServerCommandSource src, String args) {
-        String[] t = args.trim().split("\\s+");
-        // Same grammar as /cb bulkrename: the id list runs until the mode keyword (Group 04 §A7).
-        int m = BulkCommands.modeIndex(t);
-        if (m < 1 || t.length < m + 2) { usage(src); return 0; }
-        String filter = String.join(" ", Arrays.copyOf(t, m));
-        String mode = t[m].toLowerCase(Locale.ROOT);
-        String a = "";
-        String b = "";
-        switch (mode) {
-            case "prefix", "suffix" -> a = String.join(" ", Arrays.copyOfRange(t, m + 1, t.length));
-            case "replace" -> {
-                if (t.length < m + 3) { usage(src); return 0; }
-                a = t[m + 1];
-                b = t[m + 2];
-            }
-            default -> { usage(src); return 0; }
-        }
-
-        List<SlotData> blocks = BulkScope.resolve(filter, BulkConfirm.actor(src));
-        if (blocks.isEmpty()) { Chat.error(src, "No blocks matched: " + filter); return 0; }
-
-        int threshold = Math.max(1, CustomBlocksConfig.bulkConfirmThreshold);
-        boolean needConfirm = BulkScope.isAll(filter) || blocks.size() > threshold;
-
-        final String fmode = mode, fa = a, fb = b;
-        Runnable action = () -> applyReid(src, blocks, fmode, fa, fb);
-        if (needConfirm) {
-            BulkConfirm.request(src, action, "re-id " + blocks.size() + " block(s)");
-            String hoverList = CbFmt.DIM + reidWhat(mode, a, b) + " on:\n" + CbFmt.BODY + BulkChat.columns(BulkChat.ids(blocks));
-            BulkChat.confirm(src, CbFmt.BODY + "Re-id ", CbFmt.BODY + " (" + reidWhat(mode, a, b) + ")?  ", blocks.size(), hoverList,
-                    CbFmt.OK + CbFmt.BOLD + "[✔ Confirm]", CbFmt.BAD + CbFmt.BOLD + "[✖ Cancel]");
-            return 1;
-        }
-        action.run();
-        return 1;
+    /** Answer the retired chat form: say it moved, and name the one command that replaces it. */
+    private static int retired(ServerCommandSource src) {
+        Chat.error(src, "Re-id from chat is gone.");
+        Chat.info(src, "Run " + CbFmt.OK + "/cb bulkreid" + CbFmt.BODY
+                + " with no arguments — the Workbench shows every id it is about to change before you apply.");
+        return 0;
     }
 
     /** Apply the id transform to every eligible matched block, as one undo batch. */
@@ -208,14 +173,6 @@ public final class BulkReidCommands {
         HudSync.broadcast(src.getServer()); // NO-REJOIN: live for ALL players
     }
 
-    private static String reidWhat(String mode, String a, String b) {
-        return switch (mode) {
-            case "prefix" -> "add id-prefix \"" + a + "\"";
-            case "suffix" -> "add id-suffix \"" + a + "\"";
-            default       -> "replace \"" + a + "\" → \"" + b + "\" in ids";
-        };
-    }
-
     /** Short reason tail for the "nothing changed" error. */
     private static String skipSuffix(int locked, int collided, int invalid, int unchanged) {
         List<String> parts = new ArrayList<>();
@@ -232,9 +189,8 @@ public final class BulkReidCommands {
         return tail.isEmpty() ? "" : "\n\n" + CbFmt.BAD + tail.substring(3) + " — skipped";
     }
 
-    static void usage(ServerCommandSource src) {
-        Chat.error(src, "Usage: /cb bulkreid <ids...> prefix <text> | suffix <text> | replace <old> <new>");
-        Chat.info(src, "Changes many block IDs by a pattern (keeps slots).");
-        Chat.info(src, BulkChat.SCOPE_HELP);
+    /** The Screen sent a mode this handler does not implement — a bug on the Screen side, not a typo. */
+    static void badMode(ServerCommandSource src) {
+        Chat.error(src, "That re-id mode is not one this can apply. Pick prefix, suffix, or replace in the Workbench.");
     }
 }

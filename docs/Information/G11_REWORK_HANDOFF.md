@@ -195,8 +195,9 @@ Add the `CategoryMembershipStore.runFirstLoadConversionIfNeeded()` call in
 
 - Chest menus (`CategoryEditMenu`/`CategoryListMenu`/`CategoryBrowserMenu`) — untouched, per
   G11's "commands only until G27 Screens exist" decision.
-- Category export/import carrying multi-membership data — parked `Discussion ✏️` in TG12 §A /
-  TG20 §K, not G11's to design or build.
+- Category export/import carrying multi-membership data — settled 2026-07-30 for local export
+  (all memberships, one format, TG12 §A9); remote payloads still `Discussion ✏️` in TG20 §K.
+  Not G11's to design or build either way.
 - Nesting, hidden/locked/permission gates, sounds/particles/accent/badge/auto-add, templates,
   main category — all scrapped in the G11 Locked Decisions / Superseded tables. Do not
   reintroduce any of them "while you're in there."

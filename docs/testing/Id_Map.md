@@ -32,10 +32,10 @@
 > A → `G11-1` (polish) · B → `G11-1` (share/import; cloud transport → `G20`) · C → `G11-1` · D → `G11-1` · E → `G11-1` (export rework cross-refs `G12`) · auto-categorize / display-block service → `G11-2`  *(canonical ids in `ID_MAP.md` §G11)*
 
 ## GROUP_12
-> A → `G12-1` (Export Dashboard) · `G12-2` (Marketplace + share/import; cloud transport → `G20`) · `G12-3` (formats: litematic/schem/RP)  *(canonical ids in `ID_MAP.md` §G12)*
+> A → `G12-1` (export command routes + result messages) · B → `G12-4` (`importfolder` image overhaul) · C → `G12-5` (import run recall) · *(rescoped 2026-07-30: `G12-2` Marketplace/share → `G20`, `G12-3` formats scrapped, Blueprints scrapped, screens → `G27` §T, download link → `G20` §L)*  *(canonical ids in `ID_MAP.md` §G12)*
 
 ## GROUP_13
-> A → `G13-19` (cross-group, touches G06) · B → `G13-23` · C → `G13-9` · D → `G13-10` · E → `G13-13` · F → `G13-6` · G → `G13-12` · H → `G13-11` · I → `G13-20` · J → `G13-16/17/18` · K → `G13-7` · L → `G13-1` · M → `G13-4` · *(setglow→CbBlock = `G13-24`, designed)*  *(canonical ids in `ID_MAP.md` §G13)*
+> A → `G13-12` (Square recolour) · `G13-20` (static retirement) · `G13-23` (placement flash) · B → `G13-25` · C → `G13-6` (join engine) · `G13-11` (placement lag) · D → `G13-19` (cross-group, touches G06) · `G13-25` · E → `G13-21` · F → `G13-10` · G → `G13-3` · H → `G13-26` · *(setglow→CbBlock = `G13-24`, designed)*  *(canonical ids in `ID_MAP.md` §G13)*
 
 ## GROUP_14
 > A → `G14-2` (Slice 1b) · B → `G14-2` (Slice 1c) · C → `G14-2` (Slice 1d) · Q → `G14-2` (Slice 1f / Option B) · D → `G14-2` (Phase 2; UI = `G27-6` / §G27.15) · E → `G14-2` (Slice 2) · F → `G14-2` (Slice 3) · G → `G14-2` (Phase 3–10) · H → `G14-1` · I–N → `G14-2` (Slice 1 / Steps / Part A)  *(canonical ids in `ID_MAP.md` §G14)*

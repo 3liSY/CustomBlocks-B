@@ -24,6 +24,7 @@ Discord is the server's notification connection. G20 owns the events, configurat
 | Cloud request identity, worker contract, and graceful network failure behavior | Server backups and local recovery: G09 |
 | Future vault transport of block-adjacent configurations | Asset conversion and animation data production: G05 and G14 |
 | Category vault share/import transport (not yet built) | Category schema, membership, and merge rules: G11 |
+| Export download delivery and `[download]` link safety (from G12, 2026-07-30) | Export file contents, layout, and folder import: G12 |
 
 ## Direction
 
@@ -68,7 +69,9 @@ An operator can upload a complete block and receive a code; a player can import 
 
 **Boundary**
 
-G20 moves block payloads. G12 owns category export/import, G09 owns local backup/recovery, and G14 owns animation rendering and authoring.
+G20 moves block payloads. G12 owns export file contents and folder import, G09 owns local backup/recovery, and G14 owns animation rendering and authoring.
+
+G20 also owns export **delivery** as of 2026-07-30: the `[download]` route and its unreachable-link regression moved here from G12, because putting a file on someone else's computer is transport. G12 still writes the file and names it in chat. The route's future is an open owner decision — keep it, make it owner-only, or replace it with a Vault URL — and behaviour must not change on a guess.
 
 ### B. Import Conflict Resolution
 
@@ -147,7 +150,7 @@ This Group defines the mod-to-worker contract. The owner deploys and operates th
 | G05 | Asset delivery | Vault transports ready source assets; it does not rebuild resource packs. |
 | G09 | Backup safety | A local backup completes before optional cloud sync; remote failure never invalidates the local copy. |
 | G11 | Category vault share/import | G20 transports validated category artifacts (TG20 §K, not yet built); G11 owns their schema and local merge rules. |
-| G12 | Category export | Both routes can share the existing zip conventions without becoming duplicate feature owners. |
+| G12 | Export artifacts and delivery | G12 writes and names the local file; G20 owns every route that sends it off the machine, including the `[download]` link. Vault codes and Marketplace are G20's alone — G12's duplicate sections were deleted on 2026-07-30. |
 | G14 | Animation data | Animated vault payloads preserve the grid texture and `grid.json` sidecar needed by the renderer. |
 | G16 | Diagnostics | Cloud and Discord incidents use understandable diagnostic reporting without leaking sensitive configuration. |
 | G21 | Configuration Screen | G21 reads/writes the G20 Discord data model and does not duplicate webhook delivery. |
@@ -197,7 +200,7 @@ This Group defines the mod-to-worker contract. The owner deploys and operates th
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G09 Backup and Recovery](GROUP_09_BACKUP_SAFETY.md)
 - [G11 Categories](GROUP_11_CATEGORY.md)
-- [G12 Export and Marketplace](GROUP_12_EXPORT_MARKETPLACE.md)
+- [G12 Export & Import](GROUP_12_EXPORT_MARKETPLACE.md)
 - [G14 Animation and Video](GROUP_14_ANIMATION_VIDEO.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)
 - [G21 Configuration Screen](GROUP_21_CONFIG_GUI.md)

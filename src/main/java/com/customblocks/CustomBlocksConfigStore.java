@@ -6,7 +6,7 @@
  * CustomBlocksConfig so that class stays under the 300-line config limit (§9.3), mirroring the
  * HudConfig / HudConfigStore split. CustomBlocksConfig.load()/save() delegate here, so callers are unchanged.
  *
- * Depends on: CustomBlocksConfig (the fields), BackgroundRemover (mode normalize), Gson
+ * Depends on: CustomBlocksConfig (the fields), BackgroundRemover (mode validation), Gson
  * Called by:  CustomBlocksConfig.load() / .save() (delegators)
  */
 package com.customblocks;
@@ -37,6 +37,9 @@ public final class CustomBlocksConfigStore {
     public static void load() {
         Path dir = Path.of(CONFIG_DIR);
         Path file = dir.resolve(CONFIG_FILE);
+        // Recorded rather than thrown on the spot so the rest of the file still loads and the error
+        // below names ONE problem instead of stopping at the first field. See the throw after the catch.
+        String rejectedBackgroundMode = null;
         try {
             Files.createDirectories(dir);
             if (!Files.exists(file)) {
@@ -63,7 +66,7 @@ public final class CustomBlocksConfigStore {
             CustomBlocksConfig.discordWebhookUrl = getString(root, "discordWebhookUrl", CustomBlocksConfig.discordWebhookUrl);
             CustomBlocksConfig.cloudShareEnabled = getBool(root, "cloudShareEnabled", CustomBlocksConfig.cloudShareEnabled);
             CustomBlocksConfig.autoUpdateEnabled = getBool(root, "autoUpdateEnabled", CustomBlocksConfig.autoUpdateEnabled);
-            CustomBlocksConfig.backgroundMode  = BackgroundRemover.normalize(getString(root, "backgroundMode", CustomBlocksConfig.backgroundMode));
+            rejectedBackgroundMode = readBackgroundMode(root);
             CustomBlocksConfig.triangleRedHex    = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleRedHex",    CustomBlocksConfig.triangleRedHex),    CustomBlocksConfig.triangleRedHex);
             CustomBlocksConfig.triangleYellowHex = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleYellowHex", CustomBlocksConfig.triangleYellowHex), CustomBlocksConfig.triangleYellowHex);
             CustomBlocksConfig.triangleGreenHex  = CustomBlocksConfig.normalizeHexColor(getString(root, "triangleGreenHex",  CustomBlocksConfig.triangleGreenHex),  CustomBlocksConfig.triangleGreenHex);
@@ -104,6 +107,42 @@ public final class CustomBlocksConfigStore {
         } catch (Exception e) {
             LOGGER.error("[CustomBlocks] Failed to load config, using defaults", e);
         }
+        if (rejectedBackgroundMode != null) {
+            // G10 §H locked decision 2026-07-26: a mode value that is not one of the two live ones is
+            // a hard, visible failure at every entry point — including startup. Thrown OUTSIDE the
+            // catch above on purpose: that catch falls back to defaults, which for this field is
+            // exactly the silent workaround the decision forbids.
+            LOGGER.error("[CustomBlocks] {} — backgroundMode \"{}\" is not a background mode. "
+                            + "Set it to \"{}\" or \"{}\" and start again.",
+                    file, rejectedBackgroundMode, BackgroundRemover.AUTO, BackgroundRemover.NONE);
+            throw new IllegalStateException("CustomBlocks config: backgroundMode \""
+                    + rejectedBackgroundMode + "\" is not a background mode (use \""
+                    + BackgroundRemover.AUTO + "\" or \"" + BackgroundRemover.NONE + "\")");
+        }
+    }
+
+    /**
+     * Read {@code backgroundMode}, returning the offending value when it is not one of the two live
+     * modes and {@code null} when it is fine. The caller fails the load on a non-null return.
+     *
+     * <p>The one value translated instead of rejected is the pre-2026-07-26 internal id {@code none},
+     * which every earlier jar wrote for Off. Renaming the mod's OWN id is not the fallback the locked
+     * decision bans — that ban is on working around a value the mod never meant — so it is migrated in
+     * place, logged, and written back as {@code nobackground} on the next save. A player who TYPES
+     * {@code none} still gets the hard error, because {@code fromArg} does not accept it.
+     */
+    private static String readBackgroundMode(JsonObject root) {
+        String raw = getString(root, "backgroundMode", CustomBlocksConfig.backgroundMode).trim();
+        if (BackgroundRemover.LEGACY_NONE.equalsIgnoreCase(raw)) {
+            LOGGER.warn("[CustomBlocks] backgroundMode \"{}\" renamed to \"{}\" (same setting, new id); "
+                            + "the config file is rewritten on the next save.",
+                    BackgroundRemover.LEGACY_NONE, BackgroundRemover.NONE);
+            raw = BackgroundRemover.NONE;
+        }
+        String mode = BackgroundRemover.fromArg(raw);
+        if (mode == null) return raw;
+        CustomBlocksConfig.backgroundMode = mode;
+        return null;
     }
 
     /** Save current config to disk via an atomic temp-file + move. */

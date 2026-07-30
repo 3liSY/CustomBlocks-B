@@ -24,7 +24,7 @@
  * first not merely because they are more certain but so that the common picture never reaches the
  * expensive one.
  *
- * Depends on: BgQc, BgMask, BgRungAlpha, BgRungKey, BgRungSaliency, BgRungEnsemble, BgRungUnmix.
+ * Depends on: BgQc, BgMask, BgMopUp, BgRungAlpha, BgRungKey, BgRungSaliency, BgRungEnsemble, BgRungUnmix.
  * Called by:  image/BackgroundRemover (Auto path).
  */
 package com.customblocks.image;
@@ -74,7 +74,9 @@ final class BgCascade {
         if (authored == null) {
             declines.add("rung 1: the file has no transparency of its own");
         } else {
-            String bad = clean(authored, w, h);
+            // No mop-up here: authored alpha is the author's own statement of what is background, and
+            // second-guessing it by colour would replace a fact with a measurement.
+            String bad = clean(authored, px, w, h, null);
             if (bad == null) {
                 // No unmixing here, and the raster passes straight through: the file's alpha channel
                 // ALREADY states the coverage of every edge pixel, in exactly the place the composite
@@ -106,7 +108,7 @@ final class BgCascade {
             declines.add("rung 2: the keyed colour covers too little of the picture");
         } else {
             boolean[][] keyed = BgRungKey.mask(px, w, h, key);
-            String bad = clean(keyed, w, h);
+            String bad = clean(keyed, px, w, h, key);
             if (bad == null) return unmixed(px, keyed, w, h, 2, "matched " + keySource);
             if (pickedKey != null) {
                 // The player asserted a fact. If keying it does not produce a sane background, the honest
@@ -117,12 +119,17 @@ final class BgCascade {
             declines.add("rung 2: keying " + keySource + " " + bad);
         }
 
+        // The reference colour rungs 3 and 4 measure against — the same border tone rung 4 already
+        // builds its histogram from, so the mop-up below judges "is this fragment the background
+        // colour" against exactly the colour the rung called background.
+        Integer ref = BgRungKey.borderTone(px, w, h);
+
         // ── Rung 3 — boundary-connectivity saliency ───────────────────────────────────────────
         boolean[][] salient = BgRungSaliency.mask(px, w, h);
         if (salient == null) {
             declines.add("rung 3: no area sits against the picture edge clearly enough to be the background");
         } else {
-            String bad = clean(salient, w, h);
+            String bad = clean(salient, px, w, h, ref);
             if (bad == null) {
                 return unmixed(px, salient, w, h, 3, "found the area wrapping the picture edge");
             }
@@ -134,7 +141,7 @@ final class BgCascade {
         if (voted == null) {
             declines.add("rung 4: the measurements of where the background ends did not agree");
         } else {
-            String bad = clean(voted, w, h);
+            String bad = clean(voted, px, w, h, ref);
             if (bad == null) {
                 return unmixed(px, voted, w, h, 4, "measured where the background ends");
             }
@@ -154,10 +161,27 @@ final class BgCascade {
      * rather than width is what lets it remove a speck while leaving a hair-thin outline, which is why
      * a morphological opening is not used.
      *
-     * <p>It runs before the gate so QC judges the mask that will actually be used.
+     * <p>Then the MOP-UP (BgMopUp, 2026-07-26), when the rung has a background colour to measure
+     * against: a fragment too small to be a region AND, on average, the background colour is dropped
+     * too. Area opening alone cannot see it, because it is colour-blind by design, and the leftover
+     * JPEG-ringing fragments around the letter O sit just above its floor. Widening the mask's own
+     * colour match instead would take real subject detail with them, which is the trade §H exists to
+     * avoid — so the looser bar applies only inside the too-small-to-be-a-region band.
+     *
+     * <p>Both run before the gate so QC judges the mask that will actually be used.
+     *
+     * @param key the colour this rung called background, or {@code null} to skip the mop-up
      */
-    private static String clean(boolean[][] mask, int w, int h) {
+    private static String clean(boolean[][] mask, int[] px, int w, int h, Integer key) {
         BgMask.despeckle(mask, w, h);
+        if (key != null) {
+            BgMopUp.sweep(mask, px, w, h, key);
+            // …and the area opening's other half: a background island stranded deep inside the subject
+            // is a pixel that matched the colour, not a piece of the background. Grouped with the mop-up
+            // because both repair an ESTIMATE; neither may run on rung 1, where the alpha channel is the
+            // author's own statement and there is nothing to repair.
+            BgMask.fillPinholes(mask, w, h);
+        }
         return BgQc.reject(mask, w, h);
     }
 

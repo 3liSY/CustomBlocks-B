@@ -27,13 +27,13 @@
  * Textures (exactly the confirmed old-system look): ALL FOUR letter forms — isolated included —
  * bake through ArabicTileRenderer.render (white glyph on the colour's bg; black = the confirmed
  * 0xFF0A0A0A). The bundled hand-art PNG is the bake source ONLY for numbers: black uses it as-is
- * (the confirmed static look), coloured numbers recolour the black art's background to the config
- * hex through the SAME BackgroundRemover/ImageProcessor path a Triangle colour-variant uses.
- * BAKE_VERSION re-bakes existing slots' textures once whenever the recipe changes.
+ * (the confirmed static look), coloured numbers have the black art's background repainted to the
+ * config hex by ArabicNumberArt — an EXACT solve from the bundled black+red pair, not a background
+ * detection. BAKE_VERSION re-bakes existing slots' textures once whenever the recipe changes.
  *
  * Depends on: ArabicArt (catalog + bundled PNGs), ArabicGlyphs (name→char), ArabicTileRenderer,
  *             ArabicNaming (display names), ArabicJoining (form constants), ColorVariantService
- *             (config hexes), BackgroundRemover/ImageProcessor (number recolour),
+ *             (config hexes), ArabicNumberArt (number background repaint), ImageProcessor (size),
  *             SlotManager.createArabicNoSave, TextureStore
  * Called by:  CustomBlocksMod.onInitialize (after ArabicLetterRetirement.init(), before the
  *             SERVER_STARTED pack build — new textures ride that same single pack rebuild)
@@ -46,7 +46,6 @@ import com.customblocks.core.ColorVariantService;
 import com.customblocks.core.SlotData;
 import com.customblocks.core.SlotManager;
 import com.customblocks.core.TextureStore;
-import com.customblocks.image.BackgroundRemover;
 import com.customblocks.image.ImageProcessor;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -73,8 +72,10 @@ public final class ArabicSlotBootstrap {
     private static final String[] VARIANT_COLOURS = {"red", "green", "yellow"};
 
     /** Bump when the bake recipe changes; existing slots' textures are re-baked ONCE on the next
-     *  boot. v1 = bundled-art isolated letters (wrong — the join look is font-drawn); v2 = font. */
-    private static final int BAKE_VERSION = 2;
+     *  boot. v1 = bundled-art isolated letters (wrong — the join look is font-drawn); v2 = font;
+     *  v3 = art regenerated on the live config hexes + numbers repainted exactly by
+     *  {@link ArabicNumberArt} instead of guessed by BackgroundRemover (§H, 2026-07-30). */
+    private static final int BAKE_VERSION = 3;
     private static final Path VERSION_FILE = Path.of("config/customblocks/arabic_bake_version.json");
 
     private ArabicSlotBootstrap() {} // static-only
@@ -204,10 +205,9 @@ public final class ArabicSlotBootstrap {
 
     /**
      * PNG for one (glyph, form, colour). Letters are font-baked in EVERY form (the confirmed join
-     * look) on the colour's background. Numbers keep the bundled hand-art: black as-is; coloured
-     * = the black art's background recoloured to the config hex through the SAME
-     * BackgroundRemover/ImageProcessor path a Triangle variant uses (corner-sampled fill — the
-     * digit design survives, exactly like any block's colour variant).
+     * look) on the colour's background. Numbers keep the bundled hand-art: black as-is; coloured =
+     * the black art with its background repainted to the config hex by {@link ArabicNumberArt},
+     * which solves background coverage from the bundled black+red pair rather than detecting it.
      */
     private static byte[] bake(ArabicArt.Glyph g, Character ch, int form, String colour) {
         boolean black = "black".equals(colour);
@@ -216,15 +216,22 @@ public final class ArabicSlotBootstrap {
             return ArabicTileRenderer.render(ch, form, FG_WHITE, bg);
         }
         byte[] art = readResource(ArabicArt.resource(g, "black"));
-        if (black || art == null) return art;
+        if (art == null) return null;
         try {
-            int rgb = ColorVariantService.rgbFor(colour);
-            // Always Auto, whatever the server's removal mode says (G10 §H): painting a background a
-            // new colour needs to know where the background is. This rail bakes the 224 bundled art
-            // blocks, so it is the widest-reaching of the recolour paths.
-            byte[] recoloured = BackgroundRemover.recolorBackground(art, rgb);
-            byte[] png = ImageProcessor.toBlockPng(recoloured, CustomBlocksConfig.textureSize);
-            return ImageProcessor.fillBackground(png, rgb);
+            if (black) return ImageProcessor.toBlockPng(art, CustomBlocksConfig.textureSize);
+            // Exact background repaint from the bundled black+red pair (ArabicNumberArt): the old
+            // BackgroundRemover route had to GUESS where the background was, and on art whose
+            // background sits next to its own black outline that guess ate the outline and left a
+            // rim. The pair solves it instead of detecting it, so the digit is untouched.
+            byte[] pair = readResource(ArabicArt.resource(g, "red"));
+            byte[] repainted = ArabicNumberArt.repaint(art, pair, ColorVariantService.rgbFor(colour));
+            if (repainted == null) {
+                LOG.warn("[CustomBlocks/Arabic] Number repaint unusable for '{}' ({}) — bundled "
+                        + "{} art missing or drawn on the same background as black.",
+                        g.idBase(), colour, colour);
+                return null;
+            }
+            return ImageProcessor.toBlockPng(repainted, CustomBlocksConfig.textureSize);
         } catch (Exception e) {
             LOG.warn("[CustomBlocks/Arabic] Number recolour failed for '{}' ({}): {}",
                     g.idBase(), colour, e.getMessage());

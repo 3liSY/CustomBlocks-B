@@ -29,6 +29,16 @@
  * speck) that is not the main subject. Removes the dot fuzz; cannot touch text/arrow/planet (all part of
  * the one big blob). Whole pass is gated behind detect() — it only runs on a confirmed checkerboard.
  *
+ * Step 8 (2026-07-28) writes the cleaned grid TRANSPARENT as well as black. Painting it black was the
+ * whole fix while the only job was to stop rendering a checkerboard in-world; once background removal
+ * runs afterwards it is actively harmful, because the removal is told nothing and must rediscover the
+ * background from colour — and then floods from the flattened grid straight into any BLACK ARTWORK
+ * touching it (measured: the owner's football lost whole dark panels). This class already KNOWS which
+ * pixels were grid, so it hands that over as authored transparency and rung 1 decides on a fact. The
+ * RGB stays black, so anything reading colour alone sees exactly what it saw before. Only the grid is
+ * declared — the two cleanup steps also paint black, but they scrub grain and specks, some of it inside
+ * the artwork, and declaring those punched holes through it.
+ *
  * Called by: BackgroundRemover.process (flattenToBlack, before the mode-gated flood).
  *            isFlattened() has no caller since G10 §G removed the "that was a flattened preview image"
  *            chat notice (owner, 2026-07-25); the detection it exposes is unchanged and still available.
@@ -67,22 +77,22 @@ public final class CheckerboardDetector {
     // ── v3 flatten params (validated offline: share_real.webp, uranus_real.png) ──
     private static final int    NEUTRAL_V3   = 10;    // mask chroma gate: max-min ≤ this
     private static final double MASK_TOL_DE  = 14.0;  // mask ΔE: pixel within this of either tone
+    /** Verdict ΔE — how close a pixel must actually be to a checker tone before it is removed as grid.
+     *  {@link #MASK_TOL_DE} is deliberately generous because it builds a CANDIDATE set and has to hold
+     *  a lossy grid together; as a verdict it is far too loose. Measured on the owner's football, the
+     *  ball's white limb reads 200–217 against grid tones of 235 and 255, which is 12 ΔE away — inside
+     *  the candidate bar, plainly not the backdrop — and the ball baked with bites out of its edge. */
+    private static final double KILL_TOL_DE  = 6.0;
     private static final int    KILL_MIN_TONE = 8;    // a killed component needs ≥ this many px of EACH tone
     private static final double KILL_MIN_FRAC = 0.10; // …and the minority tone ≥ this fraction of the component
     private static final int    FEATHER_R    = 3;     // feather radius (px) out from killed pixels
-    private static final double RAMP_LO      = 6.0;   // ΔE below this → fully peel the checker colour
-    private static final double RAMP_HI      = 34.0;  // ΔE above this → keep the pixel untouched
-    private static final int    GUARD_LUM    = 235;   // feather GUARD: keep a pixel if max channel > this …
-    private static final int    GUARD_CH     = 12;    // … AND chroma < this (protects white text edges / planet limb)
-
-    // ── speck-cleanup params ──
-    private static final int    NONBLACK     = 24;    // output pixel counts as "ink" if max channel > this
-    private static final int    SPECK_MAX    = 64;    // a non-subject blob ≤ this many px is a cleanup candidate
-    private static final int    SPECK_NOISE  = 8;     // a blob ≤ this many px is removed regardless of colour (sub-pixel at block res)
-    private static final int    SPECK_LIGHT  = 170;   // "light-neutral" = max channel ≥ this …
-    private static final int    SPECK_CH     = 16;    // … AND chroma ≤ this
-    private static final double SPECK_FRAC   = 0.50;  // remove a ≤SPECK_MAX blob if ≥ this fraction is light-neutral
-    private static final int    EDGE_MAX     = 200;   // edge grain: a light-neutral blob ≤ this px that touches black is checker fuzz
+    /** At or below this subject coverage a boundary pixel is grid, not a thin edge — and dividing by it
+     *  would amplify the little colour that is there into a bright fringe. A majority statement, the
+     *  same one rung 5's snap makes: a pixel the solve measures as more grid than artwork IS grid.
+     *  At 0.06 the pixels between kept a fraction of the grid's own tone and drew the soft pale fringe
+     *  the owner reported round the ball and the subscribe bell. It can only reach pixels the solve has
+     *  already explained as a mixture of this grid tone and this artwork. */
+    private static final double COVER_FLOOR  = 0.50;
 
     private static final int    BLACK        = 0xFF000000;
 
@@ -118,11 +128,20 @@ public final class CheckerboardDetector {
             int n = w * h;
             int[] argb = img.getRGB(0, 0, w, h, null, 0, w);
 
-            boolean[] kill = computeKill(argb, w, h, n, tones); // steps 2–3
-            feather(argb, w, h, n, kill, tones);                 // steps 4–5
+            boolean[] kill = new boolean[n];
+            CheckerLattice.Fit fit = computeKill(argb, w, h, n, tones, kill); // steps 2–3
+            boolean declare = coversBorder(kill, w, h);          // may this be handed on as fact?
+            // Asked BEFORE the silhouette repair on purpose: coversBorder answers "was the grid found
+            // at all", which is a question about the colour verdict. The repair below spares grid that
+            // is the artwork's own colour, and near a subject running off the picture edge that is some
+            // of the border ring — letting it move the answer would mean a well-found grid stopped
+            // being declared because the ball touches the frame.
+            CheckerSilhouette.resolve(kill, fit, argb, w, h, tones.a(), tones.b());
+            if (declare) CheckerLattice.strandEnclosed(kill, fit, w, h);
+            feather(argb, w, h, n, kill, tones, declare);        // steps 4–5
             for (int i = 0; i < n; i++) if (kill[i]) argb[i] = BLACK; // step 6
-            edgeGrainCleanup(argb, w, h, n);                     // step 7a: light grain hugging the subject edge
-            speckCleanup(argb, w, h, n);                         // step 7b: isolated specks
+            CheckerScrub.run(argb, w, h, n, kill, declare);      // steps 7a–7b: residue, confined to the grid
+            if (declare) for (int i = 0; i < n; i++) if (kill[i]) argb[i] = BLACK & 0x00FFFFFF; // step 8
 
             img.setRGB(0, 0, w, h, argb, 0, w);
             ByteArrayOutputStream out = new ByteArrayOutputStream();
@@ -134,7 +153,8 @@ public final class CheckerboardDetector {
     }
 
     // ── v3 steps 2–3: mask → connected components → kill genuine 2-tone patches ──────────────────────
-    private static boolean[] computeKill(int[] argb, int w, int h, int n, Tones t) {
+    private static CheckerLattice.Fit computeKill(int[] argb, int w, int h, int n, Tones t,
+                                                  boolean[] kill) {
         // step 2: neutral, near-tone mask
         boolean[] mask = new boolean[n];
         for (int i = 0; i < n; i++) {
@@ -142,11 +162,10 @@ public final class CheckerboardDetector {
             if (((p >>> 24) & 0xFF) < OPAQUE_ALPHA) continue;
             int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
             if (Math.max(r, Math.max(g, b)) - Math.min(r, Math.min(g, b)) > NEUTRAL_V3) continue;
-            double[] lab = rgbToLab(p);
-            if (Math.min(deltaE(lab, t.a()), deltaE(lab, t.b())) <= MASK_TOL_DE) mask[i] = true;
+            double[] lab = labOf(p);
+            if (Math.min(de(lab, t.a()), de(lab, t.b())) <= MASK_TOL_DE) mask[i] = true;
         }
         // step 3: 4-connected components; kill any that carries both tones
-        boolean[] kill = new boolean[n];
         boolean[] seen = new boolean[n];
         int[] comp = new int[n]; // reused per component as a BFS queue + member list
         for (int s = 0; s < n; s++) {
@@ -162,125 +181,141 @@ public final class CheckerboardDetector {
             }
             int nA = 0, nB = 0;
             for (int k = 0; k < tail; k++) {
-                double[] lab = rgbToLab(argb[comp[k]]);
-                if (deltaE(lab, t.a()) <= deltaE(lab, t.b())) nA++; else nB++;
+                double[] lab = labOf(argb[comp[k]]);
+                if (de(lab, t.a()) <= de(lab, t.b())) nA++; else nB++;
             }
             if (nA >= KILL_MIN_TONE && nB >= KILL_MIN_TONE && Math.min(nA, nB) >= KILL_MIN_FRAC * tail) {
                 for (int k = 0; k < tail; k++) kill[comp[k]] = true;
             }
         }
-        return kill;
+        // A killed pixel must itself BE one of the two tones, not merely near enough to have joined the
+        // candidate mask. Everything above reasons about components, and a component is only as honest
+        // as its loosest member.
+        for (int i = 0; i < n; i++) {
+            if (!kill[i]) continue;
+            double[] lab = labOf(argb[i]);
+            if (Math.min(de(lab, t.a()), de(lab, t.b())) > KILL_TOL_DE) kill[i] = false;
+        }
+        // The colour verdict is a candidate list, not a decision: artwork that shares a tone with the
+        // grid lands in the same component. CheckerLattice keeps only what is geometrically a grid.
+        return CheckerLattice.confine(kill, mask, argb, w, h, n, t.a(), t.b());
+    }
+
+    /**
+     * May the grid this pass found be handed on as authored transparency?
+     *
+     * <p>Only when it accounts for the border ring. detect() fires on a border that is ≥85% grid, so on
+     * a source whose grid was properly identified the kill covers about that much of the ring as well.
+     * A lossy source can smear the tones far enough that detect() still recognises the pattern while the
+     * per-pixel mask catches almost none of it — measured on the chrome JPEG, where the kill reaches a
+     * few percent. Declaring that as the file's own transparency states a near-empty background as FACT,
+     * and rung 1 rightly believes facts: the picture came back with 1.6% removed instead of 81%.
+     *
+     * <p>Where this returns false the pass still blacks the checkerboard out, which is all it ever did
+     * before the hand-off existed, and the colour rungs decide the background as they did then.
+     */
+    private static boolean coversBorder(boolean[] kill, int w, int h) {
+        long ring = 0, killed = 0;
+        for (int x = 0; x < w; x++) {
+            ring += 2;
+            if (kill[x]) killed++;
+            if (kill[(h - 1) * w + x]) killed++;
+        }
+        for (int y = 1; y < h - 1; y++) {
+            ring += 2;
+            if (kill[y * w]) killed++;
+            if (kill[y * w + w - 1]) killed++;
+        }
+        return ring > 0 && killed >= ring * BORDER_LIGHT_FRAC;
     }
 
     // ── v3 steps 4–5: multi-source BFS from kill pixels, then peel checker bleed off subject edge ────
-    private static void feather(int[] argb, int w, int h, int n, boolean[] kill, Tones t) {
+    private static void feather(int[] argb, int w, int h, int n, boolean[] kill, Tones t, boolean declare) {
         int[] dist = new int[n]; Arrays.fill(dist, Integer.MAX_VALUE);
-        int[] near = new int[n]; Arrays.fill(near, -1); // nearest kill pixel's ORIG argb (local checker tone)
+        int[] near = new int[n]; // nearest kill pixel's ORIG argb (local checker tone)
+        // Presence is its own flag, never a reserved colour. A packed opaque WHITE pixel is 0xFFFFFFFF,
+        // which as a signed int IS -1, so a -1 sentinel collides with the commonest grid tone there is:
+        // measured 2026-07-29, 63180 of the share button's 143912 grid pixels and 44080 of the subscribe
+        // banner's 95060 are exactly that value. Every boundary pixel whose nearest grid square was pure
+        // white therefore read as "no grid tone carried here", the solve was skipped, and the mixture
+        // baked opaque — 484 pale pixels tracing the share arrow, which is the outline the owner reported.
+        boolean[] hasNear = new boolean[n];
         int[] q = new int[n];
         int head = 0, tail = 0;
-        for (int i = 0; i < n; i++) if (kill[i]) { dist[i] = 0; near[i] = argb[i]; q[tail++] = i; }
+        for (int i = 0; i < n; i++) if (kill[i]) { dist[i] = 0; near[i] = argb[i]; hasNear[i] = true; q[tail++] = i; }
         while (head < tail) {
             int idx = q[head++];
             if (dist[idx] >= FEATHER_R) continue;
             int x = idx % w, y = idx / w, nd = dist[idx] + 1, nc = near[idx];
-            if (x + 1 < w && dist[idx + 1] > nd) { dist[idx + 1] = nd; near[idx + 1] = nc; q[tail++] = idx + 1; }
-            if (x > 0     && dist[idx - 1] > nd) { dist[idx - 1] = nd; near[idx - 1] = nc; q[tail++] = idx - 1; }
-            if (y + 1 < h && dist[idx + w] > nd) { dist[idx + w] = nd; near[idx + w] = nc; q[tail++] = idx + w; }
-            if (y > 0     && dist[idx - w] > nd) { dist[idx - w] = nd; near[idx - w] = nc; q[tail++] = idx - w; }
+            if (x + 1 < w && dist[idx + 1] > nd) { dist[idx + 1] = nd; near[idx + 1] = nc; hasNear[idx + 1] = true; q[tail++] = idx + 1; }
+            if (x > 0     && dist[idx - 1] > nd) { dist[idx - 1] = nd; near[idx - 1] = nc; hasNear[idx - 1] = true; q[tail++] = idx - 1; }
+            if (y + 1 < h && dist[idx + w] > nd) { dist[idx + w] = nd; near[idx + w] = nc; hasNear[idx + w] = true; q[tail++] = idx + w; }
+            if (y > 0     && dist[idx - w] > nd) { dist[idx - w] = nd; near[idx - w] = nc; hasNear[idx - w] = true; q[tail++] = idx - w; }
         }
+        // The artwork's colour at each feather pixel, propagated the same way the grid's tone is: from
+        // the NEAREST unmixed piece of artwork, not from an average of everything nearby. Averaging a
+        // window that straddles two parts of the artwork — the share arrow's white face and its red
+        // outline — invents a pink that is in neither, and the solve then cannot explain the pixel and
+        // declines, which is what left pale steps along that outline (measured 2026-07-28).
+        int[] art = new int[n];
+        boolean[] hasArt = new boolean[n]; // same reason as hasNear: white artwork packs to the old -1
+        head = 0; tail = 0;
+        int[] adist = new int[n]; Arrays.fill(adist, Integer.MAX_VALUE);
         for (int i = 0; i < n; i++) {
-            if (kill[i] || dist[i] > FEATHER_R || near[i] == -1) continue;
+            if (!kill[i] && dist[i] > FEATHER_R) { adist[i] = 0; art[i] = argb[i]; hasArt[i] = true; q[tail++] = i; }
+        }
+        while (head < tail) {
+            int idx = q[head++];
+            if (adist[idx] >= FEATHER_R) continue;
+            int x = idx % w, y = idx / w, nd = adist[idx] + 1, nc = art[idx];
+            if (x + 1 < w && adist[idx + 1] > nd) { adist[idx + 1] = nd; art[idx + 1] = nc; hasArt[idx + 1] = true; q[tail++] = idx + 1; }
+            if (x > 0     && adist[idx - 1] > nd) { adist[idx - 1] = nd; art[idx - 1] = nc; hasArt[idx - 1] = true; q[tail++] = idx - 1; }
+            if (y + 1 < h && adist[idx + w] > nd) { adist[idx + w] = nd; art[idx + w] = nc; hasArt[idx + w] = true; q[tail++] = idx + w; }
+            if (y > 0     && adist[idx - w] > nd) { adist[idx - w] = nd; art[idx - w] = nc; hasArt[idx - w] = true; q[tail++] = idx - w; }
+        }
+
+        for (int i = 0; i < n; i++) {
+            if (kill[i] || dist[i] > FEATHER_R || !hasNear[i]) continue;
             int p = argb[i];
-            int r = (p >> 16) & 0xFF, g = (p >> 8) & 0xFF, b = p & 0xFF;
-            int mx = Math.max(r, Math.max(g, b)), mn = Math.min(r, Math.min(g, b));
-            if (mx > GUARD_LUM && (mx - mn) < GUARD_CH) continue; // GUARD: keep bright-neutral (text edge / planet limb)
-            int c = near[i], cr = (c >> 16) & 0xFF, cg = (c >> 8) & 0xFF, cb = c & 0xFF;
-            double a = clamp01((deltaE(rgbToLab(p), rgbToLab(c)) - RAMP_LO) / (RAMP_HI - RAMP_LO));
-            int nr = clampByte(r - (1 - a) * cr), ng = clampByte(g - (1 - a) * cg), nb = clampByte(b - (1 - a) * cb);
-            argb[i] = 0xFF000000 | (nr << 16) | (ng << 8) | nb;
-        }
-    }
-
-    // ── step 7a: remove light "edge grain" — checker fuzz that clings to the subject's outer edge ──
-    //    (these light-neutral specks are 8-connected to the subject blob, so speckCleanup can't see them).
-    //    Rule: kill any light-neutral connected component that TOUCHES the black exterior AND is ≤ EDGE_MAX
-    //    px. The subject's white body (planet) / text letters are far larger and the letters never touch
-    //    black, so they survive; interior light spots (cloud highlights) don't touch black either.
-    private static void edgeGrainCleanup(int[] argb, int w, int h, int n) {
-        boolean[] seen = new boolean[n];
-        int[] q = new int[n];
-        int[] comp = new int[n];
-        for (int s = 0; s < n; s++) {
-            if (seen[s] || !isLightNeutral(argb[s])) continue;
-            int head = 0, tail = 0, sz = 0;
-            boolean touchesBlack = false;
-            q[tail++] = s; seen[s] = true;
-            while (head < tail) {
-                int idx = q[head++]; comp[sz++] = idx;
-                int x = idx % w, y = idx / w;
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dy = -1; dy <= 1; dy++) {
-                        if (dx == 0 && dy == 0) continue;
-                        int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-                        int ni = ny * w + nx;
-                        if (!isInk(argb[ni])) touchesBlack = true;        // black exterior neighbour
-                        else if (isLightNeutral(argb[ni]) && !seen[ni]) { seen[ni] = true; q[tail++] = ni; }
-                    }
-                }
+            // Coverage is SOLVED, not guessed from a colour distance. The old ramp read "how far is this
+            // pixel from the grid's tone" as "how much subject is in it", and those are not the same
+            // question: a red button half covered by a white grid sits a long way from white, so the ramp
+            // called it fully covered, left it opaque, and divided the grid's colour back out of it —
+            // which lightens it. That is the pale outline the owner reported round the share button and
+            // the subscribe banner (measured 2026-07-28: boundary pixels baking as EEDDDD and E4A1A1
+            // against a DB1313 button). The matting solve answers the coverage question directly, from
+            // the grid tone on one side and the artwork's own colour on the other.
+            double[] bg = EdgeMix.linear(near[i]);
+            double[] fg = hasArt[i] ? EdgeMix.linear(art[i]) : null;
+            // No artwork nearby to interpolate against, or artwork the same colour as the grid — a white
+            // caption on a white grid tone. Both are the case the old brightness GUARD was written for,
+            // and both are answered here by the solve declining rather than by a brightness constant.
+            if (fg == null || !EdgeMix.separated(bg, fg)) continue;
+            double a = EdgeMix.coverage(p, bg, fg);
+            if (a < 0 || !EdgeMix.explains(p, bg, fg, a)) continue; // not a mixture of these two
+            if (!declare) {
+                // The grid was not identified well enough to be stated as fact, so there is no alpha
+                // channel to write coverage into: peel as before and leave the edge to the colour rungs,
+                // which run their own unmixing over whatever they decide.
+                argb[i] = 0xFF000000
+                        | (EdgeMix.encode(LinearBlend.toLinear(p >> 16) - (1 - a) * bg[0]) << 16)
+                        | (EdgeMix.encode(LinearBlend.toLinear(p >> 8)  - (1 - a) * bg[1]) << 8)
+                        |  EdgeMix.encode(LinearBlend.toLinear(p)       - (1 - a) * bg[2]);
+                continue;
             }
-            if (touchesBlack && sz <= EDGE_MAX) for (int k = 0; k < sz; k++) argb[comp[k]] = BLACK;
+            if (a < COVER_FLOOR) { kill[i] = true; continue; } // all backdrop — it belongs to the grid
+            // Coverage, not darkening. `a` is how much of this boundary pixel the subject actually
+            // occupies; the rest is grid showing through. Subtracting the grid's colour and leaving the
+            // pixel OPAQUE — what this did until 2026-07-28 — writes the premultiplied value at full
+            // strength, which composites as a dark rim on every soft edge (measured: a ring round the
+            // owner's football, speckles along the share arrow's outline). Dividing the coverage back
+            // out and recording it in the alpha channel is the matting equation, and rung 1 carries the
+            // raster through untouched, so the edge lands in the bake as the fraction it really is.
+            argb[i] = (clampByte(a * 255) << 24) | (EdgeMix.recover(p, bg, a) & 0xFFFFFF);
         }
     }
 
-    // ── step 7b: remove residual specks (small isolated blobs left on the black background) ──────────
-    private static void speckCleanup(int[] argb, int w, int h, int n) {
-        int[] label = new int[n]; Arrays.fill(label, -1);
-        int[] size = new int[n];   // size per label
-        int[] light = new int[n];  // light-neutral px per label
-        int[] q = new int[n];
-        int labels = 0;
-        for (int s = 0; s < n; s++) {
-            if (label[s] != -1 || !isInk(argb[s])) continue;
-            int id = labels++, head = 0, tail = 0, sz = 0, lt = 0;
-            q[tail++] = s; label[s] = id;
-            while (head < tail) {
-                int idx = q[head++], x = idx % w, y = idx / w;
-                sz++; if (isLightNeutral(argb[idx])) lt++;
-                for (int dx = -1; dx <= 1; dx++) {
-                    for (int dy = -1; dy <= 1; dy++) {
-                        if (dx == 0 && dy == 0) continue;
-                        int nx = x + dx, ny = y + dy;
-                        if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
-                        int ni = ny * w + nx;
-                        if (label[ni] == -1 && isInk(argb[ni])) { label[ni] = id; q[tail++] = ni; }
-                    }
-                }
-            }
-            size[id] = sz; light[id] = lt;
-        }
-        int idMax = -1, max = -1; // the subject = largest ink blob, always protected
-        for (int id = 0; id < labels; id++) if (size[id] > max) { max = size[id]; idMax = id; }
-        for (int i = 0; i < n; i++) {
-            int id = label[i];
-            if (id < 0 || id == idMax) continue;
-            int sz = size[id];
-            boolean remove = sz <= SPECK_NOISE || (sz <= SPECK_MAX && light[id] >= SPECK_FRAC * sz);
-            if (remove) argb[i] = BLACK;
-        }
-    }
 
-    private static boolean isInk(int argb) {
-        return Math.max((argb >> 16) & 0xFF, Math.max((argb >> 8) & 0xFF, argb & 0xFF)) > NONBLACK;
-    }
-
-    private static boolean isLightNeutral(int argb) {
-        int r = (argb >> 16) & 0xFF, g = (argb >> 8) & 0xFF, b = argb & 0xFF;
-        int mx = Math.max(r, Math.max(g, b)), mn = Math.min(r, Math.min(g, b));
-        return mx >= SPECK_LIGHT && (mx - mn) <= SPECK_CH;
-    }
-
-    private static double clamp01(double v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
     private static int clampByte(double v) { int i = (int) Math.round(v); return i < 0 ? 0 : (i > 255 ? 255 : i); }
 
     // ── detection ────────────────────────────────────────────────────────────────────────────────
@@ -335,8 +370,8 @@ public final class CheckerboardDetector {
             if (Math.abs(lum - c1) <= Math.abs(lum - c2)) nearC1 += hist[i]; else nearC2 += hist[i];
         }
         if (nearC1 < lightCount * TONE_MIN_FRAC || nearC2 < lightCount * TONE_MIN_FRAC) return null;
-        double l1 = rgbToLab(0xFF000000 | gray(c1))[0];
-        double l2 = rgbToLab(0xFF000000 | gray(c2))[0];
+        double l1 = labOf(0xFF000000 | gray(c1))[0];
+        double l2 = labOf(0xFF000000 | gray(c2))[0];
         double gap = Math.abs(l1 - l2);
         if (gap < DL_MIN || gap > DL_MAX) return null;
 
@@ -389,8 +424,8 @@ public final class CheckerboardDetector {
                                       long[] c = sampleTone(img.getRGB(x, h - 1), bucket, dark); sr += c[0]; sg += c[1]; sb += c[2]; n += c[3]; }
         for (int y = 1; y < h - 1; y++) { long[] a = sampleTone(img.getRGB(0, y), bucket, dark); sr += a[0]; sg += a[1]; sb += a[2]; n += a[3];
                                           long[] c = sampleTone(img.getRGB(w - 1, y), bucket, dark); sr += c[0]; sg += c[1]; sb += c[2]; n += c[3]; }
-        if (n == 0) return rgbToLab(0xFF000000 | gray(bucket * 4));
-        return rgbToLab(0xFF000000 | ((int) (sr / n) << 16) | ((int) (sg / n) << 8) | (int) (sb / n));
+        if (n == 0) return labOf(0xFF000000 | gray(bucket * 4));
+        return labOf(0xFF000000 | ((int) (sr / n) << 16) | ((int) (sg / n) << 8) | (int) (sb / n));
     }
 
     private static long[] sampleTone(int argb, int bucket, boolean dark) {
@@ -426,7 +461,8 @@ public final class CheckerboardDetector {
     }
 
     // ── CIE-LAB (sRGB → XYZ → L*a*b*, D65) + Euclidean ΔE — same formula as BackgroundRemover ───
-    private static double[] rgbToLab(int argb) {
+    /** Package-visible for CheckerLattice, which asks the same colour questions. */
+    static double[] labOf(int argb) {
         double rF = ((argb >> 16) & 0xFF) / 255.0;
         double gF = ((argb >> 8) & 0xFF) / 255.0;
         double bF = (argb & 0xFF) / 255.0;
@@ -444,7 +480,7 @@ public final class CheckerboardDetector {
         return new double[]{(116.0 * y) - 16.0, 500.0 * (x - y), 200.0 * (y - z)};
     }
 
-    private static double deltaE(double[] a, double[] b) {
+    static double de(double[] a, double[] b) {
         return Math.sqrt(Math.pow(a[0] - b[0], 2) + Math.pow(a[1] - b[1], 2) + Math.pow(a[2] - b[2], 2));
     }
 }

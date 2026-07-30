@@ -39,7 +39,8 @@ public final class SettingsBookMenu {
         new Section("general", "General", Items.LEVER, "Everyday basics.",
                 new String[]{"max_blocks", "texture_quality", "silent_pack", "auto_category"}),
         new Section("appearance", "Appearance", Items.BRUSH, "How blocks look + feedback.",
-                new String[]{"transparent_background", "background_removal", "background_strength",
+                // "background_strength" came out with /cb tolerance (G10 §H) — the field no longer exists.
+                new String[]{"transparent_background", "background_removal",
                         "variant_colours", "named_texture_mirror", "effects", "edit_hud"}),
         new Section("network", "Network & Cloud", Items.BEACON, "Texture server, cloud + integrations.",
                 new String[]{"resource_pack_port", "server_ip", "cloud_sharing", "cloud_url",

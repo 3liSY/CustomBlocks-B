@@ -117,7 +117,6 @@ public final class HudSync {
         allCats.addAll(CategoryMetadataStore.knownCategories());
         JsonObject meta = new JsonObject();
         JsonObject hexes = new JsonObject(); // §G27 Category Hub: per-category custom "#RRGGBB" name tint
-        JsonObject descs = new JsonObject(); // §G27 Category Hub: per-category description
         JsonObject sorts = new JsonObject(); // §G27 Category Hub: per-category sort order (non-default only)
         JsonArray cats = new JsonArray();    // every known category key, including 0-block ones
         for (String cat : allCats) {
@@ -126,14 +125,11 @@ public final class HudSync {
             if (tag != null && !tag.isEmpty()) meta.addProperty(cat, tag);
             String hex = CategoryMetadataStore.getColorHex(cat);
             if (hex != null && !hex.isEmpty()) hexes.addProperty(cat, hex);
-            String d = CategoryMetadataStore.getDescription(cat);
-            if (d != null && !d.isEmpty()) descs.addProperty(cat, d);
             String so = CategoryMetadataStore.getSortOrder(cat);
             if (so != null && !so.isEmpty() && !"alpha".equals(so)) sorts.addProperty(cat, so);
         }
         root.add("_meta", meta);
         root.add("_hex", hexes);
-        root.add("_desc", descs);
         root.add("_sort", sorts);
         root.add("_categories", cats);
         root.addProperty("_default", DefaultCategoryStore.get());

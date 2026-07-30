@@ -255,6 +255,11 @@ public final class HistoryCommands {
                 com.customblocks.core.CategoryMembershipStore.restoreSet(op.membership().id(), op.membership().before());
                 HudSync.broadcast(src.getServer());
             }
+            case CATEGORY_RECORD -> { // G11 — put the deleted category's own record (colour/icon/desc) back
+                com.customblocks.core.CategoryMetadataStore.restore(
+                        op.categoryRecord().key(), op.categoryRecord().before());
+                HudSync.broadcast(src.getServer());
+            }
             case FACE_ROTATE -> { FaceRotations.set(op.faceRot().index(), op.faceRot().face(), op.faceRot().oldQ()); ResourcePackServer.updatePack(); HudSync.broadcast(src.getServer()); } // restore pre-rotate turn + rebuild model; F2: sync packed rot so §B shaped blocks re-mesh on MP
             case BATCH -> { // revert every child of the bulk op as a single step
                 if (op.children() != null) {
@@ -296,6 +301,11 @@ public final class HistoryCommands {
             case FLAG -> setFlag(src, op.flag(), op.flag().on()); // re-apply the flip the op recorded
             case CATEGORY -> { // re-apply the membership change the op recorded
                 com.customblocks.core.CategoryMembershipStore.restoreSet(op.membership().id(), op.membership().after());
+                HudSync.broadcast(src.getServer());
+            }
+            case CATEGORY_RECORD -> { // re-apply the record change (a delete puts it back to "gone")
+                com.customblocks.core.CategoryMetadataStore.restore(
+                        op.categoryRecord().key(), op.categoryRecord().after());
                 HudSync.broadcast(src.getServer());
             }
             case FACE_ROTATE -> { FaceRotations.set(op.faceRot().index(), op.faceRot().face(), op.faceRot().newQ()); ResourcePackServer.updatePack(); HudSync.broadcast(src.getServer()); } // re-apply the rotate + rebuild model; F2: sync packed rot so §B shaped blocks re-mesh on MP

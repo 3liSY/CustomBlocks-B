@@ -31,7 +31,8 @@ public final class UndoManager {
     private UndoManager() {} // static-only
 
     /** What kind of change an Op represents (drives how undo/redo reverses it). */
-    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG, FACE_ROTATE, CATEGORY }
+    public enum Kind { CREATE, DELETE, MODIFY, BATCH, REID, SHAPE, TEXTURE, RETEXTURE, FLAG, FACE_ROTATE,
+                       CATEGORY, CATEGORY_RECORD }
 
     /**
      * A lock / favorite flip, the one edit that lives OUTSIDE SlotData.
@@ -79,6 +80,21 @@ public final class UndoManager {
     public record Membership(String id, List<String> before, List<String> after) {}
 
     /**
+     * A category RECORD appearing or disappearing (G11) — the twin of {@link Membership}, which
+     * only ever moves blocks between categories.
+     *
+     * Deleting a category drops its colour tag, icon, description and sort order along with it, so
+     * an undo built from membership ops alone would hand back a category stripped of everything
+     * that made it recognizable. This payload carries the whole record, serialized by
+     * {@link CategoryMetadataStore#snapshot}, on each side.
+     *
+     * @param key    the normalized category key.
+     * @param before the record as it was BEFORE (undo restores this); "" = there was none.
+     * @param after  the record as it was AFTER (redo re-applies this); "" = deleted.
+     */
+    public record CategoryRecord(String key, String before, String after) {}
+
+    /**
      * One reversible edit.
      *
      * @param kind         CREATE (before == null), DELETE (after == null), MODIFY (both set),
@@ -97,28 +113,35 @@ public final class UndoManager {
      */
     public record Op(Kind kind, SlotData before, SlotData after,
                      byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot,
-                     Membership membership) {
+                     Membership membership, CategoryRecord categoryRecord) {
+        /** Pre-CATEGORY_RECORD 10-arg shape (CATEGORY era) — categoryRecord null. */
+        public Op(Kind kind, SlotData before, SlotData after,
+                  byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot,
+                  Membership membership) {
+            this(kind, before, after, texture, textureAfter, label, children, flag, faceRot, membership, null);
+        }
+
         /** Pre-CATEGORY 9-arg shape (FACE_ROTATE era) — membership null. */
         public Op(Kind kind, SlotData before, SlotData after,
                   byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag, FaceRot faceRot) {
-            this(kind, before, after, texture, textureAfter, label, children, flag, faceRot, null);
+            this(kind, before, after, texture, textureAfter, label, children, flag, faceRot, null, null);
         }
 
         /** Pre-FACE_ROTATE 8-arg shape (FLAG era) — faceRot null. */
         public Op(Kind kind, SlotData before, SlotData after,
                   byte[] texture, byte[] textureAfter, String label, List<Op> children, Flag flag) {
-            this(kind, before, after, texture, textureAfter, label, children, flag, null, null);
+            this(kind, before, after, texture, textureAfter, label, children, flag, null, null, null);
         }
 
         /** Pre-FLAG 7-arg shape — every existing caller still compiles unchanged. */
         public Op(Kind kind, SlotData before, SlotData after,
                   byte[] texture, byte[] textureAfter, String label, List<Op> children) {
-            this(kind, before, after, texture, textureAfter, label, children, null, null, null);
+            this(kind, before, after, texture, textureAfter, label, children, null, null, null, null);
         }
 
         /** Convenience constructor for a single (non-batch) op — textureAfter + children null. */
         public Op(Kind kind, SlotData before, SlotData after, byte[] texture, String label) {
-            this(kind, before, after, texture, null, label, null, null, null, null);
+            this(kind, before, after, texture, null, label, null, null, null, null, null);
         }
     }
 
@@ -216,6 +239,21 @@ public final class UndoManager {
                 new Membership(blockId, b, a));
     }
 
+    /**
+     * Build a CATEGORY_RECORD child op (for a batch). Not pushed — hand it to {@link #recordBatch}.
+     * Returns null when the two snapshots match, so a no-op earns no undo step.
+     *
+     * @param before {@link CategoryMetadataStore#snapshot} before the change ("" = no record).
+     * @param after  the snapshot after it ("" = the record was deleted).
+     */
+    public static Op categoryRecordOp(String key, String before, String after, String label) {
+        if (key == null || key.isEmpty()) return null;
+        String b = before == null ? "" : before, a = after == null ? "" : after;
+        if (b.equals(a)) return null;
+        return new Op(Kind.CATEGORY_RECORD, null, null, null, null, label, null, null, null, null,
+                new CategoryRecord(key, b, a));
+    }
+
     /** Record one block's category-membership change as a single undo step (G11). */
     public static void recordMembership(UUID player, String blockId, java.util.Collection<String> before,
                                         java.util.Collection<String> after, String label) {
@@ -265,6 +303,8 @@ public final class UndoManager {
             mlId = op.flag() != null ? op.flag().id() : "?"; // FLAG carries no snapshot — the id lives on the payload
         } else if (op.kind() == Kind.FACE_ROTATE) {
             mlId = op.faceRot() != null ? "slot " + op.faceRot().index() : "?"; // FACE_ROTATE: id is the slot index
+        } else if (op.kind() == Kind.CATEGORY_RECORD) {
+            mlId = op.categoryRecord() != null ? op.categoryRecord().key() : "?"; // no block — the id IS the category
         } else {
             mlId = op.after() != null ? op.after().customId()
                     : (op.before() != null ? op.before().customId() : "?");

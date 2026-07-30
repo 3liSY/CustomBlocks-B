@@ -52,7 +52,7 @@ public final class BgStudioSession {
 
     public static void setMode(UUID player, String id, String mode) {
         State s = get(player, id);
-        s.mode = BackgroundRemover.normalize(mode);
+        s.mode = BackgroundRemover.requireMode(mode);
     }
 
     /** Set the fill colour (hex string from ColorLibrary.resolve, or raw "#RRGGBB"). */
@@ -73,7 +73,7 @@ public final class BgStudioSession {
     public static void clear(UUID player) { SESSIONS.remove(player); }
 
     private static String defaultMode() {
-        String m = BackgroundRemover.normalize(CustomBlocksConfig.backgroundMode);
+        String m = BackgroundRemover.requireMode(CustomBlocksConfig.backgroundMode);
         return BackgroundRemover.NONE.equals(m) ? BackgroundRemover.AUTO : m; // a studio default of "off" is pointless
     }
 }

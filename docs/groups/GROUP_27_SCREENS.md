@@ -248,6 +248,7 @@ Players browse, create, and edit categories in a proper Screen, and export a cat
 - `CategoryHubScreen` lists categories with counts, icons, browse/edit actions, and category detail; a block row supports category-appropriate give, edit, and remove actions.
 - The Create-workspace Category tab uses the main Studio canvas rather than a narrow panel, letting a player select/create a category, set a main category, and edit visible style fields without hiding existing records.
 - The Export Dashboard Screen offers the same export result as `/cb category export <category>` without a separate console-only path.
+- As of 2026-07-30 G12 is command-routes-only, so **every** export screen surface is G27's — the `/cb export` dashboard entry point included. A folder-import preview Screen is a possible later G27 upgrade; G12 ships that flow as a clickable chat preview with an anvil rename box, and G27 does not block on it.
 - `/cb categories` opens `CategoryHubScreen` for players; console callers keep a text-only fallback.
 
 **Requirements**
@@ -272,6 +273,7 @@ G27 owns the reusable Screen/Studio presentation. G11 owns what a category means
 | G09 | Backup, trash, and safety | G27 presents safety Screens while G09 controls persistence, restore, and deletion semantics. |
 | G10 | Colour, images, and resize | Editing/recolour UI uses G10 limits and processing contracts. |
 | G11 | Category Screens | G27 owns CategoryHub, Create-workspace, and Export Dashboard presentation; G11 owns category data, mutation, and export contents. |
+| G12 | Export and import surfaces | G27 owns every export/import Screen; G12 owns the commands, the export file layout, and folder import. G12 stopped owning any screen on 2026-07-30. |
 | G13 | Arabic and text | Studio Text provides Unicode/UI flow; G13 creates and renders the text/Arabic data. |
 | G14 | Animation and GIFs | Studio presents animation/resize controls; G14 owns decoding, frame behavior, and render/performance rules. |
 | G16 | Diagnostics and testing | G27 can route private testing/diagnostic Screens, but G16 owns incidents, access control, and results. |

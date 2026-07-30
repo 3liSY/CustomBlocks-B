@@ -1,5 +1,5 @@
 const dashboardData = {
-  "lastUpdated": "2026-07-18 23:44:57",
+  "lastUpdated": "2026-07-28 23:04:25",
   "groups": [
     {
       "id": "GROUP_02",
@@ -24,82 +24,82 @@ const dashboardData = {
     {
       "id": "GROUP_04",
       "title": "Messages & Command Communication",
-      "filename": "TESTING_GUIDE_04.md",
-      "verdict": "DidYouMean, feedback contract, and chat chips confirmed; kick screen preview works but the real registry-mismatch kick still shows the old screen (regression).",
-      "percent": 86,
-      "passed": 8,
+      "filename": "Testing_Guide_04_Done.md",
+      "verdict": "All Group 04 communication work is confirmed in-game.",
+      "percent": 100,
+      "passed": 10,
       "total": 10,
-      "lastTested": "2026-07-18"
+      "lastTested": "2026-07-19"
     },
     {
       "id": "GROUP_05",
       "title": "Silent Resource Pack Delivery",
-      "filename": "Testing_Guide_05.md",
-      "verdict": "Delivery, live texture swap, and skip-redundant-reload are built; server-forced 128 and resumable transfer still need implementation.",
+      "filename": "Testing_Guide_05_Paused.md",
+      "verdict": "Slow-internet joins, weak-PC textures, safe delivery, 2 GB stability, and old-version warnings are all built and awaiting play-testing (\u00a7D fix awaiting retest).",
       "percent": 40,
       "passed": 4,
       "total": 10,
-      "lastTested": "2026-07-15"
+      "lastTested": "2026-07-19"
     },
     {
       "id": "GROUP_06",
       "title": "Tools, Colour Variants & Per-Face Paint",
       "filename": "Testing_Guide_06.md",
-      "verdict": "Core colour tools + deletion built and awaiting a play-test; the Omni-Tool rework (Delete/Face/Copy modes) is the main unbuilt work; hand glow and tool-rename are dropped; the image fix is parked on a missing PNG.",
-      "percent": 40,
-      "passed": 4,
+      "verdict": "Reopened 2026-07-25: a deleted block could lose the picture it was made from. Fixed, needs the four D2 runs. Everything else stays confirmed; \u00a7E scrapped.",
+      "percent": 93,
+      "passed": 9,
       "total": 10,
-      "lastTested": "2026-07-15"
+      "lastTested": "2026-07-25"
     },
     {
       "id": "GROUP_07",
       "title": "Bulk Operations",
       "filename": "Testing_Guide_07.md",
-      "verdict": "Chat bulk commands confirmed; the Workbench, undo/redo, and Set All are built and need a play-test. One real fix left: rip the dead filter language out of the hub so the Console/NL bar tick concrete rows. Bulk-shape scrapped; bulksound cut. Screens owned by G27.",
-      "percent": 60,
+      "verdict": "The two backend items are confirmed; re-id has just moved out of chat into the Workbench and needs an in-game check.",
+      "percent": 66,
       "passed": 6,
       "total": 10,
-      "lastTested": "2026-07-15"
+      "lastTested": "2026-07-20"
     },
     {
       "id": "GROUP_08",
       "title": "Shape System & Per-Face Textures",
-      "filename": "Testing_Guide_08.md",
-      "verdict": "Shape hitboxes and basic preview are working; reload-free shape changes, non-full face textures, and the final face editor remain open.",
-      "percent": 30,
-      "passed": 3,
+      "filename": "Testing_Guide_08_Done.md",
+      "verdict": "All built shape/per-face texture features confirmed in-game, including in-hand/inventory shaped icons. Vanilla block-behavior parity remains parked pending a design session.",
+      "percent": 100,
+      "passed": 10,
       "total": 10,
-      "lastTested": "2026-07-11"
+      "lastTested": "2026-07-22"
     },
     {
       "id": "GROUP_09",
       "title": "Backup, Data Safety & Trash",
-      "filename": "Testing_Guide_09.md",
-      "verdict": "Backup commands are built, but dated confirmation and the final trash/backup Screen pass still need clean verification.",
-      "percent": 20,
-      "passed": 2,
+      "filename": "Testing_Guide_09_Done.md",
+      "verdict": "All shipped sections (A, B, C, G, H, I) confirmed in-game. Cloud backup (old \u00a7F) dropped \u2014 backups are local-only now.",
+      "percent": 100,
+      "passed": 10,
       "total": 10,
-      "lastTested": "2026-07-17"
+      "lastTested": "2026-07-23"
     },
     {
       "id": "GROUP_10",
       "title": "Color & Image Tools",
       "filename": "Testing_Guide_10.md",
-      "verdict": "Core image commands are confirmed; background routes and the advanced `/cb bulkrecolor` Hub need later discussion.",
-      "percent": 30,
-      "passed": 3,
+      "verdict": "Owner test 2026-07-28: penguin, stripes, subscribe and the golden pair pass; a pale outline survives on cut-out art and the football regressed.",
+      "percent": 60,
+      "passed": 6,
       "total": 10,
-      "lastTested": "2026-06-29"
+      "lastTested": "2026-07-28"
     },
     {
       "id": "GROUP_11",
       "title": "Category System",
       "filename": "Testing_Guide_11.md",
-      "verdict": "Category commands are confirmed; the new CategoryHub screen routing, create-tab workspace, export link, and Vault share/import still need work.",
+      "verdict": "Sections A and B are confirmed; C and E are built and waiting on one in-game round of 14 rows.",
       "percent": 50,
       "passed": 5,
       "total": 10,
-      "lastTested": "2026-06-14"
+      "lastTested": "2026-07-27"
     },
     {
       "id": "GROUP_12",
@@ -115,9 +115,9 @@ const dashboardData = {
       "id": "GROUP_13",
       "title": "Arabic Backend",
       "filename": "Testing_Guide_13.md",
-      "verdict": "Legacy Arabic behavior was confirmed, but the real-SlotBlock rebuild has conflicting source status and needs a clean checkpoint retest.",
-      "percent": 40,
-      "passed": 4,
+      "verdict": "Legacy Arabic behavior was confirmed; the real-SlotBlock rebuild retest and the new duplicate-number cleanup both still need an in-game check.",
+      "percent": 35,
+      "passed": 3,
       "total": 10,
       "lastTested": "2026-07-04"
     },
@@ -255,9 +255,9 @@ const dashboardData = {
       "id": "GROUP_27",
       "title": "Unified Screens, Create Studio & Editing",
       "filename": "Testing_Guide_27.md",
-      "verdict": "Studio baseline exists, but new upgrades, shared browser filters, Editing/Text tabs, and the wider screen migration still need owner tests or build work.",
-      "percent": 20,
-      "passed": 2,
+      "verdict": "Studio baseline exists; new upgrades, shared browser filters, Editing/Text tabs, category Screens, and the wider screen migration still need owner tests or build work.",
+      "percent": 30,
+      "passed": 3,
       "total": 10,
       "lastTested": "2026-07-12"
     },
@@ -284,10 +284,10 @@ const dashboardData = {
     {
       "id": "GROUP_30",
       "title": "Guess Mode",
-      "filename": "Testing_Guide_30_Done.md",
-      "verdict": "Fully passed. All in-scope Guess Mode work confirmed; round-control/future-expansion ideas parked outside scope.",
-      "percent": 100,
-      "passed": 10,
+      "filename": "Testing_Guide_30.md",
+      "verdict": "All earlier Guess Mode work is confirmed; Placed Mask Mode is now built and needs its first in-game run.",
+      "percent": 80,
+      "passed": 8,
       "total": 10,
       "lastTested": "2026-07-09"
     },
@@ -295,11 +295,11 @@ const dashboardData = {
       "id": "GROUP_31",
       "title": "BuzzerGame",
       "filename": "Testing_Guide_31.md",
-      "verdict": "First in-game pass (2026-07-18) found regressions across C/E/F/G, all root-caused in [G31_FIX_PLAN.md](extra/G31_FIX_PLAN.md). **The full I1\u2013I8 batch is now implemented (2026-07-18, \ud83d\udfe2 build-green) and awaits the owner's C\u2192G retest** \u2014 nothing re-confirmed in-game yet. Build-side checks that passed: I1 baked-glyph shaping eyeballed on the rendered PNG, I3 driven headlessly through both press cycles (all-pass), jar packs the new font + PNGs, all G04 gates green. I2 glue may want one tuning round.",
-      "percent": 20,
-      "passed": 2,
+      "verdict": "Screen text, stand outline, stopwatch flow, and per-part resize are built and awaiting owner retest; buzzer, wand session, and FX are confirmed.",
+      "percent": 37,
+      "passed": 3,
       "total": 10,
-      "lastTested": "2026-07-18"
+      "lastTested": "2026-07-19"
     },
     {
       "id": "GROUP_32",
@@ -320,14 +320,24 @@ const dashboardData = {
       "passed": 0,
       "total": 10,
       "lastTested": "2026-07-18"
+    },
+    {
+      "id": "GROUP_34",
+      "title": "Wheel of Fortune",
+      "filename": "Testing_Guide_34.md",
+      "verdict": "Wheel face is now ONE baked texture instead of ~850 quads \u2014 seams cannot step or flicker, and the back reads mirrored. Re-place the wheel and re-check \u00a7A.",
+      "percent": 0,
+      "passed": 0,
+      "total": 10,
+      "lastTested": "2026-07-24"
     }
   ],
   "bugs": [],
   "nextTask": {
     "group": "Silent Resource Pack Delivery",
-    "filename": "Testing_Guide_05.md",
-    "id": "A1",
-    "action": "Edit an animated or Arabic block texture.",
-    "expect": "Placed world block updates instantly with no full reload line."
+    "filename": "Testing_Guide_05_Paused.md",
+    "id": "D1",
+    "action": "In singleplayer, quickly create and re-texture two blocks using image links.",
+    "expect": "All textures show up, nothing looks broken, and you don't need to rejoin."
   }
 };

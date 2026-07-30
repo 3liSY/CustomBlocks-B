@@ -92,7 +92,7 @@ public final class ColorToolService {
         final int index = d.index();
         final SlotData slot = d;
         final UUID who = player.getUuid();
-        final String m = BackgroundRemover.normalize(mode);
+        final String m = BackgroundRemover.requireMode(mode);
         final int fill = fillRgb;
         Chat.tool(player, "Applying " + BackgroundRemover.displayName(m) + " to \"" + id + "\"…");
         Thread worker = new Thread(() -> {

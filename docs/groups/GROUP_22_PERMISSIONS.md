@@ -165,7 +165,7 @@ The full rollout waits for the unresolved command classifications below. No broa
 
 - [G05 Resource Pack Delivery](GROUP_05_RESOURCE_PACK.md)
 - [G09 Backup and Recovery](GROUP_09_BACKUP_SAFETY.md)
-- [G12 Export and Marketplace](GROUP_12_EXPORT_MARKETPLACE.md)
+- [G12 Export & Import](GROUP_12_EXPORT_MARKETPLACE.md)
 - [G13 Arabic and Text Blocks](GROUP_13_ARABIC.md)
 - [G15 AI Textures](GROUP_15_AI_TEXTURES.md)
 - [G16 Diagnostics and Private Testing](GROUP_16_DIAGNOSTICS.md)

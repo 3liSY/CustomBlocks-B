@@ -4,8 +4,11 @@
  * Stores category-level properties:
  *   - displayBlock:  which block id is the category's icon in the browser
  *   - colorTag:      §-colour code that tints the category name text in the GUI (e.g. "§a")
- *   - description:   free-text shown in the browser header
  *   - sortOrder:     "alpha" (default) or "custom" — if custom, a persisted id list
+ *
+ * Category descriptions were REMOVED root-and-branch (G11 2026-07-28): they were clutter on every
+ * surface that had to carry them. A "description" key left in an old category_meta.json is simply
+ * not read and drops out on the next save.
  *
  * Persists to config/customblocks/data/category_meta.json via atomic write (NFR-13).
  * CategoryDisplayBlockManager is kept as a thin delegate (its API stays stable for callers).
@@ -42,7 +45,6 @@ public final class CategoryMetadataStore {
         String displayBlock = "";   // block id, "" = none
         String colorTag     = "";   // §-code like "§a", "" = default white
         String colorHex     = "";   // Group 27 Category Hub custom hex "#RRGGBB", "" = use colorTag/default
-        String description  = "";   // free text
         String sortOrder    = "alpha";  // "alpha" or "custom"
         List<String> customOrder = new ArrayList<>(); // block ids in custom order (only used when sortOrder="custom")
         boolean exists = false; // §G27 L11: true once explicitly created — keeps the category listed at 0 blocks
@@ -54,7 +56,6 @@ public final class CategoryMetadataStore {
         public String displayBlock()  { return displayBlock; }
         public String colorTag()      { return colorTag; }
         public String colorHex()      { return colorHex; }
-        public String description()   { return description; }
         public String sortOrder()     { return sortOrder; }
         public List<String> customOrder() { return customOrder; }
         public boolean exists()       { return exists; }
@@ -75,7 +76,10 @@ public final class CategoryMetadataStore {
     private static Meta getOrCreate(String cat) {
         String k = key(cat);
         Meta m = DATA.computeIfAbsent(k, x -> new Meta());
-        if (m.displayName.isEmpty()) m.displayName = cat == null ? k : cat.trim();
+        // unquote, not trim: a quote typed around the name must never be BAKED INTO the stored
+        // display name, or every message that echoes the category would print it back (G11 2026-07-26).
+        if (m.displayName.isEmpty()) m.displayName = cat == null ? k : CategoryMembershipStore.unquote(cat);
+        if (m.displayName.isEmpty()) m.displayName = k;
         if (m.createdAt == 0L) m.createdAt = System.currentTimeMillis();
         return m;
     }
@@ -144,18 +148,6 @@ public final class CategoryMetadataStore {
         return "#" + h.toUpperCase(Locale.ROOT);
     }
 
-    // ── Description ──────────────────────────────────────────────────────────
-
-    public static synchronized String getDescription(String category) {
-        Meta m = DATA.get(key(category));
-        return m != null ? m.description : "";
-    }
-
-    public static synchronized void setDescription(String category, String desc) {
-        getOrCreate(category).description = desc == null ? "" : desc;
-        save();
-    }
-
     // ── Sort order ───────────────────────────────────────────────────────────
 
     public static synchronized String getSortOrder(String category) {
@@ -188,6 +180,9 @@ public final class CategoryMetadataStore {
      */
     public static synchronized String getDisplayName(String category) {
         String k = key(category);
+        // The floor has no record to hold a display name, but it is written "Uncategorized"
+        // everywhere a player can read it (G11 C16) — never as the bare lower-case key.
+        if (CategoryMembershipStore.UNCATEGORIZED.equals(k)) return "Uncategorized";
         Meta m = DATA.get(k);
         return m != null && !m.displayName.isEmpty() ? m.displayName : k;
     }
@@ -213,7 +208,7 @@ public final class CategoryMetadataStore {
      * rather than silently filed into a category the player didn't name.
      */
     public static synchronized String collisionFor(String typedName) {
-        String typed = typedName == null ? "" : typedName.trim();
+        String typed = CategoryMembershipStore.unquote(typedName);
         Meta m = DATA.get(key(typed));
         if (m == null) return null;
         String shown = m.displayName.isEmpty() ? key(typed) : m.displayName;
@@ -245,7 +240,7 @@ public final class CategoryMetadataStore {
      * @return null on success, or the EXISTING display name that blocked it.
      */
     public static synchronized String createChecked(String typedName) {
-        String typed = typedName == null ? "" : typedName.trim();
+        String typed = CategoryMembershipStore.unquote(typedName);
         String k = key(typed);
         Meta existing = DATA.get(k);
         if (existing != null) {
@@ -286,7 +281,8 @@ public final class CategoryMetadataStore {
         if (CategoryMembershipStore.isUncategorized(newCat)) return; // nothing may take the floor's key
         Meta m = DATA.remove(key(oldCat));
         if (m != null) {
-            m.displayName = newCat == null ? key(newCat) : newCat.trim();
+            m.displayName = newCat == null ? key(newCat) : CategoryMembershipStore.unquote(newCat);
+            if (m.displayName.isEmpty()) m.displayName = key(newCat);
             DATA.put(key(newCat), m);
             save();
         }
@@ -298,7 +294,83 @@ public final class CategoryMetadataStore {
         if (DATA.remove(key(category)) != null) save();
     }
 
+    // ── Record snapshot / restore (the undo payload for a category delete, G11) ──
+
+    /**
+     * The whole record for {@code category} as a JSON string, or "" when it has none.
+     *
+     * A category delete drops the record with its colour, icon and sort order, so
+     * {@code /cb undo} needs more than the memberships to put it back (TG11 A3 / §C9). The snapshot
+     * is a plain string on purpose: {@link UndoManager} stores immutable payloads and stays free of
+     * this class's types.
+     */
+    public static synchronized String snapshot(String category) {
+        Meta m = DATA.get(key(category));
+        return m == null ? "" : GSON.toJson(toJson(m));
+    }
+
+    /**
+     * Put a {@link #snapshot} back under {@code category}'s key. A blank snapshot means "there was
+     * no record" and removes it, so undo and redo are exact mirrors. The built-in
+     * {@code Uncategorized} record is never touched.
+     */
+    public static synchronized void restore(String category, String snapshot) {
+        String k = key(category);
+        if (CategoryMembershipStore.isUncategorized(k) || k.isEmpty()) return;
+        if (snapshot == null || snapshot.isBlank()) {
+            if (DATA.remove(k) != null) save();
+            return;
+        }
+        try {
+            Meta m = fromJson(GSON.fromJson(snapshot, JsonObject.class));
+            if (m.displayName.isEmpty()) m.displayName = k;
+            DATA.put(k, m);
+            save();
+        } catch (Exception ignored) {}
+    }
+
     // ── Persistence ──────────────────────────────────────────────────────────
+    //
+    // One record ↔ one JsonObject, in ONE pair of methods: the file, the undo snapshot, and the
+    // undo restore all go through them, so a field added to Meta can never persist on one path and
+    // silently vanish on another.
+
+    /** One record as JSON. Default-valued fields are left out — the reader defaults them back. */
+    private static JsonObject toJson(Meta m) {
+        JsonObject o = new JsonObject();
+        if (m.exists) o.addProperty("exists", true);
+        if (!m.displayName.isEmpty()) o.addProperty("displayName", m.displayName);
+        if (m.createdAt > 0L)          o.addProperty("createdAt", m.createdAt);
+        if (!m.displayBlock.isEmpty()) o.addProperty("displayBlock", m.displayBlock);
+        if (!m.colorTag.isEmpty())     o.addProperty("colorTag", m.colorTag);
+        if (!m.colorHex.isEmpty())     o.addProperty("colorHex", m.colorHex);
+        if (!"alpha".equals(m.sortOrder)) {
+            o.addProperty("sortOrder", m.sortOrder);
+            if (!m.customOrder.isEmpty()) {
+                JsonArray arr = new JsonArray();
+                for (String id : m.customOrder) arr.add(id);
+                o.add("customOrder", arr);
+            }
+        }
+        return o;
+    }
+
+    /** One record from JSON. Missing fields keep their {@link Meta} defaults. */
+    private static Meta fromJson(JsonObject o) {
+        Meta m = new Meta();
+        if (o == null) return m;
+        if (o.has("displayName"))  m.displayName  = o.get("displayName").getAsString();
+        if (o.has("createdAt"))    m.createdAt    = o.get("createdAt").getAsLong();
+        if (o.has("displayBlock")) m.displayBlock = o.get("displayBlock").getAsString();
+        if (o.has("colorTag"))     m.colorTag     = o.get("colorTag").getAsString();
+        if (o.has("colorHex"))     m.colorHex     = o.get("colorHex").getAsString();
+        if (o.has("sortOrder"))    m.sortOrder    = o.get("sortOrder").getAsString();
+        if (o.has("exists"))       m.exists       = o.get("exists").getAsBoolean();
+        if (o.has("customOrder")) {
+            for (JsonElement el : o.getAsJsonArray("customOrder")) m.customOrder.add(el.getAsString());
+        }
+        return m;
+    }
 
     private static void load() {
         try {
@@ -312,20 +384,7 @@ public final class CategoryMetadataStore {
             if (root == null) return;
             for (var e : root.entrySet()) {
                 try {
-                    Meta m = new Meta();
-                    JsonObject o = e.getValue().getAsJsonObject();
-                    if (o.has("displayName"))   m.displayName   = o.get("displayName").getAsString();
-                    if (o.has("createdAt"))     m.createdAt     = o.get("createdAt").getAsLong();
-                    if (o.has("displayBlock"))  m.displayBlock  = o.get("displayBlock").getAsString();
-                    if (o.has("colorTag"))      m.colorTag      = o.get("colorTag").getAsString();
-                    if (o.has("colorHex"))      m.colorHex      = o.get("colorHex").getAsString();
-                    if (o.has("description"))   m.description   = o.get("description").getAsString();
-                    if (o.has("sortOrder"))     m.sortOrder     = o.get("sortOrder").getAsString();
-                    if (o.has("exists"))        m.exists        = o.get("exists").getAsBoolean();
-                    if (o.has("customOrder")) {
-                        JsonArray arr = o.getAsJsonArray("customOrder");
-                        for (JsonElement el : arr) m.customOrder.add(el.getAsString());
-                    }
+                    Meta m = fromJson(e.getValue().getAsJsonObject());
                     // Re-key through the shared normalizer: a pre-G11 file was keyed on plain
                     // lower-case, so a stored "my-cat" has to fold to "my cat" or its metadata
                     // would orphan the moment anything looked it up.
@@ -364,24 +423,8 @@ public final class CategoryMetadataStore {
                 Meta m = e.getValue();
                 // Skip empty entries (unless explicitly created — L11: an empty category must still persist)
                 if (!m.exists && m.displayBlock.isEmpty() && m.colorTag.isEmpty() && m.colorHex.isEmpty()
-                        && m.description.isEmpty() && "alpha".equals(m.sortOrder)) continue;
-                JsonObject o = new JsonObject();
-                if (m.exists) o.addProperty("exists", true);
-                if (!m.displayName.isEmpty()) o.addProperty("displayName", m.displayName);
-                if (m.createdAt > 0L)         o.addProperty("createdAt", m.createdAt);
-                if (!m.displayBlock.isEmpty()) o.addProperty("displayBlock", m.displayBlock);
-                if (!m.colorTag.isEmpty())     o.addProperty("colorTag", m.colorTag);
-                if (!m.colorHex.isEmpty())     o.addProperty("colorHex", m.colorHex);
-                if (!m.description.isEmpty())  o.addProperty("description", m.description);
-                if (!"alpha".equals(m.sortOrder)) {
-                    o.addProperty("sortOrder", m.sortOrder);
-                    if (!m.customOrder.isEmpty()) {
-                        JsonArray arr = new JsonArray();
-                        for (String id : m.customOrder) arr.add(id);
-                        o.add("customOrder", arr);
-                    }
-                }
-                root.add(e.getKey(), o);
+                        && "alpha".equals(m.sortOrder)) continue;
+                root.add(e.getKey(), toJson(m));
             }
             Path tmp = file.resolveSibling("category_meta.json.tmp");
             Files.writeString(tmp, GSON.toJson(root), StandardCharsets.UTF_8);

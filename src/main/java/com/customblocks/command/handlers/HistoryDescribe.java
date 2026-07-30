@@ -24,7 +24,18 @@ public final class HistoryDescribe {
      */
     static String describe(UndoManager.Op op, boolean undo) {
         if (op.kind() == UndoManager.Kind.BATCH) {
-            int n = op.children() == null ? 0 : op.children().size();
+            // A label that already carries its own "(…)" is left exactly as written — the G11
+            // block-wipe entry reads "Deleted 4 blocks (Arabic Numbers)", where the parenthesis is
+            // the CATEGORY, not a count, and appending a second one would read as nonsense.
+            if (op.label() != null && op.label().endsWith(")")) return op.label();
+            // Count BLOCKS, not children: a G11 category delete batches one CATEGORY_RECORD op
+            // alongside its per-block ops, and that one is not a block.
+            int n = 0;
+            if (op.children() != null) {
+                for (UndoManager.Op child : op.children()) {
+                    if (child.kind() != UndoManager.Kind.CATEGORY_RECORD) n++;
+                }
+            }
             return op.label() + " (" + n + " block" + (n == 1 ? "" : "s") + ")";
         }
         if (op.kind() == UndoManager.Kind.REID) {
@@ -41,6 +52,10 @@ public final class HistoryDescribe {
             java.util.List<String> to = undo ? m.before() : m.after();
             return op.label() + " " + m.id() + " " + CbFmt.DIM + "→" + CbFmt.RESET + " "
                     + (to.isEmpty() ? "uncategorized" : String.join(", ", to));
+        }
+        if (op.kind() == UndoManager.Kind.CATEGORY_RECORD) { // no block at all — the category itself
+            UndoManager.CategoryRecord r = op.categoryRecord();
+            return op.label() + " " + (r == null ? "?" : r.key());
         }
         if (op.kind() == UndoManager.Kind.FACE_ROTATE) { // no snapshot — index+face live on the payload
             UndoManager.FaceRot fr = op.faceRot();

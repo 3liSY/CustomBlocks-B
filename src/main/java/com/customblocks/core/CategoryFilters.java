@@ -27,17 +27,41 @@ public final class CategoryFilters {
 
     private CategoryFilters() {} // static-only
 
+    /** The word for A→Z order (G11 2026-07-26: {@code alpha} was renamed and is never shown again). */
+    public static final String ALPHA = "alphabetically";
+
     /** Category-listing modes (G11: alphabetical, newest, oldest, most blocks, by colour, hide-empty). */
     public static final List<String> CATEGORY_MODES =
-            List.of("alpha", "newest", "oldest", "most", "color", "hideempty");
+            List.of(ALPHA, "newest", "oldest", "most", "color", "hideempty");
 
     /** Block-listing modes inside a category — no count/colour/emptiness, those aren't block traits. */
-    public static final List<String> BLOCK_MODES = List.of("alpha", "newest", "oldest");
+    public static final List<String> BLOCK_MODES = List.of(ALPHA, "newest", "oldest");
 
-    /** Normalize a typed mode; "" (nothing typed) means the alphabetical default. */
+    /**
+     * Normalize a typed mode; "" (nothing typed) means the alphabetical default.
+     *
+     * {@code alpha} still resolves as a hidden alias so an old macro or a GUI call doesn't break,
+     * but it is never suggested or printed — only {@code alphabetically} is.
+     */
     public static String mode(String raw) {
         String m = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
-        return m.isEmpty() ? "alpha" : m;
+        if (m.isEmpty() || m.equals("alpha")) return ALPHA;
+        return m;
+    }
+
+    /**
+     * The STORED per-category sort value for a typed word: {@code "alpha"} or {@code "custom"},
+     * or "" when it is neither.
+     *
+     * The stored value stays {@code "alpha"} on purpose — the Category Hub, the chest edit menu and
+     * HudSync all read and write that string — while the word a player types is
+     * {@code alphabetically}. This is the one place the two vocabularies meet.
+     */
+    public static String sortWord(String raw) {
+        String m = raw == null ? "" : raw.trim().toLowerCase(Locale.ROOT);
+        if (m.equals("custom")) return "custom";
+        if (m.equals(ALPHA) || m.equals("alpha")) return "alpha";
+        return "";
     }
 
     // ── Category listing ─────────────────────────────────────────────────────

@@ -39,15 +39,37 @@ final class BgRungUnmix {
     private BgRungUnmix() {} // static-only
 
     /**
-     * How far from the mask boundary a pixel can be and still be part of the mixed band, in pixels.
+     * How far from the mask boundary a pixel STARTS as part of the mixed band, in pixels.
      *
      * <p>Derivation: a single anti-aliased edge is one pixel of genuine partial coverage. Resampling
      * or JPEG compression smears that transition across about two. This is the same 2 px, for the same
      * physical reason, that the hysteresis flood's weak-run cap already uses — both are statements
      * about how wide an edge transition is, so they are deliberately the same number rather than two
      * independent guesses.
+     *
+     * <p>It is a starting width, not the whole story: see {@link #grow}. A source that was sharpened,
+     * re-compressed, or cut out of another background carries a transition several pixels wide, and a
+     * fixed radius leaves whatever sits past it baked in as a rim.
      */
     private static final int BAND_RADIUS = 2;
+
+    /**
+     * Hard ceiling on how far {@link #grow} may push the band past {@link #BAND_RADIUS}. Not the thing
+     * that stops it — the mixture test is — only a stop against a pathological picture walking the band
+     * across the whole subject. Scaled with the picture because an edge transition is a physical width:
+     * a 735 px photograph gets 4, a small button 2, and nothing gets more than 8.
+     */
+    private static final int GROW_CAP = 8;
+    private static final int GROW_DIVISOR = 150;
+
+    /**
+     * Largest coverage the band may GROW onto. Growth exists to catch background the strict mask left
+     * behind, so it takes only pixels that are more background than subject; a pixel past halfway is
+     * the subject's own edge, and the starting band already covers those. Being a majority statement
+     * rather than a tuned bar is what makes the growth unable to erode a subject: every pixel it takes
+     * is, by the picture's own colours, mostly backdrop.
+     */
+    private static final double GROWTH_MAX_COVERAGE = 0.5;
 
     /**
      * Radius searched for the solid background and solid subject to interpolate between. Twice the
@@ -65,6 +87,20 @@ final class BgRungUnmix {
      * from a coverage that small would divide by near-zero and amplify noise into an arbitrary colour.
      */
     private static final double MIN_COVERAGE = 1.0 / 255.0;
+
+    /**
+     * Coverage at or below which a SOLVED band pixel is called background outright rather than kept at
+     * partial strength. A majority statement, the same one {@link #GROWTH_MAX_COVERAGE} makes: a pixel
+     * the solve says is more backdrop than subject is backdrop.
+     *
+     * <p>It only ever reaches pixels the solve already explained and already measured as mostly
+     * backdrop, which is what separates it from the deleted tolerance knob. That knob compared EVERY
+     * pixel in the picture against a background colour, so a white ball on a white grid matched it and
+     * was erased whole — measured 2026-07-29 against the pre-cascade build, which keeps 70 % of the
+     * football and 90 % of the share button. Nothing here can touch a pixel that is not on the mask
+     * boundary, that the two endpoints do not explain, or that the solve calls mostly subject.
+     */
+    private static final double SNAP_COVERAGE = 0.50;
 
     /**
      * The picture re-expressed as {@code ARGB} where the ALPHA channel is subject coverage (0 entirely
@@ -90,36 +126,116 @@ final class BgRungUnmix {
         }
 
         boolean[][] band = band(isBg, w, h);
+        // The backdrop estimate the pipeline already builds, as a fallback for the one case a local
+        // window cannot cover: an edge where the mask stopped short and there is no confirmed
+        // background pixel left within reach to sample. Measured on Jupiter, 2026-07-29 — the planet
+        // runs off the top of the frame, so along that stretch of limb the anti-aliased ramp is the
+        // ONLY background-side colour present and the search returned nothing, which left the ramp
+        // baked opaque as a white line 1-3 px deep. The plate answers the same question by push-pull
+        // over the whole picture, so it still has a backdrop colour where the window has no sample.
+        final double[][] plate = BgPlate.build(px, isBg, w, h);
+        final int reach = SOLID_RADIUS + grow(px, isBg, band, plate, w, h);
 
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
                 if (!band[x][y]) continue;
-                double[] bg = solidMean(px, isBg, band, w, h, x, y, true);
-                double[] fg = solidMean(px, isBg, band, w, h, x, y, false);
+                double[] bg = background(px, isBg, band, plate, w, h, x, y, reach);
+                double[] fg = solidMean(px, isBg, band, w, h, x, y, false, reach);
                 if (bg == null || fg == null) continue; // nothing to interpolate between — keep the mask
 
                 // Indistinguishable endpoints make the projection meaningless: dividing by a
                 // near-zero separation turns pixel noise into arbitrary coverage.
-                if (CieDe2000.of(BackgroundRemover.rgbToLab(pack(fg)),
-                                 BackgroundRemover.rgbToLab(pack(bg))) <= BgRungKey.JND) continue;
+                if (!EdgeMix.separated(bg, fg)) continue;
 
                 int p = px[y * w + x];
-                double pr = LinearBlend.toLinear(p >> 16), pg = LinearBlend.toLinear(p >> 8),
-                       pb = LinearBlend.toLinear(p);
-                double dr = fg[0] - bg[0], dg = fg[1] - bg[1], db = fg[2] - bg[2];
-                double denom = dr * dr + dg * dg + db * db;
-                if (denom <= 0) continue;
-                double a = ((pr - bg[0]) * dr + (pg - bg[1]) * dg + (pb - bg[2]) * db) / denom;
-                a = Math.max(0.0, Math.min(1.0, a));
-                if (a < MIN_COVERAGE) { out[y * w + x] = p & 0xFFFFFF; continue; } // background
-                int fr = encode((pr - (1 - a) * bg[0]) / a);
-                int fgn = encode((pg - (1 - a) * bg[1]) / a);
-                int fb = encode((pb - (1 - a) * bg[2]) / a);
+                double a = EdgeMix.coverage(p, bg, fg);
+                if (a < 0) continue;                           // degenerate endpoints — keep the mask
+                if (!EdgeMix.explains(p, bg, fg, a)) continue; // not a mixture of these two — keep the mask
+                // Mostly backdrop is backdrop: leaving it at partial strength is what draws the soft
+                // pale fringe the owner reported round the ball, the bird and the planet.
+                if (a <= SNAP_COVERAGE) { out[y * w + x] = p & 0xFFFFFF; continue; } // background
                 int cov = (int) Math.round(255.0 * a);
-                out[y * w + x] = (cov << 24) | (fr << 16) | (fgn << 8) | fb;
+                out[y * w + x] = (cov << 24) | (EdgeMix.recover(p, bg, a) & 0xFFFFFF);
             }
         }
         return out;
+    }
+
+    /**
+     * Push the band outward into the subject side while the pixels there are still mostly backdrop,
+     * and return how many rings were added (G10 §H, 2026-07-28).
+     *
+     * <p>{@link #BAND_RADIUS} states how wide ONE anti-aliased edge is. Real sources routinely carry
+     * wider transitions and the picture says so: a photograph cut out of another backdrop keeps a rim of
+     * that backdrop, an over-sharpened JPEG carries an overshoot ring just inside its own outline, and a
+     * re-compressed grid smears its tones across several pixels. Measured 2026-07-28, Jupiter's limb
+     * holds four such pixels and the fixed radius reached two of them, so the other two baked as the
+     * white outline the owner reported; the chrome JPEG shows the same shape in the dark.
+     *
+     * <p>Growth is by ADJACENCY, one ring at a time, so it cannot jump a subject outline into a
+     * background-coloured area behind it — the penguin's white belly sits behind a black outline whose
+     * pixels are not mixtures, and the ring stops there. Three conditions must hold for a pixel to join,
+     * and each one alone would be unsafe:
+     *
+     * <ul>
+     *   <li>it is MOSTLY BACKDROP — {@link #GROWTH_MAX_COVERAGE}, a majority, not a tolerance;
+     *   <li>the mixture EXPLAINS it — {@link EdgeMix#explains}, which is what refuses a dark keyline
+     *       that merely projects onto the line between a dark backdrop and a bright subject;
+     *   <li>both sides are separated by more than a JND, the same guard the solve itself uses.
+     * </ul>
+     */
+    /**
+     * The background colour to solve against: the local confirmed background where there is one, and
+     * the picture's own backdrop estimate where the window has no sample to offer.
+     */
+    private static double[] background(int[] px, boolean[][] isBg, boolean[][] band, double[][] plate,
+                                       int w, int h, int x, int y, int reach) {
+        double[] bg = solidMean(px, isBg, band, w, h, x, y, true, reach);
+        if (bg != null) return bg;
+        return plate == null ? null : plate[y * w + x];
+    }
+
+    private static int grow(int[] px, boolean[][] isBg, boolean[][] band, double[][] plate,
+                            int w, int h) {
+        final int cap = Math.max(2, Math.min(GROW_CAP, Math.min(w, h) / GROW_DIVISOR));
+        java.util.List<int[]> frontier = new java.util.ArrayList<>();
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) if (band[x][y] && !isBg[x][y]) frontier.add(new int[]{x, y});
+        }
+
+        int added = 0;
+        // One scratch grid for the whole walk, cleared through the list of cells it actually touched.
+        // A fresh boolean[w][h] per ring is 20 MB per ring on the periodic table, allocated eight times.
+        final boolean[][] queued = new boolean[w][h];
+        for (int ring = 1; ring <= cap && !frontier.isEmpty(); ring++) {
+            final int reach = SOLID_RADIUS + ring;
+            java.util.List<int[]> take = new java.util.ArrayList<>();
+            java.util.List<Long> touched = new java.util.ArrayList<>();
+            for (int[] f : frontier) {
+                for (int[] d : DIRS) {
+                    int x = f[0] + d[0], y = f[1] + d[1];
+                    if (x < 0 || y < 0 || x >= w || y >= h) continue;
+                    if (isBg[x][y] || band[x][y] || queued[x][y]) continue;
+                    queued[x][y] = true;
+                    touched.add(queuedAt(x, y));
+                    double[] bg = background(px, isBg, band, plate, w, h, x, y, reach);
+                    double[] fg = solidMean(px, isBg, band, w, h, x, y, false, reach);
+                    if (bg == null || fg == null) continue;
+                    if (!EdgeMix.separated(bg, fg)) continue;
+                    int p = px[y * w + x];
+                    double a = EdgeMix.coverage(p, bg, fg);
+                    if (a < 0 || a > GROWTH_MAX_COVERAGE) continue;
+                    if (!EdgeMix.explains(p, bg, fg, a)) continue;
+                    take.add(new int[]{x, y});
+                }
+            }
+            for (long t : touched) queued[(int) (t >> 32)][(int) (t & 0xFFFFFFFFL)] = false;
+            if (take.isEmpty()) break;
+            for (int[] p : take) band[p[0]][p[1]] = true;
+            frontier = take;
+            added = ring;
+        }
+        return added;
     }
 
     /** Pixels within {@link #BAND_RADIUS} of the mask boundary, on either side of it. */
@@ -160,6 +276,8 @@ final class BgRungUnmix {
         return band;
     }
 
+    private static long queuedAt(int x, int y) { return ((long) x << 32) | (y & 0xFFFFFFFFL); }
+
     /**
      * Mean linear-light colour of the nearby pixels that are unmixed ground of the requested side —
      * confirmed background when {@code wantBg}, confirmed subject otherwise. Band pixels are excluded
@@ -167,11 +285,11 @@ final class BgRungUnmix {
      * endpoints drift toward the answer.
      */
     private static double[] solidMean(int[] px, boolean[][] isBg, boolean[][] band,
-                                      int w, int h, int cx, int cy, boolean wantBg) {
+                                      int w, int h, int cx, int cy, boolean wantBg, int radius) {
         double r = 0, g = 0, b = 0;
         int n = 0;
-        int x0 = Math.max(0, cx - SOLID_RADIUS), x1 = Math.min(w - 1, cx + SOLID_RADIUS);
-        int y0 = Math.max(0, cy - SOLID_RADIUS), y1 = Math.min(h - 1, cy + SOLID_RADIUS);
+        int x0 = Math.max(0, cx - radius), x1 = Math.min(w - 1, cx + radius);
+        int y0 = Math.max(0, cy - radius), y1 = Math.min(h - 1, cy + radius);
         for (int y = y0; y <= y1; y++) {
             for (int x = x0; x <= x1; x++) {
                 if (band[x][y] || isBg[x][y] != wantBg) continue;
@@ -185,14 +303,4 @@ final class BgRungUnmix {
         return n == 0 ? null : new double[]{r / n, g / n, b / n};
     }
 
-    /** Linear-light triple back to an opaque sRGB int, for the JND separation test. */
-    private static int pack(double[] lin) {
-        return 0xFF000000 | (encode(lin[0]) << 16) | (encode(lin[1]) << 8) | encode(lin[2]);
-    }
-
-    private static int encode(double lin) {
-        double c = lin <= 0.0031308 ? lin * 12.92 : 1.055 * Math.pow(lin, 1.0 / 2.4) - 0.055;
-        int v = (int) Math.round(c * 255.0);
-        return v < 0 ? 0 : Math.min(255, v);
-    }
 }

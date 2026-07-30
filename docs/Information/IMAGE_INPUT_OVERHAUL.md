@@ -141,6 +141,51 @@ server in chunks" pipe built first. It's the biggest of the three.
 
 ---
 
+## 8. ✅ `importfolder` spec — owner-decided `2026-07-30`
+
+This is the spec §6 said was missing. Locked in a design session; canonical copy lives in
+[GROUP_12_EXPORT_MARKETPLACE.md](../groups/GROUP_12_EXPORT_MARKETPLACE.md) §B, tests in TG12 §B.
+
+1. **Deliberate command, not a watcher.** `/cb importfolder` is run on purpose. No folder polling.
+   The owner called this "a safe step I need" over full automation.
+2. **Preview before commit.** The run shows every file with the id and display name it will get,
+   slots this run uses, slots left after, and every problem marked — *then* waits for confirmation.
+   Cancel changes nothing on disk or in the world.
+3. **Problems are fixed inline.** Each problem file gets its own clickable line: **rename** (opens
+   the anvil typing box, validated by `/cb create` rules), **delete the file**, or **ignore**.
+4. **Nothing is ever overwritten.** A name clash is a problem line, never a silent replace.
+5. **Naming matches `/cb create` exactly.** Safe ids by the same rules; display names get a capital
+   first letter on **every** word — `red_brick.png` → `Red Brick`.
+6. **Background removal uses the current configured mode/tolerance.** No import-only special case.
+7. **Slot cap: fill what fits, list the rest.** Leftovers appear as retryable clickable lines.
+8. **Imported source files move to a done folder.** Never deleted, never reprocessed on re-run.
+9. **Uncategorised on arrival**, exactly as `/cb create` leaves a block.
+10. **One undo entry per run.** The existing batch undo covers it — no new undo system. Individual
+    blocks are removed by a normal delete button in the report, not a special path.
+11. **Progress is reported** during long runs; no silent freeze.
+12. **No file type aborts the run.** Unusable files are named with a reason and skipped.
+13. **Animated GIFs are parked** for their own session — frame caps, size caps, and this server's
+    GIF crash history need deciding first. Every decision above covers still images only.
+14. **A preview *Screen* is G27's**, later and optional. G12 ships the clickable chat flow.
+15. **A dedicated import folder**, not the exports folder — files coming in never mix with files
+    that went out. Created on first run with a message saying where to drop images. `done/` sits
+    inside it.
+16. **Admin-only**, like export.
+17. **A zip dropped in the import folder is unpacked** and its images imported like loose files.
+    No manual unzipping.
+18. **Progress reuses the pack-sync top-center panel** (`SyncProgressOverlay`, G05). Needs a
+    server→client progress message; that plumbing is part of this job.
+19. **An interrupted run resumes by itself.** Everything finished is already in `done/`, so the
+    next run sees only the remainder. No separate resume state to persist or corrupt.
+20. **A sizeable run asks G09 for a normal backup first.** No backup code of G12's own. Whether
+    *every* risky bulk operation should auto-backup is G09's call, parked in TG09.
+21. **The last run's report can be recalled** after chat scrolls away, with its per-block delete
+    buttons still live (TG12 §C). Same report kept, not a second reporting system.
+22. **No restore path in G12.** Proposed and cut the same day: G09 backup/restore is built and
+    confirmed in-game, and a second way to get blocks back is clutter.
+
+---
+
 ## 8. 🔴 Still open — needs a decision before/at build time
 
 ### 🐛 Layer 1 open bugs (owner in-game test 2026-07-02 — DEFERRED, fix later)

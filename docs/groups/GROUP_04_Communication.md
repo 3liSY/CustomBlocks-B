@@ -181,4 +181,4 @@ This Group owns CustomBlocks-caused disconnect wording and the screen contract. 
 
 - [G16 Diagnostics](GROUP_16_DIAGNOSTICS.md)
 - [G27 Screens](GROUP_27_SCREENS.md)
-- [G12 Export and Marketplace](GROUP_12_EXPORT_MARKETPLACE.md)
+- [G12 Export & Import](GROUP_12_EXPORT_MARKETPLACE.md)

@@ -177,7 +177,10 @@ public class CustomBlocksClient implements ClientModInitializer {
                             context.client().setScreen(new BlockCreationStudioScreen());
                     }
                     case RECORD_OVERLAY -> CaptureOverlayActions.handle(context.client(), data);
-                    case CATEGORY_HUB   -> context.client().setScreen(new com.customblocks.client.gui.CategoryHubScreen());
+                    // data = the category key to focus on ("" = open with nothing selected), sent by
+                    // a category name clicked in chat (G11 C12).
+                    case CATEGORY_HUB   -> context.client().setScreen(
+                            new com.customblocks.client.gui.CategoryHubScreen(null, data));
                     case GUESS_SETTINGS -> context.client().setScreen(new com.customblocks.client.gui.GuessSettingsScreen());
                     case BULK_WORKBENCH -> {
                         // Group 07 §G07-3: refresh the open Workbench in place (an Apply must never close it),

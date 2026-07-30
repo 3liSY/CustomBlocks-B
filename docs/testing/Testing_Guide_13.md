@@ -4,8 +4,8 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Legacy Arabic behavior was confirmed, but the real-SlotBlock rebuild has conflicting source status and needs a clean checkpoint retest. |
-| **Progress** | 🟩🟩🟩🟩🟥🟥🟥🟥🟥🟥 40% |
+| **Verdict** | Number art was rebuilt on the live colour hexes; it, the rearchitecture retest, and the break-reflow regression all still need an in-game check. |
+| **Progress** | 🟩🟩🟥🟥🟥🟥🟥🟥🟥🟥 20% |
 | **Last tested** | 2026-07-04 |
 | **Jar** | `customblocks-1.0.0.jar` |
 
@@ -13,9 +13,10 @@
 
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
+| H | Duplicate cleanup and correct number art | Built 🎯 | - |
+| B | Real SlotBlock Arabic rearchitecture checkpoints | Built 🎯 | - |
 | C | Join/reflow instantness after break | Built 🎯 | Regression 💔 |
 | F | Type-a-word auto-build backend | Planned 📜 | Blocked ‼️ |
-| B | Real SlotBlock Arabic rearchitecture checkpoints | Built 🎯 | Discussion ✏️ |
 | D | Arabic tool and attribute parity | Designed ⏳ | Discussion ✏️ |
 | E | Text Blocks backend | Designed ⏳ | - |
 | G | `/cb arabic` command UX revamp | Planned 📜 | - |
@@ -34,14 +35,34 @@
 - Keep Square, Triangle, Deleter, and attribute commands available.
 - Test the G27 text-creation screen in TG27, not here.
 
+## H - Duplicate cleanup and correct number art - Built 🎯
+
+| | |
+| --- | --- |
+| **Check** | Old duplicate Arabic entries are gone, and the numbers that remain carry the correct art on the live Square colours. |
+| **Pass rule** | H1 through H10 pass in SP and MP. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| H1 | Start on the new jar and read the log. | Safety backup line, then a retired count. | 🎯 | 🎯 |
+| H2 | Search the block list for `A0 Black`. | One entry, no doubled name. | 🎯 | 🎯 |
+| H3 | Run `/cb backup list`. | A `pre-arabic-retire_…` backup is newest. | 🎯 | 🎯 |
+| H4 | Check a few normal non-Arabic blocks. | All present with their textures. | 🎯 | 🎯 |
+| H5 | Restart once more. | No second backup, no further removals. | 🎯 | 🎯 |
+| H6 | Place `A0`–`A9` in all four colours. | Digit sharp, background solid, no ring. | 🎯 | 🎯 |
+| H7 | Place `E0`–`E9` in all four colours. | Same clean result as the Eastern set. | 🎯 | 🎯 |
+| H8 | Put a green number beside a green Square. | Backgrounds match exactly. | 🎯 | 🎯 |
+| H9 | Repeat H8 for red, yellow, black. | Backgrounds match exactly. | 🎯 | 🎯 |
+| H10 | Restart after the textures rebuild once. | No second rebuild, art unchanged. | 🎯 | 🎯 |
+
 ## B - Real SlotBlock Arabic rearchitecture checkpoints - Built 🎯
 
 | | |
 | --- | --- |
 | **Check** | Arabic letters/numbers behave as real SlotBlocks with Arabic metadata, not as a separate live-render block system. |
-| **Pass rule** | CP1 through CP5 pass twice in MP, and the source status conflict is resolved in the group doc. |
+| **Pass rule** | B1 through B6 pass twice in MP. |
 | **Pass mark** | ✅ `YYYY-MM-DD` |
-| **Blocked** | Group doc still contains conflicting status language: checkpoint rows say built/tested, while a later table says designed/nothing built. |
 
 | # | Action | Expected result | SP | MP |
 | --- | --- | --- | --- | --- |
@@ -50,6 +71,7 @@
 | B3 | Place a word row and walk behind it. | Back face reads the same word correctly from behind. | 🎯 | 🎯 |
 | B4 | Place mixed black/red/green/yellow letters. | All four pre-baked colors use config hexes and join across colors. | 🎯 | 🎯 |
 | B5 | Restart after the old system removal. | Old `customblocks:arabic_letter` NBT system and static number/letter blocks do not return. | 🎯 | 🎯 |
+| B6 | Inspect the bundled Arabic coloured sets (moved from TG10 §HB12). | Every colour set is recoloured correctly with no dark rim around the glyphs. | 🎯 | 🎯 |
 
 ## C - Join/reflow instantness after break - Built 🎯
 
@@ -159,7 +181,7 @@
 
 <details><summary>🧨 <b>Cleanup</b></summary>
 
-- [ ] Resolve the G13-25 source status conflict before using this TG for final acceptance.
+- [x] Resolve the G13-25 source status conflict before using this TG for final acceptance.
 - [ ] Delete temporary Arabic letter/word rows after testing.
 - [ ] Keep all screen-layout findings in TG27.
 - [ ] Keep old-system behavior only as history, not active target behavior.

@@ -46,6 +46,7 @@ Each reversible operation creates one history entry. Locked blocks are protected
 | 2026-07-20 | The natural-language ("ask" / NL) command bar is removed from the Bulk Hub entirely; block targeting (tick + filters, incl. a `Category ▾` filter) is a **Screen** concern owned by [G27 §D/§E](../groups/GROUP_27_SCREENS.md). | G07 owns bulk backend, commands, and services only; the mis-targeting NL parser is gone and is not G07's to rebuild. |
 | 2026-07-18 | The bulk-shape command is scrapped, not deferred. | Changing shape across many blocks is dropped from G07 entirely; it does not wait on G08. |
 | 2026-07-18 | Every Bulk Workbench and Set All screen — build, layout, and listings — is owned by G27. | G07 owns bulk behavior only; the screens themselves live in G27. |
+| 2026-07-26 | `/cb bulkreid` and `/cb rename` lose their chat argument forms. Both become Screen-only entry points: the command name still works, but bare, and it opens the Screen. | Owner call after the G10 §HB8 test pass: renaming from chat is the wrong surface for an operation that needs to show what it is about to touch. `/cb bulkreid` already opens the Bulk Workbench on its Re-ID op when called bare, so the prefix/suffix/replace argument branches in `BulkReidCommands` are what comes out; `/cb rename <id> <newname>` needs its single-block equivalent before its arguments can go. G07 owns the backend, G27 owns the Screens. |
 
 ## Feature Plan
 

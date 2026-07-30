@@ -59,7 +59,7 @@
 
 <details><summary>💤 <b>Parked</b></summary>
 
-*(none)*
+- Auto-backup before risky bulk operations — 💤 `2026-07-30`: Raised while designing G12's folder import. G12 will call the normal backup before a sizeable import run, but whether *every* risky bulk operation should take one automatically is G09's decision and needs its own pass. G09 owns backups outright — G12 was told not to grow a second restore path, and a duplicate restore proposal there was scrapped the same day.
 
 </details>
 

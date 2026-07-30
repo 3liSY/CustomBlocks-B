@@ -39,16 +39,17 @@ final class CategoryHubView {
     private static final int CYAN = 0x39E0C8, RED_DIM = 0xFF7A0000, RED_DEEP = 0xFF2A0000, PANEL = 0xFF0A0A0D;
 
     // Detail-pane vertical layout (relative to BAR_H) — fixed gaps so labels never overlap controls.
+    // The description section used to sit between OPTIONS and BLOCKS; descriptions were removed
+    // root-and-branch (G11 2026-07-28), so BLOCKS takes back those 40px of detail-pane height.
     static final int Y_HEADER = 10, Y_RENAME_L = 26, Y_RENAME = 34, Y_ORG_L = 56, Y_ORG = 64,
-            Y_COL_L = 88, Y_COL = 96, Y_HEX = 112, Y_OPT_L = 134, Y_OPT = 142,
-            Y_DESC_L = 164, Y_DESC = 172, Y_DESC_READ = 190, Y_BLK = 204;
+            Y_COL_L = 88, Y_COL = 96, Y_HEX = 112, Y_OPT_L = 134, Y_OPT = 142, Y_BLK = 164;
 
     // Rects recomputed every render, read by CategoryHubScreen.mouseClicked in the same frame.
     final List<int[]> rowRects = new ArrayList<>();
     final List<String> rowKeys = new ArrayList<>();
     final List<int[]> blockRects = new ArrayList<>();
     final List<String> blockIds = new ArrayList<>();
-    int[] rRename, rMerge, rDelete, rMove, rDefault, rSort, rLock, rUnlock, rSaveDesc, rNew, rClear, rSetHex;
+    int[] rRename, rMerge, rDelete, rMove, rDefault, rSort, rLock, rUnlock, rNew, rClear, rSetHex;
     int[][] swatchRects = new int[CategoryHubModel.TAGS.length][4];
 
     // Scroll offsets owned here (clamped during render, nudged by the screen's scroll handler).
@@ -226,14 +227,6 @@ final class CategoryHubView {
         drawBtn(ctx, mx, my, custom ? "Sort: Custom" : "Sort: A–Z", rSort, real, false);
         drawBtn(ctx, mx, my, "Lock all", rLock, real, false);
         drawBtn(ctx, mx, my, "Unlock all", rUnlock, real, false);
-
-        // DESCRIPTION + save + read-back.
-        ctx.drawTextWithShadow(tr, Text.literal("§8Description"), rx, BAR_H + Y_DESC_L, 0xFFFFFFFF);
-        rSaveDesc = new int[]{rx + rw - 58, BAR_H + Y_DESC, 58, 16};
-        drawBtn(ctx, mx, my, "Save", rSaveDesc, real, false);
-        String savedDesc = ClientSlotCache.description(key);
-        ctx.drawTextWithShadow(tr, Text.literal(savedDesc.isEmpty()
-                ? "§8(no description saved)" : "§asaved: §7" + fit(savedDesc, rw - 60)), rx, BAR_H + Y_DESC_READ, 0xFFFFFFFF);
 
         // BLOCKS (+ a search box that filters the list below, L11 "search inside a category").
         ctx.drawTextWithShadow(tr, CbTheme.red("BLOCKS"), rx, BAR_H + Y_BLK, 0xFFFFFFFF);

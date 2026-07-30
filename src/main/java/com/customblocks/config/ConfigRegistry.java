@@ -117,7 +117,7 @@ public final class ConfigRegistry {
                 "Strip a block image's background when it is applied. Auto works it out from the picture; there is nothing to tune.",
                 Cat.LOOK, 1,
                 () -> CustomBlocksConfig.backgroundMode, v -> CustomBlocksConfig.backgroundMode = v,
-                "none", new String[]{"none", "auto"}, false, false));
+                "nobackground", new String[]{"nobackground", "auto"}, false, false));
         f.add(ConfigField.group("variant_colours", "Variant colours",
                 "The four triangle recolour swatches (red, yellow, green, black). Opens a colour chest.",
                 Cat.LOOK, 1));

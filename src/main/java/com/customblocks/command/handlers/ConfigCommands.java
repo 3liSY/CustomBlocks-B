@@ -73,15 +73,16 @@ public final class ConfigCommands {
         // /cb config transparent [...] — off-atlas block background mode (Group 14 Phase 1c Step 2b).
         RenderConfigCommands.register(root);
 
-        // /cb config background [NoBgRemove|Auto] — strip image backgrounds to black on (re)texture.
-        // A greedy arg is used so the retired "BgRemove&More" spelling (with the &) still parses; the
-        // retired names all mean Auto now (G10 §H) and are accepted but never suggested.
+        // /cb config background [NoBackground|Auto] — strip image backgrounds to black on (re)texture.
+        // Only those two values are accepted; every retired spelling now hard rejects (G10 §H,
+        // 2026-07-26). The arg stays GREEDY so a retired name containing an "&" — "BgRemove&More" —
+        // still reaches our own rejection message instead of dying as a brigadier parse error.
         root.then(CommandManager.literal("config")
                 .then(CommandManager.literal("background")
                         .executes(ConfigCommands::backgroundStatus)
                         .then(CommandManager.argument("mode", StringArgumentType.greedyString())
                                 .suggests((c, b) -> {
-                                    b.suggest("NoBgRemove");
+                                    b.suggest("NoBackground");
                                     b.suggest("Auto");
                                     return b.buildFuture();
                                 })
@@ -280,14 +281,17 @@ public final class ConfigCommands {
         String mode = CustomBlocksConfig.backgroundMode;
         Chat.info(ctx.getSource(), "Background removal: " + CbFmt.BODY + BackgroundRemover.displayName(mode)
                 + " " + CbFmt.FAINT + "(arg: " + BackgroundRemover.commandArg(mode)
-                + " · options: NoBgRemove · Auto)");
+                + " · options: NoBackground · Auto)");
         return 1;
     }
 
     private static int setBackground(CommandContext<ServerCommandSource> ctx, String raw) {
         String mode = BackgroundRemover.fromArg(raw);
         if (mode == null) {
-            Chat.error(ctx.getSource(), "Use: NoBgRemove or Auto");
+            // Hard reject, no fallback (G10 §H, 2026-07-26): a retired name like "BgRemove&More" or
+            // "BgSmart" lands here exactly like a typo, and nothing is written to the config.
+            Chat.error(ctx.getSource(), "\"" + raw + "\" is not a background mode. Use: "
+                    + BackgroundRemover.LEGAL_VALUES);
             return 0;
         }
         CustomBlocksConfig.backgroundMode = mode;

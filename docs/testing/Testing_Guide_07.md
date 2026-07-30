@@ -4,8 +4,8 @@
 
 | | |
 | --- | --- |
-| **Verdict** | Both G07 backend items are confirmed in-game; the Bulk Hub Screen now lives in [G27 §D](Testing_Guide_27.md). |
-| **Progress** | 🟩🟩🟩🟩🟩🟩🟩🟩🟩🟩 100% |
+| **Verdict** | The two backend items are confirmed; re-id has just moved out of chat into the Workbench and needs an in-game check. |
+| **Progress** | 🟩🟩🟩🟩🟩🟩🟥🟥🟥🟥 66% |
 | **Last tested** | 2026-07-20 |
 | **Jar** | `customblocks-1.0.0.jar` |
 
@@ -13,6 +13,7 @@
 
 | § | Feature | Status | Flags |
 | --- | --- | --- | --- |
+| D | Re-ID is Workbench-only | Built 🎯 | - |
 | A | Bulk undo/redo batch recording | Done ✅ | - |
 | C | Chat bulk command backend | Done ✅ | - |
 
@@ -24,9 +25,22 @@
 
 # Active Tests
 
-*No open G07 backend tests — both §A and §C are confirmed (see Archive).*
-
 The Bulk Operations Hub **Screen** (opening it, targeting blocks, search, filter chips, the new **Category ▾** filter, tick-to-select) is a screen test and lives in **[G27 §D — Bulk Operations Hub screens](Testing_Guide_27.md)**. Test it there.
+
+## D - Re-ID is Workbench-only - Built 🎯
+
+| | |
+| --- | --- |
+| **Check** | `/cb bulkreid` opens the Workbench, and the old typed form says where it went. |
+| **Pass rule** | D1 through D4 pass in SP and MP. |
+| **Pass mark** | ✅ `YYYY-MM-DD` |
+
+| # | Action | Expected result | SP | MP |
+| --- | --- | --- | --- | --- |
+| D1 | Run `/cb bulkreid` with nothing after it. | Workbench opens on Re-ID. | 🎯 | 🎯 |
+| D2 | Run `/cb bulkreid all prefix test_`. | A message pointing back to `/cb bulkreid`, no ids changed. | 🎯 | 🎯 |
+| D3 | Re-id a few blocks from the Workbench and apply. | Ids change, textures and placed blocks unchanged. | 🎯 | 🎯 |
+| D4 | Run `/cb undo` after D3. | All those ids go back in one step. | 🎯 | 🎯 |
 
 ---
 
@@ -67,6 +81,7 @@ The Bulk Operations Hub **Screen** (opening it, targeting blocks, search, filter
 - Bulk recolor ownership in G07 — 👎 `2026-07-12` (advanced Hub screen moved to G27 §O `2026-07-24`; live `/cb bulkrecolor` hue-shift op stays here in G07, unrelated to the Hub — see G27 §O note)
 - Bulk shape command — 👎 `2026-07-18` (scrapped outright; no longer waiting on G08)
 - Dedicated `bulksound` literal — 👎 `2026-07-18` (sound already works through `bulkproperty`)
+- `/cb bulkreid` chat argument forms (prefix/suffix/replace) — 👎 `2026-07-27` (owner call; the Workbench shows what it will change first, chat could not)
 
 </details>
 
